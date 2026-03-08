@@ -1157,18 +1157,21 @@ RULES:
         },
       });
 
-      const extractionPrompt = `You are a precise document extraction tool. Read the provided past paper.
+      const extractionPrompt = `You are a precise document extraction tool that follows a strict Two-Pass Verification process.
 
-Extract the exact questions found in the document. Do not invent, simulate, or hallucinate new questions.
-If the questions are already multiple-choice, extract the exact options. If they are open-ended, generate 3 plausible but incorrect distractor options to format them as MCQs.
-Format all mathematical equations, variables, and formulas strictly in KaTeX syntax.
-Provide a concise 2-3 sentence explanation for the correct answer.
+=== PASS 1: CONTEXTUAL EXTRACTION ===
+Read the provided document carefully and extract the exact questions found within it.\n\nRules for Pass 1:\n\n- Preserve the precise technical meaning and context of every question.\n- If the questions are already multiple-choice, extract the exact options verbatim.\n- If they are open-ended, generate 3 plausible but incorrect distractor options to format them as MCQs.\n- Format all mathematical equations, variables, and formulas strictly in KaTeX syntax.\n- Provide a concise 2-3 sentence explanation for the correct answer.
 
-Return only a JSON array with objects that follow this exact schema:
-- question (string)
-- options (string[] with exactly 4 options)
-- correct_answer (string that exactly matches one option)
-- explanation (string)`;
+=== PASS 2: VERIFICATION & FORMATTING ===
+Before finalizing your output, scan your extracted text against the original document.\n\nVerification checklist:\n\n1. Confirm that no context, qualifiers, or technical meaning was lost during extraction.\n2. Confirm that each correct_answer exactly matches one of the four options.\n3. Confirm that explanations are factually accurate and grounded in the source material.
+
+Markdown Formatting Rules (apply to all text fields):\n\n- Use \\n\\n to separate paragraphs and distinct thoughts.\n- Use \`- \` (dash space) or \`1. \` for any lists or sequential steps within a question or explanation.\n- Do not mash sentences together. Ensure high readability.\n- Preserve line breaks where they exist in the original document.
+
+=== STRICT JSON SCHEMA ===
+Output the verified, Markdown-formatted text as a JSON array of objects with this exact schema:\n\n- question (string) \u2014 the full question text with Markdown formatting\n- options (string[] with exactly 4 options)\n- correct_answer (string that exactly matches one option)\n- explanation (string) \u2014 Markdown-formatted explanation
+
+=== NO HALLUCINATIONS ===
+You must rely ONLY on the provided PDF text. Do not generate fictitious data or simulated examples to fill in gaps. If a question is ambiguous or incomplete in the source, extract it as-is and note the ambiguity in the explanation.`;
 
       const result = await model.generateContent([
         { text: extractionPrompt },
