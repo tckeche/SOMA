@@ -1135,6 +1135,8 @@ RULES:
 
   // Upload supporting document for tutor quiz builder
   app.post("/api/tutor/upload-doc", requireTutor, supportingDocUpload.single("pdf"), async (req, res) => {
+    req.setTimeout(300_000);
+    res.setTimeout(300_000);
     try {
       if (!req.file) return res.status(400).json({ message: "No PDF uploaded" });
 
@@ -1203,6 +1205,8 @@ You must rely ONLY on the provided PDF text. Do not generate fictitious data or 
           )
         : [];
 
+      try { fs.unlinkSync(resolvedPath); } catch {}
+
       res.json({
         id: req.file.filename,
         originalName: req.file.originalname,
@@ -1210,6 +1214,7 @@ You must rely ONLY on the provided PDF text. Do not generate fictitious data or 
         metadata: { provider: "google", model: "gemini-2.5-flash" },
       });
     } catch (err: any) {
+      if (req.file?.path) { try { fs.unlinkSync(req.file.path); } catch {} }
       res.status(500).json({ message: err.message || "Failed to extract questions from PDF" });
     }
   });

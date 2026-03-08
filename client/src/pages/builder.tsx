@@ -288,19 +288,27 @@ export default function BuilderPage() {
   const handleSupportingDoc = async (file: File, docType: string) => {
     const docEntry = { name: file.name, type: docType, processing: true };
     setSupportingDocs((prev) => [...prev, docEntry]);
+    toast({ title: "Uploading PDF...", description: "Extracting questions from the document. This may take up to 2 minutes for large files." });
     try {
       const uploadForm = new FormData();
       uploadForm.append("pdf", file);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 270_000);
       const uploadRes = await authFetch("/api/tutor/upload-doc", {
         method: "POST",
         body: uploadForm,
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       let fileId: string | null = null;
       let extractedDrafts: any[] = [];
       if (uploadRes.ok) {
         const uploadData = await uploadRes.json();
         fileId = uploadData.id;
         extractedDrafts = Array.isArray(uploadData.drafts) ? uploadData.drafts : [];
+      } else {
+        const errData = await uploadRes.json().catch(() => null);
+        toast({ title: "PDF extraction failed", description: errData?.message || `Server error (${uploadRes.status})`, variant: "destructive" });
       }
       setSupportingDocs((prev) =>
         prev.map((d) => (d.name === file.name && d.type === docType ? { ...d, processing: false } : d))
@@ -322,7 +330,9 @@ export default function BuilderPage() {
         }
         toast({ title: `Imported ${extractedDrafts.length} question${extractedDrafts.length === 1 ? "" : "s"} from PDF` });
       }
-    } catch {
+    } catch (err: any) {
+      const isTimeout = err?.name === "AbortError";
+      toast({ title: isTimeout ? "Upload timed out" : "Upload failed", description: isTimeout ? "The PDF was too large to process. Try a smaller file." : "Something went wrong during extraction.", variant: "destructive" });
       setSupportingDocs((prev) => prev.filter((d) => !(d.name === file.name && d.type === docType)));
     }
   };
