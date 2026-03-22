@@ -20,6 +20,7 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - `tutor_students` - id, tutor_id, student_id (unique index), created_at
 - `quiz_assignments` - id, quiz_id, student_id, status, due_date (optional timestamp), created_at
 - `tutor_comments` - id, tutor_id, student_id, comment, created_at
+- `password_reset_requests` - id, email, created_at (audit log for password reset attempts)
 
 ### Key Files
 - `shared/schema.ts` - Drizzle schema definitions and Zod validation schemas (soma tables only)
@@ -39,8 +40,11 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - `client/src/pages/SuperAdminDashboard.tsx` - Super admin global management. Route: `/super-admin`
 - `client/src/pages/soma-quiz.tsx` - Student quiz engine
 - `client/src/pages/SomaQuizReview.tsx` - Post-quiz review with explanations
+- `client/src/pages/ForgotPassword.tsx` - Standalone forgot-password page: email form → POST /api/auth/forgot-password → Supabase sends recovery email
+- `client/src/pages/ResetPassword.tsx` - Reset-password landing page: handles Supabase PKCE & implicit recovery tokens, validates new+confirm password match, calls supabase.auth.updateUser
 
 ### API Endpoints
+- `POST /api/auth/forgot-password` - Rate-limited (5/15min). Validates email, logs to password_reset_requests, triggers Supabase recovery email. Always returns 200 to prevent user enumeration.
 - `POST /api/auth/sync` - Upsert Supabase user into soma_users table
 - `GET /api/auth/me` - Get current user (auto-creates soma_users record if missing)
 - `GET /api/quizzes/available` - Auth-gated: quizzes assigned to this student

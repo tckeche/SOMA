@@ -484,6 +484,52 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ─── Password Reset Routes ─────────────────────────────────────────
+
+  const forgotPasswordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many reset requests. Please wait 15 minutes." },
+  });
+
+  app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== "string") {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      const normalised = email.trim().toLowerCase();
+
+      // Always respond with success to prevent user enumeration
+      const user = await storage.getSomaUserByEmail(normalised);
+
+      if (user) {
+        // Log the reset request for auditing
+        await storage.logPasswordResetRequest(normalised);
+
+        // Use Supabase's email service to send the recovery link
+        const supabaseUrl = process.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+        if (supabaseUrl && supabaseAnonKey) {
+          const { createClient } = await import("@supabase/supabase-js");
+          const supabaseAdmin = createClient(supabaseUrl, supabaseAnonKey);
+          const redirectTo = req.headers.origin
+            ? `${req.headers.origin}/reset-password`
+            : `${supabaseUrl}/reset-password`;
+          await supabaseAdmin.auth.resetPasswordForEmail(normalised, { redirectTo });
+        }
+      }
+
+      // Always return 200 — do not reveal whether the email exists
+      res.json({ message: "If that email is registered, a reset link has been sent." });
+    } catch (err: any) {
+      console.error("[forgot-password]", err);
+      res.status(500).json({ error: "Failed to process password reset request." });
+    }
+  });
+
   // ─── Tutor API Routes ──────────────────────────────────────────────
 
   // Get tutor's adopted students

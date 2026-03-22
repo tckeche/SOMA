@@ -104,6 +104,7 @@ httpServer.listen(
           await client.query(`ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS started_at TIMESTAMP`);
           await client.query(`ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`);
           await client.query(`UPDATE soma_reports SET student_name = su.display_name FROM soma_users su WHERE soma_reports.student_id = su.id AND su.display_name IS NOT NULL AND su.display_name != '' AND soma_reports.student_name != su.display_name AND su.display_name NOT LIKE '%@%'`);
+          await client.query(`CREATE TABLE IF NOT EXISTS password_reset_requests (id SERIAL PRIMARY KEY, email TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`);
           log("schema migrations applied", "bootstrap");
         } finally {
           client.release();

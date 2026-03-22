@@ -16,6 +16,8 @@ import TutorAssessments from "@/pages/TutorAssessments";
 import TutorAssessmentDetails from "@/pages/TutorAssessmentDetails";
 import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import SomaChatPage from "@/pages/soma-chat";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleRouter from "@/components/RoleRouter";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -27,6 +29,8 @@ function Router() {
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/login" component={StudentAuth} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/portal">{() => <RoleRouter studentComponent={StudentDashboard} tutorComponent={TutorDashboard} />}</Route>
       <Route path="/super-admin">{() => <ProtectedRoute component={SuperAdminDashboard} />}</Route>
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>

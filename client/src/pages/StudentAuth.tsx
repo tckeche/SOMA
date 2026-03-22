@@ -157,7 +157,7 @@ export default function StudentAuth() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + "/login",
+        redirectTo: window.location.origin + "/reset-password",
       });
       if (error) throw error;
       toast({ title: "Reset email sent", description: "Check your inbox for a password reset link." });
@@ -285,7 +285,7 @@ export default function StudentAuth() {
             {mode === "login" && (
               <button
                 type="button"
-                onClick={() => switchMode("reset")}
+                onClick={() => setLocation("/forgot-password")}
                 className="text-xs text-violet-400 hover:text-violet-300 transition-colors w-full text-right -mt-1"
                 data-testid="button-forgot-password"
               >

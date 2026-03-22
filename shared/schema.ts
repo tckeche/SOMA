@@ -70,6 +70,12 @@ export const quizAssignments = pgTable("quiz_assignments", {
   uniqueIndex("quiz_assignment_unique_idx").on(table.quizId, table.studentId),
 ]);
 
+export const passwordResetRequests = pgTable("password_reset_requests", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const tutorComments = pgTable("tutor_comments", {
   id: serial("id").primaryKey(),
   tutorId: uuid("tutor_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),

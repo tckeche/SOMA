@@ -77,6 +77,8 @@ export interface IStorage {
   deleteSomaUser(userId: string): Promise<void>;
   deleteSomaQuiz(quizId: number): Promise<void>;
   getAllSomaQuizzes(): Promise<SomaQuiz[]>;
+
+  logPasswordResetRequest(email: string): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -485,6 +487,12 @@ class DatabaseStorage implements IStorage {
   async getAllSomaQuizzes(): Promise<SomaQuiz[]> {
     return this.database.select().from(somaQuizzes).orderBy(somaQuizzes.createdAt);
   }
+
+  async logPasswordResetRequest(email: string): Promise<void> {
+    await this.database.execute(
+      sql`INSERT INTO password_reset_requests (email) VALUES (${email})`
+    );
+  }
 }
 
 class MemoryStorage implements IStorage {
@@ -786,6 +794,10 @@ class MemoryStorage implements IStorage {
 
   async getAllSomaQuizzes(): Promise<SomaQuiz[]> {
     return this.somaQuizzesList;
+  }
+
+  async logPasswordResetRequest(_email: string): Promise<void> {
+    // no-op in memory storage
   }
 }
 
