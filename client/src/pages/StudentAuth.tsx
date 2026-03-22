@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
@@ -17,31 +17,6 @@ export default function StudentAuth() {
   const [loading, setLoading] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-
-  // If Supabase redirected a recovery link to /login (old redirect_to config),
-  // transparently forward to /reset-password so the token is handled correctly.
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get("code");
-    const tokenHash = url.searchParams.get("token_hash");
-    const type = url.searchParams.get("type");
-    const hash = window.location.hash;
-    const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
-    const hashType = hashParams.get("type");
-
-    if (code) {
-      setLocation(`/reset-password?code=${code}`);
-      return;
-    }
-    if (tokenHash && type === "recovery") {
-      setLocation(`/reset-password?token_hash=${tokenHash}&type=recovery`);
-      return;
-    }
-    if (hashType === "recovery" && hash) {
-      setLocation(`/reset-password${hash}`);
-      return;
-    }
-  }, []);
 
   const resetForm = () => {
     setEmail("");

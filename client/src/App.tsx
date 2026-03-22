@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -23,6 +24,7 @@ import RoleRouter from "@/components/RoleRouter";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Redirect } from "wouter";
 import ThemeToggle from "@/components/ThemeToggle";
+import { supabase } from "@/lib/supabase";
 
 function Router() {
   return (
@@ -52,6 +54,60 @@ function Router() {
 }
 
 function App() {
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    // ── Recovery-token interceptor ──────────────────────────────────────
+    // Supabase sends the reset email pointing to /login (old config) or
+    // /reset-password (new config).  After Supabase verifies the token it
+    // redirects here with one of three URL shapes:
+    //
+    //   PKCE   → ?code=XXX                      (query param, not cleared yet)
+    //   OTP    → ?token_hash=XXX&type=recovery  (query param)
+    //   Implicit → #access_token=XXX&type=recovery  (URL hash)
+    //
+    // The implicit hash is consumed by the Supabase client asynchronously
+    // (after a microtask), so we can still read it here synchronously.
+    // For PKCE / OTP the params stay in the URL until explicitly exchanged.
+
+    const url = new URL(window.location.href);
+    const code      = url.searchParams.get("code");
+    const tokenHash = url.searchParams.get("token_hash");
+    const type      = url.searchParams.get("type");
+    const hash      = window.location.hash;
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+    const hashType  = hashParams.get("type");
+
+    // Already on the reset page — nothing to do.
+    if (window.location.pathname === "/reset-password") return;
+
+    if (code) {
+      setLocation(`/reset-password?code=${encodeURIComponent(code)}`);
+      return;
+    }
+    if (tokenHash && type === "recovery") {
+      setLocation(`/reset-password?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`);
+      return;
+    }
+    if (hashType === "recovery" && hash) {
+      // Pass the full hash so /reset-password can extract access_token etc.
+      setLocation("/reset-password" + hash);
+      return;
+    }
+
+    // Fallback: listen for Supabase's PASSWORD_RECOVERY auth event.
+    // Supabase fires this when it processes a recovery token from the URL hash.
+    // Registering here (App level, always mounted) means we never miss it
+    // regardless of which page the user lands on.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setLocation("/reset-password");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <TooltipProvider>
       <Toaster />
