@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, ArrowLeft, Loader2, CheckCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function ForgotPassword() {
@@ -12,14 +13,27 @@ export default function ForgotPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = email.trim();
+    const trimmed = email.trim().toLowerCase();
     if (!trimmed) {
       toast({ title: "Email required", description: "Please enter your email address.", variant: "destructive" });
       return;
     }
     setLoading(true);
     try {
+      // Step 1 — backend validates email exists and logs the request (audit trail)
       await apiRequest("POST", "/api/auth/forgot-password", { email: trimmed });
+
+      // Step 2 — browser calls Supabase directly so the PKCE code-verifier is
+      // stored in this browser's localStorage.  This is what makes the email
+      // link work: when the user clicks it, the verifier is present to exchange.
+      const redirectTo = `${window.location.origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
+      if (error) {
+        // Supabase errors here are usually config issues; still show success to
+        // avoid leaking whether an account exists.
+        console.error("[forgot-password] supabase error:", error.message);
+      }
+
       setSent(true);
     } catch (err: any) {
       const msg = err?.message || "Something went wrong. Please try again.";
@@ -60,7 +74,7 @@ export default function ForgotPassword() {
               <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-white mb-2">Check your inbox</h2>
               <p className="text-sm text-slate-400 mb-6">
-                If <span className="text-violet-300 font-medium">{email}</span> is registered, you'll receive a password reset link shortly. Check your spam folder if it doesn't arrive.
+                If <span className="text-violet-300 font-medium">{email}</span> is registered, you'll receive a password reset link shortly. Check your spam folder if it doesn't arrive within a minute.
               </p>
               <Link href="/login">
                 <button

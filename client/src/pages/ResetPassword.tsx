@@ -19,59 +19,74 @@ export default function ResetPassword() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Supabase recovery links arrive in two flavours:
-    //   PKCE  → ?token_hash=XXX&type=recovery  (Supabase v2 default)
-    //   Implicit → #access_token=XXX&type=recovery
+    // Supabase sends different URL formats depending on config:
+    //
+    //  PKCE (browser-initiated, Supabase v2 default):
+    //    /reset-password?code=XXXX
+    //    → call supabase.auth.exchangeCodeForSession(code)
+    //
+    //  OTP hash (server-initiated or PKCE alternate):
+    //    /reset-password?token_hash=XXXX&type=recovery
+    //    → call supabase.auth.verifyOtp({ token_hash, type: 'recovery' })
+    //
+    //  Implicit (older clients / Supabase implicit flow):
+    //    /reset-password#access_token=XXX&refresh_token=YYY&type=recovery
+    //    → call supabase.auth.setSession(...)
+    //
+    // We also subscribe to onAuthStateChange in case Supabase's client-side
+    // listener fires PASSWORD_RECOVERY before the component fully mounts.
+
     const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
     const tokenHash = url.searchParams.get("token_hash");
     const type = url.searchParams.get("type");
-    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const accessToken = hashParams.get("access_token");
     const refreshToken = hashParams.get("refresh_token");
     const hashType = hashParams.get("type");
 
-    if (tokenHash && type === "recovery") {
-      // PKCE flow — verify OTP to establish a session
-      supabase.auth
-        .verifyOtp({ token_hash: tokenHash, type: "recovery" })
-        .then(({ error }) => {
-          if (error) {
-            console.error("[reset-password] verifyOtp error:", error);
-            setPageState("invalid");
-          } else {
-            setPageState("ready");
-          }
-        });
+    // Subscribe to auth state changes — this catches PASSWORD_RECOVERY events
+    // that fire before the component mounts (common with implicit flow).
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setPageState("ready");
+      }
+    });
+
+    const settle = (ok: boolean) => setPageState(ok ? "ready" : "invalid");
+
+    if (code) {
+      // PKCE flow — exchange authorization code for a session
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) console.error("[reset-password] exchangeCodeForSession:", error.message);
+        settle(!error);
+      });
+    } else if (tokenHash && type === "recovery") {
+      // OTP hash flow
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ error }) => {
+        if (error) console.error("[reset-password] verifyOtp:", error.message);
+        settle(!error);
+      });
     } else if (accessToken && hashType === "recovery") {
-      // Implicit flow — set the session directly from the hash tokens
+      // Implicit flow — set the session from the URL hash
       supabase.auth
         .setSession({ access_token: accessToken, refresh_token: refreshToken ?? "" })
         .then(({ error }) => {
-          if (error) {
-            console.error("[reset-password] setSession error:", error);
-            setPageState("invalid");
-          } else {
-            setPageState("ready");
-          }
+          if (error) console.error("[reset-password] setSession:", error.message);
+          settle(!error);
         });
     } else {
-      // Listen for PASSWORD_RECOVERY event (emitted when Supabase detects the URL)
-      const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-        if (event === "PASSWORD_RECOVERY") {
-          setPageState("ready");
-        }
-      });
-
-      // Give the auth listener a moment before deciding the link is invalid
+      // No recognised token in URL — wait briefly for the auth listener to fire
       const timer = setTimeout(() => {
         setPageState((prev) => (prev === "loading" ? "invalid" : prev));
       }, 3000);
-
       return () => {
-        listener.subscription.unsubscribe();
         clearTimeout(timer);
+        authListener.subscription.unsubscribe();
       };
     }
+
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
   const validate = (): boolean => {
@@ -98,8 +113,7 @@ export default function ResetPassword() {
       toast({ title: "Password updated", description: "You can now log in with your new password." });
       setTimeout(() => setLocation("/login"), 2500);
     } catch (err: any) {
-      const msg = err?.message || "Failed to update password.";
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      toast({ title: "Error", description: err?.message || "Failed to update password.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -118,7 +132,6 @@ export default function ResetPassword() {
 
         <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
 
-          {/* Loading */}
           {pageState === "loading" && (
             <div className="text-center py-8" data-testid="status-verifying">
               <Loader2 className="w-8 h-8 text-violet-400 mx-auto animate-spin mb-3" />
@@ -126,7 +139,6 @@ export default function ResetPassword() {
             </div>
           )}
 
-          {/* Invalid / expired link */}
           {pageState === "invalid" && (
             <div className="text-center py-4" data-testid="status-invalid-token">
               <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
@@ -153,7 +165,6 @@ export default function ResetPassword() {
             </div>
           )}
 
-          {/* Success */}
           {pageState === "success" && (
             <div className="text-center py-4" data-testid="status-password-updated">
               <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
@@ -162,7 +173,6 @@ export default function ResetPassword() {
             </div>
           )}
 
-          {/* New password form */}
           {pageState === "ready" && (
             <>
               <div className="mb-6">
@@ -222,7 +232,6 @@ export default function ResetPassword() {
                   </div>
                 </div>
 
-                {/* Live password match indicator */}
                 {confirmPassword.length > 0 && (
                   <p
                     className={`text-xs ${newPassword === confirmPassword ? "text-emerald-400" : "text-red-400"}`}

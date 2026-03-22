@@ -502,27 +502,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       const normalised = email.trim().toLowerCase();
 
-      // Always respond with success to prevent user enumeration
+      // Log the request for auditing only if the user exists.
+      // The browser sends the Supabase email directly (preserving the PKCE
+      // code-verifier in localStorage so the reset link works).
       const user = await storage.getSomaUserByEmail(normalised);
-
       if (user) {
-        // Log the reset request for auditing
         await storage.logPasswordResetRequest(normalised);
-
-        // Use Supabase's email service to send the recovery link
-        const supabaseUrl = process.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-        if (supabaseUrl && supabaseAnonKey) {
-          const { createClient } = await import("@supabase/supabase-js");
-          const supabaseAdmin = createClient(supabaseUrl, supabaseAnonKey);
-          const redirectTo = req.headers.origin
-            ? `${req.headers.origin}/reset-password`
-            : `${supabaseUrl}/reset-password`;
-          await supabaseAdmin.auth.resetPasswordForEmail(normalised, { redirectTo });
-        }
       }
 
-      // Always return 200 — do not reveal whether the email exists
+      // Always return 200 — never reveal whether the email exists.
       res.json({ message: "If that email is registered, a reset link has been sent." });
     } catch (err: any) {
       console.error("[forgot-password]", err);
