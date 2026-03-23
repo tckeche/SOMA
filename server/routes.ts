@@ -7,6 +7,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
+import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers } from "./services/aiPipeline";
@@ -26,6 +27,41 @@ const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
 const analyzeClassLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // limit each IP to 20 analyze-class requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const tutorApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const superAdminApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const studentApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const uploadImageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -124,48 +160,29 @@ function verifyPassword(password: string, storedHash: string): boolean {
   return crypto.timingSafeEqual(derived, expected);
 }
 
-function parseCookies(req: Request) {
-  const raw = req.headers.cookie;
-  if (!raw) return {} as Record<string, string>;
-  return raw.split(";").reduce<Record<string, string>>((acc, pair) => {
-    const idx = pair.indexOf("=");
-    if (idx === -1) return acc;
-    const key = pair.slice(0, idx).trim();
-    const value = decodeURIComponent(pair.slice(idx + 1).trim());
-    acc[key] = value;
-    return acc;
-  }, {});
-}
-
-function getAdminSessionToken(req: Request) {
-  return parseCookies(req)[ADMIN_COOKIE_NAME] || "";
-}
-
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const token = getAdminSessionToken(req);
+  const token = getAdminSessionToken(req, ADMIN_COOKIE_NAME);
   if (token) {
     try {
       jwt.verify(token, getJwtSecret());
       return next();
     } catch {}
   }
+
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const supaToken = authHeader.slice(7);
-    return verifySupabaseToken(supaToken).then((decoded) => {
-      if (!decoded) return res.status(401).json({ message: "Unauthorized" });
-      const userId = decoded.sub;
-      return storage.getSomaUserById(userId).then((user) => {
-        if (user && (user.role === "tutor" || user.role === "super_admin")) {
-          (req as any).tutorId = userId;
-          (req as any).tutorUser = user;
-          (req as any).authUser = { id: user.id, email: user.email, role: user.role };
-          return next();
-        }
-        return res.status(401).json({ message: "Unauthorized" });
-      }).catch(() => res.status(401).json({ message: "Unauthorized" }));
-    }).catch(() => res.status(401).json({ message: "Unauthorized" }));
+    return getAuthorizedUserFromBearer(supaToken, ["tutor", "super_admin"])
+      .then((user) => {
+        if (!user) return res.status(401).json({ message: "Unauthorized" });
+        (req as any).tutorId = user.id;
+        (req as any).tutorUser = user;
+        (req as any).authUser = { id: user.id, email: user.email, role: user.role, displayName: user.displayName };
+        return next();
+      })
+      .catch(() => res.status(401).json({ message: "Unauthorized" }));
   }
+
   return res.status(401).json({ message: "Unauthorized" });
 }
 
@@ -173,45 +190,29 @@ const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com"
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "admin.soma@melaniacalvin.com";
 
-function determinRole(email: string): "tutor" | "student" | "super_admin" {
+function determineRole(email: string): "tutor" | "student" | "super_admin" {
   if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
   const domain = email.split("@")[1]?.toLowerCase();
   return domain === TUTOR_EMAIL_DOMAIN.toLowerCase() ? "tutor" : "student";
 }
 
-function requireTutor(req: Request, res: Response, next: NextFunction) {
-  const tutorId = req.headers["x-tutor-id"] as string;
-  if (!tutorId) {
-    return res.status(401).json({ message: "Tutor ID required" });
-  }
-  storage.getSomaUserById(tutorId).then((user) => {
-    if (!user || (user.role !== "tutor" && user.role !== "super_admin")) {
-      return res.status(403).json({ message: "Access denied: tutor role required" });
-    }
-    (req as any).tutorId = tutorId;
-    (req as any).tutorUser = user;
-    next();
-  }).catch(() => {
-    res.status(500).json({ message: "Failed to verify tutor identity" });
-  });
-}
+const requireTutor = createRoleMiddleware({
+  allowedRoles: ["tutor", "super_admin"],
+  identityHeaderName: "x-tutor-id",
+  missingIdentityMessage: "Tutor ID required",
+  forbiddenMessage: "Access denied: tutor role required",
+  requestIdKey: "tutorId",
+  requestUserKey: "tutorUser",
+});
 
-function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
-  const adminId = req.headers["x-admin-id"] as string;
-  if (!adminId) {
-    return res.status(401).json({ message: "Admin ID required" });
-  }
-  storage.getSomaUserById(adminId).then((user) => {
-    if (!user || user.role !== "super_admin") {
-      return res.status(403).json({ message: "Access denied: super_admin role required" });
-    }
-    (req as any).adminId = adminId;
-    (req as any).adminUser = user;
-    next();
-  }).catch(() => {
-    res.status(500).json({ message: "Failed to verify admin identity" });
-  });
-}
+const requireSuperAdmin = createRoleMiddleware({
+  allowedRoles: ["super_admin"],
+  identityHeaderName: "x-admin-id",
+  missingIdentityMessage: "Admin ID required",
+  forbiddenMessage: "Access denied: super_admin role required",
+  requestIdKey: "adminId",
+  requestUserKey: "adminUser",
+});
 
 /**
  * Supabase JWT authentication middleware.
@@ -219,33 +220,6 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
  * JWT secret, extracts the user ID (sub claim), looks up the user in
  * soma_users, and attaches `req.authUser` with { id, email, role }.
  */
-function getSupabaseJwtSecret(): string {
-  return process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || "";
-}
-
-async function verifySupabaseToken(token: string): Promise<{ sub: string; email?: string } | null> {
-  const secret = getSupabaseJwtSecret();
-  if (secret) {
-    try {
-      const decoded = jwt.verify(token, secret) as { sub?: string; email?: string };
-      if (decoded.sub) return { sub: decoded.sub, email: decoded.email };
-    } catch {}
-  }
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) return null;
-
-  try {
-    const resp = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: { Authorization: `Bearer ${token}`, apikey: process.env.VITE_SUPABASE_ANON_KEY || "" },
-    });
-    if (!resp.ok) return null;
-    const user = await resp.json();
-    if (user?.id) return { sub: user.id, email: user.email };
-  } catch {}
-
-  return null;
-}
 
 function requireSupabaseAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -435,6 +409,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     next();
   });
 
+  app.use("/api/admin", adminRateLimiter);
+  app.use("/api/auth", authApiLimiter);
+  app.use("/api/tutor", tutorApiLimiter);
+  app.use("/api/super-admin", superAdminApiLimiter);
+  app.use("/api/student", studentApiLimiter);
+  app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
 
   app.post("/api/auth/sync", async (req, res) => {
@@ -443,7 +423,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!id || !email) {
         return res.status(400).json({ message: "Missing id or email" });
       }
-      const role = determinRole(email);
+      const role = determineRole(email);
       console.log(`[auth-sync] email=${email} domain=${email.split("@")[1]} role=${role}`);
       const parsed = insertSomaUserSchema.parse({
         id,
@@ -467,7 +447,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!userId) return res.status(400).json({ message: "userId required" });
       let user = await storage.getSomaUserById(userId);
       if (!user && email) {
-        const role = determinRole(email);
+        const role = determineRole(email);
         console.log(`[auth-me] auto-sync for missing user: email=${email} role=${role}`);
         const parsed = insertSomaUserSchema.parse({
           id: userId,
@@ -1434,8 +1414,8 @@ You must rely ONLY on the provided PDF text. Do not generate fictitious data or 
     res.json({ authenticated: true });
   });
 
-  app.get("/api/admin/session", adminRateLimiter, async (req, res) => {
-    const token = getAdminSessionToken(req);
+  app.get("/api/admin/session", async (req, res) => {
+    const token = getAdminSessionToken(req, ADMIN_COOKIE_NAME);
     if (token) {
       try {
         jwt.verify(token, getJwtSecret());
@@ -1446,12 +1426,9 @@ You must rely ONLY on the provided PDF text. Do not generate fictitious data or 
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const supaToken = authHeader.slice(7);
       try {
-        const decoded = await verifySupabaseToken(supaToken);
-        if (decoded?.sub) {
-          const user = await storage.getSomaUserById(decoded.sub);
-          if (user && (user.role === "tutor" || user.role === "super_admin")) {
-            return res.json({ authenticated: true });
-          }
+        const user = await getAuthorizedUserFromBearer(supaToken, ["tutor", "super_admin"]);
+        if (user) {
+          return res.json({ authenticated: true });
         }
       } catch {}
     }
@@ -1538,7 +1515,7 @@ ${JSON.stringify({
   app.use("/api/admin", requireAdmin);
 
 
-  app.post("/api/upload-image", requireAdmin, (req, res) => {
+  app.post("/api/upload-image", uploadImageLimiter, requireAdmin, (req, res) => {
     upload.single("image")(req, res, (err: any) => {
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {

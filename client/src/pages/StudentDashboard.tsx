@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import DOMPurify from "dompurify";
 import type { SomaQuiz } from "@shared/schema";
@@ -13,7 +14,6 @@ import {
   Eye, FileText, Calendar,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { Session } from "@supabase/supabase-js";
 
 interface ReportWithQuiz {
   id: number;
@@ -101,7 +101,6 @@ function DonutCard({ subject, percentage, color }: { subject: string; percentage
 
 export default function StudentDashboard() {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<Session | null>(null);
   const [, setLocation] = useLocation();
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [levelFilter, setLevelFilter] = useState<string>("all");
@@ -109,6 +108,8 @@ export default function StudentDashboard() {
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [analysisPopup, setAnalysisPopup] = useState<{ title: string; html: string } | null>(null);
   const [loadingAnalysisId, setLoadingAnalysisId] = useState<string | null>(null);
+
+  const { session, userId } = useSupabaseSession();
 
   const fetchAnalysis = useCallback(async (item: { quizId: number; title: string }) => {
     const cacheKey = `ai_analysis_soma_${item.quizId}`;
@@ -145,13 +146,6 @@ export default function StudentDashboard() {
     }
   }, [session]);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const userId = session?.user?.id;
   const displayName = toProperCase(session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Student");
 
   const { data: somaQuizzes, isLoading: somaLoading } = useQuery<SomaQuiz[]>({

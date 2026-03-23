@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Link } from "wouter";
-import { supabase } from "@/lib/supabase";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SomaQuiz } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -249,27 +249,14 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [session, setSession] = useState<Session | null>(null);
-  const [sessionLoading, setSessionLoading] = useState(!isPreview);
+  const { session, isLoading: sessionHookLoading } = useSupabaseSession();
+  const sessionLoading = !isPreview && sessionHookLoading;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [showSummary, setShowSummary] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<{ score: number; maxScore: number } | null>(null);
   const [quizStartedAt] = useState<string>(new Date().toISOString());
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (isPreview) return;
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setSessionLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-      setSessionLoading(false);
-    });
-    return () => subscription.unsubscribe();
-  }, [isPreview]);
 
   const userId = session?.user?.id;
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Student";

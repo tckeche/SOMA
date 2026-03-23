@@ -6,7 +6,7 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 ## Tech Stack
 - **Frontend:** React (Vite), Tailwind CSS, Shadcn UI, react-katex for LaTeX rendering, DOMPurify for XSS protection, @supabase/supabase-js for auth
 - **Backend:** Node.js, Express, @google/generative-ai (Gemini), @anthropic-ai/sdk (Claude), openai (GPT-4o & DeepSeek), multer for file uploads
-- **Database:** PostgreSQL with Drizzle ORM (auto-failover: tries SUPABASE_URL → SUPABASE_DB_URL → DATABASE_URL)
+- **Database:** PostgreSQL with Drizzle ORM (current codepath reads SUPABASE_URL for the primary database connection)
 - **Auth:** Supabase Auth (client initialized in `client/src/lib/supabase.ts` using VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY)
 - **Routing:** wouter
 

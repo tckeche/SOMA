@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
+import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment } from "@shared/schema";
 import {
@@ -10,7 +12,6 @@ import {
   FileText, Eye, UserPlus, UserMinus, Trash2, AlertTriangle,
   ClockArrowUp, Pencil,
 } from "lucide-react";
-import type { Session } from "@supabase/supabase-js";
 import DOMPurify from "dompurify";
 
 interface SomaUser {
@@ -266,7 +267,6 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
 
 export default function TutorAssessments() {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<Session | null>(null);
   const [, setLocation] = useLocation();
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -276,15 +276,9 @@ export default function TutorAssessments() {
   const [confirmDelete, setConfirmDelete] = useState<{ quizId: number; title: string } | null>(null);
   const [confirmDeleteQuestion, setConfirmDeleteQuestion] = useState<{ questionId: number; stem: string } | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const userId = session?.user?.id;
+  const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
-  const headers = useMemo(() => ({ "x-tutor-id": userId || "" }), [userId]);
+  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const { data: tutorQuizzes = [], isLoading: quizzesLoading } = useQuery<SomaQuiz[]>({

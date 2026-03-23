@@ -12,7 +12,7 @@ vi.mock("../server/services/aiOrchestrator", () => ({
 }));
 
 import { generateWithFallback } from "../server/services/aiOrchestrator";
-import { generateAuditedQuiz, QuestionSchema, QuizResultSchema } from "../server/services/aiPipeline";
+import { generateAuditedQuiz, parsePdfTextFromBuffer, QuestionSchema, QuizResultSchema } from "../server/services/aiPipeline";
 import { z } from "zod";
 
 const mockGenerateWithFallback = generateWithFallback as ReturnType<typeof vi.fn>;
@@ -257,5 +257,23 @@ describe("generateAuditedQuiz: System prompt content", () => {
     await generateAuditedQuiz("Algebra");
     const [systemPrompt] = mockGenerateWithFallback.mock.calls[2];
     expect(systemPrompt.toLowerCase()).toMatch(/syllabus|curriculum|compliance/i);
+  });
+});
+
+
+describe("parsePdfTextFromBuffer", () => {
+  it("extracts text from common Tj operators before falling back to raw latin1", async () => {
+    const buffer = Buffer.from("BT (Question 1) Tj ET BT (Find x) Tj ET", "latin1");
+    await expect(parsePdfTextFromBuffer(buffer)).resolves.toBe("Question 1 Find x");
+  });
+
+  it("extracts text from TJ arrays", async () => {
+    const buffer = Buffer.from("BT [(Hello) 120 (World)] TJ ET", "latin1");
+    await expect(parsePdfTextFromBuffer(buffer)).resolves.toBe("Hello World");
+  });
+
+  it("falls back to printable text when operators are absent", async () => {
+    const buffer = Buffer.from("simple printable fallback", "latin1");
+    await expect(parsePdfTextFromBuffer(buffer)).resolves.toBe("simple printable fallback");
   });
 });

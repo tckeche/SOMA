@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { supabase } from "@/lib/supabase";
+import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz } from "@shared/schema";
 import {
   ArrowLeft, BookOpen, Users, Trash2, Plus, FileText,
@@ -113,7 +114,6 @@ export default function TutorAssessmentDetails() {
   const queryClient = useQueryClient();
   const params = useParams<{ quizId: string }>();
   const quizId = parseInt(params.quizId || "0");
-  const [session, setSession] = useState<any>(null);
   const [revokeStudentId, setRevokeStudentId] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -121,13 +121,9 @@ export default function TutorAssessmentDetails() {
   const [newDueDate, setNewDueDate] = useState("");
   const [assignDueDate, setAssignDueDate] = useState("");
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-  }, []);
-
-  const userId = session?.user?.id;
-  const headers = useMemo(() => ({ "x-tutor-id": userId || "" }), [userId]);
-  const jsonHeaders = useMemo(() => ({ "x-tutor-id": userId || "", "Content-Type": "application/json" }), [userId]);
+  const { userId } = useSupabaseSession();
+  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
+  const jsonHeaders = useMemo(() => createIdentityHeaders("x-tutor-id", userId, { "Content-Type": "application/json" }), [userId]);
 
   const { data: details, isLoading } = useQuery<QuizDetails>({
     queryKey: [`/api/tutor/quizzes/${quizId}/details`, userId],

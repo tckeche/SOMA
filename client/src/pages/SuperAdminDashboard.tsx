@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
+import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import type { Session } from "@supabase/supabase-js";
 import type { SomaQuiz } from "@shared/schema";
 import {
   Shield, Users, BookOpen, Trash2, LogOut,
@@ -35,21 +36,14 @@ interface AdminStats {
 export default function SuperAdminDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [session, setSession] = useState<Session | null>(null);
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"users" | "quizzes">("users");
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: "user" | "quiz"; id: string | number; name: string } | null>(null);
   const [roleVerified, setRoleVerified] = useState(false);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const userId = session?.user?.id;
-  const headers = useMemo(() => ({ "x-admin-id": userId || "" }), [userId]);
+  const { session, userId } = useSupabaseSession();
+  const headers = useMemo(() => createIdentityHeaders("x-admin-id", userId), [userId]);
 
   useEffect(() => {
     if (!userId) return;

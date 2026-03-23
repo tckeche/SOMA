@@ -21,7 +21,8 @@ import { renderLatex, unescapeLatex } from '@/lib/render-latex';
 import SomaQuizEngine from "./soma-quiz";
 import type { StudentQuestion } from "./soma-quiz";
 import { supabase } from "@/lib/supabase";
-import type { Session } from "@supabase/supabase-js";
+import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 
 const LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
 
@@ -171,28 +172,17 @@ export default function BuilderPage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const [supaSession, setSupaSession] = useState<Session | null>(null);
-  const [supaLoading, setSupaLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSupaSession(s);
-      setSupaLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSupaSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const tutorUserId = supaSession?.user?.id;
+  const { session: supaSession, isLoading: supaLoading, userId: tutorUserId } = useSupabaseSession();
   const supaAccessToken = supaSession?.access_token;
   const isTutorAuth = !!tutorUserId;
   const backLink = "/tutor/assessments";
 
   const authHeaders = useCallback((): Record<string, string> => {
-    const headers: Record<string, string> = {};
-    if (supaAccessToken) headers["Authorization"] = `Bearer ${supaAccessToken}`;
-    if (tutorUserId) headers["x-tutor-id"] = tutorUserId;
-    return headers;
+    return createIdentityHeaders(
+      "x-tutor-id",
+      tutorUserId,
+      supaAccessToken ? { Authorization: `Bearer ${supaAccessToken}` } : {},
+    );
   }, [supaAccessToken, tutorUserId]);
 
   const authFetch = useCallback(async (url: string, opts: RequestInit = {}): Promise<Response> => {
