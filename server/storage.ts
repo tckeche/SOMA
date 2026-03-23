@@ -6,8 +6,10 @@ import {
   type TutorStudent, type InsertTutorStudent,
   type QuizAssignment, type InsertQuizAssignment,
   type TutorComment, type InsertTutorComment,
+  type SyllabusDocument, type InsertSyllabusDocument,
+  type SyllabusChunk, type InsertSyllabusChunk,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
-  tutorStudents, quizAssignments, tutorComments,
+  tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum } from "drizzle-orm";
@@ -79,6 +81,10 @@ export interface IStorage {
   getAllSomaQuizzes(): Promise<SomaQuiz[]>;
 
   logPasswordResetRequest(email: string): Promise<void>;
+  createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }>;
+  listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]>;
+  getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined>;
+
 }
 
 class DatabaseStorage implements IStorage {
@@ -130,14 +136,47 @@ class DatabaseStorage implements IStorage {
   async createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
     if (questionList.length === 0) return [];
     const normalized = questionList.map((q) => ({
-      ...q,
+      quizId: q.quizId,
+      stem: q.stem,
       options: Array.isArray(q.options) ? [...q.options] as string[] : [],
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation,
+      marks: q.marks ?? 1,
+      questionType: q.questionType ?? "multiple_choice",
+      graphSpec: (q.graphSpec ?? null) as any,
+      topicTag: q.topicTag ?? null,
+      subtopicTag: q.subtopicTag ?? null,
+      difficultyTag: q.difficultyTag ?? null,
     }));
     return this.database.insert(somaQuestions).values(normalized).returning();
   }
 
   async getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]> {
     return this.database.select().from(somaQuestions).where(eq(somaQuestions.quizId, quizId));
+  }
+
+  async createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }> {
+    return this.database.transaction(async (tx) => {
+      const [createdDocument] = await tx.insert(syllabusDocuments).values(document).returning();
+      const createdChunks = chunks.length === 0 ? [] : await tx.insert(syllabusChunks).values(chunks.map((chunk) => ({ ...chunk, documentId: createdDocument.id }))).returning();
+      return { document: createdDocument, chunks: createdChunks };
+    });
+  }
+
+  async listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]> {
+    if (tutorId) {
+      return this.database.select().from(syllabusDocuments).where(or(eq(syllabusDocuments.tutorId, tutorId), isNull(syllabusDocuments.tutorId))).orderBy(syllabusDocuments.uploadedAt);
+    }
+    return this.database.select().from(syllabusDocuments).orderBy(syllabusDocuments.uploadedAt);
+  }
+
+  async getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined> {
+    const conditions = [eq(syllabusDocuments.board, selection.board), eq(syllabusDocuments.level, selection.level), eq(syllabusDocuments.syllabusCode, selection.syllabusCode)];
+    if (selection.tutorId) conditions.push(or(eq(syllabusDocuments.tutorId, selection.tutorId), isNull(syllabusDocuments.tutorId)) as any);
+    const [document] = await this.database.select().from(syllabusDocuments).where(and(...conditions as any));
+    if (!document) return undefined;
+    const chunks = await this.database.select().from(syllabusChunks).where(eq(syllabusChunks.documentId, document.id));
+    return { ...document, chunks };
   }
 
   async getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>> {
@@ -503,11 +542,15 @@ class MemoryStorage implements IStorage {
   private tutorStudentsList: TutorStudent[] = [];
   private quizAssignmentsList: QuizAssignment[] = [];
   private tutorCommentsList: TutorComment[] = [];
+  private syllabusDocumentsList: SyllabusDocument[] = [];
+  private syllabusChunksList: SyllabusChunk[] = [];
   private somaQuizId = 1;
   private somaQuestionId = 1;
   private somaReportId = 1;
   private tutorStudentId = 1;
   private quizAssignmentId = 1;
+  private syllabusDocumentId = 1;
+  private syllabusChunkId = 1;
 
   async createSomaQuiz(quiz: InsertSomaQuiz): Promise<SomaQuiz> {
     const created: SomaQuiz = {
@@ -552,10 +595,17 @@ class MemoryStorage implements IStorage {
   async createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
     const created = questionList.map((q) => ({
       id: this.somaQuestionId++,
-      ...q,
+      quizId: q.quizId,
+      stem: q.stem,
       options: Array.isArray(q.options) ? [...(q.options as string[])] : [],
+      correctAnswer: q.correctAnswer,
       explanation: q.explanation,
       marks: q.marks ?? 1,
+      questionType: q.questionType ?? "multiple_choice",
+      graphSpec: (q.graphSpec ?? null) as any,
+      topicTag: q.topicTag ?? null,
+      subtopicTag: q.subtopicTag ?? null,
+      difficultyTag: q.difficultyTag ?? null,
     }));
     this.somaQuestionsList.push(...created);
     return created;
@@ -765,6 +815,26 @@ class MemoryStorage implements IStorage {
     return { totalStudents: adoptedIds.length, totalQuizzes: 0, cohortAverages: [], recentSubmissions: [], pendingAssignments: [] };
   }
 
+
+  async createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }> {
+    const createdDocument: SyllabusDocument = { id: this.syllabusDocumentId++, uploadedAt: new Date(), tutorId: document.tutorId ?? null, ...document };
+    this.syllabusDocumentsList.push(createdDocument);
+    const createdChunks: SyllabusChunk[] = chunks.map((chunk) => ({ id: this.syllabusChunkId++, documentId: createdDocument.id, ...chunk }));
+    this.syllabusChunksList.push(...createdChunks);
+    return { document: createdDocument, chunks: createdChunks };
+  }
+
+  async listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]> {
+    if (!tutorId) return [...this.syllabusDocumentsList];
+    return this.syllabusDocumentsList.filter((doc) => doc.tutorId === tutorId || doc.tutorId === null);
+  }
+
+  async getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined> {
+    const document = this.syllabusDocumentsList.find((doc) => doc.board === selection.board && doc.level === selection.level && doc.syllabusCode === selection.syllabusCode && (!selection.tutorId || doc.tutorId === selection.tutorId || doc.tutorId === null));
+    if (!document) return undefined;
+    const chunks = this.syllabusChunksList.filter((chunk) => chunk.documentId === document.id);
+    return { ...document, chunks };
+  }
   async getAllSomaUsers(): Promise<SomaUser[]> {
     return this.somaUsersList;
   }

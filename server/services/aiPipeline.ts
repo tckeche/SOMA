@@ -39,24 +39,126 @@ function decodePdfLiteral(segment: string): string {
     .replace(/\\\d{3}/g, " ");
 }
 
-function extractTextOperators(pdfText: string): string[] {
-  const chunks: string[] = [];
-  const tjRegex = /\(([^)]*)\)\s*Tj/g;
-  const tjArrayRegex = /\[([\s\S]*?)\]\s*TJ/g;
-  const tjChunkRegex = /\(([^)]*)\)/g;
+function skipPdfWhitespace(input: string, start: number): number {
+  let index = start;
+  while (index < input.length) {
+    const code = input.charCodeAt(index);
+    if (code !== 0x20 && code !== 0x0a && code !== 0x0d && code !== 0x09) break;
+    index++;
+  }
+  return index;
+}
 
-  let match: RegExpExecArray | null;
-  while ((match = tjRegex.exec(pdfText)) !== null) {
-    chunks.push(decodePdfLiteral(match[1] || ""));
+function readPdfLiteral(input: string, start: number): { value: string; end: number } | null {
+  if (input[start] !== "(") return null;
+
+  let index = start + 1;
+  let depth = 1;
+  let escaped = false;
+  let literal = "";
+
+  while (index < input.length) {
+    const char = input[index];
+    if (escaped) {
+      literal += `\\${char}`;
+      escaped = false;
+      index++;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      index++;
+      continue;
+    }
+
+    if (char === "(") {
+      depth++;
+      literal += char;
+      index++;
+      continue;
+    }
+
+    if (char === ")") {
+      depth--;
+      if (depth === 0) {
+        return { value: literal, end: index + 1 };
+      }
+      literal += char;
+      index++;
+      continue;
+    }
+
+    literal += char;
+    index++;
   }
 
-  while ((match = tjArrayRegex.exec(pdfText)) !== null) {
-    const arrayValue = match[1] || "";
-    let chunkMatch: RegExpExecArray | null;
-    while ((chunkMatch = tjChunkRegex.exec(arrayValue)) !== null) {
-      chunks.push(decodePdfLiteral(chunkMatch[1] || ""));
+  return null;
+}
+
+function extractTextFromTjArray(input: string, start: number): { values: string[]; end: number } | null {
+  if (input[start] !== "[") return null;
+
+  const values: string[] = [];
+  let index = start + 1;
+
+  while (index < input.length) {
+    index = skipPdfWhitespace(input, index);
+    const char = input[index];
+
+    if (!char) return null;
+    if (char === "]") {
+      return { values, end: index + 1 };
     }
-    tjChunkRegex.lastIndex = 0;
+
+    if (char === "(") {
+      const literal = readPdfLiteral(input, index);
+      if (!literal) return null;
+      values.push(decodePdfLiteral(literal.value));
+      index = literal.end;
+      continue;
+    }
+
+    index++;
+  }
+
+  return null;
+}
+
+function extractTextOperators(pdfText: string): string[] {
+  const chunks: string[] = [];
+  let index = 0;
+
+  while (index < pdfText.length) {
+    const char = pdfText[index];
+
+    if (char === "(") {
+      const literal = readPdfLiteral(pdfText, index);
+      if (!literal) break;
+      const next = skipPdfWhitespace(pdfText, literal.end);
+      if (pdfText.startsWith("Tj", next)) {
+        chunks.push(decodePdfLiteral(literal.value));
+        index = next + 2;
+        continue;
+      }
+      index = literal.end;
+      continue;
+    }
+
+    if (char === "[") {
+      const array = extractTextFromTjArray(pdfText, index);
+      if (!array) break;
+      const next = skipPdfWhitespace(pdfText, array.end);
+      if (pdfText.startsWith("TJ", next)) {
+        chunks.push(...array.values);
+        index = next + 2;
+        continue;
+      }
+      index = array.end;
+      continue;
+    }
+
+    index++;
   }
 
   return chunks.map((chunk) => chunk.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -65,7 +167,7 @@ function extractTextOperators(pdfText: string): string[] {
 export async function parsePdfTextFromBuffer(buffer: Buffer): Promise<string> {
   const latin1 = buffer.toString("latin1");
   const operatorText = extractTextOperators(latin1).join(" ").replace(/\s+/g, " ").trim();
-  if (operatorText) {
+  if (operatorText && operatorText.split(/\s+/).filter(Boolean).length >= 2) {
     return operatorText;
   }
 
@@ -74,7 +176,9 @@ export async function parsePdfTextFromBuffer(buffer: Buffer): Promise<string> {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!fallback) throw new Error("Unable to parse PDF text content");
+  if (!fallback || fallback.split(/\s+/).filter(Boolean).length < 2) {
+    throw new Error("Unable to parse PDF text content");
+  }
   return fallback;
 }
 

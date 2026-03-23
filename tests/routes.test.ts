@@ -42,9 +42,17 @@ vi.mock("../server/services/aiPipeline", () => ({
       },
     ],
   }),
+  parsePdfTextFromBuffer: vi.fn().mockResolvedValue("Cambridge Mathematics syllabus algebra functions geometry probability ".repeat(20)),
+  validateAndCorrectMcqAnswers: vi.fn((questions: any[]) => questions),
+  fetchPaperContext: vi.fn().mockResolvedValue("paper context"),
 }));
 
 vi.mock("@google/generative-ai", () => ({
+  SchemaType: {
+    ARRAY: "ARRAY",
+    OBJECT: "OBJECT",
+    STRING: "STRING",
+  },
   GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
     getGenerativeModel: () => ({
       generateContent: vi.fn().mockResolvedValue({
@@ -1430,5 +1438,42 @@ describe("AI Analysis: metadata in responses", () => {
     expect(res.status).toBe(200);
     expect(res.body.metadata).toBeDefined();
     expect(res.body.metadata.provider).toBe("mock");
+  });
+});
+
+describe("Tutor syllabus grounding and copilot session support", () => {
+  it("uploads a valid text syllabus PDF and lists it for retrieval", async () => {
+    const token = await createAuthToken("tutor-1", "teacher@melaniacalvin.com");
+    const uploadRes = await request
+      .post("/api/tutor/syllabus-documents")
+      .set("Authorization", `Bearer ${token}`)
+      .field("board", "Cambridge")
+      .field("level", "IGCSE")
+      .field("syllabusCode", "0580")
+      .attach("pdf", Buffer.from("%PDF-1.4 sample"), "syllabus.pdf");
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.body.board).toBe("Cambridge");
+    expect(uploadRes.body.level).toBe("IGCSE");
+    expect(uploadRes.body.syllabusCode).toBe("0580");
+
+    const listRes = await request
+      .get("/api/tutor/syllabus-documents")
+      .set("Authorization", `Bearer ${token}`);
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.some((doc: any) => doc.syllabusCode === "0580")).toBe(true);
+  });
+
+  it("fails safely for unreadable syllabus PDFs", async () => {
+    const { parsePdfTextFromBuffer } = await import("../server/services/aiPipeline");
+    (parsePdfTextFromBuffer as any).mockRejectedValueOnce(new Error("Unable to parse PDF text content"));
+    const token = await createAuthToken("tutor-2", "teacher2@melaniacalvin.com");
+    const res = await request
+      .post("/api/tutor/syllabus-documents")
+      .set("Authorization", `Bearer ${token}`)
+      .field("board", "Cambridge")
+      .field("level", "AS")
+      .field("syllabusCode", "9709")
+      .attach("pdf", Buffer.from("%PDF-1.4 scanned"), "scanned.pdf");
+    expect(res.status).toBe(400);
   });
 });
