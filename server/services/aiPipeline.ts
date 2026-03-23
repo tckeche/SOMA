@@ -41,9 +41,9 @@ function decodePdfLiteral(segment: string): string {
 
 function extractTextOperators(pdfText: string): string[] {
   const chunks: string[] = [];
-  const tjRegex = /\(((?:\.|[^\)])*)\)\s*Tj/g;
+  const tjRegex = /\(([^)]*)\)\s*Tj/g;
   const tjArrayRegex = /\[([\s\S]*?)\]\s*TJ/g;
-  const tjChunkRegex = /\(((?:\.|[^\)])*)\)/g;
+  const tjChunkRegex = /\(([^)]*)\)/g;
 
   let match: RegExpExecArray | null;
   while ((match = tjRegex.exec(pdfText)) !== null) {
