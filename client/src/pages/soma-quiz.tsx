@@ -4,7 +4,7 @@ import { useParams, useLocation } from "wouter";
 import { Link } from "wouter";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { SomaQuiz } from "@shared/schema";
+import type { GraphQuestionSpec, SomaQuiz } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
+import GraphPlot from "@/components/GraphPlot";
 import type { Session } from '@supabase/supabase-js';
 
 export type StudentQuestion = {
@@ -23,6 +24,8 @@ export type StudentQuestion = {
   stem: string;
   options: string[];
   marks: number;
+  questionType?: string;
+  graphSpec?: GraphQuestionSpec | null;
 };
 
 function LoadingSkeleton() {
@@ -425,8 +428,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     <div className="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 shadow-lg" data-testid="banner-preview-mode">
       <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between">
         <Button
-          size="sm"
-          className="hover:bg-slate-800 bg-transparent text-slate-300 transition-colors px-4 py-2 rounded-lg flex items-center gap-2 min-h-[44px]"
+          size="default"
+          className="hover:bg-slate-800 bg-transparent text-slate-300 transition-colors rounded-lg flex items-center gap-2"
           onClick={(props as PreviewProps).onExitPreview}
           data-testid="button-exit-preview"
         >
@@ -438,8 +441,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           <span className="text-xs sm:text-sm font-semibold text-amber-300 tracking-wide">Admin Preview — Scores will not be saved</span>
         </div>
         <Button
-          size="sm"
-          className="hover:bg-slate-800 bg-transparent text-slate-400 transition-colors px-4 py-2 rounded-lg flex items-center gap-2 min-h-[44px]"
+          size="default"
+          className="hover:bg-slate-800 bg-transparent text-slate-400 transition-colors rounded-lg flex items-center gap-2"
           onClick={() => { (props as PreviewProps).onExitPreview(); setLocation("/tutor/assessments"); }}
           data-testid="button-preview-to-dashboard"
         >
@@ -519,7 +522,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           {isPreview ? (
             <Button
               variant="ghost"
-              size="sm"
+              size="default"
               className="text-slate-400 hover:text-slate-200"
               onClick={(props as PreviewProps).onExitPreview}
               data-testid="button-preview-back"
@@ -529,9 +532,9 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             </Button>
           ) : (
             <Link href="/dashboard">
-              <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-200" aria-label="Back to dashboard" data-testid="button-soma-back">
+              <Button variant="ghost" size="default" className="text-slate-400 hover:text-slate-200" aria-label="Back to dashboard" data-testid="button-soma-back">
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                Exit
+                Exit Assessment
               </Button>
             </Link>
           )}
@@ -574,6 +577,11 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           <div className="text-lg text-slate-100 leading-relaxed mb-2" data-testid="text-question-stem">
             <MarkdownRenderer content={currentQuestion.stem} />
           </div>
+          {currentQuestion.questionType === "graph" && currentQuestion.graphSpec ? (
+            <div className="mt-6" data-testid="graph-question-layout">
+              <GraphPlot spec={currentQuestion.graphSpec} />
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-3 mb-8">

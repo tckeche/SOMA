@@ -11,8 +11,10 @@ import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers } from "./services/aiPipeline";
+import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import type { GraphQuestionSpec } from "@shared/schema";
 
 const adminRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -293,6 +295,21 @@ function extractJsonArray(text: string): any[] | null {
     } catch {
       return null;
     }
+  }
+}
+
+
+function extractStructuredCopilotResponse(text: string) {
+  const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+  try {
+    return copilotResponseSchema.parse(JSON.parse(cleaned));
+  } catch {
+    const drafts = extractJsonArray(cleaned) || [];
+    return {
+      reply: cleaned || "Assessment draft prepared.",
+      drafts,
+      summary: buildCopilotSummary({ drafts }),
+    };
   }
 }
 
@@ -1009,15 +1026,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         correct_answer: String(q.correct_answer || q.correctAnswer || ""),
         explanation: String(q.explanation || ""),
         marks: Number(q.marks_worth || q.marks || 1) || 1,
+        question_type: String(q.question_type || (q.graph_spec ? "graph" : "multiple_choice")),
+        graph_spec: (q.graph_spec ?? null) as GraphQuestionSpec | null,
+        topic_tag: q.topic_tag ? String(q.topic_tag) : null,
+        subtopic_tag: q.subtopic_tag ? String(q.subtopic_tag) : null,
+        difficulty_tag: q.difficulty_tag ? String(q.difficulty_tag) : null,
       }));
-      const validated = validateAndCorrectMcqAnswers(rawMapped);
-      const mapped = validated.map((q) => ({
+      const balanced = balanceAnswerOptions(rawMapped);
+      const validated = validateAndCorrectMcqAnswers(balanced);
+      const mapped = validated.map((q, index) => ({
         quizId,
         stem: q.stem,
         options: q.options,
         correctAnswer: q.correct_answer,
         explanation: q.explanation,
         marks: q.marks,
+        questionType: rawMapped[index].question_type || "multiple_choice",
+        graphSpec: rawMapped[index].graph_spec,
+        topicTag: rawMapped[index].topic_tag,
+        subtopicTag: rawMapped[index].subtopic_tag,
+        difficultyTag: rawMapped[index].difficulty_tag,
       }));
       const saved = await storage.createSomaQuestions(mapped);
       res.json(saved);
@@ -1036,10 +1064,63 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/tutor/syllabus-documents", requireTutor, async (req, res) => {
+    try {
+      const documents = await storage.listSyllabusDocuments((req as any).tutorId);
+      res.json(documents.map((document) => ({
+        id: document.id,
+        board: document.board,
+        level: document.level,
+        syllabusCode: document.syllabusCode,
+        filename: document.filename,
+        uploadedAt: document.uploadedAt,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch syllabus documents" });
+    }
+  });
+
+  app.post("/api/tutor/syllabus-documents", requireTutor, pdfUpload.single("pdf"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No PDF uploaded" });
+      const { board, level, syllabusCode } = req.body;
+      if (!board || !level || !syllabusCode) {
+        return res.status(400).json({ message: "board, level, and syllabusCode are required" });
+      }
+
+      const extractedText = await parsePdfTextFromBuffer(req.file.buffer);
+      if (extractedText.split(/\s+/).filter(Boolean).length < 50) {
+        return res.status(400).json({ message: "This PDF appears to be image-only or unreadable as text. Please upload a text-based syllabus PDF." });
+      }
+
+      const chunks = buildSyllabusChunks(extractedText);
+      const created = await storage.createSyllabusDocument({
+        tutorId: (req as any).tutorId ?? null,
+        board: String(board).trim(),
+        level: String(level).trim(),
+        syllabusCode: String(syllabusCode).trim(),
+        filename: req.file.originalname,
+        extractedText,
+      }, chunks);
+
+      res.json({
+        id: created.document.id,
+        board: created.document.board,
+        level: created.document.level,
+        syllabusCode: created.document.syllabusCode,
+        filename: created.document.filename,
+        uploadedAt: created.document.uploadedAt,
+        chunkCount: created.chunks.length,
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to upload syllabus PDF" });
+    }
+  });
+
   // Copilot chat for tutor quiz builder
   app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
     try {
-      const { message, documentIds } = req.body;
+      const { message, documentIds, chatHistory, syllabusSelection } = req.body;
       if (!message) return res.status(400).json({ message: "message is required" });
 
       const text = String(message);
@@ -1056,6 +1137,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.json({
           reply: "To generate relevant questions, please fill in at least one of the Subject, Level, or Syllabus fields on the left — or mention the topic in your message (e.g. \"Generate 5 questions about Newton's laws\").",
           drafts: [],
+          summary: buildCopilotSummary({ drafts: [] }),
           metadata: { provider: "clarification", model: "copilot-guard", durationMs: 0 },
           needsClarification: true,
         });
@@ -1072,42 +1154,50 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }
       }
 
+      let syllabusContextLabel = "";
+      if (syllabusSelection?.board && syllabusSelection?.level && syllabusSelection?.syllabusCode) {
+        const syllabusDocument = await storage.getSyllabusDocumentBySelection({
+          board: String(syllabusSelection.board),
+          level: String(syllabusSelection.level),
+          syllabusCode: String(syllabusSelection.syllabusCode),
+          tutorId: (req as any).tutorId,
+        });
+        if (!syllabusDocument) {
+          return res.status(404).json({ message: "Selected syllabus could not be found" });
+        }
+        syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
+        const relevantChunks = scoreSyllabusChunks(syllabusDocument.chunks, text);
+        supportingText += `\nSelected syllabus: ${syllabusContextLabel}\n${relevantChunks.join("\n---\n") || syllabusDocument.extractedText.slice(0, 2000)}`;
+      }
+
       const paperCode = text.match(/\b\d{4}\/v\d\/\d{4}\b/i)?.[0];
       if (paperCode) {
         supportingText += `\n${await fetchPaperContext(paperCode)}`;
       }
 
-      const copilotSystemPrompt = `You are SOMA Copilot, an expert MCQ assessment generator for the MCEC platform.
+      const memoryTranscript = Array.isArray(chatHistory)
+        ? chatHistory
+          .filter((item: any) => item && (item.role === "user" || item.role === "ai"))
+          .slice(-8)
+          .map((item: any) => `${String(item.role).toUpperCase()}: ${String(item.text || "")}`)
+          .join("\n")
+        : "";
 
-CRITICAL: You MUST generate questions as a JSON array with this EXACT schema:
-\`\`\`json
-[
-  {
-    "prompt_text": "The full question text with LaTeX like \\\\(x^2\\\\) if needed",
-    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
-    "correct_answer": "The full text of the correct option (must exactly match one of the options)",
-    "marks_worth": 2,
-    "explanation": "Brief explanation of why the correct answer is right"
-  }
-]
-\`\`\`
-
-RULES:
-- "options" MUST be an array of exactly 4 strings. NEVER use an object like {A: ..., B: ...}.
-- "correct_answer" MUST be the full text of the correct option, NOT a letter like "A" or "B".
-- "prompt_text" is the question text. Do NOT use "question" or "stem" as the key name.
-- Every question MUST have all 5 fields: prompt_text, options, correct_answer, marks_worth, explanation.
-- "explanation" MUST be 2-3 sentences that explain the underlying concept and why the correct answer is right. Make it educational and focused on learning, not just confirming correctness.
-- Generate ONLY multiple-choice questions. NEVER generate open-ended, essay, or free-response questions.
-- Include 1 correct answer and 3 calculated distractors based on common student errors.
-- You may include a brief plain-text discussion before the JSON block.`;
+      const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
+Return one JSON object with keys "reply", "drafts", and "summary".
+Each draft must include prompt_text, options, correct_answer, marks_worth, explanation, topic_tag, subtopic_tag, difficulty_tag, and question_type.
+question_type may be "multiple_choice" or "graph".
+For graph questions, include graph_spec for deterministic XY Cartesian rendering only: plotType, equation or points, xRange, yRange, axisLabels, showGrid, tickInterval, and optional highlightedPoints.
+Do not generate graph images.
+Summary must reflect the actual drafts produced.`;
 
       const { data, metadata } = await generateWithFallback(
         copilotSystemPrompt,
-        `${text}\n\nSupporting context:\n${supportingText || "No extra context."}`,
+        `Current request:\n${text}\n\nConversation memory for this assessment session:\n${memoryTranscript || "No previous turns."}\n\nSupporting context:\n${supportingText || "No extra context."}`,
       );
 
-      const rawDrafts = extractJsonArray(data) || [];
+      const structured = extractStructuredCopilotResponse(data);
+      const rawDrafts = structured.drafts || [];
       const drafts = rawDrafts.map((d: any) => {
         let opts = d.options;
         if (opts && !Array.isArray(opts) && typeof opts === "object") {
@@ -1143,9 +1233,16 @@ RULES:
           correct_answer: correctAnswer,
           marks_worth: Number(d.marks_worth || d.marksWorth || d.marks || 1) || 1,
           explanation: String(d.explanation || ""),
+          topic_tag: d.topic_tag ? String(d.topic_tag) : undefined,
+          subtopic_tag: d.subtopic_tag ? String(d.subtopic_tag) : undefined,
+          difficulty_tag: d.difficulty_tag ? String(d.difficulty_tag) : undefined,
+          question_type: String(d.question_type || (d.graph_spec ? "graph" : "multiple_choice")),
+          graph_spec: d.graph_spec ?? undefined,
         };
-      }).filter(Boolean);
-      res.json({ reply: data, drafts, metadata, needsClarification: false });
+      }).filter((draft): draft is NonNullable<typeof draft> => Boolean(draft));
+      const summary = buildCopilotSummary({ drafts, syllabusContextLabel });
+      const reply = `${structured.reply}\n\nSummary:\n- Questions added: ${summary.numberOfQuestionsAdded}\n- Types: ${summary.questionTypesUsed.join(", ") || "multiple_choice"}\n- Topics: ${summary.topicsCovered.join(", ") || "Mixed"}\n- Subtopics: ${summary.subtopicsCovered.join(", ") || "Mixed"}\n- Difficulty: ${summary.difficultyMix.join(", ") || "Mixed"}${summary.syllabusContextUsed.length ? `\n- Syllabus grounding: ${summary.syllabusContextUsed.join(", ")}` : ""}`;
+      res.json({ reply, drafts, summary, metadata, needsClarification: false });
     } catch (err: any) {
       res.status(500).json({ message: `Copilot failed: ${err.message}` });
     }

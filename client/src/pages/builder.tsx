@@ -27,10 +27,10 @@ import { useSupabaseSession } from "@/hooks/use-supabase-session";
 const LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
 
 const PIPELINE_STAGES = [
-  { stage: 1, icon: "search", label: "Fetching Context...", aiName: "Context Engine" },
-  { stage: 2, icon: "brain", label: "Claude is drafting questions...", aiName: "Claude Sonnet" },
-  { stage: 3, icon: "scan", label: "Gemini is auditing quality...", aiName: "Gemini QA" },
-  { stage: 4, icon: "pencil", label: "Saving to database...", aiName: "Database" },
+  { stage: 1, icon: "search", label: "Reading syllabus & context", aiName: "Context" },
+  { stage: 2, icon: "brain", label: "Analysing requirements", aiName: "Analysis" },
+  { stage: 3, icon: "scan", label: "Drafting questions & balancing options", aiName: "Drafting" },
+  { stage: 4, icon: "pencil", label: "Preparing summary & saving", aiName: "Summary" },
 ];
 
 const PDF_PIPELINE_STAGES = [
@@ -169,6 +169,9 @@ export default function BuilderPage() {
   const [supportingDocs, setSupportingDocs] = useState<{ name: string; type: string; processing: boolean }[]>([]);
   const [docContext, setDocContext] = useState<{ name: string; type: string; fileId: string }[]>([]);
   const [uploadPipeline, setUploadPipeline] = useState<{ active: boolean; stage: number; fileName: string; startTime: number }>({ active: false, stage: 0, fileName: "", startTime: 0 });
+  const [syllabusDocs, setSyllabusDocs] = useState<{ id: number; board: string; level: string; syllabusCode: string; filename: string; uploadedAt: string }[]>([]);
+  const [selectedSyllabusId, setSelectedSyllabusId] = useState<string>("");
+  const [syllabusUpload, setSyllabusUpload] = useState({ board: "Cambridge", level: "", syllabusCode: "" });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -222,6 +225,14 @@ export default function BuilderPage() {
   });
 
   const authenticated = tutorSession?.authenticated === true;
+
+  useEffect(() => {
+    if (!authenticated) return;
+    authFetch("/api/tutor/syllabus-documents")
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => setSyllabusDocs(Array.isArray(data) ? data : []))
+      .catch(() => setSyllabusDocs([]));
+  }, [authenticated, authFetch]);
 
   const { data: quizData, isLoading: quizLoading } = useQuery<SomaQuiz & { questions: SomaQuestion[] }>({
     queryKey: ["/api/tutor/quizzes", activeQuizId],
@@ -301,11 +312,18 @@ export default function BuilderPage() {
       ].filter(Boolean).join(", ");
       const enrichedMessage = context ? `[${context}]\n\n${message}` : message;
       const docIds = docContext.map((d) => d.fileId);
+      const selectedSyllabus = syllabusDocs.find((doc) => String(doc.id) === selectedSyllabusId);
 
       animatePipeline(2);
       const res = await authApiRequest("POST", "/api/tutor/copilot-chat", {
         message: enrichedMessage,
         documentIds: docIds.length > 0 ? docIds : undefined,
+        chatHistory: chat,
+        syllabusSelection: selectedSyllabus ? {
+          board: selectedSyllabus.board,
+          level: selectedSyllabus.level,
+          syllabusCode: selectedSyllabus.syllabusCode,
+        } : undefined,
       });
       const data = await res.json();
 
@@ -470,7 +488,23 @@ export default function BuilderPage() {
       stem: unescapeLatex(q.stem),
       options: q.options,
       marks: q.marks,
+      questionType: (q as any).questionType,
+      graphSpec: (q as any).graphSpec,
     } as StudentQuestion)), [savedQuestions, activeQuizId]);
+
+  const handleSyllabusUpload = async (file: File) => {
+    const form = new FormData();
+    form.append("pdf", file);
+    form.append("board", syllabusUpload.board);
+    form.append("level", syllabusUpload.level);
+    form.append("syllabusCode", syllabusUpload.syllabusCode);
+    const res = await authFetch("/api/tutor/syllabus-documents", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Upload failed");
+    setSyllabusDocs((prev) => [...prev, data]);
+    setSelectedSyllabusId(String(data.id));
+    toast({ title: "Syllabus uploaded", description: `${data.board} ${data.level} ${data.syllabusCode}` });
+  };
 
   if (supaLoading || sessionLoading) {
     return (
@@ -517,9 +551,9 @@ export default function BuilderPage() {
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
             <Link href={backLink}>
-              <Button className="glow-button-outline min-h-[44px] md:min-h-0" size="sm" data-testid="button-back-admin">
+              <Button className="glow-button-outline" size="default" data-testid="button-back-admin">
                 <ArrowLeft className="w-4 h-4 md:mr-1" />
-                <span className="hidden md:inline">Back</span>
+                <span>Back</span>
               </Button>
             </Link>
             <div className="flex items-center gap-2 md:gap-3 min-w-0">
@@ -537,8 +571,8 @@ export default function BuilderPage() {
               {totalQuestions} Q{totalQuestions !== 1 ? "s" : ""}
             </Badge>
             <Button
-              className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all min-h-[44px] md:min-h-0"
-              size="sm"
+              className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all"
+              size="default"
               onClick={() => setShowPreview(true)}
               disabled={totalQuestions === 0}
               data-testid="button-preview-quiz"
@@ -547,9 +581,9 @@ export default function BuilderPage() {
               <span className="hidden md:inline">Preview</span>
             </Button>
             <Link href="/tutor/assessments">
-              <Button className="border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all min-h-[44px] md:min-h-0" size="sm" data-testid="button-exit-builder">
+              <Button className="border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all" size="default" data-testid="button-exit-builder">
                 <X className="w-4 h-4 md:mr-1" />
-                <span className="hidden md:inline">Exit</span>
+                <span>Exit Assessment</span>
               </Button>
             </Link>
           </div>
@@ -764,6 +798,49 @@ export default function BuilderPage() {
             <div className="flex items-center gap-2 mb-2">
               <Upload className="w-4 h-4 text-violet-400" />
               <h2 className="font-semibold text-slate-100 text-sm">Supporting Documents</h2>
+            </div>
+            <div className="mb-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
+              <p className="text-xs text-slate-300">Upload a Cambridge syllabus PDF and ground generation on the selected board, level, and syllabus code.</p>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <Input value={syllabusUpload.board} onChange={(e) => setSyllabusUpload((prev) => ({ ...prev, board: e.target.value }))} placeholder="Board" className="glass-input h-11" />
+                <Input value={syllabusUpload.level} onChange={(e) => setSyllabusUpload((prev) => ({ ...prev, level: e.target.value }))} placeholder="Level" className="glass-input h-11" />
+                <Input value={syllabusUpload.syllabusCode} onChange={(e) => setSyllabusUpload((prev) => ({ ...prev, syllabusCode: e.target.value }))} placeholder="Syllabus code" className="glass-input h-11" />
+                <Label htmlFor="syllabus-upload-input" className="cursor-pointer">
+                  <div className="flex items-center justify-center gap-2 text-sm text-cyan-200 border border-cyan-500/30 bg-cyan-500/10 rounded-lg px-4 py-2.5 min-h-[44px] hover:bg-cyan-500/20 transition-colors">
+                    <Upload className="w-4 h-4" />
+                    Upload Syllabus PDF
+                  </div>
+                  <input
+                    id="syllabus-upload-input"
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        await handleSyllabusUpload(file);
+                      } catch (error: any) {
+                        toast({ title: "Syllabus upload failed", description: error.message, variant: "destructive" });
+                      } finally {
+                        e.target.value = "";
+                      }
+                    }}
+                    data-testid="input-syllabus-doc"
+                  />
+                </Label>
+              </div>
+              <select
+                value={selectedSyllabusId}
+                onChange={(e) => setSelectedSyllabusId(e.target.value)}
+                className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-11"
+                data-testid="select-syllabus-context"
+              >
+                <option value="">No syllabus grounding selected</option>
+                {syllabusDocs.map((doc) => (
+                  <option key={doc.id} value={doc.id}>{doc.board} · {doc.level} · {doc.syllabusCode}</option>
+                ))}
+              </select>
             </div>
             <p className="text-xs text-slate-500 mb-3">
               Upload a syllabus, past paper, or any other documents that the AI can help with generating questions from.

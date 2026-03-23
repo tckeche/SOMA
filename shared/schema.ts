@@ -1,8 +1,24 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, json, jsonb, serial, uuid, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, json, jsonb, serial, uuid, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { insertQuizSchema, insertQuestionSchema, insertStudentSchema, insertSubmissionSchema, questionUploadSchema } from "./legacySchemas";
+
+
+export const graphPlotTypeSchema = z.enum(["line", "curve", "points"]);
+export const graphQuestionSpecSchema = z.object({
+  plotType: graphPlotTypeSchema,
+  equation: z.string().optional(),
+  points: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),
+  xRange: z.tuple([z.number(), z.number()]),
+  yRange: z.tuple([z.number(), z.number()]),
+  axisLabels: z.object({ x: z.string().default("x"), y: z.string().default("y") }).default({ x: "x", y: "y" }),
+  showGrid: z.boolean().default(true),
+  tickInterval: z.number().positive().default(1),
+  highlightedPoints: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),
+});
+
+export type GraphQuestionSpec = z.infer<typeof graphQuestionSpecSchema>;
 
 export const somaUsers = pgTable("soma_users", {
   id: uuid("id").primaryKey(),
@@ -35,6 +51,31 @@ export const somaQuestions = pgTable("soma_questions", {
   correctAnswer: text("correct_answer").notNull(),
   explanation: text("explanation").notNull(),
   marks: integer("marks").notNull().default(1),
+  questionType: text("question_type").notNull().default("multiple_choice"),
+  graphSpec: jsonb("graph_spec").$type<GraphQuestionSpec | null>(),
+  topicTag: text("topic_tag"),
+  subtopicTag: text("subtopic_tag"),
+  difficultyTag: text("difficulty_tag"),
+});
+
+
+export const syllabusDocuments = pgTable("syllabus_documents", {
+  id: serial("id").primaryKey(),
+  tutorId: uuid("tutor_id").references(() => somaUsers.id, { onDelete: "set null" }),
+  board: text("board").notNull(),
+  level: text("level").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  filename: text("filename").notNull(),
+  extractedText: text("extracted_text").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+});
+
+export const syllabusChunks = pgTable("syllabus_chunks", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => syllabusDocuments.id, { onDelete: "cascade" }),
+  chunkIndex: integer("chunk_index").notNull(),
+  content: text("content").notNull(),
+  contentPreview: text("content_preview").notNull(),
 });
 
 export const somaReports = pgTable("soma_reports", {
@@ -160,6 +201,8 @@ export const STANDARDIZED_SUBJECTS = [
 export const insertSomaUserSchema = createInsertSchema(somaUsers).omit({ createdAt: true });
 export const insertSomaQuizSchema = createInsertSchema(somaQuizzes).omit({ id: true, createdAt: true });
 export const insertSomaQuestionSchema = createInsertSchema(somaQuestions).omit({ id: true });
+export const insertSyllabusDocumentSchema = createInsertSchema(syllabusDocuments).omit({ id: true, uploadedAt: true });
+export const insertSyllabusChunkSchema = createInsertSchema(syllabusChunks).omit({ id: true });
 export const insertSomaReportSchema = createInsertSchema(somaReports).omit({ id: true, createdAt: true });
 
 export type SomaUser = typeof somaUsers.$inferSelect;
@@ -168,6 +211,10 @@ export type SomaQuiz = typeof somaQuizzes.$inferSelect;
 export type InsertSomaQuiz = z.infer<typeof insertSomaQuizSchema>;
 export type SomaQuestion = typeof somaQuestions.$inferSelect;
 export type InsertSomaQuestion = z.infer<typeof insertSomaQuestionSchema>;
+export type SyllabusDocument = typeof syllabusDocuments.$inferSelect;
+export type InsertSyllabusDocument = z.infer<typeof insertSyllabusDocumentSchema>;
+export type SyllabusChunk = typeof syllabusChunks.$inferSelect;
+export type InsertSyllabusChunk = z.infer<typeof insertSyllabusChunkSchema>;
 export type SomaReport = typeof somaReports.$inferSelect;
 export type InsertSomaReport = z.infer<typeof insertSomaReportSchema>;
 

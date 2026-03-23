@@ -65,7 +65,7 @@ function extractTextOperators(pdfText: string): string[] {
 export async function parsePdfTextFromBuffer(buffer: Buffer): Promise<string> {
   const latin1 = buffer.toString("latin1");
   const operatorText = extractTextOperators(latin1).join(" ").replace(/\s+/g, " ").trim();
-  if (operatorText) {
+  if (operatorText && operatorText.split(/\s+/).filter(Boolean).length >= 2) {
     return operatorText;
   }
 
@@ -74,7 +74,9 @@ export async function parsePdfTextFromBuffer(buffer: Buffer): Promise<string> {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!fallback) throw new Error("Unable to parse PDF text content");
+  if (!fallback || fallback.split(/\s+/).filter(Boolean).length < 2) {
+    throw new Error("Unable to parse PDF text content");
+  }
   return fallback;
 }
 
