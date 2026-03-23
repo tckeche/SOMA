@@ -958,13 +958,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const tutorId = (req as any).tutorId;
       const { title, syllabus, level, subject, topic, timeLimitMinutes } = req.body;
       if (!title) return res.status(400).json({ message: "title is required" });
+      if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
+        return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
+      }
       const quiz = await storage.createSomaQuiz({
         title,
         topic: topic || title,
-        syllabus: syllabus || "IEB",
-        level: level || "Grade 6-12",
-        subject: subject || null,
-        timeLimitMinutes: Number(timeLimitMinutes) || 60,
+        syllabus: syllabus ?? null,
+        level: level ?? null,
+        subject: subject ?? null,
+        timeLimitMinutes: Number(timeLimitMinutes),
         authorId: tutorId,
         status: "published",
       });
@@ -1019,6 +1022,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const { questions } = req.body;
       if (!Array.isArray(questions) || questions.length === 0) {
         return res.status(400).json({ message: "questions array required" });
+      }
+      for (const q of questions) {
+        if (!q.prompt_text && !q.stem) {
+          return res.status(400).json({ message: "Each question must have a prompt_text" });
+        }
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
+          return res.status(400).json({ message: "Each question must have exactly 4 options" });
+        }
       }
       const rawMapped = questions.map((q: any) => ({
         stem: q.prompt_text || q.stem || "",
@@ -1775,6 +1786,9 @@ ${JSON.stringify({
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
+
+      const quiz = await storage.getSomaQuiz(id);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
       const allQuestions = await storage.getSomaQuestionsByQuizId(id);
       const sanitized = allQuestions.map(({ correctAnswer, explanation, ...rest }) => rest);

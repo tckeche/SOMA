@@ -1,0 +1,256 @@
+You are reviewing an existing production maths quiz / assessment app after a Codex Phase 1 implementation.
+
+Your job is NOT to add new features.
+Your job is to VERIFY that the implemented Phase 1 changes work correctly, do not break the app, and preserve the current architecture and existing behaviour.
+
+You may make SMALL, SAFE, MINIMAL fixes only if something is broken.
+Do NOT do broad refactors.
+Do NOT rename core variables, routes, components, env vars, DB fields, or service contracts unless absolutely necessary for a fix.
+Do NOT change architecture unless there is no other safe option.
+
+==================================================
+CONTEXT
+==================================================
+
+Codex was asked to implement ONLY these Phase 1 features:
+
+1. Graph generation for maths questions
+2. Syllabus PDF upload and syllabus-grounded question generation
+3. Session-scoped copilot conversational memory during assessment generation
+4. Copilot returns a summary of generated work
+6. Balanced answer randomisation across A/B/C/D
+10. Light mode removed / dark mode forced
+11. Back / Exit Preview / Exit Assessment buttons fixed to proper size
+
+Your task is to review the current repo state and ensure these are working well without regressions.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Audit the current codebase and verify:
+
+- the app still builds and runs
+- the existing app flows still work
+- the Phase 1 features are correctly implemented
+- the changes are stable
+- the implementation is additive and safe
+- nothing important was broken
+
+If anything fails, fix only what is needed, then re-test.
+
+==================================================
+STRICT RULES
+==================================================
+
+1. Start by understanding the repo structure and identifying:
+   - assessment generation flow
+   - AI/copilot flow
+   - question model
+   - quiz rendering UI
+   - theme handling
+   - button/shared component sizing
+   - syllabus upload / file handling flow
+2. Do not assume passing tests means the app is fully correct. Also manually verify critical flows.
+3. Do not remove features.
+4. Do not rewrite working areas “for cleanliness”.
+5. Keep fixes minimal and scoped.
+6. Re-run verification after every fix.
+7. At the end, provide a precise QA report with pass/fail status.
+
+==================================================
+REVIEW CHECKLIST
+==================================================
+
+A. PROJECT HEALTH CHECK
+- Install dependencies if needed
+- Run lint
+- Run typecheck if present
+- Run unit/integration tests
+- Run build
+- Start the app locally
+- Check console/server logs for warnings and runtime errors
+- Check whether any new errors appear in the browser console during core flows
+
+B. REGRESSION CHECKS
+Verify these pre-existing areas still work:
+- tutor login / normal access flow
+- student quiz/assessment flow
+- assessment preview flow
+- question rendering for non-graph questions
+- quiz submission flow
+- any existing AI generation flow still works
+- navigation between pages related to assessments
+
+C. PHASE 1 FEATURE VERIFICATION
+
+1) GRAPH GENERATION
+Verify:
+- graph questions can be created/rendered
+- graph display is readable and not cramped
+- axes, labels, ranges, grid, and plotted data are visible
+- graph rendering is deterministic and not broken
+- non-graph questions still render normally
+- mobile/tablet responsive layout is still acceptable if responsive UI exists
+
+Test cases:
+- straight-line graph
+- simple curve graph
+- plotted points graph
+- edge case with negative and positive axes
+
+2) SYLLABUS PDF UPLOAD + GROUNDING
+Verify:
+- syllabus upload UI works
+- required metadata exists: board, level, syllabus code
+- text-based PDF upload succeeds
+- extracted content is stored/retrievable
+- selected syllabus context is used during question generation
+- invalid or non-extractable PDF fails clearly and safely
+- app does not crash on bad upload
+- existing upload flows elsewhere are unaffected
+
+Test cases:
+- valid text PDF
+- invalid PDF
+- empty upload or missing metadata
+- selecting one syllabus among multiple uploaded syllabi
+
+3) COPILOT SESSION MEMORY DURING ASSESSMENT BUILDING
+Verify:
+- conversation context persists within one active assessment-generation session
+- tutor follow-up changes are remembered
+- previewing does not accidentally clear memory
+- exiting assessment builder does clear/end the session
+- starting a new assessment does not incorrectly reuse old session memory
+- progress/status UI shows meaningful stages instead of only a vague spinner
+
+Test cases:
+- initial request
+- follow-up refinement
+- preview
+- return to editing
+- exit builder
+- start fresh new builder session
+
+4) COPILOT SUMMARY OUTPUT
+Verify:
+- after generation or revision, copilot returns a visible summary
+- summary includes:
+  - number of questions
+  - question types
+  - topics
+  - subtopics
+  - difficulty or difficulty mix
+  - syllabus grounding context if used
+- summary matches actual generated output
+
+5) ANSWER RANDOMISATION BALANCE
+Verify:
+- correct answers are not biased heavily toward A or B
+- answer positions are distributed across A/B/C/D
+- exact balance when question count divisible by 4, or near-even balance otherwise
+- correctness is preserved after shuffling
+- distractor order feels natural
+
+Test cases:
+- 4-question quiz
+- 8-question quiz
+- 10-question quiz
+- repeated generation runs to inspect distribution behaviour
+
+6) LIGHT MODE REMOVAL
+Verify:
+- light mode toggle is gone or disabled
+- dark mode is forced consistently
+- app visuals are not broken due to theme removal
+- no dead toggle/button remains
+- no page has unreadable text due to theme assumptions
+
+7) BUTTON SIZE FIXES
+Verify:
+- Back, Exit Preview, and Exit Assessment buttons match normal button size
+- padding, height, font size, and tap/click area are correct
+- they visually align with the app’s standard buttons
+- no other buttons were unintentionally changed or broken
+
+==================================================
+TESTING EXPECTATIONS
+==================================================
+
+If automated tests are missing or insufficient for the new features, add ONLY the smallest necessary tests for confidence.
+
+At minimum, ensure there is coverage for:
+- graph question rendering
+- syllabus upload success/failure
+- copilot session persistence/reset logic
+- summary output presence
+- answer balancing correctness
+- forced dark mode behaviour if testable
+- button style/class usage if testable
+
+==================================================
+BUG-FIX POLICY
+==================================================
+
+If you find issues:
+1. identify the root cause
+2. apply the smallest safe fix
+3. do not refactor unrelated code
+4. re-run the relevant tests and manual checks
+5. confirm no new regressions were introduced
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+When finished, return a full QA report in this exact structure:
+
+1. Overall result
+- PASS / PASS WITH MINOR FIXES / FAIL
+
+2. What you checked
+- concise bullet list of areas verified
+
+3. Issues found
+For each issue include:
+- title
+- severity
+- root cause
+- fix applied or not applied
+- files changed
+
+4. Phase 1 feature status
+For each feature mark:
+- PASS / PARTIAL / FAIL
+and explain briefly
+
+Features:
+- graph generation
+- syllabus upload + grounding
+- copilot session memory
+- copilot summary
+- answer randomisation balance
+- light mode removal
+- button sizing
+
+5. Regression status
+- confirm whether pre-existing flows still work
+
+6. Commands run
+- lint
+- tests
+- build
+- dev run
+- any other verification commands
+
+7. Files changed
+- list every file changed during review/fixes
+
+8. Remaining risks
+- note any unresolved concern or follow-up recommendation
+
+Important:
+Do not stop at “tests passed”.
+Actually inspect the implementation and confirm the app behaves correctly.
+Be meticulous, conservative, and stability-focused.

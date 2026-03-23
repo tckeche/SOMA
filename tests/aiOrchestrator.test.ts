@@ -8,15 +8,12 @@
  *
  * IMPORTANT: generateWithFallback now returns { data: string, metadata: AIMetadata }
  * The fallback chain order is:
- *   1. anthropic/claude-sonnet-4-6
- *   2. anthropic/claude-haiku-4-5
- *   3. google/gemini-2.5-flash
- *   4. google/gemini-2.5-pro
- *   5. google/gemini-1.5-pro
- *   6. deepseek/deepseek-reasoner  (uses OpenAI SDK)
- *   7. deepseek/deepseek-chat      (uses OpenAI SDK)
- *   8. openai/gpt-5.1
- *   9. openai/gpt-4o-mini
+ *   1. anthropic/claude-sonnet-4-6   (1 Anthropic model)
+ *   2. google/gemini-2.5-flash       (1st Google)
+ *   3. google/gemini-2.0-flash-001   (2nd Google)
+ *   4. deepseek/deepseek-chat        (uses OpenAI SDK)
+ *   5. openai/gpt-4o                 (1st OpenAI)
+ *   6. openai/gpt-4o-mini            (2nd OpenAI)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -64,26 +61,22 @@ import { generateWithFallback } from "../server/services/aiOrchestrator";
 
 // Helper: make all Anthropic calls reject
 function rejectAllAnthropic(error = new Error("Anthropic down")) {
-  // 2 models in chain
-  mocks.anthropicCreate
-    .mockRejectedValueOnce(error)
-    .mockRejectedValueOnce(error);
+  // 1 model in chain: claude-sonnet-4-6
+  mocks.anthropicCreate.mockRejectedValueOnce(error);
 }
 
 // Helper: make all Google calls reject
 function rejectAllGoogle(error = new Error("Google down")) {
-  // 3 models in chain
+  // 2 models in chain: gemini-2.5-flash, gemini-2.0-flash-001
   mocks.googleGenerateContent
-    .mockRejectedValueOnce(error)
     .mockRejectedValueOnce(error)
     .mockRejectedValueOnce(error);
 }
 
 // Helper: make all DeepSeek+OpenAI calls reject (they share OpenAI SDK)
 function rejectAllOpenAI(error = new Error("OpenAI down")) {
-  // 4 models total (deepseek×2 + openai×2)
+  // 3 models total (deepseek×1 + openai×2)
   mocks.openAICreate
-    .mockRejectedValueOnce(error)
     .mockRejectedValueOnce(error)
     .mockRejectedValueOnce(error)
     .mockRejectedValueOnce(error);
@@ -94,7 +87,12 @@ const ANTHROPIC_TEXT_RESPONSE = {
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Only reset the inner API call mocks (clears queued one-time values between tests).
+  // Do NOT call vi.resetAllMocks() — it would also reset the SDK constructor mocks
+  // (new Anthropic(), new OpenAI(), etc.) which need to keep their mockImplementation.
+  mocks.anthropicCreate.mockReset();
+  mocks.googleGenerateContent.mockReset();
+  mocks.openAICreate.mockReset();
 });
 
 // ─── Anthropic success path ───────────────────────────────────────────────────
@@ -174,7 +172,7 @@ describe("generateWithFallback: Google fallback", () => {
     const result = await generateWithFallback("System", "User");
     expect(result.data).toBe("Gemini response");
     expect(result.metadata.provider).toBe("google");
-    expect(mocks.anthropicCreate).toHaveBeenCalledTimes(2);
+    expect(mocks.anthropicCreate).toHaveBeenCalledTimes(1);
     expect(mocks.googleGenerateContent).toHaveBeenCalledOnce();
   });
 
@@ -234,10 +232,10 @@ describe("generateWithFallback: OpenAI (GPT) fallback", () => {
   it("falls back to OpenAI when Anthropic, Google, and DeepSeek all fail", async () => {
     rejectAllAnthropic(new Error("Anthropic down"));
     rejectAllGoogle(new Error("Google down"));
-    // deepseek×2 fail, then openai succeeds
+    // deepseek×1 fail, gpt-4o fail, gpt-4o-mini succeeds
     mocks.openAICreate
       .mockRejectedValueOnce(new Error("DeepSeek down"))
-      .mockRejectedValueOnce(new Error("DeepSeek down"))
+      .mockRejectedValueOnce(new Error("GPT-4o down"))
       .mockResolvedValueOnce({ choices: [{ message: { content: "GPT response" } }] });
     const result = await generateWithFallback("System", "User");
     expect(result.data).toBe("GPT response");
@@ -258,9 +256,9 @@ describe("generateWithFallback: OpenAI (GPT) fallback", () => {
     rejectAllAnthropic();
     rejectAllGoogle();
     let openaiConfig: any;
+    // deepseek×1 fail, then gpt-4o captures config and succeeds
     mocks.openAICreate
       .mockRejectedValueOnce(new Error("DeepSeek 1 down"))
-      .mockRejectedValueOnce(new Error("DeepSeek 2 down"))
       .mockImplementationOnce((cfg: any) => {
         openaiConfig = cfg;
         return Promise.resolve({ choices: [{ message: { content: '{"result":true}' } }] });

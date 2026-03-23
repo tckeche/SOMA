@@ -558,8 +558,8 @@ class MemoryStorage implements IStorage {
       createdAt: new Date(),
       title: quiz.title,
       topic: quiz.topic,
-      syllabus: quiz.syllabus ?? "IEB",
-      level: quiz.level ?? "Grade 6-12",
+      syllabus: quiz.syllabus ?? null,
+      level: quiz.level ?? null,
       subject: quiz.subject ?? null,
       curriculumContext: quiz.curriculumContext ?? null,
       authorId: quiz.authorId ?? null,
@@ -878,10 +878,14 @@ export function initStorage() {
 }
 
 export const storage: IStorage = new Proxy({} as IStorage, {
-  get(_target, prop, receiver) {
+  get(_target, prop, _receiver) {
     if (!_storage) {
       _storage = db ? new DatabaseStorage(db) : new MemoryStorage();
     }
-    return Reflect.get(_storage, prop, receiver);
+    const val = (_storage as any)[prop as string];
+    if (typeof val === "function") {
+      return val.bind(_storage);
+    }
+    return val;
   },
 });

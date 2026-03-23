@@ -15,6 +15,13 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`,
   `UPDATE soma_reports SET student_name = su.display_name FROM soma_users su WHERE soma_reports.student_id = su.id AND su.display_name IS NOT NULL AND su.display_name != '' AND soma_reports.student_name != su.display_name AND su.display_name NOT LIKE '%@%'`,
   `CREATE TABLE IF NOT EXISTS password_reset_requests (id SERIAL PRIMARY KEY, email TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'multiple_choice'`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS graph_spec JSONB`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS topic_tag TEXT`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS subtopic_tag TEXT`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS difficulty_tag TEXT`,
+  `CREATE TABLE IF NOT EXISTS syllabus_documents (id SERIAL PRIMARY KEY, tutor_id UUID REFERENCES soma_users(id) ON DELETE SET NULL, board TEXT NOT NULL, level TEXT NOT NULL, syllabus_code TEXT NOT NULL, filename TEXT NOT NULL, extracted_text TEXT NOT NULL, uploaded_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS syllabus_chunks (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, content TEXT NOT NULL, content_preview TEXT NOT NULL)`,
 ] as const;
 
 function logBootstrap(message: string) {

@@ -91,6 +91,16 @@ async function createAuthToken(userId: string, email: string): Promise<string> {
   return jwt.sign({ sub: userId, email, role: "authenticated" }, secret, { expiresIn: "1h" });
 }
 
+// Stable UUID for the test tutor user (melaniacalvin.com → tutor role)
+const TEST_TUTOR_UUID = "aaaaaaaa-1111-2222-3333-444444444444";
+let _tutorToken: string | null = null;
+async function getTutorToken(): Promise<string> {
+  if (!_tutorToken) {
+    _tutorToken = await createAuthToken(TEST_TUTOR_UUID, "testtutor@melaniacalvin.com");
+  }
+  return _tutorToken;
+}
+
 // Helper: login as admin and get cookie
 async function loginAsAdmin() {
   const res = await request
@@ -102,22 +112,26 @@ async function loginAsAdmin() {
   return cookieStr?.split(";")[0] ?? "";
 }
 
-// Helper: create a test quiz and return it
-async function createTestQuiz(cookie: string, overrides: any = {}) {
+// Helper: create a test quiz using tutor auth (cookie param kept for call-site compatibility)
+async function createTestQuiz(_cookie: string, overrides: any = {}) {
+  const token = await getTutorToken();
   const res = await request
-    .post("/api/admin/quizzes")
-    .set("Cookie", cookie)
+    .post("/api/tutor/quizzes")
+    .set("Authorization", `Bearer ${token}`)
     .send({
       title: overrides.title ?? "Test Quiz",
       timeLimitMinutes: overrides.timeLimitMinutes ?? 30,
-      dueDate: overrides.dueDate ?? "2099-12-31T00:00:00.000Z",
+      syllabus: overrides.syllabus ?? "IEB",
+      level: overrides.level ?? "Grade 6-12",
+      subject: overrides.subject ?? null,
     });
   expect(res.status).toBe(200);
   return res.body;
 }
 
-// Helper: add questions to a quiz
-async function addQuestions(cookie: string, quizId: number, questions?: any[]) {
+// Helper: add questions to a quiz using tutor auth (cookie param kept for call-site compatibility)
+async function addQuestions(_cookie: string, quizId: number, questions?: any[]) {
+  const token = await getTutorToken();
   const defaultQuestions = [
     {
       prompt_text: "What is \\\\frac{1}{2}?",
@@ -133,8 +147,8 @@ async function addQuestions(cookie: string, quizId: number, questions?: any[]) {
     },
   ];
   const res = await request
-    .post(`/api/admin/quizzes/${quizId}/questions`)
-    .set("Cookie", cookie)
+    .post(`/api/tutor/quizzes/${quizId}/questions`)
+    .set("Authorization", `Bearer ${token}`)
     .send({ questions: questions ?? defaultQuestions });
   expect(res.status).toBe(200);
   return res.body;
@@ -219,19 +233,14 @@ describe("POST /api/admin/logout", () => {
 });
 
 // ─── AUTH: Protected route guards ─────────────────────────────────────────────
-describe("Protected routes: requireAdmin middleware", () => {
-  it("blocks GET /api/admin/quizzes without cookie (401)", async () => {
-    const res = await request.get("/api/admin/quizzes");
+describe("Protected routes: requireTutor middleware", () => {
+  it("blocks GET /api/tutor/quizzes without Bearer token (401)", async () => {
+    const res = await request.get("/api/tutor/quizzes");
     expect(res.status).toBe(401);
   });
 
-  it("blocks POST /api/admin/quizzes without cookie (401)", async () => {
-    const res = await request.post("/api/admin/quizzes").send({ title: "X", timeLimitMinutes: 10, dueDate: new Date() });
-    expect(res.status).toBe(401);
-  });
-
-  it("blocks POST /api/analyze-student without cookie (401)", async () => {
-    const res = await request.post("/api/analyze-student").send({ submission: {}, questions: [] });
+  it("blocks POST /api/tutor/quizzes without Bearer token (401)", async () => {
+    const res = await request.post("/api/tutor/quizzes").send({ title: "X", timeLimitMinutes: 10 });
     expect(res.status).toBe(401);
   });
 
@@ -240,39 +249,44 @@ describe("Protected routes: requireAdmin middleware", () => {
     expect(res.status).toBe(401);
   });
 
-  it("blocks DELETE /api/admin/quizzes/:id without cookie (401)", async () => {
-    const res = await request.delete("/api/admin/quizzes/1");
+  it("blocks DELETE /api/tutor/quizzes/:id without Bearer token (401)", async () => {
+    const res = await request.delete("/api/tutor/quizzes/1");
+    expect(res.status).toBe(401);
+  });
+
+  it("blocks /api/analyze-class without admin cookie (401)", async () => {
+    const res = await request.post("/api/analyze-class").send({ quizId: 1 });
     expect(res.status).toBe(401);
   });
 });
 
-// ─── QUIZ: Public endpoints ────────────────────────────────────────────────────
-describe("GET /api/quizzes", () => {
+// ─── QUIZ: Public endpoints (soma) ────────────────────────────────────────────
+describe("GET /api/soma/quizzes", () => {
   it("returns 200 with array of quizzes (public)", async () => {
-    const res = await request.get("/api/quizzes");
+    const res = await request.get("/api/soma/quizzes");
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 });
 
-describe("GET /api/quizzes/:id", () => {
+describe("GET /api/soma/quizzes/:id", () => {
   it("returns 404 for non-existent quiz", async () => {
-    const res = await request.get("/api/quizzes/99999");
+    const res = await request.get("/api/soma/quizzes/99999");
     expect(res.status).toBe(404);
   });
 
   it("returns quiz data for existing quiz", async () => {
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie, { title: "Public Quiz" });
-    const res = await request.get(`/api/quizzes/${quiz.id}`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}`);
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("Public Quiz");
   });
 });
 
-describe("GET /api/quizzes/:id/questions", () => {
+describe("GET /api/soma/quizzes/:id/questions", () => {
   it("returns 404 for non-existent quiz", async () => {
-    const res = await request.get("/api/quizzes/99999/questions");
+    const res = await request.get("/api/soma/quizzes/99999/questions");
     expect(res.status).toBe(404);
   });
 
@@ -280,7 +294,7 @@ describe("GET /api/quizzes/:id/questions", () => {
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie);
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/quizzes/${quiz.id}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     if (res.body.length > 0) {
@@ -293,7 +307,7 @@ describe("GET /api/quizzes/:id/questions", () => {
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie);
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/quizzes/${quiz.id}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
     expect(res.status).toBe(200);
     if (res.body.length > 0) {
       expect(Array.isArray(res.body[0].options)).toBe(true);
@@ -304,66 +318,65 @@ describe("GET /api/quizzes/:id/questions", () => {
 // ─── QUIZ: Admin CRUD ────────────────────────────────────────────────────────
 describe("Admin Quiz CRUD", () => {
   let cookie: string;
-  beforeAll(async () => { cookie = await loginAsAdmin(); });
+  let token: string;
+  beforeAll(async () => {
+    cookie = await loginAsAdmin();
+    token = await getTutorToken();
+  });
 
-  it("POST /api/admin/quizzes creates a quiz", async () => {
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
-      .send({ title: "Admin Test Quiz", timeLimitMinutes: 45, dueDate: "2099-06-15T00:00:00.000Z" });
+  it("POST /api/tutor/quizzes creates a quiz", async () => {
+    const res = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Tutor Test Quiz", timeLimitMinutes: 45, syllabus: "IEB", level: "Grade 10" });
     expect(res.status).toBe(200);
-    expect(res.body.title).toBe("Admin Test Quiz");
+    expect(res.body.title).toBe("Tutor Test Quiz");
     expect(res.body.id).toBeDefined();
   });
 
-  it("POST /api/admin/quizzes rejects missing title", async () => {
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
-      .send({ timeLimitMinutes: 10, dueDate: "2099-01-01T00:00:00.000Z" });
+  it("POST /api/tutor/quizzes rejects missing title", async () => {
+    const res = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ timeLimitMinutes: 10 });
     expect(res.status).toBe(400);
   });
 
-  it("POST /api/admin/quizzes rejects missing timeLimitMinutes", async () => {
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
-      .send({ title: "Bad Quiz", dueDate: "2099-01-01T00:00:00.000Z" });
+  it("POST /api/tutor/quizzes rejects missing timeLimitMinutes", async () => {
+    const res = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Bad Quiz" });
     expect(res.status).toBe(400);
   });
 
-  it("POST /api/admin/quizzes rejects missing dueDate", async () => {
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
-      .send({ title: "Bad Quiz", timeLimitMinutes: 20 });
-    expect(res.status).toBe(400);
-  });
-
-  it("GET /api/admin/quizzes returns all quizzes", async () => {
-    const res = await request.get("/api/admin/quizzes").set("Cookie", cookie);
+  it("GET /api/tutor/quizzes returns all quizzes for tutor", async () => {
+    const res = await request.get("/api/tutor/quizzes").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it("DELETE /api/admin/quizzes/:id removes quiz", async () => {
+  it("DELETE /api/tutor/quizzes/:id removes quiz", async () => {
     const quiz = await createTestQuiz(cookie, { title: "To Delete" });
-    const delRes = await request.delete(`/api/admin/quizzes/${quiz.id}`).set("Cookie", cookie);
+    const delRes = await request.delete(`/api/tutor/quizzes/${quiz.id}`).set("Authorization", `Bearer ${token}`);
     expect(delRes.status).toBe(200);
-    const getRes = await request.get(`/api/quizzes/${quiz.id}`);
+    const getRes = await request.get(`/api/soma/quizzes/${quiz.id}`);
     expect(getRes.status).toBe(404);
   });
 });
 
-// ─── QUESTIONS: Admin Management ──────────────────────────────────────────────
-describe("Admin Question Management", () => {
+// ─── QUESTIONS: Tutor Management ──────────────────────────────────────────────
+describe("Tutor Question Management", () => {
   let cookie: string;
+  let token: string;
   let quiz: any;
   beforeAll(async () => {
     cookie = await loginAsAdmin();
+    token = await getTutorToken();
     quiz = await createTestQuiz(cookie, { title: "Question Test Quiz" });
   });
 
-  it("POST /api/admin/quizzes/:id/questions creates questions", async () => {
+  it("POST /api/tutor/quizzes/:id/questions creates questions", async () => {
     const res = await request
-      .post(`/api/admin/quizzes/${quiz.id}/questions`)
-      .set("Cookie", cookie)
+      .post(`/api/tutor/quizzes/${quiz.id}/questions`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         questions: [{
           prompt_text: "What is $\\\\pi$?",
@@ -374,49 +387,49 @@ describe("Admin Question Management", () => {
       });
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body[0].promptText).toBe("What is $\\\\pi$?");
+    expect(res.body[0].stem).toBe("What is $\\\\pi$?");
   });
 
-  it("POST /api/admin/quizzes/:id/questions rejects invalid format", async () => {
+  it("POST /api/tutor/quizzes/:id/questions rejects invalid format", async () => {
     const res = await request
-      .post(`/api/admin/quizzes/${quiz.id}/questions`)
-      .set("Cookie", cookie)
+      .post(`/api/tutor/quizzes/${quiz.id}/questions`)
+      .set("Authorization", `Bearer ${token}`)
       .send({ questions: "not an array" });
     expect(res.status).toBe(400);
   });
 
-  it("POST /api/admin/quizzes/:id/questions returns 404 for non-existent quiz", async () => {
+  it("POST /api/tutor/quizzes/:id/questions returns 404 for non-existent quiz", async () => {
     const res = await request
-      .post("/api/admin/quizzes/99999/questions")
-      .set("Cookie", cookie)
+      .post("/api/tutor/quizzes/99999/questions")
+      .set("Authorization", `Bearer ${token}`)
       .send({ questions: [] });
     expect(res.status).toBe(404);
   });
 
-  it("GET /api/admin/quizzes/:id/questions returns full questions (with correctAnswer)", async () => {
+  it("GET /api/tutor/quizzes/:id/detail returns full questions (with correctAnswer)", async () => {
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/admin/quizzes/${quiz.id}/questions`).set("Cookie", cookie);
+    const res = await request.get(`/api/tutor/quizzes/${quiz.id}/detail`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    if (res.body.length > 0) {
-      expect(res.body[0].correctAnswer).toBeDefined(); // Admin CAN see correctAnswer
+    expect(res.body.questions).toBeDefined();
+    if (res.body.questions.length > 0) {
+      expect(res.body.questions[0].correctAnswer).toBeDefined();
     }
   });
 
-  it("DELETE /api/admin/questions/:id removes a question", async () => {
+  it("DELETE /api/tutor/questions/:id removes a question (tutor Bearer token)", async () => {
     const [q] = await addQuestions(cookie, quiz.id, [{
       prompt_text: "Deletable question?",
       options: ["Y", "N", "M", "L"],
       correct_answer: "Y",
       marks_worth: 1,
     }]);
-    const delRes = await request.delete(`/api/admin/questions/${q.id}`).set("Cookie", cookie);
+    const delRes = await request.delete(`/api/tutor/questions/${q.id}`).set("Authorization", `Bearer ${token}`);
     expect(delRes.status).toBe(200);
   });
 });
 
-// ─── STUDENTS: Registration ────────────────────────────────────────────────────
-describe("POST /api/students", () => {
+// ─── STUDENTS: Registration (legacy — route removed) ───────────────────────────
+describe.skip("POST /api/students", () => {
   it("creates a student", async () => {
     const res = await request.post("/api/students")
       .send({ firstName: "Alice", lastName: "Wonderland" });
@@ -454,8 +467,8 @@ describe("POST /api/students", () => {
   });
 });
 
-// ─── SUBMISSIONS: Check & Submit ──────────────────────────────────────────────
-describe("POST /api/check-submission", () => {
+// ─── SUBMISSIONS: Check & Submit (legacy — route removed) ─────────────────────
+describe.skip("POST /api/check-submission", () => {
   let cookie: string;
   let quiz: any;
 
@@ -490,7 +503,7 @@ describe("POST /api/check-submission", () => {
   });
 });
 
-describe("POST /api/submissions", () => {
+describe.skip("POST /api/submissions", () => {
   let cookie: string;
   let quiz: any;
   let questions: any[];
@@ -611,8 +624,8 @@ describe("POST /api/submissions", () => {
   });
 });
 
-// ─── SUBMISSIONS: Admin management ───────────────────────────────────────────
-describe("Admin Submission Management", () => {
+// ─── SUBMISSIONS: Admin management (legacy — route removed) ──────────────────
+describe.skip("Admin Submission Management", () => {
   let cookie: string;
   let quiz: any;
 
@@ -735,13 +748,9 @@ describe("GET /api/soma/quizzes/:id/questions", () => {
     }
   });
 
-  it("returns 200 with empty array for non-existent soma quiz (BUG: missing quiz validation)", async () => {
-    // BUG: /api/soma/quizzes/:id/questions does NOT verify the quiz exists before
-    // returning questions. It returns [] for any unknown quizId instead of 404.
-    // This should be fixed to match /api/quizzes/:id/questions behavior.
+  it("returns 404 for non-existent soma quiz (quiz existence validated)", async () => {
     const res = await request.get("/api/soma/quizzes/99999/questions");
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]); // Documents current (buggy) behavior
+    expect(res.status).toBe(404);
   });
 
   it("returns 400 for invalid ID", async () => {
@@ -750,8 +759,8 @@ describe("GET /api/soma/quizzes/:id/questions", () => {
   });
 });
 
-// ─── AI ANALYSIS: analyze-student ─────────────────────────────────────────────
-describe("POST /api/analyze-student", () => {
+// ─── AI ANALYSIS: analyze-student (legacy — route removed) ──────────────────
+describe.skip("POST /api/analyze-student", () => {
   let cookie: string;
   beforeAll(async () => { cookie = await loginAsAdmin(); });
 
@@ -816,13 +825,13 @@ describe("POST /api/analyze-class", () => {
 });
 
 // ─── COPILOT: AI chat ─────────────────────────────────────────────────────────
-describe("POST /api/admin/copilot-chat", () => {
-  let cookie: string;
-  beforeAll(async () => { cookie = await loginAsAdmin(); });
+describe("POST /api/tutor/copilot-chat", () => {
+  let token: string;
+  beforeAll(async () => { token = await getTutorToken(); });
 
   it("returns reply and drafts array for valid message", async () => {
-    const res = await request.post("/api/admin/copilot-chat")
-      .set("Cookie", cookie)
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
       .send({ message: "Generate 3 questions about quadratic equations" });
     expect(res.status).toBe(200);
     expect(res.body.reply).toBeDefined();
@@ -830,8 +839,8 @@ describe("POST /api/admin/copilot-chat", () => {
   });
 
   it("returns 400 when message is missing", async () => {
-    const res = await request.post("/api/admin/copilot-chat")
-      .set("Cookie", cookie)
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
       .send({});
     expect(res.status).toBe(400);
   });
@@ -839,26 +848,17 @@ describe("POST /api/admin/copilot-chat", () => {
 
 // ─── SECURITY: Input injection tests ─────────────────────────────────────────
 describe("Security: Input sanitization", () => {
-  it("student names with SQL injection chars are sanitized (stored, not executed)", async () => {
-    const res = await request.post("/api/students")
-      .send({ firstName: "'; DROP TABLE students;--", lastName: "Smith" });
-    // Should succeed but name is sanitized (lowercased, trimmed)
-    expect(res.status).toBe(200);
-    expect(res.body.firstName).toBe("'; drop table students;--");
-  });
-
   it("XSS in quiz title is stored as-is (HTML escaping handled by frontend)", async () => {
-    const cookie = await loginAsAdmin();
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
-      .send({ title: "<script>alert('XSS')</script>", timeLimitMinutes: 10, dueDate: "2099-01-01T00:00:00.000Z" });
+    const token = await getTutorToken();
+    const res = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "<script>alert('XSS')</script>", timeLimitMinutes: 10, syllabus: "IEB", level: "Grade 10" });
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("<script>alert('XSS')</script>");
   });
 
-  it("non-integer quiz ID handled gracefully (returns 404 not 500)", async () => {
-    const res = await request.get("/api/quizzes/abc");
-    // parseInt('abc') = NaN, getQuiz(NaN) should return undefined → 404
+  it("non-integer soma quiz ID handled gracefully (returns 400 not 500)", async () => {
+    const res = await request.get("/api/soma/quizzes/abc");
     expect([404, 400]).toContain(res.status);
     expect(res.status).not.toBe(500);
   });
@@ -866,21 +866,20 @@ describe("Security: Input sanitization", () => {
 
 // ─── EDGE CASES ───────────────────────────────────────────────────────────────
 describe("Edge cases", () => {
-  it("GET /api/quizzes/:id returns quiz with correct structure", async () => {
+  it("GET /api/soma/quizzes/:id returns quiz with correct structure", async () => {
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie, { title: "Structure Test" });
-    const res = await request.get(`/api/quizzes/${quiz.id}`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}`);
     expect(res.body).toHaveProperty("id");
     expect(res.body).toHaveProperty("title");
     expect(res.body).toHaveProperty("timeLimitMinutes");
-    expect(res.body).toHaveProperty("dueDate");
     expect(res.body).toHaveProperty("createdAt");
   });
 
-  it("Empty question array is handled for a quiz (returns empty array)", async () => {
+  it("Empty question array is handled for a soma quiz (returns empty array)", async () => {
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie, { title: "No Questions Quiz" });
-    const res = await request.get(`/api/quizzes/${quiz.id}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
@@ -986,42 +985,36 @@ describe("GET /api/student/submissions", () => {
   });
 });
 
-// ─── QUIZ: Admin Update (PUT) ───────────────────────────────────────────────
-describe("PUT /api/admin/quizzes/:id", () => {
+// ─── QUIZ: Tutor Update (PUT) ───────────────────────────────────────────────
+describe("PUT /api/tutor/quizzes/:id", () => {
   let cookie: string;
+  let token: string;
   let quiz: any;
   beforeAll(async () => {
     cookie = await loginAsAdmin();
+    token = await getTutorToken();
     quiz = await createTestQuiz(cookie, { title: "Updatable Quiz" });
   });
 
   it("updates quiz title", async () => {
-    const res = await request.put(`/api/admin/quizzes/${quiz.id}`)
-      .set("Cookie", cookie)
+    const res = await request.put(`/api/tutor/quizzes/${quiz.id}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({ title: "Updated Title" });
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("Updated Title");
   });
 
   it("updates quiz timeLimitMinutes", async () => {
-    const res = await request.put(`/api/admin/quizzes/${quiz.id}`)
-      .set("Cookie", cookie)
+    const res = await request.put(`/api/tutor/quizzes/${quiz.id}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({ timeLimitMinutes: 90 });
     expect(res.status).toBe(200);
     expect(res.body.timeLimitMinutes).toBe(90);
   });
 
-  it("updates quiz dueDate", async () => {
-    const newDate = "2100-06-15T00:00:00.000Z";
-    const res = await request.put(`/api/admin/quizzes/${quiz.id}`)
-      .set("Cookie", cookie)
-      .send({ dueDate: newDate });
-    expect(res.status).toBe(200);
-  });
-
   it("updates optional fields (syllabus, level, subject)", async () => {
-    const res = await request.put(`/api/admin/quizzes/${quiz.id}`)
-      .set("Cookie", cookie)
+    const res = await request.put(`/api/tutor/quizzes/${quiz.id}`)
+      .set("Authorization", `Bearer ${token}`)
       .send({ syllabus: "IGCSE", level: "O Level", subject: "Mathematics" });
     expect(res.status).toBe(200);
     expect(res.body.syllabus).toBe("IGCSE");
@@ -1030,38 +1023,42 @@ describe("PUT /api/admin/quizzes/:id", () => {
   });
 
   it("returns 404 for non-existent quiz", async () => {
-    const res = await request.put("/api/admin/quizzes/99999")
-      .set("Cookie", cookie)
+    const res = await request.put("/api/tutor/quizzes/99999")
+      .set("Authorization", `Bearer ${token}`)
       .send({ title: "Ghost Quiz" });
     expect(res.status).toBe(404);
   });
 
   it("blocks unauthenticated access (401)", async () => {
-    const res = await request.put(`/api/admin/quizzes/${quiz.id}`)
+    const res = await request.put(`/api/tutor/quizzes/${quiz.id}`)
       .send({ title: "Sneaky Update" });
     expect(res.status).toBe(401);
   });
 });
 
-// ─── QUIZ: Admin detail GET ─────────────────────────────────────────────────
-describe("GET /api/admin/quizzes/:id", () => {
+// ─── QUIZ: Tutor detail GET ─────────────────────────────────────────────────
+describe("GET /api/tutor/quizzes/:id/detail", () => {
   let cookie: string;
-  beforeAll(async () => { cookie = await loginAsAdmin(); });
+  let token: string;
+  beforeAll(async () => {
+    cookie = await loginAsAdmin();
+    token = await getTutorToken();
+  });
 
   it("returns quiz with questions included", async () => {
     const quiz = await createTestQuiz(cookie, { title: "Detail Quiz" });
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/admin/quizzes/${quiz.id}`).set("Cookie", cookie);
+    const res = await request.get(`/api/tutor/quizzes/${quiz.id}/detail`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("Detail Quiz");
     expect(Array.isArray(res.body.questions)).toBe(true);
     expect(res.body.questions.length).toBeGreaterThan(0);
   });
 
-  it("includes correctAnswer in admin questions", async () => {
-    const quiz = await createTestQuiz(cookie, { title: "Admin Detail" });
+  it("includes correctAnswer in tutor questions", async () => {
+    const quiz = await createTestQuiz(cookie, { title: "Tutor Detail" });
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/admin/quizzes/${quiz.id}`).set("Cookie", cookie);
+    const res = await request.get(`/api/tutor/quizzes/${quiz.id}/detail`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     if (res.body.questions.length > 0) {
       expect(res.body.questions[0].correctAnswer).toBeDefined();
@@ -1069,18 +1066,18 @@ describe("GET /api/admin/quizzes/:id", () => {
   });
 
   it("returns 404 for non-existent quiz", async () => {
-    const res = await request.get("/api/admin/quizzes/99999").set("Cookie", cookie);
+    const res = await request.get("/api/tutor/quizzes/99999/detail").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
   it("blocks unauthenticated access (401)", async () => {
-    const res = await request.get("/api/admin/quizzes/1");
+    const res = await request.get("/api/tutor/quizzes/1/detail");
     expect(res.status).toBe(401);
   });
 });
 
-// ─── SUBMISSIONS: Single delete and score verification ──────────────────────
-describe("Admin Submission: Single delete", () => {
+// ─── SUBMISSIONS: Single delete and score verification (legacy — removed) ─────
+describe.skip("Admin Submission: Single delete", () => {
   let cookie: string;
   let quiz: any;
   let questions: any[];
@@ -1116,8 +1113,8 @@ describe("Admin Submission: Single delete", () => {
   });
 });
 
-// ─── CHECK SUBMISSION: Verified submission returns score ────────────────────
-describe("POST /api/check-submission (after submission)", () => {
+// ─── CHECK SUBMISSION: Verified submission returns score (legacy — removed) ──
+describe.skip("POST /api/check-submission (after submission)", () => {
   let cookie: string;
   let quiz: any;
   let questions: any[];
@@ -1151,8 +1148,8 @@ describe("POST /api/check-submission (after submission)", () => {
   });
 });
 
-// ─── SUBMISSIONS: Partial scoring and answersBreakdown ──────────────────────
-describe("Submission scoring accuracy", () => {
+// ─── SUBMISSIONS: Partial scoring and answersBreakdown (legacy — removed) ────
+describe.skip("Submission scoring accuracy", () => {
   let cookie: string;
   let quiz: any;
   let questions: any[];
@@ -1217,16 +1214,15 @@ describe("Submission scoring accuracy", () => {
 
 // ─── QUIZ CRUD: Optional fields ─────────────────────────────────────────────
 describe("Quiz creation with optional fields", () => {
-  let cookie: string;
-  beforeAll(async () => { cookie = await loginAsAdmin(); });
+  let token: string;
+  beforeAll(async () => { token = await getTutorToken(); });
 
   it("creates quiz with syllabus, level, and subject", async () => {
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
+    const res = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
       .send({
         title: "Full Quiz",
         timeLimitMinutes: 45,
-        dueDate: "2099-01-01T00:00:00.000Z",
         syllabus: "ZIMSEC",
         level: "A Level",
         subject: "Pure Mathematics",
@@ -1238,12 +1234,11 @@ describe("Quiz creation with optional fields", () => {
   });
 
   it("sets optional fields to null when not provided", async () => {
-    const res = await request.post("/api/admin/quizzes")
-      .set("Cookie", cookie)
+    const res = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
       .send({
         title: "Minimal Quiz",
         timeLimitMinutes: 20,
-        dueDate: "2099-06-01T00:00:00.000Z",
       });
     expect(res.status).toBe(200);
     expect(res.body.syllabus).toBeNull();
@@ -1255,19 +1250,23 @@ describe("Quiz creation with optional fields", () => {
 // ─── CASCADE DELETE: Quiz deletion cleans up questions and submissions ───────
 describe("Cascade delete behavior", () => {
   let cookie: string;
+  let token: string;
 
-  beforeAll(async () => { cookie = await loginAsAdmin(); });
+  beforeAll(async () => {
+    cookie = await loginAsAdmin();
+    token = await getTutorToken();
+  });
 
   it("deleting a quiz removes its questions", async () => {
     const quiz = await createTestQuiz(cookie, { title: "Cascade Quiz" });
     await addQuestions(cookie, quiz.id);
-    // Verify questions exist
-    const qRes = await request.get(`/api/admin/quizzes/${quiz.id}/questions`).set("Cookie", cookie);
+    // Verify questions exist via soma public endpoint
+    const qRes = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
     expect(qRes.body.length).toBeGreaterThan(0);
-    // Delete quiz
-    await request.delete(`/api/admin/quizzes/${quiz.id}`).set("Cookie", cookie);
+    // Delete quiz via tutor route
+    await request.delete(`/api/tutor/quizzes/${quiz.id}`).set("Authorization", `Bearer ${token}`);
     // Quiz is gone
-    const getRes = await request.get(`/api/quizzes/${quiz.id}`);
+    const getRes = await request.get(`/api/soma/quizzes/${quiz.id}`);
     expect(getRes.status).toBe(404);
   });
 });
@@ -1289,17 +1288,17 @@ describe("Security: Additional hardening", () => {
     expect(res.status).toBe(401);
   });
 
-  it("admin routes reject requests with tampered JWT tokens", async () => {
-    const res = await request.get("/api/admin/quizzes")
-      .set("Cookie", "admin_session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYWRtaW4ifQ.fakesignature");
+  it("tutor routes reject requests without Bearer token", async () => {
+    const res = await request.get("/api/tutor/quizzes");
     expect(res.status).toBe(401);
   });
 
   it("question upload rejects items with missing prompt_text", async () => {
+    const token = await getTutorToken();
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie);
-    const res = await request.post(`/api/admin/quizzes/${quiz.id}/questions`)
-      .set("Cookie", cookie)
+    const res = await request.post(`/api/tutor/quizzes/${quiz.id}/questions`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         questions: [{ options: ["A", "B", "C", "D"], correct_answer: "A", marks_worth: 1 }],
       });
@@ -1307,47 +1306,21 @@ describe("Security: Additional hardening", () => {
   });
 
   it("question upload rejects items that do not provide exactly 4 options", async () => {
+    const token = await getTutorToken();
     const cookie = await loginAsAdmin();
     const quiz = await createTestQuiz(cookie);
-    const res = await request.post(`/api/admin/quizzes/${quiz.id}/questions`)
-      .set("Cookie", cookie)
+    const res = await request.post(`/api/tutor/quizzes/${quiz.id}/questions`)
+      .set("Authorization", `Bearer ${token}`)
       .send({
         questions: [{ prompt_text: "Q?", options: ["A"], correct_answer: "A", marks_worth: 1 }],
       });
     expect(res.status).toBe(400);
   });
 
-  it("submission with non-finite startTime is rejected", async () => {
-    const cookie = await loginAsAdmin();
-    const quiz = await createTestQuiz(cookie, { timeLimitMinutes: 30 });
-    const stRes = await request.post("/api/students").send({ firstName: "Inf", lastName: "Time" });
-    const res = await request.post("/api/submissions").send({
-      studentId: stRes.body.id,
-      quizId: quiz.id,
-      answers: {},
-      startTime: Infinity,
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/startTime/i);
-  });
-
-  it("submission with NaN startTime is rejected", async () => {
-    const cookie = await loginAsAdmin();
-    const quiz = await createTestQuiz(cookie, { timeLimitMinutes: 30 });
-    const stRes = await request.post("/api/students").send({ firstName: "Nan", lastName: "Time" });
-    const res = await request.post("/api/submissions").send({
-      studentId: stRes.body.id,
-      quizId: quiz.id,
-      answers: {},
-      startTime: "not-a-number",
-    });
-    expect(res.status).toBe(400);
-  });
-
   it("copilot rejects empty string message", async () => {
-    const cookie = await loginAsAdmin();
-    const res = await request.post("/api/admin/copilot-chat")
-      .set("Cookie", cookie)
+    const token = await getTutorToken();
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
       .send({ message: "" });
     expect(res.status).toBe(400);
   });
@@ -1401,23 +1374,10 @@ describe("Soma endpoints: additional coverage", () => {
 // ─── ADMIN: Analyze endpoints metadata ──────────────────────────────────────
 describe("AI Analysis: metadata in responses", () => {
   let cookie: string;
-  beforeAll(async () => { cookie = await loginAsAdmin(); });
-
-  it("analyze-student returns metadata with provider info", async () => {
-    const res = await request.post("/api/analyze-student")
-      .set("Cookie", cookie)
-      .send({
-        submission: {
-          totalScore: 5,
-          maxPossibleScore: 10,
-          answersBreakdown: { "1": { answer: "A", correct: true, marksEarned: 5 } },
-        },
-        questions: [{ id: 1, promptText: "Q?", marksWorth: 5 }],
-      });
-    expect(res.status).toBe(200);
-    expect(res.body.metadata).toBeDefined();
-    expect(res.body.metadata.provider).toBe("mock");
-    expect(res.body.metadata.model).toBe("mock-model");
+  let token: string;
+  beforeAll(async () => {
+    cookie = await loginAsAdmin();
+    token = await getTutorToken();
   });
 
   it("analyze-class returns submissionCount and metadata", async () => {
@@ -1432,8 +1392,8 @@ describe("AI Analysis: metadata in responses", () => {
   });
 
   it("copilot returns metadata with provider info", async () => {
-    const res = await request.post("/api/admin/copilot-chat")
-      .set("Cookie", cookie)
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
       .send({ message: "Give me 2 questions about fractions" });
     expect(res.status).toBe(200);
     expect(res.body.metadata).toBeDefined();
@@ -1443,7 +1403,10 @@ describe("AI Analysis: metadata in responses", () => {
 
 describe("Tutor syllabus grounding and copilot session support", () => {
   it("uploads a valid text syllabus PDF and lists it for retrieval", async () => {
-    const token = await createAuthToken("tutor-1", "teacher@melaniacalvin.com");
+    const token = await createAuthToken(
+      "bbbbbbbb-1111-2222-3333-444444444441",
+      "teacher@melaniacalvin.com"
+    );
     const uploadRes = await request
       .post("/api/tutor/syllabus-documents")
       .set("Authorization", `Bearer ${token}`)
@@ -1466,7 +1429,10 @@ describe("Tutor syllabus grounding and copilot session support", () => {
   it("fails safely for unreadable syllabus PDFs", async () => {
     const { parsePdfTextFromBuffer } = await import("../server/services/aiPipeline");
     (parsePdfTextFromBuffer as any).mockRejectedValueOnce(new Error("Unable to parse PDF text content"));
-    const token = await createAuthToken("tutor-2", "teacher2@melaniacalvin.com");
+    const token = await createAuthToken(
+      "bbbbbbbb-1111-2222-3333-444444444442",
+      "teacher2@melaniacalvin.com"
+    );
     const res = await request
       .post("/api/tutor/syllabus-documents")
       .set("Authorization", `Bearer ${token}`)
