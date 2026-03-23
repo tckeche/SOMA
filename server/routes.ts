@@ -31,6 +31,41 @@ const analyzeClassLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const authApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const tutorApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const superAdminApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const studentApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const uploadImageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => {
@@ -374,6 +409,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     next();
   });
 
+  app.use("/api/admin", adminRateLimiter);
+  app.use("/api/auth", authApiLimiter);
+  app.use("/api/tutor", tutorApiLimiter);
+  app.use("/api/super-admin", superAdminApiLimiter);
+  app.use("/api/student", studentApiLimiter);
+  app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
 
   app.post("/api/auth/sync", async (req, res) => {
@@ -1373,7 +1414,7 @@ You must rely ONLY on the provided PDF text. Do not generate fictitious data or 
     res.json({ authenticated: true });
   });
 
-  app.get("/api/admin/session", adminRateLimiter, async (req, res) => {
+  app.get("/api/admin/session", async (req, res) => {
     const token = getAdminSessionToken(req, ADMIN_COOKIE_NAME);
     if (token) {
       try {
@@ -1474,7 +1515,7 @@ ${JSON.stringify({
   app.use("/api/admin", requireAdmin);
 
 
-  app.post("/api/upload-image", requireAdmin, (req, res) => {
+  app.post("/api/upload-image", uploadImageLimiter, requireAdmin, (req, res) => {
     upload.single("image")(req, res, (err: any) => {
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {
