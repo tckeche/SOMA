@@ -1063,14 +1063,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!message) return res.status(400).json({ message: "message is required" });
 
       const text = String(message);
-      const missing: string[] = [];
-      if (!/subject\s*:/i.test(text)) missing.push("Subject");
-      if (!/level\s*:/i.test(text)) missing.push("Level");
-      if (!/syllabus\s*:/i.test(text)) missing.push("Syllabus");
+      // Only ask for clarification when the message is a completely blank slate:
+      // all three context fields are absent AND the message has no implicit topic.
+      // If the user has filled in even one field (Subject/Level/Syllabus via the
+      // builder form), the enriched message will contain it and we proceed.
+      const hasSubject  = /subject\s*:/i.test(text);
+      const hasLevel    = /level\s*:/i.test(text);
+      const hasSyllabus = /syllabus\s*:/i.test(text);
       const hasImplicitTopic = /about\s+\w+/i.test(text);
-      if (missing.length > 0 && !hasImplicitTopic) {
+      const hasAnyContext = hasSubject || hasLevel || hasSyllabus || hasImplicitTopic;
+      if (!hasAnyContext) {
         return res.json({
-          reply: `Before I generate, please provide: ${missing.join(", ")}.`,
+          reply: "To generate relevant questions, please fill in at least one of the Subject, Level, or Syllabus fields on the left — or mention the topic in your message (e.g. \"Generate 5 questions about Newton's laws\").",
           drafts: [],
           metadata: { provider: "clarification", model: "copilot-guard", durationMs: 0 },
           needsClarification: true,

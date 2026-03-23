@@ -460,7 +460,7 @@ export default function BuilderPage() {
   };
 
   const handleSend = () => {
-    if (!msg.trim() || chatMutation.isPending) return;
+    if (!msg.trim() || chatMutation.isPending || !authenticated) return;
     chatMutation.mutate(msg);
   };
 
@@ -760,7 +760,7 @@ export default function BuilderPage() {
                   className="glow-button shrink-0 self-end min-h-[44px] min-w-[44px]"
                   size="icon"
                   onClick={handleSend}
-                  disabled={!msg.trim() || chatMutation.isPending}
+                  disabled={!msg.trim() || chatMutation.isPending || !authenticated}
                   data-testid="button-copilot-send"
                 >
                   {chatMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
