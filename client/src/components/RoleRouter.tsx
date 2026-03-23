@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Redirect } from "wouter";
-import { supabase } from "@/lib/supabase";
-import type { Session } from "@supabase/supabase-js";
 import { Loader2 } from "lucide-react";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 
 interface RoleRouterProps {
   studentComponent: React.ComponentType<any>;
@@ -10,40 +9,32 @@ interface RoleRouterProps {
 }
 
 export default function RoleRouter({ studentComponent: StudentComp, tutorComponent: TutorComp }: RoleRouterProps) {
-  const [session, setSession] = useState<Session | null>(null);
+  const { session, isLoading: isSessionLoading } = useSupabaseSession();
   const [role, setRole] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isRoleLoading, setIsRoleLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      if (!s) setIsLoading(false);
-    });
+    if (!session?.user?.id) {
+      setRole(null);
+      setIsRoleLoading(false);
+      return;
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (!s) setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!session?.user?.id) return;
+    setIsRoleLoading(true);
     const email = encodeURIComponent(session.user.email || "");
     fetch(`/api/auth/me?userId=${session.user.id}&email=${email}`)
       .then((res) => res.json())
       .then((data) => {
         setRole(data.role || "student");
-        setIsLoading(false);
+        setIsRoleLoading(false);
       })
       .catch(() => {
         setRole("student");
-        setIsLoading(false);
+        setIsRoleLoading(false);
       });
-  }, [session?.user?.id]);
+  }, [session?.user?.id, session?.user?.email]);
 
-  if (isLoading) {
+  if (isSessionLoading || isRoleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">

@@ -30,10 +30,52 @@ function extractJson(raw: string): QuizResult {
   return QuizResultSchema.parse(JSON.parse(raw));
 }
 
+function decodePdfLiteral(segment: string): string {
+  return segment
+    .replace(/\\([()\\])/g, "$1")
+    .replace(/\\n/g, " ")
+    .replace(/\\r/g, " ")
+    .replace(/\\t/g, " ")
+    .replace(/\\\d{3}/g, " ");
+}
+
+function extractTextOperators(pdfText: string): string[] {
+  const chunks: string[] = [];
+  const tjRegex = /\(((?:\.|[^\)])*)\)\s*Tj/g;
+  const tjArrayRegex = /\[([\s\S]*?)\]\s*TJ/g;
+  const tjChunkRegex = /\(((?:\.|[^\)])*)\)/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = tjRegex.exec(pdfText)) !== null) {
+    chunks.push(decodePdfLiteral(match[1] || ""));
+  }
+
+  while ((match = tjArrayRegex.exec(pdfText)) !== null) {
+    const arrayValue = match[1] || "";
+    let chunkMatch: RegExpExecArray | null;
+    while ((chunkMatch = tjChunkRegex.exec(arrayValue)) !== null) {
+      chunks.push(decodePdfLiteral(chunkMatch[1] || ""));
+    }
+    tjChunkRegex.lastIndex = 0;
+  }
+
+  return chunks.map((chunk) => chunk.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
 export async function parsePdfTextFromBuffer(buffer: Buffer): Promise<string> {
-  const text = buffer.toString("latin1").replace(/\s+/g, " ").trim();
-  if (!text) throw new Error("Unable to parse PDF text content");
-  return text;
+  const latin1 = buffer.toString("latin1");
+  const operatorText = extractTextOperators(latin1).join(" ").replace(/\s+/g, " ").trim();
+  if (operatorText) {
+    return operatorText;
+  }
+
+  const fallback = latin1
+    .replace(/[^\x20-\x7E\n\r\t]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!fallback) throw new Error("Unable to parse PDF text content");
+  return fallback;
 }
 
 export async function fetchPaperContext(paperCode: string): Promise<string> {

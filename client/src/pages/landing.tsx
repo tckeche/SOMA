@@ -1,25 +1,11 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
-import type { Session } from "@supabase/supabase-js";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { Loader2 } from "lucide-react";
 
 export default function Landing() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { session, isLoading: loading } = useSupabaseSession();
   const [, setLocation] = useLocation();
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-      setLoading(false);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   useEffect(() => {
     if (!loading && session) {

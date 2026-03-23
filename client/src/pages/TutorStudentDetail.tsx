@@ -1,13 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { supabase } from "@/lib/supabase";
+import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import type { Session } from "@supabase/supabase-js";
 import {
   ArrowLeft, MessageSquare, Send, Loader2, BookOpen,
   Trash2, Eye, FileText, Award, Target, CheckCircle2,
@@ -86,19 +86,12 @@ export default function TutorStudentDetail() {
   const studentId = params.id || "";
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [session, setSession] = useState<Session | null>(null);
   const [newComment, setNewComment] = useState("");
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const userId = session?.user?.id;
-  const headers = useMemo(() => ({ "x-tutor-id": userId || "" }), [userId]);
-  const jsonHeaders = useMemo(() => ({ "x-tutor-id": userId || "", "Content-Type": "application/json" }), [userId]);
+  const { userId } = useSupabaseSession();
+  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
+  const jsonHeaders = useMemo(() => createIdentityHeaders("x-tutor-id", userId, { "Content-Type": "application/json" }), [userId]);
 
   // Fetch student report (assignments + stats)
   const { data: report, isLoading: reportLoading } = useQuery<StudentReport>({

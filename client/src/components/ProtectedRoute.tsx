@@ -1,30 +1,13 @@
-import { useState, useEffect } from "react";
-import { useLocation, Redirect } from "wouter";
-import { supabase } from "@/lib/supabase";
-import type { Session } from "@supabase/supabase-js";
+import { Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 
 interface ProtectedRouteProps {
   component: React.ComponentType<any>;
 }
 
 export default function ProtectedRoute({ component: Component, ...rest }: ProtectedRouteProps & Record<string, any>) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setIsLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { session, isLoading } = useSupabaseSession();
 
   if (isLoading) {
     return (
