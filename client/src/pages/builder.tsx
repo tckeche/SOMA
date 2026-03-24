@@ -80,7 +80,7 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
     correctAnswer: String(raw.correct_answer || raw.correctAnswer || opts[0] || ""),
     explanation: String(raw.explanation || ""),
     marks: Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1,
-    questionType: raw.question_type === "graph" ? "graph" : "multiple_choice",
+    questionType: (raw.question_type === "graph" || raw.questionType === "graph") ? "graph" : "multiple_choice",
     graphSpec: raw.graphSpec ?? raw.graph_spec ?? null,
     topicTag: raw.topic_tag ? String(raw.topic_tag) : null,
     subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : null,
