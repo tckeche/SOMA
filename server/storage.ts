@@ -85,6 +85,7 @@ export interface IStorage {
   createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }>;
   listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]>;
   getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined>;
+  getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined>;
 
 }
 
@@ -178,6 +179,11 @@ class DatabaseStorage implements IStorage {
     if (!document) return undefined;
     const chunks = await this.database.select().from(syllabusChunks).where(eq(syllabusChunks.documentId, document.id));
     return { ...document, chunks };
+  }
+
+  async getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined> {
+    const [doc] = await this.database.select().from(syllabusDocuments).where(eq(syllabusDocuments.contentHash, contentHash));
+    return doc;
   }
 
   async getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>> {
@@ -844,6 +850,11 @@ class MemoryStorage implements IStorage {
     const chunks = this.syllabusChunksList.filter((chunk) => chunk.documentId === document.id);
     return { ...document, chunks };
   }
+
+  async getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined> {
+    return this.syllabusDocumentsList.find((doc) => doc.contentHash === contentHash);
+  }
+
   async getAllSomaUsers(): Promise<SomaUser[]> {
     return this.somaUsersList;
   }

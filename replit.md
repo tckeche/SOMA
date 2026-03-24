@@ -18,6 +18,8 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - `soma_questions` - id, quiz_id (FK → soma_quizzes), stem, options (JSON), correct_answer, explanation (NOT NULL), marks, graph_spec (JSONB, nullable — see GraphQuestionSpec)
 - `soma_reports` - id, quiz_id (FK → soma_quizzes), student_id (uuid FK → soma_users), student_name, score, status, ai_feedback_html, answers_json, started_at, completed_at, created_at
 - `tutor_students` - id, tutor_id, student_id (unique index), created_at
+- `syllabus_documents` - id, tutor_id (nullable), board, level, syllabus_code, filename, extracted_text, uploaded_at, document_type ('syllabus'|'examiner_report', default 'syllabus'), subject (nullable), original_path (nullable), content_hash (nullable, SHA-256 for dedup)
+- `syllabus_chunks` - id, document_id (FK → syllabus_documents), chunk_index, content, content_preview
 - `quiz_assignments` - id, quiz_id, student_id, status, due_date (optional timestamp), created_at
 - `tutor_comments` - id, tutor_id, student_id, comment, created_at
 - `password_reset_requests` - id, email, created_at (audit log for password reset attempts)

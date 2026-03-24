@@ -79,6 +79,10 @@ export const syllabusDocuments = pgTable("syllabus_documents", {
   filename: text("filename").notNull(),
   extractedText: text("extracted_text").notNull(),
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  documentType: text("document_type").notNull().default("syllabus"),
+  subject: text("subject"),
+  originalPath: text("original_path"),
+  contentHash: text("content_hash"),
 });
 
 export const syllabusChunks = pgTable("syllabus_chunks", {

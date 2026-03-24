@@ -1,0 +1,204 @@
+You are working inside my existing maths quiz / assessment app.
+
+Your task is to build a clean bulk-ingestion system for syllabus PDFs and examiner report PDFs so I can upload a whole set of documents at once instead of one by one.
+
+This is an infrastructure and workflow task.
+Do NOT do a broad refactor.
+Do NOT break the app.
+Do NOT change unrelated features.
+Keep changes additive, clean, and safe.
+
+PRIMARY GOAL
+
+I want to be able to place many syllabus PDFs and examiner report PDFs into the project and then ingest them in bulk into the app’s knowledge layer.
+
+This should support:
+- syllabus PDFs
+- examiner report PDFs
+- clean folder organization
+- bulk discovery
+- bulk ingestion
+- proper metadata
+- safe parsing
+- retrieval-ready storage
+
+==================================================
+WHAT TO BUILD
+==================================================
+
+1. CREATE A CLEAN SOURCE FOLDER STRUCTURE
+
+Create a root-level document library folder such as:
+
+/curriculum-docs
+
+Inside it, create sensible subfolders such as:
+
+/curriculum-docs/cambridge/syllabi
+/curriculum-docs/cambridge/examiner-reports
+
+If needed, make optional level subfolders too, for example:
+
+/curriculum-docs/cambridge/syllabi/igcse
+/curriculum-docs/cambridge/syllabi/as
+/curriculum-docs/cambridge/syllabi/a2
+/curriculum-docs/cambridge/examiner-reports/igcse
+/curriculum-docs/cambridge/examiner-reports/as
+/curriculum-docs/cambridge/examiner-reports/a2
+
+Keep it simple and scalable.
+
+Important:
+Do NOT store these in public client folders.
+
+2. SUPPORT BULK UPLOAD / BULK INGESTION
+
+I want to be able to upload many files into Replit manually by placing them into these folders, then run one script/command that scans and ingests all of them.
+
+Create a script such as:
+
+/scripts/ingestCurriculumDocs.ts
+
+It should:
+- recursively scan the curriculum-docs folder
+- find all PDF files
+- classify them as syllabus or examiner report based on path and/or metadata
+- extract useful metadata from file path and/or filename where possible
+- process all files in one run
+- log progress clearly
+- skip duplicates safely if already ingested
+- fail gracefully per file instead of crashing the whole batch
+
+3. ADD METADATA MODEL FOR BOTH DOCUMENT TYPES
+
+Extend the existing storage/document model if needed so the app can distinguish between:
+- syllabus
+- examiner_report
+
+For each ingested document, store metadata such as:
+- board (e.g. Cambridge)
+- level (e.g. IGCSE / AS / A2)
+- subject if inferable
+- syllabusCode if inferable
+- documentType (syllabus or examiner_report)
+- filename
+- original path
+- upload/ingest timestamp
+- extracted text
+- chunks
+
+If a schema change is needed, make it additive and backward-compatible.
+
+4. CHUNK BOTH DOCUMENT TYPES FOR RETRIEVAL
+
+When a PDF is successfully parsed:
+- extract text
+- chunk it
+- store chunks for later retrieval
+
+Keep chunking strategy clean and reusable.
+Do not OCR in this task unless it is already safely supported.
+If a PDF is image-only and cannot be parsed as text, log it clearly and move on.
+
+5. MAKE INGESTION IDEMPOTENT
+
+If I run the ingestion script twice, it should not create messy duplicates.
+
+Use a safe duplicate strategy, for example based on:
+- filename + path
+- hash of file contents
+- or another stable method
+
+6. ADD A BULK-INGEST COMMAND
+
+Add a package.json script such as:
+- curriculum:ingest
+
+This should run the bulk ingestion script.
+
+7. DOCUMENT HOW TO USE IT
+
+Add a README or docs file explaining:
+- where to place syllabus PDFs
+- where to place examiner report PDFs
+- naming guidance
+- how to run the ingestion command
+- what metadata is inferred
+- what happens with unreadable PDFs
+- how duplicates are handled
+
+8. KEEP RETRIEVAL FUTURE-READY
+
+This system is being built so the copilot can later use:
+- syllabus documents for curriculum grounding
+- examiner reports for common mistakes, examiner insights, and exam-style question design
+
+So the ingestion design should support future retrieval cleanly.
+
+==================================================
+IMPORTANT DESIGN REQUIREMENTS
+==================================================
+
+- Do not make this a one-file manual upload flow only
+- I want bulk ingestion from folders
+- Keep current single-upload routes working if they already exist
+- This new bulk path should complement the existing upload UI, not break it
+- Make schema changes additive
+- Keep implementation conservative and stable
+
+==================================================
+EXAMINER REPORT HANDLING
+==================================================
+
+Examiner reports are not the same as syllabi.
+
+They should be ingested as a separate document type.
+
+The app should be able to distinguish them later so that:
+- syllabus is used for what students must know
+- examiner reports are used for common errors, misunderstandings, and exam style
+
+Do not merge them into one undifferentiated pool.
+
+==================================================
+NAMING GUIDANCE
+==================================================
+
+Document suggested naming conventions such as:
+- 0580_igcse_mathematics_syllabus.pdf
+- 9709_as_mathematics_syllabus.pdf
+- 9709_a2_mathematics_syllabus.pdf
+- 9709_as_mathematics_examiner_report_mj_2025.pdf
+
+But do not over-enforce rigid naming if it would make the system fragile.
+
+==================================================
+QUALITY BAR
+==================================================
+
+The final system should let me do this:
+
+1. upload many PDFs into the curriculum-docs folder structure
+2. run one command
+3. have all valid documents discovered, classified, parsed, chunked, and stored
+4. get a clean summary of what succeeded, failed, or was skipped
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+When finished, return:
+1. folders created
+2. files created or changed
+3. schema/storage changes made
+4. how syllabus vs examiner report is distinguished
+5. package.json command added
+6. how I should place my files
+7. what happens when I run the ingestion command
+8. how duplicates are handled
+9. any limitations
+
+Important:
+Do not over-engineer.
+Do not break the app.
+Build a clean bulk-ingestion foundation for curriculum documents.
