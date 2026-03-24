@@ -1,14 +1,17 @@
 import React from "react";
 import type { GraphQuestionSpec } from "@shared/schema";
 
-const WIDTH  = 640;
-const HEIGHT = 380;
-const M = { top: 36, right: 56, bottom: 36, left: 52 };
+// ── Layout constants ──────────────────────────────────────────────────────────
+const WIDTH  = 620;
+const HEIGHT = 340;
+const M = { top: 32, right: 48, bottom: 32, left: 50 };
 
 const plotLeft   = M.left;
 const plotRight  = WIDTH  - M.right;
 const plotTop    = M.top;
 const plotBottom = HEIGHT - M.bottom;
+const plotW      = plotRight - plotLeft;   // 522
+const plotH      = plotBottom - plotTop;   // 276
 
 const CURVE_COLORS = [
   "#38bdf8", // sky blue
@@ -19,24 +22,36 @@ const CURVE_COLORS = [
   "#facc15", // yellow
 ];
 
+// ── Nice tick interval ────────────────────────────────────────────────────────
+// Overrides the AI-supplied tickInterval so there are always 4-10 readable ticks.
+function niceInterval(span: number): number {
+  if (span <= 0) return 1;
+  const rough = span / 8; // aim for ~8 ticks
+  const mag   = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm  = rough / mag;
+  // round to 1, 2, 2.5, 5, 10
+  const nice  = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 3 ? 2.5 : norm <= 7.5 ? 5 : 10;
+  return parseFloat((nice * mag).toPrecision(6));
+}
+
+// ── Equation evaluator ────────────────────────────────────────────────────────
 function evaluateEquation(equation: string, x: number): number | null {
   const expr = equation
     .replace(/^y\s*=\s*/i, "")
     .replace(/\^/g, "**")
     .replace(/([0-9])\s*x/g, "$1*x")
-    .replace(/([0-9])\s*\(/g, "$1*(")
-    .replace(/Math\./g, "Math.");
+    .replace(/([0-9])\s*\(/g, "$1*(");
   try {
     // eslint-disable-next-line no-new-func
     const fn = new Function("x", `"use strict"; return (${expr});`) as (x: number) => number;
-    const v = fn(x);
+    const v  = fn(x);
     return Number.isFinite(v) ? v : null;
   } catch {
     return null;
   }
 }
 
-/** Build an SVG path string for an equation, breaking on discontinuities. */
+// ── SVG path for a curve, with pen-lift on discontinuities ───────────────────
 function buildCurvePath(
   equation: string,
   xMin: number, xMax: number,
@@ -47,7 +62,7 @@ function buildCurvePath(
 ): string {
   const ySpan = yMax - yMin;
   const parts: string[] = [];
-  let penDown = false;
+  let penDown  = false;
   let prevY: number | null = null;
 
   for (let i = 0; i <= numSamples; i++) {
@@ -56,75 +71,94 @@ function buildCurvePath(
 
     if (y === null) { penDown = false; prevY = null; continue; }
 
-    // Discontinuity: vertical jump larger than 4× visible range → lift pen
     if (prevY !== null && Math.abs(y - prevY) > ySpan * 4) {
-      penDown = false;
+      penDown = false; // lift pen on asymptote-like jump
     }
 
-    const sx = xToSvg(x).toFixed(2);
-    const sy = yToSvg(y).toFixed(2);
-
-    parts.push(penDown ? `L ${sx} ${sy}` : `M ${sx} ${sy}`);
+    parts.push(penDown
+      ? `L ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`
+      : `M ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`);
     penDown = true;
-    prevY = y;
+    prevY   = y;
   }
-
   return parts.join(" ");
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
-  const [xMin, xMax] = spec.xRange;
-  const [yMin, yMax] = spec.yRange;
-  const tick = spec.tickInterval ?? 1;
+  const [rawXMin, rawXMax] = spec.xRange;
+  const [rawYMin, rawYMax] = spec.yRange;
   const axisLabels = spec.axisLabels ?? { x: "x", y: "y" };
 
+  // ── Auto-correct extreme aspect ratio (cap x:y pixel ratio at 2:1) ──────────
+  const xSpanNat = rawXMax - rawXMin;
+  const ySpanNat = rawYMax - rawYMin;
+  const xPPU = plotW / xSpanNat;  // x pixels-per-unit
+  const yPPU = plotH / ySpanNat;  // y pixels-per-unit
+  const pxRatio = xPPU / yPPU;    // > 1 → x zoomed in more than y
+
+  let xMin = rawXMin, xMax = rawXMax, yMin = rawYMin, yMax = rawYMax;
+  if (pxRatio > 2) {
+    // x axis is too "zoomed in" — expand the y range so units balance
+    const newYSpan = (plotH / plotW) * xSpanNat * 2;
+    const cy = (rawYMin + rawYMax) / 2;
+    yMin = cy - newYSpan / 2;
+    yMax = cy + newYSpan / 2;
+  } else if (pxRatio < 0.5) {
+    // y axis is too "zoomed in" — expand the x range
+    const newXSpan = (plotW / plotH) * ySpanNat * 2;
+    const cx = (rawXMin + rawXMax) / 2;
+    xMin = cx - newXSpan / 2;
+    xMax = cx + newXSpan / 2;
+  }
+
+  // ── Coordinate transforms ──────────────────────────────────────────────────
   const xToSvg = (x: number) =>
-    plotLeft + ((x - xMin) / (xMax - xMin)) * (plotRight - plotLeft);
+    plotLeft  + ((x - xMin) / (xMax - xMin)) * plotW;
   const yToSvg = (y: number) =>
-    plotBottom - ((y - yMin) / (yMax - yMin)) * (plotBottom - plotTop);
+    plotBottom - ((y - yMin) / (yMax - yMin)) * plotH;
 
-  // Axes clamped to plot area (handle ranges that don't include 0)
-  const xAxisY = Math.max(plotTop, Math.min(plotBottom, yToSvg(0)));
-  const yAxisX = Math.max(plotLeft, Math.min(plotRight, xToSvg(0)));
+  // ── Axes (clamped inside plot area when 0 is off-range) ────────────────────
+  const xAxisY = Math.max(plotTop,  Math.min(plotBottom, yToSvg(0)));
+  const yAxisX = Math.max(plotLeft, Math.min(plotRight,  xToSvg(0)));
 
-  const xTicks = Array.from(
-    { length: Math.floor((xMax - xMin) / tick) + 1 },
-    (_, i) => parseFloat((xMin + i * tick).toPrecision(10)),
-  );
-  const yTicks = Array.from(
-    { length: Math.floor((yMax - yMin) / tick) + 1 },
-    (_, i) => parseFloat((yMin + i * tick).toPrecision(10)),
-  );
+  // ── Smart tick interval ────────────────────────────────────────────────────
+  const tick = niceInterval(Math.max(xMax - xMin, yMax - yMin));
 
-  // Resolve all curves (single equation → treat as curves[0])
+  const xTicks = (() => {
+    const start = Math.ceil(xMin / tick) * tick;
+    const out: number[] = [];
+    for (let v = start; v <= xMax + 1e-9; v = parseFloat((v + tick).toPrecision(10))) {
+      out.push(parseFloat(v.toPrecision(10)));
+    }
+    return out;
+  })();
+
+  const yTicks = (() => {
+    const start = Math.ceil(yMin / tick) * tick;
+    const out: number[] = [];
+    for (let v = start; v <= yMax + 1e-9; v = parseFloat((v + tick).toPrecision(10))) {
+      out.push(parseFloat(v.toPrecision(10)));
+    }
+    return out;
+  })();
+
+  // ── Resolve curves ─────────────────────────────────────────────────────────
   const allCurves: { equation: string; label?: string; color: string }[] = [];
   if (spec.curves && spec.curves.length > 0) {
-    spec.curves.forEach((c, i) => {
-      allCurves.push({
-        equation: c.equation,
-        label: c.label,
-        color: c.color ?? CURVE_COLORS[i % CURVE_COLORS.length],
-      });
-    });
+    spec.curves.forEach((c, i) => allCurves.push({
+      equation: c.equation,
+      label:    c.label,
+      color:    c.color ?? CURVE_COLORS[i % CURVE_COLORS.length],
+    }));
   } else if (spec.equation) {
     allCurves.push({ equation: spec.equation, color: CURVE_COLORS[0] });
   }
 
-  const showLegend = allCurves.length > 1 && allCurves.some((c) => c.label);
-
-  const plotPoints = [...(spec.points || []), ...(spec.highlightedPoints || [])];
-
-  const clipId = "plot-clip";
-
-  // Legend sizing
-  const legendPad = 8;
-  const legendLineW = 18;
+  const showLegend    = allCurves.length > 1 && allCurves.some((c) => c.label);
   const legendEntries = showLegend ? allCurves.filter((c) => c.label) : [];
-  const legendRowH = 18;
-  const legendH = legendEntries.length * legendRowH + legendPad * 2;
-  const legendW = Math.min(180, Math.max(...legendEntries.map((c) => (c.label?.length ?? 0) * 7 + legendLineW + 16)));
-  const legendX = plotRight - legendW - 4;
-  const legendY = plotTop + 4;
+  const plotPoints    = [...(spec.points || []), ...(spec.highlightedPoints || [])];
+  const tickSize      = 4; // half-length of tick marks in px
 
   return (
     <div
@@ -133,124 +167,151 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
     >
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full h-[260px] md:h-[380px]"
+        className="w-full h-[230px] md:h-[340px]"
         role="img"
         aria-label="Cartesian graph"
       >
         <defs>
-          {/* Clip path — all curves/points are clipped strictly to the plot area */}
-          <clipPath id={clipId}>
-            <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} />
+          {/* Clip to plot area — curves & points cannot bleed outside */}
+          <clipPath id="plot-clip">
+            <rect
+              x={plotLeft} y={plotTop}
+              width={plotRight - plotLeft}
+              height={plotBottom - plotTop}
+            />
           </clipPath>
-          {/* Arrowhead markers */}
-          <marker id="arrow-x" markerWidth="7" markerHeight="7" refX="6" refY="2" orient="0">
-            <path d="M0,0 L0,4 L7,2 z" fill="rgba(226,232,240,0.55)" />
-          </marker>
-          <marker id="arrow-y" markerWidth="7" markerHeight="7" refX="2" refY="0" orient="-90">
-            <path d="M0,4 L4,4 L2,0 z" fill="rgba(226,232,240,0.55)" />
+
+          {/*
+            Single arrowhead used for BOTH axes.
+            orient="auto" rotates the marker to match each line's direction:
+              • X axis (→): 0°  — arrow points right  ✓
+              • Y axis (↑, y2 < y1 in SVG): −90°  — arrow points up  ✓
+            The tip of the triangle is at (8, 4); refX/refY place that tip
+            exactly at the line endpoint so there's no gap or overshoot.
+          */}
+          <marker
+            id="arrowhead"
+            markerWidth="8" markerHeight="8"
+            refX="8" refY="4"
+            orient="auto"
+          >
+            <path d="M0,1 L8,4 L0,7 z" fill="rgba(226,232,240,0.60)" />
           </marker>
         </defs>
 
-        {/* ── Grid lines (clipped) ─────────────────────────────────────── */}
-        <g clipPath={`url(#${clipId})`}>
-          {spec.showGrid &&
-            xTicks.map((x) => (
-              <line
-                key={`vg-${x}`}
-                x1={xToSvg(x)} x2={xToSvg(x)}
-                y1={plotTop} y2={plotBottom}
-                stroke="rgba(148,163,184,0.11)" strokeWidth="1"
-              />
-            ))}
-          {spec.showGrid &&
-            yTicks.map((y) => (
-              <line
-                key={`hg-${y}`}
-                x1={plotLeft} x2={plotRight}
-                y1={yToSvg(y)} y2={yToSvg(y)}
-                stroke="rgba(148,163,184,0.11)" strokeWidth="1"
-              />
-            ))}
+        {/* ── Grid lines ────────────────────────────────────────────────── */}
+        <g clipPath="url(#plot-clip)">
+          {spec.showGrid && xTicks.map((x) => (
+            <line
+              key={`vg-${x}`}
+              x1={xToSvg(x)} x2={xToSvg(x)}
+              y1={plotTop}   y2={plotBottom}
+              stroke="rgba(148,163,184,0.10)" strokeWidth="1"
+            />
+          ))}
+          {spec.showGrid && yTicks.map((y) => (
+            <line
+              key={`hg-${y}`}
+              x1={plotLeft} x2={plotRight}
+              y1={yToSvg(y)} y2={yToSvg(y)}
+              stroke="rgba(148,163,184,0.10)" strokeWidth="1"
+            />
+          ))}
         </g>
 
-        {/* ── Axes ────────────────────────────────────────────────────── */}
-        {/* X axis with arrowhead at right end */}
+        {/* ── Axes with arrowheads ──────────────────────────────────────── */}
+        {/* X axis → */}
         <line
-          x1={plotLeft} x2={plotRight + 2}
-          y1={xAxisY} y2={xAxisY}
+          x1={plotLeft} x2={plotRight + 4}
+          y1={xAxisY}   y2={xAxisY}
           stroke="rgba(226,232,240,0.55)" strokeWidth="1.5"
-          markerEnd="url(#arrow-x)"
+          markerEnd="url(#arrowhead)"
         />
-        {/* Y axis with arrowhead at top */}
+        {/* Y axis ↑ (line drawn bottom→top so marker points up) */}
         <line
           x1={yAxisX} x2={yAxisX}
-          y1={plotBottom} y2={plotTop - 2}
+          y1={plotBottom} y2={plotTop - 4}
           stroke="rgba(226,232,240,0.55)" strokeWidth="1.5"
-          markerEnd="url(#arrow-y)"
+          markerEnd="url(#arrowhead)"
         />
 
-        {/* ── X tick labels (skip 0 where axes cross) ─────────────────── */}
+        {/* ── Tick marks on axes ────────────────────────────────────────── */}
         {xTicks.map((x) => {
-          const skip = x === 0 && yMin < 0 && yMax > 0;
-          return !skip ? (
+          const sx = xToSvg(x);
+          if (sx < plotLeft - 1 || sx > plotRight + 1) return null;
+          return (
+            <line
+              key={`xtick-${x}`}
+              x1={sx} x2={sx}
+              y1={xAxisY - tickSize} y2={xAxisY + tickSize}
+              stroke="rgba(148,163,184,0.55)" strokeWidth="1"
+            />
+          );
+        })}
+        {yTicks.map((y) => {
+          const sy = yToSvg(y);
+          if (sy < plotTop - 1 || sy > plotBottom + 1) return null;
+          return (
+            <line
+              key={`ytick-${y}`}
+              x1={yAxisX - tickSize} x2={yAxisX + tickSize}
+              y1={sy} y2={sy}
+              stroke="rgba(148,163,184,0.55)" strokeWidth="1"
+            />
+          );
+        })}
+
+        {/* ── Tick labels ───────────────────────────────────────────────── */}
+        {xTicks.map((x) => {
+          const sx = xToSvg(x);
+          if (sx < plotLeft - 1 || sx > plotRight + 1) return null;
+          // Skip "0" where axes cross to avoid cluttered origin
+          const skipZero = x === 0 && yMin < 0 && yMax > 0;
+          return !skipZero ? (
             <text
-              key={`xt-${x}`}
-              x={xToSvg(x)}
-              y={xAxisY + 16}
-              textAnchor="middle"
-              fill="#94a3b8"
-              fontSize="11"
+              key={`xl-${x}`}
+              x={sx} y={xAxisY + 15}
+              textAnchor="middle" fill="#94a3b8" fontSize="11"
             >
               {x}
             </text>
           ) : null;
         })}
-
-        {/* ── Y tick labels (skip 0 where axes cross) ─────────────────── */}
         {yTicks.map((y) => {
-          const skip = y === 0 && xMin < 0 && xMax > 0;
-          return !skip ? (
+          const sy = yToSvg(y);
+          if (sy < plotTop - 1 || sy > plotBottom + 1) return null;
+          const skipZero = y === 0 && xMin < 0 && xMax > 0;
+          return !skipZero ? (
             <text
-              key={`yt-${y}`}
-              x={yAxisX - 7}
-              y={yToSvg(y) + 4}
-              textAnchor="end"
-              fill="#94a3b8"
-              fontSize="11"
+              key={`yl-${y}`}
+              x={yAxisX - 8} y={sy + 4}
+              textAnchor="end" fill="#94a3b8" fontSize="11"
             >
               {y}
             </text>
           ) : null;
         })}
 
-        {/* ── Axis labels — right next to axes (Cartesian style) ──────── */}
-        {/* X label: right next to the right end of the x-axis */}
+        {/* ── Axis labels — right next to each axis end ─────────────────── */}
+        {/* X label: to the right of the arrowhead */}
         <text
-          x={plotRight + 10}
-          y={xAxisY + 5}
-          textAnchor="start"
-          fill="#cbd5e1"
-          fontSize="13"
-          fontWeight="600"
-          fontStyle="italic"
+          x={plotRight + 10} y={xAxisY + 4}
+          textAnchor="start" fill="#cbd5e1"
+          fontSize="13" fontWeight="600" fontStyle="italic"
         >
           {axisLabels.x}
         </text>
-        {/* Y label: right next to the top of the y-axis */}
+        {/* Y label: just above the arrowhead */}
         <text
-          x={yAxisX + 6}
-          y={plotTop - 8}
-          textAnchor="start"
-          fill="#cbd5e1"
-          fontSize="13"
-          fontWeight="600"
-          fontStyle="italic"
+          x={yAxisX + 5} y={plotTop - 8}
+          textAnchor="start" fill="#cbd5e1"
+          fontSize="13" fontWeight="600" fontStyle="italic"
         >
           {axisLabels.y}
         </text>
 
-        {/* ── Plotted curves (strictly clipped to plot area) ───────────── */}
-        <g clipPath={`url(#${clipId})`}>
+        {/* ── Curves (clipped strictly to plot area) ────────────────────── */}
+        <g clipPath="url(#plot-clip)">
           {allCurves.map((c, i) => {
             const d = buildCurvePath(c.equation, xMin, xMax, yMin, yMax, xToSvg, yToSvg);
             return d ? (
@@ -266,61 +327,40 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             ) : null;
           })}
 
-          {/* Discrete plotted points */}
+          {/* Scatter / highlighted points */}
           {plotPoints.map((p, i) => (
             <g key={`pt-${p.x}-${p.y}-${i}`}>
-              <circle cx={xToSvg(p.x)} cy={yToSvg(p.y)} r="4" fill="#a78bfa" stroke="#1e1b4b" strokeWidth="1" />
-              {p.label ? (
+              <circle
+                cx={xToSvg(p.x)} cy={yToSvg(p.y)} r="4"
+                fill="#a78bfa" stroke="#1e1b4b" strokeWidth="1"
+              />
+              {p.label && (
                 <text
-                  x={xToSvg(p.x) + 8}
-                  y={yToSvg(p.y) - 7}
-                  fill="#e2e8f0"
-                  fontSize="12"
+                  x={xToSvg(p.x) + 8} y={yToSvg(p.y) - 6}
+                  fill="#e2e8f0" fontSize="11"
                 >
                   {p.label}
                 </text>
-              ) : null}
+              )}
             </g>
           ))}
         </g>
-
-        {/* ── Legend (when multiple labelled curves) ───────────────────── */}
-        {showLegend && legendEntries.length > 0 && (
-          <g>
-            <rect
-              x={legendX}
-              y={legendY}
-              width={legendW}
-              height={legendH}
-              rx="6"
-              fill="rgba(15,23,42,0.82)"
-              stroke="rgba(148,163,184,0.18)"
-              strokeWidth="1"
-            />
-            {legendEntries.map((c, i) => (
-              <g key={`legend-${i}`}>
-                <line
-                  x1={legendX + legendPad}
-                  x2={legendX + legendPad + legendLineW}
-                  y1={legendY + legendPad + i * legendRowH + legendRowH / 2}
-                  y2={legendY + legendPad + i * legendRowH + legendRowH / 2}
-                  stroke={c.color}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <text
-                  x={legendX + legendPad + legendLineW + 5}
-                  y={legendY + legendPad + i * legendRowH + legendRowH / 2 + 4}
-                  fill="#e2e8f0"
-                  fontSize="11"
-                >
-                  {c.label}
-                </text>
-              </g>
-            ))}
-          </g>
-        )}
       </svg>
+
+      {/* ── Legend — rendered as HTML below the plot ──────────────────────── */}
+      {showLegend && legendEntries.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 mt-2 pt-2 border-t border-white/5">
+          {legendEntries.map((c, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span
+                className="inline-block rounded-full flex-shrink-0"
+                style={{ width: 20, height: 2, background: c.color }}
+              />
+              <span className="text-xs text-slate-300 whitespace-nowrap">{c.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
