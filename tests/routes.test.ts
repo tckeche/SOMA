@@ -1715,6 +1715,167 @@ describe("Graph question control via includeGraphQuestions flag", () => {
     const drafts = res.body.drafts as any[];
     expect(drafts.every((d: any) => d.question_type !== "graph")).toBe(true);
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Graph verification: honest reply based on actual draft state
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it("graph verification: reply includes verified position when graph question is valid", async () => {
+    // AI returns 1 valid graph question via REPLACE_ALL
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "I added a graph question.",
+        action: "REPLACE_ALL",
+        questions: [graphQuestion],
+        positions: [],
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Give me a graph question about Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    // Reply must mention verified state with position 1
+    expect(res.body.reply).toMatch(/[Vv]erified/);
+    expect(res.body.reply).toMatch(/position/i);
+    expect(res.body.reply).toContain("1");
+    // The returned questions must include the graph question
+    expect(res.body.questions.some((q: any) => q.questionType === "graph")).toBe(true);
+  });
+
+  it("graph verification: malformed graph_spec is rejected and reply warns honestly", async () => {
+    // AI returns a graph question with an INVALID graph_spec (missing xRange/yRange/equation)
+    const brokenGraphQuestion = {
+      ...graphQuestion,
+      question_type: "graph",
+      graph_spec: { plotType: "line" }, // missing xRange, yRange, and equation — INVALID
+    };
+    vi.mocked(generateWithFallback)
+      .mockResolvedValueOnce({
+        data: JSON.stringify({
+          reply: "I replaced questions with graphs.",
+          action: "REPLACE_ALL",
+          questions: [brokenGraphQuestion],
+          positions: [],
+        }),
+        metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+      })
+      // Retry call (graph shortfall detected): also fails
+      .mockResolvedValueOnce({
+        data: JSON.stringify({ questions: [] }),
+        metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+      });
+
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Replace with graph questions about Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    // Reply must warn that graph validation failed — NOT claim success
+    expect(res.body.reply).toMatch(/graph validation failed|could not produce|warning/i);
+    // The downgraded question must not appear as a valid graph question
+    const graphsInResponse = (res.body.questions ?? []).filter((q: any) => q.questionType === "graph");
+    expect(graphsInResponse).toHaveLength(0);
+  });
+
+  it("graph verification: retry rescues a failed graph question and shows correct position", async () => {
+    // AI returns 2 questions: 1 broken graph + 1 valid MCQ
+    const brokenGraph = {
+      ...graphQuestion,
+      question_type: "graph",
+      graph_spec: { plotType: "line" }, // invalid — missing xRange/yRange/equation
+    };
+    // Retry returns 1 valid graph question
+    const retryGraph = {
+      ...graphQuestion,
+      prompt_text: "What is the x-intercept of the graph?",
+      question_type: "graph",
+      graph_spec: {
+        plotType: "line",
+        equation: "2*x + 1",
+        xRange: [-5, 5],
+        yRange: [-10, 10],
+        axisLabels: { x: "x", y: "y" },
+        showGrid: true,
+        tickInterval: 1,
+      },
+    };
+
+    vi.mocked(generateWithFallback)
+      // First call: broken graph + valid MCQ
+      .mockResolvedValueOnce({
+        data: JSON.stringify({
+          reply: "Here are 2 questions including a graph.",
+          action: "REPLACE_ALL",
+          questions: [brokenGraph, mcqQuestion],
+          positions: [],
+        }),
+        metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+      })
+      // Retry call: returns 1 valid graph question to replace the broken one
+      .mockResolvedValueOnce({
+        data: JSON.stringify({ questions: [retryGraph] }),
+        metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+      });
+
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Give me graph questions on Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    // After retry, draft should contain 1 valid graph question
+    const graphsInResponse = (res.body.questions ?? []).filter((q: any) => q.questionType === "graph" && q.graphSpec != null);
+    expect(graphsInResponse.length).toBeGreaterThanOrEqual(1);
+    // Reply should confirm graph position
+    expect(res.body.reply).toMatch(/[Vv]erified/);
+  });
+
+  it("graph verification: REPLACE_ALL with 2 graph questions shows positions 1 and 2 in reply", async () => {
+    // AI returns REPLACE_ALL with 2 graph questions (positions are implicit: 1 and 2)
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "I replaced all questions with 2 graph questions.",
+        action: "REPLACE_ALL",
+        questions: [graphQuestion, graphQuestion],
+        positions: [],
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        message: "Replace all questions with graph questions about Subject: Mathematics",
+        includeGraphQuestions: true,
+      });
+    expect(res.status).toBe(200);
+    // Reply must confirm positions 1 and 2
+    expect(res.body.reply).toMatch(/[Vv]erified/);
+    expect(res.body.reply).toContain("1");
+    expect(res.body.reply).toContain("2");
+    // Returned questions: 2 graph questions
+    const graphsInResponse = (res.body.questions ?? []).filter((q: any) => q.questionType === "graph");
+    expect(graphsInResponse).toHaveLength(2);
+  });
+
+  it("graph verification: non-graph message does not add verified-positions block", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Here are 2 MCQ questions.",
+        action: "REPLACE_ALL",
+        questions: [mcqQuestion, mcqQuestion],
+        positions: [],
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate 2 algebra questions about Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    // No graph request → no "Verified:" position block
+    expect(res.body.reply).not.toMatch(/[Vv]erified:.*position/);
+    // All returned questions are MCQ
+    const qs = res.body.questions ?? res.body.drafts ?? [];
+    expect(qs.every((q: any) => (q.questionType ?? q.question_type) !== "graph")).toBe(true);
+  });
 });
 
 // ─── AUTOSAVE: Quiz creation persists on new assessment ───────────────────────

@@ -1,0 +1,217 @@
+You are fixing a specific reliability defect in my maths quiz / assessment app.
+
+This is a targeted bug-fix and draft-editing enforcement task.
+Do NOT do a broad refactor.
+Do NOT break unrelated features.
+Do NOT change core architecture unless necessary for this fix.
+
+PRIMARY PROBLEM
+
+The tutor can ask for graph replacements, and the assistant replies as if the replacement happened, but the actual draft still contains no real graph questions.
+
+This must be fixed properly.
+
+Example failure:
+1. Tutor generates 5 questions on linear graphical equations
+2. Tutor says: "I want three of them to actually have graphs, so replace three with questions with graphs"
+3. Assistant replies as if it replaced 3 questions
+4. But the resulting draft does not actually contain 3 valid graph questions, and preview shows no plotted graphs
+
+The graph checkbox may already be ticked, so the issue is NOT just graph permission.
+The issue is that the app is not truly enforcing and verifying graph replacements against the draft state.
+
+==================================================
+GOAL
+==================================================
+
+Make graph-related edit requests actually work.
+
+If the tutor asks for:
+- 3 graph questions
+- all questions to be graph questions
+- replacement of existing questions with graph questions
+
+then the draft state must truly reflect that request before the assistant claims success.
+
+==================================================
+ROOT CAUSES TO ADDRESS
+==================================================
+
+1. The app is narrating edits without strongly enforcing them.
+2. Graph requests are treated too softly instead of as hard postconditions.
+3. Graph schema validation exists but is not enforced strictly enough in the copilot/draft path.
+4. The backend is not sufficiently verifying final draft state before replying.
+
+==================================================
+REQUIRED FIXES
+==================================================
+
+A. MAKE GRAPH REPLACEMENT A REAL DRAFT MUTATION
+
+When the tutor requests graph replacements, implement it as a real draft action.
+
+At minimum support these structured operations in the active draft workflow:
+- REPLACE_QUESTIONS
+- UPDATE_QUESTION
+- DELETE_QUESTIONS
+
+For graph conversion/replacement, prefer REPLACE_QUESTIONS unless safe deterministic conversion is possible.
+
+Examples that must work:
+- "replace three with questions with graphs"
+- "make all questions graph questions"
+- "replace questions 2, 3 and 4 with graph questions"
+- "I want 3 of the 5 to have graphs"
+
+B. TREAT REQUESTED GRAPH COUNT AS A HARD REQUIREMENT
+
+If the tutor requests 3 graph questions:
+- final draft must contain exactly 3 valid graph questions
+
+If the tutor requests all questions to be graphs:
+- final draft must contain all questions as valid graph questions
+
+Do not let the assistant claim success unless the draft state proves it.
+
+C. STRICTLY VALIDATE GRAPH QUESTIONS
+
+A question only counts as a valid graph question if it has ALL of these:
+- question_type = "graph"
+- valid graph_spec
+- prompt_text or stem
+- exactly 4 options
+- correct_answer that matches one of the options
+- explanation
+
+Use and strengthen the existing graph schema validation.
+
+Also validate graph_spec content:
+- plotType
+- xRange
+- yRange
+- axisLabels
+- tickInterval
+- and at least one of:
+  - equation
+  - points
+
+If graph questions returned by the model are invalid or incomplete:
+- reject them
+- retry safely if appropriate
+- or return a clear failure state
+But do NOT silently accept broken graph questions.
+
+D. VERIFY RESULTING DRAFT STATE AFTER APPLYING ACTIONS
+
+After applying graph-related actions, compute and verify:
+- total draft question count
+- graph question count
+- which question positions or ids are graph questions
+- whether the requested graph replacement count was satisfied
+
+The reply shown to the tutor must be based on this verified state.
+
+Bad:
+- "I replaced 3 questions with graphs" without proof
+
+Good:
+- "The draft now has 5 questions total, with graph questions at positions 2, 3, and 4"
+
+If the target was not achieved, the assistant must not falsely claim success.
+
+E. USE CURRENT DRAFT STATE AS SOURCE OF TRUTH
+
+Before making copilot edit decisions, include structured current draft context:
+- draft question ids or positions
+- stems
+- question types
+- graph presence
+- marks
+- topic/subtopic/difficulty tags
+- total counts
+
+For graph requests also include:
+- current graph question count
+- required graph question count after edit
+- whether replacement or full conversion is needed
+
+F. DO NOT RELY ON MODEL WORDING ALONE
+
+The model may say it replaced questions.
+That is not enough.
+
+The app must:
+1. parse model output
+2. validate graph questions
+3. apply draft mutation
+4. verify final draft state
+5. only then produce a success reply
+
+G. PREVIEW MUST SHOW REAL GRAPHS
+
+After successful graph replacement:
+- preview must show actual graph questions
+- plotted graph must be visible, not only a graph container
+- saved draft state and preview state must match
+
+==================================================
+IMPLEMENTATION GUIDANCE
+==================================================
+
+Keep changes minimal and safe.
+
+Likely places to inspect and fix:
+- builder page draft/coplay request flow
+- copilot route
+- graph validation helpers
+- draft action application logic
+- preview question mapping
+- graph rendering path
+- final assistant reply generation
+
+Do not do a broad redesign beyond what is necessary to enforce correct draft mutations and verification.
+
+==================================================
+TEST CASES YOU MUST PASS
+==================================================
+
+1. Generate 5 normal questions
+2. Ask: "replace three with questions with graphs"
+Expected:
+- draft still has 5 total questions
+- exactly 3 are valid graph questions
+- preview visibly shows 3 plotted graph questions
+
+3. Generate 5 questions
+4. Ask: "make all questions graph questions"
+Expected:
+- all 5 become valid graph questions
+- preview visibly shows graphs for all 5
+
+5. Ask for graph questions when graph checkbox is on
+Expected:
+- explicit graph request is satisfied in real draft state
+
+6. If model returns malformed graph questions
+Expected:
+- system rejects or retries
+- no false success message
+
+7. Normal non-graph question generation still works unchanged
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+When finished, return:
+1. root cause of false graph replacement success
+2. files changed
+3. how graph replacement is now enforced
+4. how graph validation is now enforced
+5. how final draft state is now verified before replying
+6. tests added or updated
+7. manual verification performed
+
+Important:
+Fix the real state-management problem, not just the wording of the reply.
+Do not leave the app pretending it made graph edits when it did not.

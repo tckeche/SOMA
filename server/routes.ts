@@ -126,6 +126,81 @@ function setDraft(quizId: number, questions: DraftQuestion[]): void {
   draftStore.set(quizId, { questions, updatedAt: new Date() });
 }
 
+// ---------------------------------------------------------------------------
+// Server-side mirror of the client's applyDraftAction (kept in sync)
+// ---------------------------------------------------------------------------
+function applyDraftActionServer(
+  current: DraftQuestion[],
+  action: CopilotActionType,
+  questions: DraftQuestion[],
+  positions: number[],
+): DraftQuestion[] {
+  switch (action) {
+    case "ADD": return [...current, ...questions];
+    case "REPLACE_ALL": return [...questions];
+    case "REPLACE_SELECTED": {
+      const next = [...current];
+      positions.forEach((pos, i) => {
+        const idx = pos - 1;
+        if (idx >= 0 && idx < next.length && questions[i]) next[idx] = questions[i];
+      });
+      return next;
+    }
+    case "DELETE": {
+      const toRemove = new Set(positions.map((p) => p - 1));
+      return current.filter((_, i) => !toRemove.has(i));
+    }
+    case "REORDER": {
+      if (positions.length !== current.length) return current;
+      return positions.map((pos) => current[pos - 1]).filter(Boolean);
+    }
+    default: return current;
+  }
+}
+
+// Detect whether the user's message is requesting graph questions
+function isGraphRequestMessage(text: string): boolean {
+  return /\bgraph\b|\bplot\b|\bvisual(?:ise|ize|ised|ized)?\b|\bplotted?\b/i.test(text);
+}
+
+// The explicit graph spec system prompt used for targeted graph retries
+const GRAPH_RETRY_SYSTEM_PROMPT = `You are a math graph question generator. Your ONLY job is to return a JSON object with exactly the format below.
+
+Return ONLY this JSON structure, with no extra text:
+{
+  "questions": [
+    {
+      "prompt_text": "<question text>",
+      "options": ["<opt1>", "<opt2>", "<opt3>", "<opt4>"],
+      "correct_answer": "<one of the 4 options, copied exactly>",
+      "marks_worth": 2,
+      "explanation": "<non-empty explanation>",
+      "topic_tag": "<topic>",
+      "subtopic_tag": "<subtopic>",
+      "difficulty_tag": "medium",
+      "question_type": "graph",
+      "graph_spec": {
+        "plotType": "line",
+        "equation": "2*x + 1",
+        "xRange": [-5, 5],
+        "yRange": [-10, 10],
+        "axisLabels": {"x": "x", "y": "y"},
+        "showGrid": true,
+        "tickInterval": 1
+      }
+    }
+  ]
+}
+
+CRITICAL FORMAT RULES (breaking any of these means your output is INVALID):
+1. xRange and yRange MUST be JSON arrays like [-5, 5] — NEVER objects like {"min":-5, "max":5}
+2. You MUST include either "equation" (a math string) OR "points" (array of {x,y} pairs) — never omit both
+3. equation MUST use * for multiplication: write "2*x + 1" NOT "2x + 1", and "-x^2 + 3" NOT "-x² + 3"
+4. graph_spec is REQUIRED for every question — never omit it
+5. Every question MUST have exactly 4 distinct options
+6. correct_answer MUST be an exact copy of one of the 4 options
+7. question_type MUST be "graph"`;
+
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
   let opts = raw.options;
@@ -1477,13 +1552,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // ── Build draft context block ─────────────────────────────────────────
       let draftContextBlock = "";
       if (currentDraft.length > 0) {
+        const currentGraphCount = currentDraft.filter((q) => q.questionType === "graph" && q.graphSpec != null).length;
         const draftLines: string[] = ["=== CURRENT DRAFT QUESTIONS (do NOT regenerate these unless the user asks) ==="];
         currentDraft.forEach((q, i) => {
-          draftLines.push(`Q${i + 1} [${q.questionType}] ${q.stem.slice(0, 100)}${q.stem.length > 100 ? "…" : ""}`);
+          const graphFlag = q.questionType === "graph" && q.graphSpec != null ? " [HAS_GRAPH]" : "";
+          draftLines.push(`Q${i + 1} [${q.questionType}${graphFlag}] ${q.stem.slice(0, 100)}${q.stem.length > 100 ? "…" : ""}`);
           draftLines.push(`   Options: ${q.options.join(" | ")}`);
           draftLines.push(`   Correct: ${q.correctAnswer} | Marks: ${q.marks} | Difficulty: ${q.difficultyTag || "—"} | Topic: ${q.topicTag || "—"}`);
         });
-        draftLines.push(`Total draft questions: ${currentDraft.length}`);
+        draftLines.push(`Total draft questions: ${currentDraft.length} | Graph questions: ${currentGraphCount}`);
         draftLines.push("=================================================================");
         draftContextBlock = draftLines.join("\n");
       }
@@ -1544,10 +1621,34 @@ Each question MUST have:
 - topic_tag, subtopic_tag, difficulty_tag (easy/medium/hard)
 - question_type: "multiple_choice" or "graph"
 ${allowGraphs
-  ? `Graph questions are ALLOWED but use sparingly (at most 1-3 per assessment).
-A graph question is still a full MCQ — it must have all the fields above PLUS graph_spec.
-graph_spec: { plotType, equation (or points), xRange: [min,max], yRange: [min,max], axisLabels: {x, y}, showGrid, tickInterval }
-Set question_type to "graph" only when including a valid graph_spec.`
+  ? `Graph questions are ALLOWED. When graph questions are requested, you MUST produce them.
+A graph question is still a full MCQ — it must have all the fields above PLUS a valid graph_spec.
+
+GRAPH QUESTION FORMAT (copy this structure exactly):
+{
+  "question_type": "graph",
+  "prompt_text": "What is the y-intercept of the line shown?",
+  "options": ["1", "2", "3", "4"],
+  "correct_answer": "1",
+  "marks_worth": 2,
+  "explanation": "The line y = 2x + 1 has a y-intercept of 1.",
+  "graph_spec": {
+    "plotType": "line",
+    "equation": "2*x + 1",
+    "xRange": [-5, 5],
+    "yRange": [-10, 10],
+    "axisLabels": {"x": "x", "y": "y"},
+    "showGrid": true,
+    "tickInterval": 1
+  }
+}
+
+CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
+1. xRange and yRange MUST be JSON arrays [min, max] — NEVER objects like {"min":-5,"max":5}
+2. You MUST include "equation" (a math string) OR "points" (array of {x,y} objects) — never omit both
+3. equation uses * for multiplication: write "2*x + 1" NOT "2x+1", write "-x^2 + 3" NOT "-x² + 3"
+4. graph_spec is REQUIRED — do NOT omit it or leave it null/empty
+5. Set question_type to "graph" ONLY when you have included a valid graph_spec`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
 ## CRITICAL RULES:
@@ -1567,11 +1668,114 @@ Set question_type to "graph" only when including a valid graph_spec.`
 
       const structured = extractStructuredCopilotResponse(data);
 
-      // Normalise raw question objects into DraftQuestion shape
-      const normalisedQuestions: DraftQuestion[] = structured.questions
-        .map((q: any) => normaliseToDraftQuestion(q))
+      // ── Step 1: Normalise raw question objects into DraftQuestion shape,
+      //    tracking which attempted to be graph questions but failed validation
+      type NormResult = { normalised: DraftQuestion | null; attemptedGraph: boolean; isValidGraph: boolean };
+      const normResults: NormResult[] = structured.questions.map((q: any) => {
+        const normalised = normaliseToDraftQuestion(q);
+        const attemptedGraph = q.question_type === "graph" || (q.graph_spec && typeof q.graph_spec === "object");
+        const isValidGraph = normalised?.questionType === "graph" && normalised?.graphSpec != null;
+        return { normalised, attemptedGraph, isValidGraph };
+      });
+
+      let normalisedQuestions: DraftQuestion[] = normResults
+        .map((r) => r.normalised)
         .filter((q): q is DraftQuestion => q !== null)
         .filter((q) => allowGraphs || q.questionType !== "graph");
+
+      // ── Step 2: Graph shortfall detection + targeted retry
+      const requestedAsGraphCount = normResults.filter((r) => r.attemptedGraph).length;
+      const validGraphAfterNorm = normalisedQuestions.filter((q) => q.questionType === "graph").length;
+      const graphShortfall = requestedAsGraphCount - validGraphAfterNorm;
+      const graphRequest = isGraphRequestMessage(text);
+
+      if (allowGraphs && graphRequest && graphShortfall > 0) {
+        // Some graph questions failed repairGraphSpec — retry with an explicit spec prompt
+        const retryUserPrompt = `Generate exactly ${graphShortfall} graph question${graphShortfall !== 1 ? "s" : ""} on this topic: ${text}\n\nReturn a JSON object with key "questions" containing the graph questions.`;
+        try {
+          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt);
+          const retryStructured = extractStructuredCopilotResponse(retryData);
+          const retryGraphQuestions: DraftQuestion[] = retryStructured.questions
+            .map((q: any) => normaliseToDraftQuestion(q))
+            .filter((q): q is DraftQuestion => q !== null && q.questionType === "graph" && q.graphSpec != null);
+
+          if (retryGraphQuestions.length > 0) {
+            // Swap failed graph slots with valid retry results
+            let retryIdx = 0;
+            const merged: DraftQuestion[] = [];
+            for (const r of normResults) {
+              if (!r.normalised) continue;
+              if (r.attemptedGraph && !r.isValidGraph && retryIdx < retryGraphQuestions.length) {
+                merged.push(retryGraphQuestions[retryIdx++]);
+              } else {
+                merged.push(r.normalised);
+              }
+            }
+            // Append any remaining retry graph questions if there were fewer failed slots than retry results
+            while (retryIdx < retryGraphQuestions.length) {
+              merged.push(retryGraphQuestions[retryIdx++]);
+            }
+            normalisedQuestions = merged.filter((q) => allowGraphs || q.questionType !== "graph");
+          }
+        } catch {
+          // Retry failed — proceed with what we have
+        }
+      }
+
+      // ── Step 3: Simulate the final draft state on the server to compute
+      //    verified graph positions (what the client will actually see)
+      const simulatedDraft = applyDraftActionServer(
+        currentDraft,
+        structured.action,
+        normalisedQuestions,
+        structured.positions,
+      );
+      const graphPositionsInDraft = simulatedDraft
+        .map((q, i) => ({ pos: i + 1, isGraph: q.questionType === "graph" && q.graphSpec != null }))
+        .filter((x) => x.isGraph)
+        .map((x) => x.pos);
+      const finalGraphCount = graphPositionsInDraft.length;
+
+      // ── Step 4: Build an honest verified reply (based on actual draft state,
+      //    not the AI's claimed narrative)
+      const actionVerb = {
+        ADD: `Added ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
+        REPLACE_ALL: `Replaced all questions (${normalisedQuestions.length} new)`,
+        REPLACE_SELECTED: `Replaced ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
+        DELETE: `Removed ${structured.positions.length} question${structured.positions.length !== 1 ? "s" : ""}`,
+        REORDER: "Reordered questions",
+        NONE: "",
+      }[structured.action];
+
+      // How many valid graph questions are in the normalised result (after any retry)?
+      const validGraphAfterRetry = normalisedQuestions.filter((q) => q.questionType === "graph" && q.graphSpec != null).length;
+
+      // Verified graph state block — only shown when graphs are relevant
+      let graphVerificationBlock = "";
+      if (graphRequest || finalGraphCount > 0) {
+        if (finalGraphCount > 0) {
+          // Simulation found graph questions in the projected draft
+          const posLabel = graphPositionsInDraft.length === 1 ? "position" : "positions";
+          graphVerificationBlock =
+            `\n\n**Verified:** draft has ${simulatedDraft.length} total question${simulatedDraft.length !== 1 ? "s" : ""}, ` +
+            `graph question${finalGraphCount !== 1 ? "s" : ""} at ${posLabel} ${graphPositionsInDraft.join(", ")}.`;
+        } else if (validGraphAfterRetry > 0 && simulatedDraft.length > 0) {
+          // Normalization succeeded but simulation couldn't place them (e.g. REPLACE_SELECTED out of range)
+          const posLabel = validGraphAfterRetry === 1 ? "question" : "questions";
+          graphVerificationBlock =
+            `\n\n**Verified:** ${validGraphAfterRetry} graph ${posLabel} generated and ready to be applied to the draft.`;
+        } else if (graphRequest && requestedAsGraphCount > 0 && validGraphAfterRetry === 0) {
+          // Normalization completely failed — no valid graph questions at all
+          graphVerificationBlock =
+            `\n\n⚠️ **Graph validation failed:** the AI could not produce valid graph questions ` +
+            `(the graph specification was malformed or missing). The draft was not changed for graph positions. ` +
+            `Try again, or specify an equation explicitly (e.g. "y = 2x + 1").`;
+        }
+      }
+
+      const replySuffix = actionVerb
+        ? `\n\n**Draft action:** ${actionVerb}. Click "Save & Publish" when you're happy with the full set.`
+        : "";
 
       const summary = buildCopilotSummary({
         drafts: normalisedQuestions.map((q) => ({
@@ -1589,21 +1793,8 @@ Set question_type to "graph" only when including a valid graph_spec.`
         syllabusContextLabel,
       });
 
-      const actionVerb = {
-        ADD: `Added ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
-        REPLACE_ALL: `Replaced all questions (${normalisedQuestions.length} new)`,
-        REPLACE_SELECTED: `Replaced ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
-        DELETE: `Removed ${structured.positions.length} question${structured.positions.length !== 1 ? "s" : ""}`,
-        REORDER: "Reordered questions",
-        NONE: "",
-      }[structured.action];
-
-      const replySuffix = actionVerb
-        ? `\n\n**Draft action:** ${actionVerb}. Click "Save & Publish" when you're happy with the full set.`
-        : "";
-
       res.json({
-        reply: `${structured.reply}${replySuffix}`,
+        reply: `${structured.reply}${replySuffix}${graphVerificationBlock}`,
         action: structured.action,
         questions: normalisedQuestions,
         positions: structured.positions,
