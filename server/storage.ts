@@ -40,6 +40,8 @@ export interface IStorage {
   getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>>;
   deleteSomaQuestion(id: number): Promise<void>;
   deleteSomaQuestionsByQuizId(quizId: number): Promise<void>;
+  /** Atomically replace all questions for a quiz inside a DB transaction. */
+  publishSomaQuestionsTransactional(quizId: number, questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]>;
   getSomaReportsByStudentId(studentId: string): Promise<(SomaReport & { quiz: SomaQuiz })[]>;
   createSomaReport(report: InsertSomaReport): Promise<SomaReport>;
   updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null }>): Promise<SomaReport | undefined>;
@@ -210,6 +212,27 @@ class DatabaseStorage implements IStorage {
 
   async deleteSomaQuestionsByQuizId(quizId: number): Promise<void> {
     await this.database.delete(somaQuestions).where(eq(somaQuestions.quizId, quizId));
+  }
+
+  async publishSomaQuestionsTransactional(quizId: number, questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
+    return this.database.transaction(async (tx) => {
+      await tx.delete(somaQuestions).where(eq(somaQuestions.quizId, quizId));
+      if (questionList.length === 0) return [];
+      const normalized = questionList.map((q) => ({
+        quizId,
+        stem: q.stem,
+        options: Array.isArray(q.options) ? [...q.options] as string[] : [],
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        marks: q.marks ?? 1,
+        questionType: q.questionType ?? "multiple_choice",
+        graphSpec: (q.graphSpec ?? null) as any,
+        topicTag: q.topicTag ?? null,
+        subtopicTag: q.subtopicTag ?? null,
+        difficultyTag: q.difficultyTag ?? null,
+      }));
+      return tx.insert(somaQuestions).values(normalized).returning();
+    });
   }
 
   async upsertSomaUser(user: InsertSomaUser): Promise<SomaUser> {
@@ -644,6 +667,11 @@ class MemoryStorage implements IStorage {
     this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.quizId !== quizId);
   }
 
+  async publishSomaQuestionsTransactional(quizId: number, questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
+    this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.quizId !== quizId);
+    return this.createSomaQuestions(questionList);
+  }
+
   async upsertSomaUser(user: InsertSomaUser): Promise<SomaUser> {
     const idx = this.somaUsersList.findIndex((u) => u.id === user.id);
     const record: SomaUser = { createdAt: new Date(), displayName: null, role: "student", ...user };
@@ -832,7 +860,16 @@ class MemoryStorage implements IStorage {
 
 
   async createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }> {
-    const createdDocument: SyllabusDocument = { id: this.syllabusDocumentId++, uploadedAt: new Date(), tutorId: document.tutorId ?? null, ...document };
+    const createdDocument: SyllabusDocument = {
+      ...document,
+      id: this.syllabusDocumentId++,
+      uploadedAt: new Date(),
+      tutorId: document.tutorId ?? null,
+      documentType: document.documentType ?? "syllabus",
+      subject: document.subject ?? null,
+      originalPath: document.originalPath ?? null,
+      contentHash: document.contentHash ?? null,
+    };
     this.syllabusDocumentsList.push(createdDocument);
     const createdChunks: SyllabusChunk[] = chunks.map((chunk) => ({ id: this.syllabusChunkId++, documentId: createdDocument.id, ...chunk }));
     this.syllabusChunksList.push(...createdChunks);

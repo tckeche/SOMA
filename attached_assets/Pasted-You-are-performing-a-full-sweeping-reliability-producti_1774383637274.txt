@@ -1,0 +1,415 @@
+You are performing a full sweeping reliability, production-readiness, and fragility audit on my maths quiz / assessment app.
+
+This is NOT a feature task.
+This is a comprehensive stabilization, hardening, and verification task.
+
+I want you to check EVERYTHING.
+I mean the whole app:
+- frontend
+- backend
+- database usage
+- AI/copilot flows
+- auth
+- builder
+- quiz engine
+- reports
+- uploads
+- graph rendering
+- draft/question state
+- publish flow
+- tutor flows
+- student flows
+- production deployment behaviour
+- anything fragile that could break under real use
+
+PRIMARY OBJECTIVE
+
+1. Thoroughly inspect the entire app.
+2. Find all fragile or failure-prone areas.
+3. Identify what could break under:
+   - normal use
+   - repeated use
+   - edge cases
+   - concurrent use
+   - production deployment
+4. Fix what is broken.
+5. Harden what is fragile.
+6. Verify both:
+   - development environment
+   - production/published Replit site
+
+This is a full quality and resilience pass.
+
+IMPORTANT RULES
+
+- Do NOT do a broad stylistic refactor.
+- Do NOT rewrite the whole app.
+- Do NOT change working behaviour unless needed to fix a bug, fragility, or reliability risk.
+- Keep changes targeted, safe, and well-justified.
+- Prefer additive safeguards, validation, checks, fallbacks, and tests.
+- Do NOT stop at “it builds” or “tests pass”.
+- Actually verify runtime behaviour.
+
+==================================================
+FULL AUDIT SCOPE
+==================================================
+
+You must inspect and validate all of the following areas.
+
+A. AUTHENTICATION / SESSION / ACCESS CONTROL
+Check:
+- login flow
+- role-based access
+- tutor access
+- student access
+- session persistence
+- auth header usage
+- token validation
+- unauthorized access handling
+- production auth behaviour
+
+Look for:
+- silent failures
+- stale session issues
+- role leakage
+- routes that can fail unexpectedly
+- differences between dev and production
+
+B. TUTOR DASHBOARD / ASSESSMENT MANAGEMENT
+Check:
+- tutor dashboard loading
+- assessments list
+- create assessment
+- edit assessment
+- preview assessment
+- publish/save assessment
+- delete/archive flows
+- re-open saved assessments
+- state consistency after edits
+
+Look for:
+- stale UI state
+- incorrect counts
+- missing refresh
+- false success messages
+- broken data after reload
+
+C. COPILOT / AI GENERATION FLOW
+Check the full AI flow end to end:
+- message sent
+- backend route called
+- AI response returned
+- parsing/validation
+- draft action application
+- question state update
+- preview state
+- save/publish state
+
+Look for:
+- responses that sound correct but do not mutate state
+- parsing failures
+- validation dropping all drafts
+- empty question results
+- graph-related failures
+- race conditions
+- state drift between UI and backend
+
+D. QUESTION / DRAFT STATE INTEGRITY
+Check:
+- where questions live before publish
+- how changes are tracked
+- whether replacements actually replace
+- whether deletes actually delete
+- whether edits are reflected after reload
+- whether counts match real stored state
+
+Look for:
+- false claims of success
+- empty draft after successful response
+- duplicate questions
+- lost updates
+- save/publish inconsistency
+
+E. GRAPH QUESTIONS / GRAPH RENDERING
+Check thoroughly:
+- graph generation
+- graph validation
+- graph save/reload
+- graph preview
+- graph rendering in dev
+- graph rendering in production
+
+Specifically inspect:
+- axis labels
+- y-axis padding
+- tick label spacing
+- margins
+- clipping
+- plot rendering
+- zero-axis clamping
+- negative/positive ranges
+- graphSpec validation
+- graph question replacement flow
+
+Look for:
+- hard-coded brittle layout logic
+- malformed graph data
+- graphs not rendering even when claimed
+- production rendering regressions
+
+F. STUDENT QUIZ FLOW
+Check:
+- available quizzes
+- assigned quizzes
+- open quiz
+- answer questions
+- submit quiz
+- report generation
+- report review
+- timing / autosave if present
+- score calculation
+- max score calculation
+- result persistence
+
+Look for:
+- missing questions
+- incorrect marking
+- stale answers
+- submission failure
+- duplicate submission risk
+- score/report mismatch
+
+G. REPORTS / ANALYTICS
+Check:
+- tutor reports
+- student reports
+- dashboard stats
+- averages
+- max-score calculations
+- report rendering
+- AI feedback/report generation if present
+
+Look for:
+- wrong percentages
+- incorrect subject stats
+- missing data
+- slow or fragile queries
+- failures under larger data
+
+H. SYLLABUS / DOCUMENT UPLOADS
+Check:
+- syllabus upload
+- document upload
+- text extraction
+- selection
+- retrieval usage
+- error handling for bad PDFs
+- duplicate handling if any
+- production upload behaviour
+
+Look for:
+- broken file handling
+- parse failures
+- inconsistent metadata
+- empty extracted content
+- runtime crashes on unreadable files
+
+I. UI / UX RELIABILITY
+Check:
+- broken buttons
+- inconsistent sizes
+- dark mode consistency
+- hidden or clipped controls
+- mobile/responsive breakage if relevant
+- loading states
+- misleading success states
+- navigation consistency
+
+Look for:
+- brittle layout
+- inconsistent button sizing
+- stale previews
+- controls that do nothing
+- user confusion due to incorrect messages
+
+J. PERFORMANCE / FRAGILITY / HEAVY USE
+Identify areas that could break under heavier use, including:
+- repeated copilot requests
+- repeated assessment edits
+- large question sets
+- multiple uploads
+- rapid refresh/navigation
+- repeated preview open/close
+- repeated save/publish
+- repeated graph generation
+- larger tutor/student data volumes
+
+For each fragile area, identify:
+- what could break
+- why it could break
+- what safeguard should be added
+
+Examples of safeguards:
+- stronger validation
+- defensive null handling
+- idempotency checks
+- retry-safe logic
+- clearer failure responses
+- race-condition protection
+- duplicate protection
+- state reconciliation after mutations
+- safer production build/deploy checks
+
+K. PRODUCTION / PUBLISHED REPLIT SITE
+This is critical:
+I do NOT want only the development site checked.
+
+You must also check the published/production Replit site behaviour and ensure it is working properly.
+
+Verify:
+- latest code is actually deployed
+- build output is current
+- frontend assets are current
+- production routes behave correctly
+- production graph rendering matches source code
+- production AI flows work
+- production quiz creation works
+- production save/publish works
+- no dev-only assumptions are breaking production
+
+If there are deployment/cache/build issues, identify and fix them.
+
+==================================================
+HOW TO APPROACH THE WORK
+==================================================
+
+1. Inspect the current app structure and identify all major runtime flows.
+2. Add targeted debug instrumentation where needed.
+3. Reproduce real issues.
+4. Identify root causes.
+5. Apply the smallest safe fixes.
+6. Add safeguards to fragile areas.
+7. Run a full verification pass.
+8. Verify both development and production behaviour.
+
+==================================================
+DEBUGGING / INSTRUMENTATION
+==================================================
+
+Add targeted logs where needed using clear prefixes such as:
+- [AUTH_DEBUG]
+- [COPILOT_DEBUG]
+- [DRAFT_DEBUG]
+- [GRAPH_DEBUG]
+- [SAVE_DEBUG]
+- [PREVIEW_DEBUG]
+- [REPORT_DEBUG]
+- [UPLOAD_DEBUG]
+- [DEPLOY_DEBUG]
+
+Use these logs to identify real runtime breakpoints.
+Do not guess.
+
+==================================================
+MINIMUM FLOWS TO VERIFY
+==================================================
+
+You must verify these end to end:
+
+1. Tutor login and dashboard load
+2. View assessments list
+3. Create a new assessment
+4. Generate normal questions
+5. Generate graph questions
+6. Replace existing questions with graph questions
+7. Preview assessment
+8. Save/publish assessment
+9. Re-open assessment and confirm same questions remain
+10. Assign quiz if applicable
+11. Student opens assigned quiz
+12. Student submits quiz
+13. Report is created and visible
+14. Syllabus/doc upload still works
+15. Production site performs the same flows correctly
+
+==================================================
+FRAGILITY ANALYSIS REQUIREMENT
+==================================================
+
+I want more than just bug fixing.
+
+For each fragile area you find, document:
+- what could make it break
+- what conditions trigger failure
+- how likely it is in real use
+- what measure you added to reduce the risk
+
+Examples:
+- graph rendering breaks when labels are longer
+- draft state breaks when validation drops all returned questions
+- preview breaks when stale query data is used
+- save flow breaks if publish occurs after an empty mutation
+- production may serve stale assets after deployment
+- AI route may claim success with zero valid drafts
+
+Add protective measures wherever justified.
+
+==================================================
+TESTING REQUIREMENTS
+==================================================
+
+Run and/or add the tests needed for confidence.
+
+At minimum:
+- build
+- typecheck
+- existing tests
+- targeted new tests for any serious fixes
+- manual runtime verification
+- production verification
+
+Do not rely only on automated tests.
+Actually test the running app.
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+When finished, return a structured audit report with:
+
+1. Overall result
+- PASS / PASS WITH FIXES / PARTIAL / FAIL
+
+2. Areas checked
+- list all major app areas reviewed
+
+3. Broken issues found
+For each issue include:
+- title
+- severity
+- root cause
+- where it occurred
+- fix applied
+
+4. Fragile areas found
+For each fragile area include:
+- what could break
+- why
+- risk level
+- safeguard added
+
+5. Production verification
+- what was checked on the published Replit site
+- whether production matched development
+- any deployment/build/cache issue found
+
+6. Exact files changed
+
+7. Tests and manual verification performed
+
+8. Remaining risks or follow-up recommendations
+
+IMPORTANT:
+Do not stop early.
+Do not just fix one thing.
+Perform a true sweeping reliability check of the entire app and harden fragile areas so the app is much less likely to break under real or heavier use.

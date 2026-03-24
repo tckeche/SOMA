@@ -22,6 +22,13 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS difficulty_tag TEXT`,
   `CREATE TABLE IF NOT EXISTS syllabus_documents (id SERIAL PRIMARY KEY, tutor_id UUID REFERENCES soma_users(id) ON DELETE SET NULL, board TEXT NOT NULL, level TEXT NOT NULL, syllabus_code TEXT NOT NULL, filename TEXT NOT NULL, extracted_text TEXT NOT NULL, uploaded_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS syllabus_chunks (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, content TEXT NOT NULL, content_preview TEXT NOT NULL)`,
+  // Syllabus document extended columns (curriculum ingestion system)
+  `ALTER TABLE syllabus_documents ADD COLUMN IF NOT EXISTS document_type TEXT NOT NULL DEFAULT 'syllabus'`,
+  `ALTER TABLE syllabus_documents ADD COLUMN IF NOT EXISTS subject TEXT`,
+  `ALTER TABLE syllabus_documents ADD COLUMN IF NOT EXISTS original_path TEXT`,
+  `ALTER TABLE syllabus_documents ADD COLUMN IF NOT EXISTS content_hash TEXT`,
+  // Unique index on soma_reports to prevent duplicate submissions at DB level
+  `CREATE UNIQUE INDEX IF NOT EXISTS soma_reports_quiz_student_idx ON soma_reports(quiz_id, student_id) WHERE student_id IS NOT NULL`,
 ] as const;
 
 function logBootstrap(message: string) {
@@ -41,7 +48,13 @@ export async function applyBootstrapMigrations() {
 
   try {
     for (const query of BOOTSTRAP_QUERIES) {
-      await client.query(query);
+      try {
+        await client.query(query);
+      } catch (err: any) {
+        // Log but continue — idempotent migrations that fail (e.g. unique index
+        // conflicts when duplicates already exist) should not block the server.
+        logBootstrap(`migration warning (non-fatal): ${err.message?.slice(0, 120)}`);
+      }
     }
     logBootstrap("schema migrations applied");
   } finally {

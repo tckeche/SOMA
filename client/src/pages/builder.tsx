@@ -365,26 +365,39 @@ export default function BuilderPage() {
     }
   }, [quizData, populated]);
 
-  // Load draft from server when quiz is first opened (edit mode)
+  // Load draft from server when quiz is first opened (edit mode).
+  // IMPORTANT: We only mark draftLoaded=true once we either:
+  //   (a) have a non-empty server draft, or
+  //   (b) quizData has finished loading (so we can seed from published questions or know it's empty)
+  // If the draft API responds before quizData arrives, we hold off on marking draftLoaded
+  // so that the effect re-runs once quizData is ready and can seed the draft correctly.
   useEffect(() => {
     if (!authenticated || !activeQuizId || draftLoaded) return;
     authFetch(`/api/tutor/quizzes/${activeQuizId}/draft`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data && Array.isArray(data.questions) && data.questions.length > 0) {
-          // Server has a saved draft — use it
+          // Server has a saved draft — use it immediately
           setDraftQuestions(data.questions as DraftQuestion[]);
-        } else if (quizData?.questions && quizData.questions.length > 0) {
-          // No server draft — seed from published questions
-          setDraftQuestions(quizData.questions.map(somaQuestionToDraft));
+          setDraftLoaded(true);
+        } else if (quizData !== undefined) {
+          // Draft is empty AND quizData has arrived — seed from published questions if any
+          if (quizData?.questions && quizData.questions.length > 0) {
+            setDraftQuestions(quizData.questions.map(somaQuestionToDraft));
+          }
+          setDraftLoaded(true);
         }
-        setDraftLoaded(true);
+        // If quizData is still loading (undefined), don't set draftLoaded yet —
+        // the effect will re-run when quizData arrives (it's in the dependency array).
       })
       .catch(() => {
-        if (quizData?.questions) {
-          setDraftQuestions(quizData.questions.map(somaQuestionToDraft));
+        // On fetch error, seed from quizData if available, otherwise wait
+        if (quizData !== undefined) {
+          if (quizData?.questions && quizData.questions.length > 0) {
+            setDraftQuestions(quizData.questions.map(somaQuestionToDraft));
+          }
+          setDraftLoaded(true);
         }
-        setDraftLoaded(true);
       });
   }, [authenticated, activeQuizId, draftLoaded, authFetch, quizData]);
 
@@ -699,6 +712,12 @@ export default function BuilderPage() {
     const res = await authFetch("/api/tutor/syllabus-documents", { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Upload failed");
+    if (data.duplicate) {
+      // Document already exists — select it but don't add a duplicate entry to the list
+      setSelectedSyllabusId(String(data.id));
+      toast({ title: "Already uploaded", description: "This document was already in your library. It has been selected.", variant: "default" });
+      return;
+    }
     setSyllabusDocs((prev) => [...prev, data]);
     setSelectedSyllabusId(String(data.id));
     toast({ title: "Syllabus uploaded", description: `${data.board} ${data.level} ${data.syllabusCode}` });

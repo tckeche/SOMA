@@ -4,7 +4,8 @@ import type { GraphQuestionSpec } from "@shared/schema";
 // ── Layout constants ──────────────────────────────────────────────────────────
 const WIDTH  = 620;
 const HEIGHT = 340;
-const M = { top: 32, right: 50, bottom: 32, left: 50 };
+// left=64 gives enough room for labels like "−100" without clipping
+const M = { top: 32, right: 50, bottom: 32, left: 64 };
 
 const plotLeft   = M.left;
 const plotRight  = WIDTH  - M.right;
@@ -34,16 +35,27 @@ function niceInterval(span: number): number {
 }
 
 // ── Safe equation evaluator ───────────────────────────────────────────────────
+// Injects the full Math object so equations like sin(x), cos(x), exp(x),
+// sqrt(x), log(x), abs(x), PI etc. work without any extra pre-processing.
 function evaluateEquation(eq: string, x: number): number | null {
   const expr = eq
-    .replace(/^y\s*=\s*/i, "")
-    .replace(/\^/g, "**")
-    .replace(/([0-9])\s*x/g, "$1*x")
-    .replace(/([0-9])\s*\(/g, "$1*(");
+    .replace(/^y\s*=\s*/i, "")           // strip "y = " prefix
+    .replace(/\^/g, "**")                  // ^ → **
+    .replace(/([0-9])\s*x/g, "$1*x")      // 2x → 2*x
+    .replace(/([0-9])\s*\(/g, "$1*(");    // 2( → 2*(
   try {
+    // Destructure Math so authors can write sin(x) instead of Math.sin(x).
     // eslint-disable-next-line no-new-func
-    const fn = new Function("x", `"use strict"; return (${expr});`) as (x: number) => number;
-    const v  = fn(x);
+    const fn = new Function(
+      "x",
+      `"use strict";
+       const {abs,acos,acosh,asin,asinh,atan,atanh,atan2,cbrt,ceil,clz32,cos,cosh,
+              exp,expm1,floor,fround,hypot,imul,log,log10,log1p,log2,max,min,pow,
+              random,round,sign,sin,sinh,sqrt,tan,tanh,trunc,
+              PI,E,LN2,LN10,LOG2E,LOG10E,SQRT2,SQRT1_2} = Math;
+       return (${expr});`,
+    ) as (x: number) => number;
+    const v = fn(x);
     return Number.isFinite(v) ? v : null;
   } catch {
     return null;

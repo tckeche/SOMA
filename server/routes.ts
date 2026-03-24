@@ -619,7 +619,7 @@ function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
       : [];
 
   const positions: number[] = Array.isArray(parsed.positions)
-    ? parsed.positions.map(Number).filter((n) => Number.isInteger(n) && n >= 1)
+    ? parsed.positions.map(Number).filter((n: number) => Number.isInteger(n) && n >= 1)
     : [];
 
   // Accept as a structured response only if it has the key fields
@@ -721,7 +721,8 @@ Return clean HTML using <h3>, <ul>, <li>, <p>, and <strong>.
 
 CRITICAL: When referencing specific questions, you MUST use the sequential question numbers provided in the data (e.g., "Question 1", "Question 4"). Never invent numbers and never use database IDs like Q156.`;
 
-    const userPrompt = `Student scored ${totalScore}/${maxPossibleScore} (${Math.round((totalScore / maxPossibleScore) * 100)}%).
+    const scorePct = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
+    const userPrompt = `Student scored ${totalScore}/${maxPossibleScore} (${scorePct}%).
 
 Here is the question-by-question breakdown (numbered sequentially as they appear in the quiz):
 
@@ -1010,9 +1011,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const assignments = await storage.getQuizAssignmentsForQuiz(quizId);
       const allReports = await storage.getSomaReportsByQuizId(quizId);
 
-      // Calculate actual max grade from question marks
+      // Calculate actual max grade from question marks (0 if no questions — do not fallback to 100)
       const questions = await storage.getSomaQuestionsByQuizId(quizId);
-      const maxGrade = questions.reduce((sum, q) => sum + q.marks, 0) || 100;
+      const maxGrade = questions.reduce((sum, q) => sum + q.marks, 0);
 
       // Map assignments with their submission status and grades
       const studentDetails = assignments.map((assignment) => {
@@ -1396,10 +1397,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }
       }
 
-      // Delete all existing questions for this quiz
-      await storage.deleteSomaQuestionsByQuizId(quizId);
-
-      // Insert draft questions
+      // Atomically replace all questions in a DB transaction (delete + insert as one unit)
+      // so a failed insert cannot leave the quiz without any questions.
       const mapped = draft.map((q) => ({
         quizId,
         stem: q.stem,
@@ -1414,9 +1413,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         difficultyTag: q.difficultyTag ?? null,
       }));
 
-      const saved = await storage.createSomaQuestions(mapped);
+      const saved = await storage.publishSomaQuestionsTransactional(quizId, mapped);
 
-      // Clear draft after successful publish
+      // Clear in-memory draft only after DB commit succeeded
       draftStore.delete(quizId);
 
       res.json({ quizId, publishedCount: saved.length, questions: saved });
@@ -1556,6 +1555,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(400).json({ message: "This PDF appears to be image-only or unreadable as text. Please upload a text-based syllabus PDF." });
       }
 
+      // SHA-256 dedup: prevent uploading the exact same PDF content twice
+      const contentHash = crypto.createHash("sha256").update(extractedText).digest("hex");
+      const existingDoc = await storage.getSyllabusDocumentByHash(contentHash);
+      if (existingDoc) {
+        const existingChunks = await storage.getSyllabusDocumentBySelection({
+          board: existingDoc.board,
+          level: existingDoc.level,
+          syllabusCode: existingDoc.syllabusCode,
+        });
+        return res.json({
+          id: existingDoc.id,
+          board: existingDoc.board,
+          level: existingDoc.level,
+          syllabusCode: existingDoc.syllabusCode,
+          filename: existingDoc.filename,
+          uploadedAt: existingDoc.uploadedAt,
+          chunkCount: existingChunks?.chunks.length ?? 0,
+          duplicate: true,
+          message: "This document has already been uploaded.",
+        });
+      }
+
       const chunks = buildSyllabusChunks(extractedText);
       const created = await storage.createSyllabusDocument({
         tutorId: (req as any).tutorId ?? null,
@@ -1564,6 +1585,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         syllabusCode: String(syllabusCode).trim(),
         filename: req.file.originalname,
         extractedText,
+        contentHash,
       }, chunks);
 
       res.json({
@@ -1945,9 +1967,9 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
           correct_answer: q.correctAnswer,
           marks_worth: q.marks,
           explanation: q.explanation,
-          topic_tag: q.topicTag,
-          subtopic_tag: q.subtopicTag,
-          difficulty_tag: q.difficultyTag,
+          topic_tag: q.topicTag ?? undefined,
+          subtopic_tag: q.subtopicTag ?? undefined,
+          difficulty_tag: q.difficultyTag ?? undefined,
           question_type: q.questionType,
           graph_spec: q.graphSpec ?? undefined,
         })),
@@ -2555,16 +2577,25 @@ ${JSON.stringify({
       const now = new Date();
       const parsedStartedAt = startedAt ? new Date(startedAt) : null;
 
-      const report = await storage.createSomaReport({
-        quizId,
-        studentId,
-        studentName: resolvedName,
-        score: totalScore,
-        status: "pending",
-        answersJson: sanitizedAnswers,
-        startedAt: parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? parsedStartedAt : null,
-        completedAt: now,
-      });
+      let report;
+      try {
+        report = await storage.createSomaReport({
+          quizId,
+          studentId,
+          studentName: resolvedName,
+          score: totalScore,
+          status: "pending",
+          answersJson: sanitizedAnswers,
+          startedAt: parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? parsedStartedAt : null,
+          completedAt: now,
+        });
+      } catch (dbErr: any) {
+        // Handle DB-level unique constraint violation (race condition between concurrent submits)
+        if (dbErr.code === "23505" || dbErr.message?.includes("unique") || dbErr.message?.includes("duplicate")) {
+          return res.status(409).json({ message: "You have already submitted this quiz." });
+        }
+        throw dbErr;
+      }
 
       res.json(report);
 
