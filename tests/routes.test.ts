@@ -1444,6 +1444,98 @@ describe("Tutor syllabus grounding and copilot session support", () => {
   });
 });
 
+// ─── PARSER RESILIENCE: schema-mismatch must not swallow valid drafts ─────────
+describe("Copilot parser: schema-mismatch does not discard valid drafts", () => {
+  let token: string;
+  let generateWithFallback: any;
+
+  beforeAll(async () => {
+    token = await getTutorToken();
+    const mod = await import("../server/services/aiOrchestrator");
+    generateWithFallback = mod.generateWithFallback;
+  });
+
+  it("returns drafts when AI payload contains a marks_worth: 0 field (previously swallowed all)", async () => {
+    // marks_worth: 0 fails the strict Zod schema (min 1) — was causing full parse to throw
+    // and extractJsonArray falling back to wrapping the whole object, yielding 0 drafts
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Here are your questions.",
+        drafts: [
+          {
+            prompt_text: "What is $2^3$?",
+            options: ["4", "6", "8", "16"],
+            correct_answer: "8",
+            marks_worth: 0,        // ← violates strict min(1) — caused total parse failure
+            explanation: "2^3 = 8",
+            topic_tag: "Indices",
+            subtopic_tag: "Powers",
+            difficulty_tag: "Easy",
+            question_type: "multiple_choice",
+          },
+        ],
+        summary: { numberOfQuestionsAdded: 1, questionTypesUsed: ["multiple_choice"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: false });
+    expect(res.status).toBe(200);
+    // The draft should survive — downstream mapper handles marks_worth normalization
+    expect(res.body.drafts.length).toBe(1);
+    expect(res.body.drafts[0].prompt_text).toBe("What is $2^3$?");
+  });
+
+  it("returns drafts when AI uses 'questions' key instead of 'drafts'", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Questions generated.",
+        questions: [                // ← AI used 'questions' not 'drafts'
+          {
+            prompt_text: "What is $\\sqrt{16}$?",
+            options: ["2", "4", "8", "16"],
+            correct_answer: "4",
+            marks_worth: 1,
+            explanation: "sqrt(16) = 4",
+            topic_tag: "Surds",
+            question_type: "multiple_choice",
+          },
+        ],
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: false });
+    expect(res.status).toBe(200);
+    expect(res.body.drafts.length).toBe(1);
+    expect(res.body.drafts[0].prompt_text).toBe("What is $\\sqrt{16}$?");
+  });
+
+  it("summary correctly reflects actual draft count (not 0)", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Three questions for you.",
+        drafts: [
+          { prompt_text: "Q1?", options: ["A", "B", "C", "D"], correct_answer: "A", marks_worth: 1, explanation: "A is right", question_type: "multiple_choice" },
+          { prompt_text: "Q2?", options: ["A", "B", "C", "D"], correct_answer: "B", marks_worth: 1, explanation: "B is right", question_type: "multiple_choice" },
+          { prompt_text: "Q3?", options: ["A", "B", "C", "D"], correct_answer: "C", marks_worth: 1, explanation: "C is right", question_type: "multiple_choice" },
+        ],
+        summary: { numberOfQuestionsAdded: 3, questionTypesUsed: ["multiple_choice"], topicsCovered: ["Arithmetic"], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate 3 questions about Subject: Mathematics", includeGraphQuestions: false });
+    expect(res.status).toBe(200);
+    expect(res.body.drafts.length).toBe(3);
+    // The reply must say "Questions added: 3", not "Questions added: 0"
+    expect(res.body.reply).toContain("Questions added: 3");
+  });
+});
+
 // ─── GRAPH CONTROL: includeGraphQuestions flag ────────────────────────────────
 describe("Graph question control via includeGraphQuestions flag", () => {
   let token: string;

@@ -1,0 +1,256 @@
+You are reviewing an existing production maths quiz / assessment app after recent copilot-generation changes.
+
+Your job is NOT to add new features.
+Your job is to verify and fix, with minimal safe changes only, the current broken copilot quiz-generation flow.
+
+==================================================
+CORE PROBLEM TO INVESTIGATE
+==================================================
+
+The AI appears to be returning populated question data, but the app is still not actually creating the quiz.
+
+Example symptom:
+- AI returns a populated payload with reply, drafts, and summary
+- but the app then says:
+  - Questions added: 0
+  - Types: multiple_choice
+  - Topics: Mixed
+  - Subtopics: Mixed
+  - Difficulty: Mixed
+
+That means the likely failure is in the app pipeline AFTER the AI response is received:
+- response parsing
+- field mapping
+- question validation
+- draft persistence
+- quiz creation
+- summary rendering
+
+You must inspect the real code path and confirm the exact root cause.
+
+==================================================
+ALSO VERIFY THESE RELATED RULES
+==================================================
+
+1. Copilot-generated questions must autosave into the draft
+2. Graph questions must ONLY appear when the tutor ticks a checkbox such as:
+   "Include some questions with graphs"
+3. If checkbox is OFF:
+   - no graph questions at all
+4. If checkbox is ON:
+   - only some questions may include graphs
+   - graph questions must still be full MCQs
+   - no graph-only items allowed
+5. The app must actually create and save the quiz from valid AI output
+
+==================================================
+STRICT RULES
+==================================================
+
+1. Do NOT broadly refactor
+2. Do NOT rename core models, routes, env vars, state keys, DB fields, or service contracts unless absolutely necessary
+3. Reuse current architecture and flows
+4. Make only minimal, precise, safe fixes if needed
+5. Add/update only the tests needed for confidence
+6. Run build, lint, tests, and manual checks
+7. Do not stop at “tests pass” — verify actual end-to-end behaviour
+
+==================================================
+WHAT TO INSPECT
+==================================================
+
+Inspect the full pipeline from:
+AI response
+→ parser
+→ mapper/transformer
+→ validation
+→ draft save
+→ quiz creation
+→ preview
+→ summary UI
+
+Specifically investigate likely mismatches such as:
+- AI returns `drafts` but app expects `questions`
+- AI returns `options` as an array but app expects keyed A/B/C/D options
+- AI returns `correct_answer` as answer text but app expects option letter or index
+- AI returns `question_type: "graph"` but app only accepts `mcq` / `multiple_choice`
+- graph items are being filtered incorrectly
+- parser succeeds but persistence fails
+- creation service silently returns 0 created
+- summary UI is reading fallback defaults instead of actual created records
+
+Do not guess. Trace the real path.
+
+==================================================
+REVIEW / FIX CHECKLIST
+==================================================
+
+A. PROJECT HEALTH
+- install dependencies if needed
+- run lint
+- run typecheck if present
+- run tests
+- run build
+- run app locally
+- check server logs and browser console for generation-related errors
+
+B. END-TO-END QUIZ CREATION CHECK
+1. Trigger copilot generation with standard MCQ settings
+2. Inspect the raw returned AI payload
+3. Confirm whether the app maps that payload into internal question objects
+4. Confirm whether actual quiz/draft question records are created
+5. Confirm whether UI still incorrectly says “Questions added: 0”
+6. Fix only what is needed if this fails
+
+C. RESPONSE MAPPING CHECK
+Verify whether the app correctly maps:
+- `drafts` into the internal questions structure
+- `options` into the internal option format
+- `correct_answer` into the app’s expected correct-answer representation
+- `graph_spec` into an optional supplemental graph field
+- graph questions into MCQ-compatible stored data
+
+D. AUTOSAVE CHECK
+Verify:
+- first successful generation autosaves into draft
+- regeneration updates the same draft
+- refresh does not lose generated questions
+- preview reads the latest saved draft
+- no duplicate drafts or duplicate questions
+- autosave does not loop or spam requests
+
+E. GRAPH CHECKBOX CONTROL
+Verify exactly this behaviour:
+
+1. Checkbox OFF:
+- generate assessment
+- confirm zero graph questions are included
+- confirm all questions are standard MCQs
+
+2. Checkbox ON:
+- generate assessment
+- confirm some, but not all, questions may include graphs
+- confirm graph questions are still full MCQs
+- confirm no graph-only items appear
+- confirm the quiz is still created successfully
+
+F. VALIDATION CHECK
+Verify every created question has:
+- question text
+- 4 options
+- exactly one correct answer
+- supported question type
+- optional graph only as supporting content
+
+If malformed output is accepted, fix it minimally.
+
+G. SUMMARY CHECK
+Verify:
+- summary reflects actual created/saved questions
+- if 4 questions are returned and saved, summary should not say 0 added
+- fallback/generic summary must not mask a real failure
+- if creation fails, app shows a real error instead of fake success
+
+==================================================
+TEST CASES TO RUN
+==================================================
+
+Run these at minimum:
+
+1. Standard MCQ generation
+- no graph checkbox
+- quiz should be created
+- questions should save
+- summary should match actual created questions
+
+2. Graph checkbox OFF
+- generate
+- confirm no graph questions
+- confirm quiz still creates properly
+
+3. Graph checkbox ON
+- generate
+- confirm some graph questions only
+- confirm graph questions are still valid MCQs
+- confirm no graph-only entries
+
+4. Refresh test
+- generate questions
+- refresh page
+- confirm draft still contains generated questions
+
+5. Preview test
+- open preview
+- confirm latest saved questions appear
+
+6. Regeneration test
+- regenerate questions
+- confirm draft updates correctly
+- confirm no duplicate records
+
+7. Failure-state test
+- if mapping/validation fails, confirm the app shows a clear failure state and not a misleading “0 questions added” success-style summary
+
+==================================================
+IF FIXES ARE NEEDED
+==================================================
+
+If you find issues:
+1. identify exact root cause
+2. apply the smallest safe fix
+3. do not refactor unrelated code
+4. rerun relevant tests and manual checks
+5. confirm no new regressions
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Return your result in this exact structure:
+
+1. Overall result
+- PASS / PASS WITH FIXES / FAIL
+
+2. Root cause
+- exact technical reason the quiz was not being created
+
+3. What you checked
+- concise list of flows inspected
+
+4. Issues found
+For each issue include:
+- title
+- severity
+- root cause
+- fix applied or not applied
+- files changed
+
+5. Feature status
+Mark each as PASS / PARTIAL / FAIL:
+- quiz creation from AI output
+- response mapping
+- autosave
+- graph checkbox control
+- graph question MCQ validity
+- preview correctness
+- summary correctness
+
+6. Regression status
+- confirm whether existing flows still work
+
+7. Commands run
+- lint
+- tests
+- build
+- dev run
+- any others
+
+8. Files changed
+- list every file changed during review/fixes
+
+9. Remaining risks
+- note anything unresolved or needing follow-up
+
+Important:
+Do not stop at “the AI returned data.”
+Confirm that valid AI output actually becomes real created quiz questions in the app.

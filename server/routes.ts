@@ -282,10 +282,13 @@ function extractJsonArray(text: string): any[] | null {
   try {
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed)) return parsed;
-    if (parsed && Array.isArray((parsed as { questions?: unknown }).questions)) {
-      return (parsed as { questions: any[] }).questions;
+    // Support objects with a known question-list key
+    for (const key of ["drafts", "questions", "items"]) {
+      if (parsed && Array.isArray((parsed as Record<string, unknown>)[key])) {
+        return (parsed as Record<string, any[]>)[key];
+      }
     }
-    return [parsed];
+    return null;
   } catch {
     const match = cleaned.match(/\[[\s\S]*\]/);
     if (!match) return null;
@@ -302,11 +305,27 @@ function extractJsonArray(text: string): any[] | null {
 function extractStructuredCopilotResponse(text: string) {
   const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
   try {
-    return copilotResponseSchema.parse(JSON.parse(cleaned));
+    const parsed = JSON.parse(cleaned);
+    // Extract reply — accept any string field
+    const reply: string =
+      typeof parsed.reply === "string" && parsed.reply.trim()
+        ? parsed.reply.trim()
+        : "Assessment draft prepared.";
+    // Extract raw drafts WITHOUT strict schema validation.
+    // The downstream mapping step normalises field names, options format,
+    // and correct_answer — strict Zod validation here drops valid drafts
+    // whenever a single field slightly mismatches (e.g. marks_worth: 0).
+    const rawDrafts: any[] = Array.isArray(parsed.drafts)
+      ? parsed.drafts
+      : Array.isArray(parsed.questions)
+        ? parsed.questions
+        : [];
+    return { reply, drafts: rawDrafts, summary: buildCopilotSummary({ drafts: [] }) };
   } catch {
+    // JSON parse failed entirely — try fishing an array from the text
     const drafts = extractJsonArray(cleaned) || [];
     return {
-      reply: cleaned || "Assessment draft prepared.",
+      reply: "Assessment draft prepared.",
       drafts,
       summary: buildCopilotSummary({ drafts }),
     };
@@ -1259,7 +1278,7 @@ Summary must reflect the actual drafts produced.`;
           topic_tag: d.topic_tag ? String(d.topic_tag) : undefined,
           subtopic_tag: d.subtopic_tag ? String(d.subtopic_tag) : undefined,
           difficulty_tag: d.difficulty_tag ? String(d.difficulty_tag) : undefined,
-          question_type: String(d.question_type || (d.graph_spec ? "graph" : "multiple_choice")),
+          question_type: (d.question_type === "graph" ? "graph" : "multiple_choice") as "multiple_choice" | "graph",
           graph_spec: allowGraphs ? (d.graph_spec ?? undefined) : undefined,
         };
       }).filter((draft): draft is NonNullable<typeof draft> => {
