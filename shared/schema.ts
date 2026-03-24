@@ -5,10 +5,21 @@ import { z } from "zod";
 import { insertQuizSchema, insertQuestionSchema, insertStudentSchema, insertSubmissionSchema, questionUploadSchema } from "./legacySchemas";
 
 
-export const graphPlotTypeSchema = z.enum(["line", "curve", "points"]);
+export const graphPlotTypeSchema = z.enum(["line", "curve", "scatter", "points"]);
+
+// A single curve/series on a graph
+export const graphCurveSchema = z.object({
+  equation: z.string(),                // math expression in x, e.g. "2*x + 1"
+  label: z.string().optional(),        // display label in legend (e.g. "y = 2x + 1", "Supply", "v = 3t")
+  color: z.string().optional(),        // CSS color override; auto-assigned if omitted
+});
+
 export const graphQuestionSpecSchema = z.object({
   plotType: graphPlotTypeSchema,
+  // Single-curve shorthand (backward compat) — used when only one equation
   equation: z.string().optional(),
+  // Multi-curve: 2–4 curves, each with own equation, optional label and color
+  curves: z.array(graphCurveSchema).optional(),
   points: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),
   xRange: z.tuple([z.number(), z.number()]),
   yRange: z.tuple([z.number(), z.number()]),

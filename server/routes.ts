@@ -49,17 +49,28 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
 
   // plotType — default to "line" for equation-based, "points" if only points
   const rawPlotType = String(r.plotType || "");
-  const validPlotTypes = ["line", "curve", "points"] as const;
-  const plotType: "line" | "curve" | "points" = validPlotTypes.includes(rawPlotType as never)
-    ? (rawPlotType as "line" | "curve" | "points")
-    : r.equation
+  const validPlotTypes = ["line", "curve", "scatter", "points"] as const;
+  const plotType: "line" | "curve" | "scatter" | "points" = validPlotTypes.includes(rawPlotType as never)
+    ? (rawPlotType as "line" | "curve" | "scatter" | "points")
+    : r.equation || r.curves
     ? "line"
     : "points";
 
-  // Require at least equation or points
+  // Multi-curve support: parse the `curves` array if present
+  const curves = Array.isArray(r.curves)
+    ? (r.curves as any[])
+        .filter((c: any) => c && typeof c === "object" && typeof c.equation === "string" && c.equation.trim())
+        .map((c: any) => ({
+          equation: String(c.equation),
+          label: c.label ? String(c.label) : undefined,
+          color: c.color ? String(c.color) : undefined,
+        }))
+    : undefined;
+
+  // Require at least equation, curves, or points
   const equation = r.equation && typeof r.equation === "string" ? r.equation : undefined;
   const points = Array.isArray(r.points) ? r.points : undefined;
-  if (!equation && (!points || points.length === 0)) return null;
+  if (!equation && (!curves || curves.length === 0) && (!points || points.length === 0)) return null;
 
   // axisLabels — default to x/y if missing
   const rawLabels = r.axisLabels && typeof r.axisLabels === "object" ? (r.axisLabels as Record<string, unknown>) : {};
@@ -75,6 +86,7 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   const repaired = {
     plotType,
     equation,
+    curves: curves && curves.length > 0 ? curves : undefined,
     points: points as { x: number; y: number; label?: string }[] | undefined,
     xRange,
     yRange,
@@ -164,7 +176,7 @@ function isGraphRequestMessage(text: string): boolean {
 }
 
 // The explicit graph spec system prompt used for targeted graph retries
-const GRAPH_RETRY_SYSTEM_PROMPT = `You are a math graph question generator. Your ONLY job is to return a JSON object with exactly the format below.
+const GRAPH_RETRY_SYSTEM_PROMPT = `You are a graph question generator for any subject (Maths, Physics, Economics, Biology, Chemistry, etc.). Your ONLY job is to return a JSON object with exactly the format below.
 
 Return ONLY this JSON structure, with no extra text:
 {
@@ -192,14 +204,35 @@ Return ONLY this JSON structure, with no extra text:
   ]
 }
 
+For MULTI-CURVE graphs (e.g. Supply & Demand, comparing two functions), use "curves" instead of "equation":
+  "graph_spec": {
+    "plotType": "line",
+    "curves": [
+      {"equation": "2*x + 1", "label": "Supply", "color": "#34d399"},
+      {"equation": "-x + 8",  "label": "Demand", "color": "#f87171"}
+    ],
+    "xRange": [0, 6], "yRange": [0, 10],
+    "axisLabels": {"x": "Quantity", "y": "Price"},
+    "showGrid": true, "tickInterval": 1
+  }
+
+Subject-specific axis examples:
+- Physics velocity-time:  axisLabels {"x":"t (s)","y":"v (m/s)"}  equation e.g. "3*x + 2"
+- Physics force-extension: axisLabels {"x":"Extension (m)","y":"Force (N)"}
+- Economics supply/demand: axisLabels {"x":"Quantity","y":"Price"}, use curves array
+- Biology enzyme: axisLabels {"x":"Temperature (°C)","y":"Rate of reaction"}
+- Chemistry concentration: axisLabels {"x":"Time (s)","y":"Concentration (mol/L)"}
+
 CRITICAL FORMAT RULES (breaking any of these means your output is INVALID):
 1. xRange and yRange MUST be JSON arrays like [-5, 5] — NEVER objects like {"min":-5, "max":5}
-2. You MUST include either "equation" (a math string) OR "points" (array of {x,y} pairs) — never omit both
-3. equation MUST use * for multiplication: write "2*x + 1" NOT "2x + 1", and "-x^2 + 3" NOT "-x² + 3"
+2. You MUST include "equation" (single curve) OR "curves" (array) OR "points" — never omit all three
+3. equation/curves[i].equation MUST use * for multiplication: write "2*x + 1" NOT "2x + 1"
 4. graph_spec is REQUIRED for every question — never omit it
 5. Every question MUST have exactly 4 distinct options
 6. correct_answer MUST be an exact copy of one of the 4 options
-7. question_type MUST be "graph"`;
+7. question_type MUST be "graph"
+8. When using "curves", each entry needs at least "equation" and "label"
+9. equations use variable x only (the renderer evaluates f(x))`;
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
@@ -1635,34 +1668,64 @@ Each question MUST have:
 - topic_tag, subtopic_tag, difficulty_tag (easy/medium/hard)
 - question_type: "multiple_choice" or "graph"
 ${allowGraphs
-  ? `Graph questions are ALLOWED. When graph questions are requested, you MUST produce them.
+  ? `Graph questions are ALLOWED for ANY subject — not just Maths. Physics, Economics, Biology, Chemistry graphs are all valid.
 A graph question is still a full MCQ — it must have all the fields above PLUS a valid graph_spec.
 
-GRAPH QUESTION FORMAT (copy this structure exactly):
+SINGLE-CURVE graph (use "equation"):
 {
   "question_type": "graph",
-  "prompt_text": "What is the y-intercept of the line shown?",
-  "options": ["1", "2", "3", "4"],
-  "correct_answer": "1",
+  "prompt_text": "The graph shows an object's velocity over time. What is the acceleration?",
+  "options": ["2 m/s²", "3 m/s²", "4 m/s²", "6 m/s²"],
+  "correct_answer": "3 m/s²",
   "marks_worth": 2,
-  "explanation": "The line y = 2x + 1 has a y-intercept of 1.",
+  "explanation": "The gradient of v-t graph = acceleration. Rise/run = (12−0)/(4−0) = 3 m/s².",
   "graph_spec": {
     "plotType": "line",
-    "equation": "2*x + 1",
-    "xRange": [-5, 5],
-    "yRange": [-10, 10],
-    "axisLabels": {"x": "x", "y": "y"},
+    "equation": "3*x",
+    "xRange": [0, 5],
+    "yRange": [0, 16],
+    "axisLabels": {"x": "t (s)", "y": "v (m/s)"},
     "showGrid": true,
     "tickInterval": 1
   }
 }
 
+MULTI-CURVE graph (use "curves" array — for 2 to 4 curves on one graph):
+{
+  "question_type": "graph",
+  "prompt_text": "The supply and demand curves are shown. At what price does the market reach equilibrium?",
+  "options": ["$2", "$4", "$6", "$8"],
+  "correct_answer": "$4",
+  "marks_worth": 3,
+  "explanation": "Equilibrium is where supply = demand. Setting 2x+1 = -x+7 gives x=2, y=5, so price = $4.",
+  "graph_spec": {
+    "plotType": "line",
+    "curves": [
+      {"equation": "2*x + 1", "label": "Supply"},
+      {"equation": "-x + 7",  "label": "Demand"}
+    ],
+    "xRange": [0, 5],
+    "yRange": [0, 10],
+    "axisLabels": {"x": "Quantity", "y": "Price ($)"},
+    "showGrid": true,
+    "tickInterval": 1
+  }
+}
+
+Subject-specific graph ideas:
+- Physics: velocity-time (gradient=acceleration), force-extension (Hooke's law), I-V characteristics
+- Economics: supply & demand (2 curves), cost curves (MC, AC, ATC on one graph)
+- Biology: enzyme activity vs temperature/pH, population growth curves
+- Chemistry: concentration vs time, titration curves
+- Maths: comparing two functions, finding intersections, transformations
+
 CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 1. xRange and yRange MUST be JSON arrays [min, max] — NEVER objects like {"min":-5,"max":5}
-2. You MUST include "equation" (a math string) OR "points" (array of {x,y} objects) — never omit both
-3. equation uses * for multiplication: write "2*x + 1" NOT "2x+1", write "-x^2 + 3" NOT "-x² + 3"
-4. graph_spec is REQUIRED — do NOT omit it or leave it null/empty
-5. Set question_type to "graph" ONLY when you have included a valid graph_spec`
+2. Use "equation" for single curve OR "curves" (array with "equation"+"label" per entry) for multi-curve
+3. equations use * for multiplication: write "2*x + 1" NOT "2x+1", write "-x^2 + 3" NOT "-x² + 3"
+4. All equations use variable x only
+5. graph_spec is REQUIRED — do NOT omit it or leave it null/empty
+6. Set question_type to "graph" ONLY when you have included a valid graph_spec`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
 ## CRITICAL RULES:

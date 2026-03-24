@@ -15,7 +15,7 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 ### Database Schema (Soma-only — legacy tables removed)
 - `soma_users` - id (uuid, maps to Supabase auth UID), email, display_name, role, created_at
 - `soma_quizzes` - id, title, topic, syllabus, level, subject, curriculum_context, author_id, time_limit_minutes (default 60), status (always "published"), is_archived, created_at
-- `soma_questions` - id, quiz_id (FK → soma_quizzes), stem, options (JSON), correct_answer, explanation (NOT NULL), marks
+- `soma_questions` - id, quiz_id (FK → soma_quizzes), stem, options (JSON), correct_answer, explanation (NOT NULL), marks, graph_spec (JSONB, nullable — see GraphQuestionSpec)
 - `soma_reports` - id, quiz_id (FK → soma_quizzes), student_id (uuid FK → soma_users), student_name, score, status, ai_feedback_html, answers_json, started_at, completed_at, created_at
 - `tutor_students` - id, tutor_id, student_id (unique index), created_at
 - `quiz_assignments` - id, quiz_id, student_id, status, due_date (optional timestamp), created_at
