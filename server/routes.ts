@@ -232,7 +232,8 @@ CRITICAL FORMAT RULES (breaking any of these means your output is INVALID):
 6. correct_answer MUST be an exact copy of one of the 4 options
 7. question_type MUST be "graph"
 8. When using "curves", each entry needs at least "equation" and "label"
-9. equations use variable x only (the renderer evaluates f(x))`;
+9. equations use variable x only (the renderer evaluates f(x))
+10. RANGE CHECK — evaluate EVERY equation at xMin and xMax; set yRange to contain ALL y-values plus 10% padding. Example: x² on [-3,4] reaches y=16 at x=4, so yMin ≥ -2, yMax ≥ 18`;
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
@@ -1725,7 +1726,9 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 3. equations use * for multiplication: write "2*x + 1" NOT "2x+1", write "-x^2 + 3" NOT "-x² + 3"
 4. All equations use variable x only
 5. graph_spec is REQUIRED — do NOT omit it or leave it null/empty
-6. Set question_type to "graph" ONLY when you have included a valid graph_spec`
+6. Set question_type to "graph" ONLY when you have included a valid graph_spec
+7. RANGE CHECK — before setting yRange, evaluate every equation at xMin AND xMax to find the true y-min and y-max; set yRange with at least 10% padding so NO curve is clipped. Example: y=x² on xRange[-3,4] reaches y=16 at x=4, so yRange must be at least [-1,18] not [-1,10]
+8. Keep xRange and yRange spans within a 3:1 ratio of each other (avoid extreme aspect ratios)`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
 ## CRITICAL RULES:
