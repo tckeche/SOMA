@@ -1531,8 +1531,9 @@ describe("Copilot parser: schema-mismatch does not discard valid drafts", () => 
       .send({ message: "Generate 3 questions about Subject: Mathematics", includeGraphQuestions: false });
     expect(res.status).toBe(200);
     expect(res.body.drafts.length).toBe(3);
-    // The reply must say "Questions added: 3", not "Questions added: 0"
-    expect(res.body.reply).toContain("Questions added: 3");
+    // The action model must correctly reflect the 3 new questions (not 0)
+    expect(res.body.action).toBe("ADD");
+    expect(res.body.questions.length).toBe(3);
   });
 });
 

@@ -65,6 +65,9 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - `DELETE /api/admin/questions/:id` - Delete soma question
 - `POST /api/admin/copilot-chat` - AI copilot chat for quiz generation
 - `POST /api/upload-image` - Upload image for question attachment
+- `GET /api/tutor/quizzes/:quizId/draft` - Get current draft questions (in-memory, returns [] if no draft)
+- `PUT /api/tutor/quizzes/:quizId/draft` - Save (replace) entire draft array to in-memory store
+- `POST /api/tutor/quizzes/:quizId/publish` - Publish draft to soma_questions (deletes existing, inserts draft, clears draft store)
 - `GET /api/tutor/*` - Tutor endpoints (students, performance, dashboard-stats, comments, quizzes/:quizId/reports)
 - `GET /api/super-admin/*` - Super admin endpoints (users, quizzes, delete)
 
@@ -73,7 +76,7 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - **Soma Quiz Engine**: Student-facing quiz UI with glassmorphism cards, LaTeX rendering, option selection, navigation dots, summary view.
 - **Soma Quiz Review**: Post-quiz review with explanations, correct/incorrect indicators, AI feedback.
 - **Admin Route Deprecation**: `/admin` redirects to `/login`. Builder (`/admin/builder`) remains accessible.
-- **AI Copilot**: Builder page uses copilot chat to generate quiz questions via AI fallback chain.
+- **AI Copilot (Draft Architecture)**: Builder page uses a draft layer — copilot never writes directly to `soma_questions`. Instead it returns structured actions (`ADD`, `REPLACE_ALL`, `REPLACE_SELECTED`, `DELETE`, `REORDER`, `NONE`) applied to an in-memory `draftQuestions` state. Drafts are auto-saved to the server's in-memory `draftStore` (`Map<quizId, DraftQuestion[]>`). The explicit "Save & Publish" button commits the draft to `soma_questions` via `POST /api/tutor/quizzes/:id/publish`.
 - **AI Orchestrator**: Centralized dynamic fallback chain (`server/services/aiOrchestrator.ts`). Model order: Claude claude-sonnet-4-6 → Gemini 2.0 Flash → DeepSeek → GPT-4o. Maker-Checker pipeline in `server/services/aiPipeline.ts`.
 - **Tutor Portal**: Multi-page navigation (Dashboard, Students, Assessments) with analytics, student management, comments.
 - **Super Admin Dashboard**: Global management with user/quiz data tables, hard delete.

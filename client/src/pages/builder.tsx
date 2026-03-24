@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import type { SomaQuiz, SomaQuestion } from "@shared/schema";
 import { STANDARDIZED_SUBJECTS } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -14,15 +14,118 @@ import { Link, useLocation, useParams } from "wouter";
 import {
   ArrowLeft, Send, Loader2, Sparkles, FileStack, Upload, Trash2,
   FileText, X, Pencil, BookOpen,
-  Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard
+  Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard,
+  Save, AlertCircle
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
 import { renderLatex, unescapeLatex } from '@/lib/render-latex';
 import SomaQuizEngine from "./soma-quiz";
 import type { StudentQuestion } from "./soma-quiz";
-import { supabase } from "@/lib/supabase";
 import { createIdentityHeaders } from "@/lib/identityHeaders";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
+
+// ── Draft question type (mirrors server DraftQuestion) ───────────────────────
+export interface DraftQuestion {
+  draftId: string;
+  stem: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+  marks: number;
+  questionType: "multiple_choice" | "graph";
+  graphSpec?: any | null;
+  topicTag?: string | null;
+  subtopicTag?: string | null;
+  difficultyTag?: string | null;
+}
+
+type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
+
+function makeDraftId(): string {
+  return `draft-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+}
+
+function somaQuestionToDraft(q: SomaQuestion): DraftQuestion {
+  return {
+    draftId: `q-${q.id}`,
+    stem: q.stem,
+    options: Array.isArray(q.options) ? (q.options as string[]) : [],
+    correctAnswer: q.correctAnswer,
+    explanation: q.explanation,
+    marks: q.marks,
+    questionType: (q as any).questionType || "multiple_choice",
+    graphSpec: (q as any).graphSpec ?? null,
+    topicTag: (q as any).topicTag ?? null,
+    subtopicTag: (q as any).subtopicTag ?? null,
+    difficultyTag: (q as any).difficultyTag ?? null,
+  };
+}
+
+function rawToDraftQuestion(raw: any): DraftQuestion | null {
+  let opts = raw.options;
+  if (opts && !Array.isArray(opts) && typeof opts === "object") {
+    const keys = Object.keys(opts);
+    opts = keys.every((k) => /^[A-Z]$/i.test(k))
+      ? keys.sort().map((k) => opts[k])
+      : Object.values(opts);
+  }
+  if (!Array.isArray(opts) || opts.length < 4) return null;
+  opts = (opts as any[]).map(String).slice(0, 4);
+  const stem = String(raw.prompt_text || raw.promptText || raw.stem || raw.question || "");
+  if (!stem) return null;
+  return {
+    draftId: raw.draftId || makeDraftId(),
+    stem,
+    options: opts,
+    correctAnswer: String(raw.correct_answer || raw.correctAnswer || opts[0] || ""),
+    explanation: String(raw.explanation || ""),
+    marks: Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1,
+    questionType: raw.question_type === "graph" ? "graph" : "multiple_choice",
+    graphSpec: raw.graphSpec ?? raw.graph_spec ?? null,
+    topicTag: raw.topic_tag ? String(raw.topic_tag) : null,
+    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : null,
+    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : null,
+  };
+}
+
+function applyDraftAction(
+  current: DraftQuestion[],
+  action: CopilotAction,
+  questions: DraftQuestion[],
+  positions: number[],
+): DraftQuestion[] {
+  switch (action) {
+    case "ADD":
+      return [...current, ...questions];
+
+    case "REPLACE_ALL":
+      return [...questions];
+
+    case "REPLACE_SELECTED": {
+      const next = [...current];
+      positions.forEach((pos, i) => {
+        const idx = pos - 1;
+        if (idx >= 0 && idx < next.length && questions[i]) {
+          next[idx] = questions[i];
+        }
+      });
+      return next;
+    }
+
+    case "DELETE": {
+      const toRemove = new Set(positions.map((p) => p - 1));
+      return current.filter((_, i) => !toRemove.has(i));
+    }
+
+    case "REORDER": {
+      if (positions.length !== current.length) return current;
+      return positions.map((pos) => current[pos - 1]).filter(Boolean);
+    }
+
+    default:
+      return current;
+  }
+}
 
 const LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
 
@@ -154,7 +257,11 @@ export default function BuilderPage() {
 
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState<{ role: "user" | "ai"; text: string; metadata?: { provider: string; model: string; durationMs: number } }[]>([]);
-  const [savedQuestions, setSavedQuestions] = useState<SomaQuestion[]>([]);
+  const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([]);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [isDraftDirty, setIsDraftDirty] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isSyncingDraft, setIsSyncingDraft] = useState(false);
   const [populated, setPopulated] = useState(false);
   const [activeQuizId, setActiveQuizId] = useState<number | null>(editId);
 
@@ -246,6 +353,7 @@ export default function BuilderPage() {
     enabled: authenticated && activeQuizId !== null,
   });
 
+  // Populate metadata from quizData on first load
   useEffect(() => {
     if (quizData && !populated) {
       setTitle(quizData.title);
@@ -253,22 +361,68 @@ export default function BuilderPage() {
       setLevel(quizData.level || "");
       setSubject(quizData.subject || "");
       setTimeLimitMinutes(quizData.timeLimitMinutes ?? 60);
-      if (quizData.questions) {
-        setSavedQuestions(quizData.questions);
-      }
       setPopulated(true);
     }
   }, [quizData, populated]);
 
+  // Load draft from server when quiz is first opened (edit mode)
   useEffect(() => {
-    if (quizData?.questions) {
-      setSavedQuestions(quizData.questions);
-    }
-  }, [quizData]);
+    if (!authenticated || !activeQuizId || draftLoaded) return;
+    authFetch(`/api/tutor/quizzes/${activeQuizId}/draft`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data && Array.isArray(data.questions) && data.questions.length > 0) {
+          // Server has a saved draft — use it
+          setDraftQuestions(data.questions as DraftQuestion[]);
+        } else if (quizData?.questions && quizData.questions.length > 0) {
+          // No server draft — seed from published questions
+          setDraftQuestions(quizData.questions.map(somaQuestionToDraft));
+        }
+        setDraftLoaded(true);
+      })
+      .catch(() => {
+        if (quizData?.questions) {
+          setDraftQuestions(quizData.questions.map(somaQuestionToDraft));
+        }
+        setDraftLoaded(true);
+      });
+  }, [authenticated, activeQuizId, draftLoaded, authFetch, quizData]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat]);
+
+  // Helper: sync the current draft to the server (debounce-friendly, call after mutations)
+  const syncDraft = useCallback(async (quizId: number, questions: DraftQuestion[]) => {
+    setIsSyncingDraft(true);
+    try {
+      await authFetch(`/api/tutor/quizzes/${quizId}/draft`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions }),
+      });
+    } catch {
+      // Non-fatal — draft is still in local state
+    } finally {
+      setIsSyncingDraft(false);
+    }
+  }, [authFetch]);
+
+  // Update draft state + mark dirty + sync to server
+  const updateDraft = useCallback(async (
+    newQuestions: DraftQuestion[] | ((prev: DraftQuestion[]) => DraftQuestion[]),
+    quizId?: number | null,
+  ) => {
+    setDraftQuestions((prev) => {
+      const next = typeof newQuestions === "function" ? newQuestions(prev) : newQuestions;
+      const id = quizId ?? activeQuizId;
+      if (id) {
+        syncDraft(id, next);
+      }
+      return next;
+    });
+    setIsDraftDirty(true);
+  }, [activeQuizId, syncDraft]);
 
   const markMeta = () => { if (activeQuizId) setMetaDirty(true); };
 
@@ -318,30 +472,19 @@ export default function BuilderPage() {
       const docIds = docContext.map((d) => d.fileId);
       const selectedSyllabus = syllabusDocs.find((doc) => String(doc.id) === selectedSyllabusId);
 
-      // Build structured assessment context so copilot knows what's already saved
-      const topicsCovered = Array.from(new Set(savedQuestions.map((q) => (q as any).topicTag).filter(Boolean))) as string[];
-      const subtopicsCovered = Array.from(new Set(savedQuestions.map((q) => (q as any).subtopicTag).filter(Boolean))) as string[];
-      const difficultySpread = savedQuestions.reduce((acc, q) => {
-        const d = String((q as any).difficultyTag || "").toLowerCase();
+      // Snapshot current draft for context
+      const currentDraftSnap = draftQuestions;
+      const difficultySpread = currentDraftSnap.reduce((acc, q) => {
+        const d = String(q.difficultyTag || "").toLowerCase();
         if (d.includes("easy")) acc.easy++;
         else if (d.includes("hard")) acc.hard++;
         else acc.medium++;
         return acc;
       }, { easy: 0, medium: 0, hard: 0 });
-      const graphQuestionCount = savedQuestions.filter((q) => (q as any).questionType === "graph").length;
-      const recentQuestions = savedQuestions.slice(-6).map((q) => ({
-        stem: q.stem,
-        type: (q as any).questionType || "multiple_choice",
-        topic: (q as any).topicTag || null,
-      }));
+
       const assessmentContext = {
         assessmentMeta: { title, subject, level, syllabus },
-        questionCount: savedQuestions.length,
-        topicsCovered,
-        subtopicsCovered,
         difficultySpread,
-        graphQuestionCount,
-        recentQuestions,
       };
 
       animatePipeline(2);
@@ -356,42 +499,41 @@ export default function BuilderPage() {
         } : undefined,
         includeGraphQuestions,
         assessmentContext,
+        // Send the full current draft so the AI knows what exists
+        draftQuestions: currentDraftSnap,
       });
       const data = await res.json();
 
       if (data.needsClarification) {
         setPipelineActive(false);
-        return { ...data, savedToDb: false };
+        return { action: "NONE" as CopilotAction, questions: [], positions: [], reply: data.reply, metadata: data.metadata };
       }
 
-      if (Array.isArray(data.drafts) && data.drafts.length > 0) {
+      // Parse action from response
+      const action: CopilotAction = data.action || "ADD";
+      const questions: DraftQuestion[] = (Array.isArray(data.questions) ? data.questions : [])
+        .map((q: any) => rawToDraftQuestion(q))
+        .filter((q: DraftQuestion | null): q is DraftQuestion => q !== null);
+      const positions: number[] = Array.isArray(data.positions) ? data.positions : [];
+
+      if (action !== "NONE" && (questions.length > 0 || positions.length > 0)) {
         animatePipeline(3);
+        // Ensure quiz shell exists (creates quiz in DB for URL persistence)
         const quizId = await ensureQuizExists();
-
         animatePipeline(4);
-        await authApiRequest("POST", `/api/tutor/quizzes/${quizId}/questions`, { questions: data.drafts });
 
-        await queryClient.refetchQueries({ queryKey: ["/api/tutor/quizzes", quizId] });
-        queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
-
-        const refetched = queryClient.getQueryData<SomaQuiz & { questions: SomaQuestion[] }>(["/api/tutor/quizzes", quizId]);
-        if (refetched?.questions) {
-          setSavedQuestions(refetched.questions);
-        }
-
+        // Apply action to the draft
+        const newDraft = applyDraftAction(currentDraftSnap, action, questions, positions);
+        await updateDraft(newDraft, quizId);
         finishPipeline();
-        return { ...data, savedToDb: true, savedCount: data.drafts.length };
+        return { action, questions, positions, reply: data.reply, metadata: data.metadata, draftCount: newDraft.length };
       }
 
       setPipelineActive(false);
-      return { ...data, savedToDb: false };
+      return { action, questions, positions, reply: data.reply, metadata: data.metadata };
     },
     onSuccess: (data, message) => {
       setChat((prev) => [...prev, { role: "user", text: message }, { role: "ai", text: data.reply, metadata: data.metadata }]);
-      if (data.savedToDb) {
-        setLastSavedCount(data.savedCount);
-        setShowSuccessModal(true);
-      }
       setMsg("");
     },
     onError: (err: Error) => {
@@ -421,16 +563,44 @@ export default function BuilderPage() {
     onError: (err: Error) => toast({ title: "Failed to update", description: err.message, variant: "destructive" }),
   });
 
-  const deleteQuestionMutation = useMutation({
-    mutationFn: async (questionId: number) =>
-      authApiRequest("DELETE", `/api/tutor/questions/${questionId}`),
-    onSuccess: (_data, questionId) => {
-      setSavedQuestions((prev) => prev.filter((q) => q.id !== questionId));
+  // Client-side draft delete (no DB write — draft only)
+  const deleteDraftQuestion = useCallback(async (draftId: string) => {
+    const newDraft = draftQuestions.filter((q) => q.draftId !== draftId);
+    setDraftQuestions(newDraft);
+    setIsDraftDirty(true);
+    if (activeQuizId) await syncDraft(activeQuizId, newDraft);
+  }, [draftQuestions, activeQuizId, syncDraft]);
+
+  // Publish draft → commit to DB
+  const handlePublish = useCallback(async () => {
+    if (!activeQuizId) {
+      toast({ title: "Create the quiz first", description: "Use the copilot to generate some questions before publishing.", variant: "destructive" });
+      return;
+    }
+    if (draftQuestions.length === 0) {
+      toast({ title: "Draft is empty", description: "Add at least one question before publishing.", variant: "destructive" });
+      return;
+    }
+    setIsPublishing(true);
+    try {
+      const res = await authFetch(`/api/tutor/quizzes/${activeQuizId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Publish failed");
+      setIsDraftDirty(false);
+      setLastSavedCount(data.publishedCount ?? draftQuestions.length);
+      setShowSuccessModal(true);
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", activeQuizId] });
-      toast({ title: "Question deleted" });
-    },
-    onError: (err: Error) => toast({ title: "Failed to delete question", description: err.message, variant: "destructive" }),
-  });
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
+    } catch (err: any) {
+      toast({ title: "Publish failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [activeQuizId, draftQuestions, authFetch, toast]);
 
   const handleSupportingDoc = async (file: File, docType: string) => {
     const docEntry = { name: file.name, type: docType, processing: true };
@@ -478,16 +648,12 @@ export default function BuilderPage() {
       if (extractedDrafts.length > 0) {
         setUploadPipeline((p) => ({ ...p, stage: 5 }));
         const quizId = await ensureQuizExists();
-        await authApiRequest("POST", `/api/tutor/quizzes/${quizId}/questions`, { questions: extractedDrafts });
-
-        await queryClient.refetchQueries({ queryKey: ["/api/tutor/quizzes", quizId] });
-        queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
-
-        const refetched = queryClient.getQueryData<SomaQuiz & { questions: SomaQuestion[] }>(["/api/tutor/quizzes", quizId]);
-        if (refetched?.questions) {
-          setSavedQuestions(refetched.questions);
-        }
-        toast({ title: `Imported ${extractedDrafts.length} question${extractedDrafts.length === 1 ? "" : "s"} from PDF` });
+        // Add PDF-extracted questions to draft (no immediate DB write)
+        const newDraftQs = extractedDrafts
+          .map((d: any) => rawToDraftQuestion(d))
+          .filter((q): q is DraftQuestion => q !== null);
+        await updateDraft((prev) => [...prev, ...newDraftQs], quizId);
+        toast({ title: `Added ${newDraftQs.length} question${newDraftQs.length === 1 ? "" : "s"} to draft from PDF`, description: "Click 'Save & Publish' when you're ready to commit." });
       }
       setUploadPipeline((p) => ({ ...p, stage: 6 }));
       setTimeout(() => setUploadPipeline({ active: false, stage: 0, fileName: "", startTime: 0 }), 2500);
@@ -511,18 +677,18 @@ export default function BuilderPage() {
     }
   };
 
-  const totalQuestions = savedQuestions.length;
+  const totalQuestions = draftQuestions.length;
 
   const previewQuestions = useMemo(() =>
-    savedQuestions.map((q) => ({
-      id: q.id,
+    draftQuestions.map((q, idx) => ({
+      id: idx,
       quizId: activeQuizId || 0,
       stem: unescapeLatex(q.stem),
       options: q.options,
       marks: q.marks,
-      questionType: (q as any).questionType,
-      graphSpec: (q as any).graphSpec,
-    } as StudentQuestion)), [savedQuestions, activeQuizId]);
+      questionType: q.questionType,
+      graphSpec: q.graphSpec,
+    } as StudentQuestion)), [draftQuestions, activeQuizId]);
 
   const handleSyllabusUpload = async (file: File) => {
     const form = new FormData();
@@ -599,8 +765,9 @@ export default function BuilderPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Badge className="bg-white/5 text-slate-400 border-white/10 text-[10px] md:text-xs">
+            <Badge className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-white/5 text-slate-400 border-white/10"}`}>
               {totalQuestions} Q{totalQuestions !== 1 ? "s" : ""}
+              {isDraftDirty && <span className="ml-1 hidden md:inline">· unsaved</span>}
             </Badge>
             <Button
               className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all"
@@ -611,6 +778,20 @@ export default function BuilderPage() {
             >
               <Eye className="w-4 h-4 md:mr-1.5" />
               <span className="hidden md:inline">Preview</span>
+            </Button>
+            <Button
+              className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold"
+              size="default"
+              onClick={handlePublish}
+              disabled={isPublishing || totalQuestions === 0 || !activeQuizId}
+              data-testid="button-save-publish"
+            >
+              {isPublishing ? (
+                <Loader2 className="w-4 h-4 animate-spin md:mr-1.5" />
+              ) : (
+                <Save className="w-4 h-4 md:mr-1.5" />
+              )}
+              <span className="hidden md:inline">{isPublishing ? "Publishing…" : "Save & Publish"}</span>
             </Button>
             <Link href="/tutor/assessments">
               <Button className="border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all" size="default" data-testid="button-exit-builder">
@@ -951,46 +1132,103 @@ export default function BuilderPage() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Saved Questions (desktop sidebar) */}
+        {/* RIGHT COLUMN — Draft Questions (desktop sidebar) */}
         <div className="md:col-span-4">
-          <div className="glass-card p-4 md:p-5 md:sticky md:top-20">
-            <div className="flex items-center gap-2 mb-3">
-              <FileStack className="w-4 h-4 text-emerald-400" />
-              <h2 className="font-semibold text-slate-100 text-sm">Saved Questions</h2>
+          <div className="glass-card p-4 md:p-5 md:sticky md:top-20 flex flex-col gap-3">
+
+            {/* Panel header */}
+            <div className="flex items-center gap-2">
+              <FileStack className="w-4 h-4 text-amber-400" />
+              <h2 className="font-semibold text-slate-100 text-sm">Draft Questions</h2>
+              {isDraftDirty && (
+                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Unsaved
+                </Badge>
+              )}
               <Badge className="bg-white/5 text-slate-400 border-white/10 text-[10px] ml-auto">{totalQuestions}</Badge>
             </div>
 
-            {savedQuestions.length === 0 && !pipelineActive ? (
+            {/* Draft syncing indicator */}
+            {isSyncingDraft && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Auto-saving draft…
+              </div>
+            )}
+
+            {/* Empty state */}
+            {draftQuestions.length === 0 && !pipelineActive ? (
               <div className="py-8 text-center space-y-2">
                 <FileStack className="w-8 h-8 mx-auto text-slate-700" />
-                <p className="text-sm text-slate-500">No questions yet.</p>
-                <p className="text-xs text-slate-600">Use the AI Co-Pilot to generate and auto-save questions.</p>
+                <p className="text-sm text-slate-500">No draft questions yet.</p>
+                <p className="text-xs text-slate-600">Use the AI Co-Pilot to generate questions. They'll appear here before you publish.</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[60vh] md:max-h-[calc(100vh-180px)] overflow-auto">
-                {savedQuestions.map((q, idx) => (
-                  <div key={q.id} className="bg-white/[0.03] border border-white/5 rounded-lg p-3 flex items-start gap-2" data-testid={`card-saved-q-${q.id}`}>
-                    <span className="text-xs font-mono text-emerald-400 font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
+              <div className="space-y-2 max-h-[50vh] md:max-h-[calc(100vh-280px)] overflow-auto pr-1">
+                {draftQuestions.map((q, idx) => (
+                  <div
+                    key={q.draftId}
+                    className="bg-white/[0.03] border border-white/5 rounded-lg p-3 flex items-start gap-2"
+                    data-testid={`card-draft-q-${idx}`}
+                  >
+                    <span className="text-xs font-mono text-amber-400 font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-slate-300 line-clamp-2">{renderLatex(unescapeLatex(q.stem))}</div>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px]">{q.options.length} opts</Badge>
                         <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px]">{q.marks}m</Badge>
+                        {q.questionType === "graph" && (
+                          <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px]">graph</Badge>
+                        )}
+                        {q.difficultyTag && (
+                          <Badge className={`text-[10px] border ${
+                            q.difficultyTag.toLowerCase().includes("hard")
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : q.difficultyTag.toLowerCase().includes("easy")
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                : "bg-white/5 text-slate-500 border-white/10"
+                          }`}>{q.difficultyTag}</Badge>
+                        )}
                       </div>
                     </div>
                     <button
-                      className="text-slate-600 hover:text-red-400 shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
-                      onClick={() => {
-                        if (confirm("Delete this question permanently?")) {
-                          deleteQuestionMutation.mutate(q.id);
-                        }
-                      }}
-                      data-testid={`button-delete-saved-${q.id}`}
+                      className="text-slate-600 hover:text-red-400 shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg transition-colors"
+                      onClick={() => deleteDraftQuestion(q.draftId)}
+                      title="Remove from draft"
+                      data-testid={`button-delete-draft-${idx}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Publish CTA */}
+            {draftQuestions.length > 0 && (
+              <div className="border-t border-white/5 pt-3">
+                <Button
+                  className="w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold min-h-[44px]"
+                  onClick={handlePublish}
+                  disabled={isPublishing || !activeQuizId}
+                  data-testid="button-publish-draft"
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Publishing…
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Save & Publish ({totalQuestions} Q{totalQuestions !== 1 ? "s" : ""})
+                    </>
+                  )}
+                </Button>
+                <p className="text-[10px] text-slate-600 text-center mt-2">
+                  Questions are in draft until you publish. Keep editing freely.
+                </p>
               </div>
             )}
           </div>

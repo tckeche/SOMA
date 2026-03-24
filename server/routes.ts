@@ -98,6 +98,78 @@ const adminRateLimiter = rateLimit({
 const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
 
+// ---------------------------------------------------------------------------
+// Draft Assessment Store — in-memory, keyed by quizId
+// Drafts survive page refresh for the current server process.
+// ---------------------------------------------------------------------------
+export interface DraftQuestion {
+  draftId: string;
+  stem: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+  marks: number;
+  questionType: "multiple_choice" | "graph";
+  graphSpec?: import("@shared/schema").GraphQuestionSpec | null;
+  topicTag?: string | null;
+  subtopicTag?: string | null;
+  difficultyTag?: string | null;
+}
+
+const draftStore = new Map<number, { questions: DraftQuestion[]; updatedAt: Date }>();
+
+function getDraft(quizId: number): DraftQuestion[] {
+  return draftStore.get(quizId)?.questions ?? [];
+}
+
+function setDraft(quizId: number, questions: DraftQuestion[]): void {
+  draftStore.set(quizId, { questions, updatedAt: new Date() });
+}
+
+/** Normalise a raw copilot draft object into a DraftQuestion */
+function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
+  let opts = raw.options;
+  if (opts && !Array.isArray(opts) && typeof opts === "object") {
+    const keys = Object.keys(opts);
+    opts = keys.every((k) => /^[A-Z]$/i.test(k))
+      ? keys.sort().map((k) => opts[k])
+      : Object.values(opts);
+  }
+  if (!Array.isArray(opts) || opts.length < 4) return null;
+  opts = opts.map(String).slice(0, 4);
+
+  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
+  if (!stem) return null;
+
+  const explanation = String(raw.explanation || "");
+  const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
+
+  let correctAnswer = String(raw.correct_answer || raw.correctAnswer || raw.answer || "");
+  if (!opts.includes(correctAnswer)) correctAnswer = opts[0];
+
+  let questionType: "multiple_choice" | "graph" = raw.question_type === "graph" ? "graph" : "multiple_choice";
+  let graphSpec: import("@shared/schema").GraphQuestionSpec | null = null;
+  if (raw.graph_spec) {
+    const repaired = repairGraphSpec(raw.graph_spec);
+    if (repaired) { graphSpec = repaired; questionType = "graph"; }
+    else { questionType = "multiple_choice"; }
+  }
+
+  return {
+    draftId: `draft-${crypto.randomUUID()}`,
+    stem,
+    options: opts,
+    correctAnswer,
+    explanation,
+    marks,
+    questionType,
+    graphSpec,
+    topicTag: raw.topic_tag ? String(raw.topic_tag) : null,
+    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : null,
+    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : null,
+  };
+}
+
 const analyzeClassLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // limit each IP to 20 analyze-class requests per window
@@ -374,33 +446,50 @@ function extractJsonArray(text: string): any[] | null {
 }
 
 
-function extractStructuredCopilotResponse(text: string) {
+type CopilotActionType = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
+
+interface ParsedCopilotResponse {
+  reply: string;
+  action: CopilotActionType;
+  questions: any[];       // new/replacement question objects
+  positions: number[];    // 1-based position numbers (for REPLACE_SELECTED, DELETE, REORDER)
+}
+
+function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
   const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+  const EMPTY: ParsedCopilotResponse = { reply: "Assessment draft prepared.", action: "NONE", questions: [], positions: [] };
+
   try {
     const parsed = JSON.parse(cleaned);
-    // Extract reply — accept any string field
+
     const reply: string =
       typeof parsed.reply === "string" && parsed.reply.trim()
         ? parsed.reply.trim()
         : "Assessment draft prepared.";
-    // Extract raw drafts WITHOUT strict schema validation.
-    // The downstream mapping step normalises field names, options format,
-    // and correct_answer — strict Zod validation here drops valid drafts
-    // whenever a single field slightly mismatches (e.g. marks_worth: 0).
-    const rawDrafts: any[] = Array.isArray(parsed.drafts)
-      ? parsed.drafts
-      : Array.isArray(parsed.questions)
-        ? parsed.questions
+
+    // Determine action type
+    const rawAction = typeof parsed.action === "string" ? parsed.action.toUpperCase().trim() : "";
+    const VALID_ACTIONS: CopilotActionType[] = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED", "DELETE", "REORDER", "NONE"];
+    const action: CopilotActionType = VALID_ACTIONS.includes(rawAction as CopilotActionType)
+      ? (rawAction as CopilotActionType)
+      : "ADD";
+
+    // Raw questions array — accept drafts or questions key for compatibility
+    const questions: any[] = Array.isArray(parsed.questions)
+      ? parsed.questions
+      : Array.isArray(parsed.drafts)
+        ? parsed.drafts
         : [];
-    return { reply, drafts: rawDrafts, summary: buildCopilotSummary({ drafts: [] }) };
+
+    // Positions array (1-based)
+    const positions: number[] = Array.isArray(parsed.positions)
+      ? parsed.positions.map(Number).filter((n) => Number.isInteger(n) && n >= 1)
+      : [];
+
+    return { reply, action, questions, positions };
   } catch {
-    // JSON parse failed entirely — try fishing an array from the text
-    const drafts = extractJsonArray(cleaned) || [];
-    return {
-      reply: "Assessment draft prepared.",
-      drafts,
-      summary: buildCopilotSummary({ drafts }),
-    };
+    const questions = extractJsonArray(cleaned) || [];
+    return { ...EMPTY, action: questions.length > 0 ? "ADD" : "NONE", questions };
   }
 }
 
@@ -1081,6 +1170,88 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ── Draft endpoints ────────────────────────────────────────────────────────
+
+  // GET current draft for a quiz (returns [] if no draft exists)
+  app.get("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
+      const questions = getDraft(quizId);
+      res.json({ quizId, questions });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch draft" });
+    }
+  });
+
+  // PUT replace entire draft (client sends full DraftQuestion[])
+  app.put("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      const { questions } = req.body;
+      if (!Array.isArray(questions)) return res.status(400).json({ message: "questions array required" });
+      setDraft(quizId, questions as DraftQuestion[]);
+      res.json({ quizId, questions, updatedAt: new Date() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to save draft" });
+    }
+  });
+
+  // POST publish draft → write to soma_questions (replaces all existing questions)
+  app.post("/api/tutor/quizzes/:quizId/publish", requireTutor, async (req, res) => {
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+
+      const draft = getDraft(quizId);
+      if (draft.length === 0) return res.status(400).json({ message: "Draft is empty — add questions before publishing" });
+
+      // Validate each draft question before write
+      for (const q of draft) {
+        if (!q.stem || !Array.isArray(q.options) || q.options.length !== 4) {
+          return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
+        }
+        if (q.questionType === "graph" && q.graphSpec) {
+          const check = repairGraphSpec(q.graphSpec);
+          if (!check) return res.status(400).json({ message: "A graph question has an invalid graph spec" });
+        }
+      }
+
+      // Delete all existing questions for this quiz
+      await storage.deleteSomaQuestionsByQuizId(quizId);
+
+      // Insert draft questions
+      const mapped = draft.map((q) => ({
+        quizId,
+        stem: q.stem,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        marks: q.marks,
+        questionType: q.questionType,
+        graphSpec: (q.graphSpec ?? null) as import("@shared/schema").GraphQuestionSpec | null,
+        topicTag: q.topicTag ?? null,
+        subtopicTag: q.subtopicTag ?? null,
+        difficultyTag: q.difficultyTag ?? null,
+      }));
+
+      const saved = await storage.createSomaQuestions(mapped);
+
+      // Clear draft after successful publish
+      draftStore.delete(quizId);
+
+      res.json({ quizId, publishedCount: saved.length, questions: saved });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to publish" });
+    }
+  });
+
+  // ── End draft endpoints ────────────────────────────────────────────────────
+
   // Update quiz metadata
   app.put("/api/tutor/quizzes/:quizId", requireTutor, async (req, res) => {
     try {
@@ -1237,8 +1408,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Copilot chat for tutor quiz builder
   app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
     try {
-      const { message, documentIds, chatHistory, syllabusSelection, includeGraphQuestions, assessmentContext } = req.body;
+      const { message, documentIds, chatHistory, syllabusSelection, includeGraphQuestions, assessmentContext, draftQuestions } = req.body;
       const allowGraphs = includeGraphQuestions === true;
+      // draftQuestions is the current in-progress question list (may be empty for new assessments)
+      const currentDraft: DraftQuestion[] = Array.isArray(draftQuestions) ? draftQuestions : [];
       if (!message) return res.status(400).json({ message: "message is required" });
 
       const text = String(message);
@@ -1301,123 +1474,156 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           .join("\n")
         : "";
 
-      // Build structured assessment snapshot from client-supplied context
+      // ── Build draft context block ─────────────────────────────────────────
+      let draftContextBlock = "";
+      if (currentDraft.length > 0) {
+        const draftLines: string[] = ["=== CURRENT DRAFT QUESTIONS (do NOT regenerate these unless the user asks) ==="];
+        currentDraft.forEach((q, i) => {
+          draftLines.push(`Q${i + 1} [${q.questionType}] ${q.stem.slice(0, 100)}${q.stem.length > 100 ? "…" : ""}`);
+          draftLines.push(`   Options: ${q.options.join(" | ")}`);
+          draftLines.push(`   Correct: ${q.correctAnswer} | Marks: ${q.marks} | Difficulty: ${q.difficultyTag || "—"} | Topic: ${q.topicTag || "—"}`);
+        });
+        draftLines.push(`Total draft questions: ${currentDraft.length}`);
+        draftLines.push("=================================================================");
+        draftContextBlock = draftLines.join("\n");
+      }
+
+      // ── Build assessment metadata snapshot ───────────────────────────────
       let assessmentSnapshot = "";
       if (assessmentContext && typeof assessmentContext === "object") {
         const ac = assessmentContext as Record<string, any>;
-        const lines: string[] = ["=== CURRENT ASSESSMENT STATE ==="];
+        const lines: string[] = ["=== ASSESSMENT METADATA ==="];
         if (ac.assessmentMeta) {
           const m = ac.assessmentMeta;
-          lines.push(`Assessment: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"}`);
-        }
-        lines.push(`Questions already saved: ${ac.questionCount ?? 0}`);
-        if (ac.graphQuestionCount) lines.push(`Graph questions already present: ${ac.graphQuestionCount}`);
-        if (Array.isArray(ac.topicsCovered) && ac.topicsCovered.length > 0) {
-          lines.push(`Topics already covered: ${ac.topicsCovered.join(", ")}`);
-        }
-        if (Array.isArray(ac.subtopicsCovered) && ac.subtopicsCovered.length > 0) {
-          lines.push(`Subtopics already covered: ${ac.subtopicsCovered.join(", ")}`);
+          lines.push(`Title: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"}`);
         }
         if (ac.difficultySpread && typeof ac.difficultySpread === "object") {
           const ds = ac.difficultySpread as Record<string, number>;
-          lines.push(`Difficulty spread: easy=${ds.easy ?? 0}, medium=${ds.medium ?? 0}, hard=${ds.hard ?? 0}`);
+          lines.push(`Difficulty spread in draft: easy=${ds.easy ?? 0}, medium=${ds.medium ?? 0}, hard=${ds.hard ?? 0}`);
         }
-        if (Array.isArray(ac.recentQuestions) && ac.recentQuestions.length > 0) {
-          lines.push("Most recent questions in this assessment:");
-          for (const q of ac.recentQuestions) {
-            lines.push(`  - [${q.type || "MCQ"}] ${String(q.stem || "").slice(0, 90)}${String(q.stem || "").length > 90 ? "…" : ""} (topic: ${q.topic || "—"})`);
-          }
-        }
-        lines.push("=================================");
+        lines.push("===========================");
         assessmentSnapshot = lines.join("\n");
       }
 
       const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
-Return one JSON object with keys "reply", "drafts", and "summary".
-Each draft MUST include: prompt_text (the question text), options (array of exactly 4 answer strings), correct_answer (one of the 4 options verbatim), marks_worth (integer 1-10), explanation (non-empty string), topic_tag, subtopic_tag, difficulty_tag, and question_type.
-CRITICAL MCQ RULES — every question without exception must have:
-  - A non-empty prompt_text (the question)
-  - Exactly 4 distinct answer options
-  - A correct_answer that exactly matches one of the 4 options
-  - A non-empty explanation
-${allowGraphs
-  ? `Graph questions are ALLOWED but must be used sparingly (at most 1-3 out of all questions).
-A graph question is still a full MCQ: it must have prompt_text, 4 options, correct_answer, and explanation.
-The graph_spec is SUPPLEMENTAL visual context only — it never replaces the MCQ structure.
-Set question_type to "graph" and include graph_spec (plotType, equation or points, xRange, yRange, axisLabels, showGrid, tickInterval).
-Do NOT output a graph_spec without a complete MCQ structure — such items will be rejected.`
-  : `question_type MUST be "multiple_choice" for every question.
-Do NOT include any graph_spec, graph questions, or graph-related content whatsoever.
-All questions must be standard text-based MCQs.`}
-Summary must reflect the actual drafts produced.`;
 
-      const { data, metadata } = await generateWithFallback(
-        copilotSystemPrompt,
-        `${assessmentSnapshot ? `${assessmentSnapshot}\n\n` : ""}Current request:\n${text}\n\nConversation memory for this assessment session:\n${memoryTranscript || "No previous turns."}\n\nSupporting context:\n${supportingText || "No extra context."}`,
-      );
+You operate on a DRAFT layer — questions are NOT saved to the database until the tutor clicks "Save & Publish".
+Your job is to return a JSON object that describes what action to take on the draft.
+
+## RESPONSE FORMAT (always return exactly this JSON structure):
+{
+  "reply": "<friendly conversational reply explaining what you did>",
+  "action": "<one of: ADD | REPLACE_ALL | REPLACE_SELECTED | DELETE | REORDER | NONE>",
+  "questions": [ <array of question objects — see below> ],
+  "positions": [ <array of 1-based integer positions — see below> ]
+}
+
+## ACTION TYPES:
+- ADD: Append new questions to the end of the draft. Put new questions in "questions", leave "positions" empty.
+- REPLACE_ALL: Replace the entire draft with new questions. Put all new questions in "questions", leave "positions" empty.
+- REPLACE_SELECTED: Replace specific questions. "positions[i]" (1-based) is replaced by "questions[i]". Both arrays must be the same length.
+- DELETE: Remove specific questions by position. Put 1-based positions in "positions", leave "questions" empty.
+- REORDER: Reorder all questions. "positions" must be a complete permutation of [1..N] specifying the new order. "questions" is empty.
+- NONE: No question changes (e.g. for questions/clarifications). Empty "questions" and "positions".
+
+## CHOOSE ACTION BASED ON USER INTENT:
+- "add N questions" / "generate more" → ADD
+- "replace all questions" / "start over" / "regenerate everything" → REPLACE_ALL
+- "make question 3 harder" / "fix Q2" / "replace questions 1 and 4" → REPLACE_SELECTED
+- "delete question 2" / "remove questions 3 and 5" → DELETE
+- "move Q3 to the top" / "reorder so easy questions come first" → REORDER
+- No question change needed → NONE
+
+## QUESTION OBJECT FORMAT (for ADD, REPLACE_ALL, REPLACE_SELECTED):
+Each question MUST have:
+- prompt_text: the question text (non-empty)
+- options: array of exactly 4 distinct answer strings
+- correct_answer: one of the 4 options verbatim
+- marks_worth: integer 1-10
+- explanation: non-empty string
+- topic_tag, subtopic_tag, difficulty_tag (easy/medium/hard)
+- question_type: "multiple_choice" or "graph"
+${allowGraphs
+  ? `Graph questions are ALLOWED but use sparingly (at most 1-3 per assessment).
+A graph question is still a full MCQ — it must have all the fields above PLUS graph_spec.
+graph_spec: { plotType, equation (or points), xRange: [min,max], yRange: [min,max], axisLabels: {x, y}, showGrid, tickInterval }
+Set question_type to "graph" only when including a valid graph_spec.`
+  : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
+
+## CRITICAL RULES:
+- correct_answer must exactly match one of the 4 options (copy verbatim)
+- Do not regenerate unchanged questions — only return questions for ADD/REPLACE operations
+- For DELETE and REORDER, "questions" must be an empty array []`;
+
+      const userPrompt = [
+        draftContextBlock || "(Draft is currently empty — no questions yet)",
+        assessmentSnapshot,
+        `Current request from tutor:\n${text}`,
+        `Conversation memory:\n${memoryTranscript || "No previous turns."}`,
+        `Supporting context:\n${supportingText || "No extra context."}`,
+      ].filter(Boolean).join("\n\n");
+
+      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt);
 
       const structured = extractStructuredCopilotResponse(data);
-      const rawDrafts = structured.drafts || [];
-      const drafts = rawDrafts.map((d: any) => {
-        let opts = d.options;
-        if (opts && !Array.isArray(opts) && typeof opts === "object") {
-          const keys = Object.keys(opts);
-          const isLetterKeyed = keys.every((k) => /^[A-Z]$/i.test(k));
-          if (isLetterKeyed) {
-            opts = keys.sort().map((k) => opts[k]);
-          } else {
-            opts = Object.values(opts);
-          }
-        }
-        if (!Array.isArray(opts) || opts.length < 4) return null;
-        opts = opts.map(String).slice(0, 4);
 
-        const promptText = d.prompt_text || d.promptText || d.question || d.stem || "";
-        if (!promptText) return null;
+      // Normalise raw question objects into DraftQuestion shape
+      const normalisedQuestions: DraftQuestion[] = structured.questions
+        .map((q: any) => normaliseToDraftQuestion(q))
+        .filter((q): q is DraftQuestion => q !== null)
+        .filter((q) => allowGraphs || q.questionType !== "graph");
 
-        let correctAnswer = String(d.correct_answer || d.correctAnswer || d.answer || "");
-        const validated = validateAndCorrectMcqAnswers([{
-          stem: String(promptText),
-          options: opts,
-          correct_answer: correctAnswer,
-          explanation: String(d.explanation || ""),
-          marks: Number(d.marks_worth || d.marksWorth || d.marks || 1) || 1,
-        }]);
-        correctAnswer = validated[0].correct_answer;
-
-        // Validate and repair graph_spec; downgrade to MCQ if spec is unrepairable
-        let questionType: "multiple_choice" | "graph" = d.question_type === "graph" ? "graph" : "multiple_choice";
-        let graphSpec: import("@shared/schema").GraphQuestionSpec | undefined;
-        if (allowGraphs && d.graph_spec) {
-          const repaired = repairGraphSpec(d.graph_spec);
-          if (repaired) {
-            graphSpec = repaired;
-            questionType = "graph";
-          } else {
-            questionType = "multiple_choice";
-          }
-        }
-
-        return {
-          prompt_text: String(promptText),
-          options: opts,
-          correct_answer: correctAnswer,
-          marks_worth: Number(d.marks_worth || d.marksWorth || d.marks || 1) || 1,
-          explanation: String(d.explanation || ""),
-          topic_tag: d.topic_tag ? String(d.topic_tag) : undefined,
-          subtopic_tag: d.subtopic_tag ? String(d.subtopic_tag) : undefined,
-          difficulty_tag: d.difficulty_tag ? String(d.difficulty_tag) : undefined,
-          question_type: questionType,
-          graph_spec: graphSpec,
-        };
-      }).filter((draft): draft is NonNullable<typeof draft> => {
-        if (!draft) return false;
-        if (!allowGraphs && (draft.question_type === "graph" || draft.graph_spec !== undefined)) return false;
-        return true;
+      const summary = buildCopilotSummary({
+        drafts: normalisedQuestions.map((q) => ({
+          prompt_text: q.stem,
+          options: q.options,
+          correct_answer: q.correctAnswer,
+          marks_worth: q.marks,
+          explanation: q.explanation,
+          topic_tag: q.topicTag,
+          subtopic_tag: q.subtopicTag,
+          difficulty_tag: q.difficultyTag,
+          question_type: q.questionType,
+          graph_spec: q.graphSpec ?? undefined,
+        })),
+        syllabusContextLabel,
       });
-      const summary = buildCopilotSummary({ drafts, syllabusContextLabel });
-      const reply = `${structured.reply}\n\nSummary:\n- Questions added: ${summary.numberOfQuestionsAdded}\n- Types: ${summary.questionTypesUsed.join(", ") || "multiple_choice"}\n- Topics: ${summary.topicsCovered.join(", ") || "Mixed"}\n- Subtopics: ${summary.subtopicsCovered.join(", ") || "Mixed"}\n- Difficulty: ${summary.difficultyMix.join(", ") || "Mixed"}${summary.syllabusContextUsed.length ? `\n- Syllabus grounding: ${summary.syllabusContextUsed.join(", ")}` : ""}`;
-      res.json({ reply, drafts, summary, metadata, needsClarification: false });
+
+      const actionVerb = {
+        ADD: `Added ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
+        REPLACE_ALL: `Replaced all questions (${normalisedQuestions.length} new)`,
+        REPLACE_SELECTED: `Replaced ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
+        DELETE: `Removed ${structured.positions.length} question${structured.positions.length !== 1 ? "s" : ""}`,
+        REORDER: "Reordered questions",
+        NONE: "",
+      }[structured.action];
+
+      const replySuffix = actionVerb
+        ? `\n\n**Draft action:** ${actionVerb}. Click "Save & Publish" when you're happy with the full set.`
+        : "";
+
+      res.json({
+        reply: `${structured.reply}${replySuffix}`,
+        action: structured.action,
+        questions: normalisedQuestions,
+        positions: structured.positions,
+        // Legacy field for backward-compat (builder.tsx migration)
+        drafts: normalisedQuestions.map((q) => ({
+          prompt_text: q.stem,
+          options: q.options,
+          correct_answer: q.correctAnswer,
+          marks_worth: q.marks,
+          explanation: q.explanation,
+          topic_tag: q.topicTag,
+          subtopic_tag: q.subtopicTag,
+          difficulty_tag: q.difficultyTag,
+          question_type: q.questionType,
+          graph_spec: q.graphSpec ?? undefined,
+        })),
+        summary,
+        metadata,
+        needsClarification: false,
+      });
     } catch (err: any) {
       res.status(500).json({ message: `Copilot failed: ${err.message}` });
     }

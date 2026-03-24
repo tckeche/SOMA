@@ -39,6 +39,7 @@ export interface IStorage {
   getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]>;
   getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>>;
   deleteSomaQuestion(id: number): Promise<void>;
+  deleteSomaQuestionsByQuizId(quizId: number): Promise<void>;
   getSomaReportsByStudentId(studentId: string): Promise<(SomaReport & { quiz: SomaQuiz })[]>;
   createSomaReport(report: InsertSomaReport): Promise<SomaReport>;
   updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null }>): Promise<SomaReport | undefined>;
@@ -199,6 +200,10 @@ class DatabaseStorage implements IStorage {
 
   async deleteSomaQuestion(id: number): Promise<void> {
     await this.database.delete(somaQuestions).where(eq(somaQuestions.id, id));
+  }
+
+  async deleteSomaQuestionsByQuizId(quizId: number): Promise<void> {
+    await this.database.delete(somaQuestions).where(eq(somaQuestions.quizId, quizId));
   }
 
   async upsertSomaUser(user: InsertSomaUser): Promise<SomaUser> {
@@ -627,6 +632,10 @@ class MemoryStorage implements IStorage {
 
   async deleteSomaQuestion(id: number): Promise<void> {
     this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.id !== id);
+  }
+
+  async deleteSomaQuestionsByQuizId(quizId: number): Promise<void> {
+    this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.quizId !== quizId);
   }
 
   async upsertSomaUser(user: InsertSomaUser): Promise<SomaUser> {

@@ -1,0 +1,207 @@
+You are modifying an existing maths quiz / assessment app.
+
+This is a controlled architecture upgrade.
+Do NOT do a broad refactor of unrelated systems.
+Do NOT break the current app.
+Do NOT rename major routes, env vars, core database fields, or core components unless absolutely necessary.
+
+PRIMARY GOAL
+
+Redesign the assessment builder and Copilot flow so that:
+
+1. Copilot can truly edit the current assessment draft
+2. Questions are NOT permanently saved immediately after generation
+3. Questions are only persisted when the tutor explicitly chooses:
+   "Save and publish assessment"
+
+This must support strong editing behaviour such as:
+- change all questions
+- make all questions graph questions
+- add questions
+- alter existing questions
+- replace selected questions
+- delete questions
+- reorder questions
+- change metadata
+- continue editing through multiple turns in one draft session
+
+==================================================
+CORE PRODUCT REQUIREMENT
+==================================================
+
+The tutor is working on a DRAFT assessment.
+
+Until the tutor explicitly publishes, the AI must have freedom to:
+- add
+- edit
+- replace
+- delete
+- reorder
+- transform question types
+- revise difficulty
+- revise topic/subtopic coverage
+
+The AI should act like an assessment editor, not only a question generator.
+
+==================================================
+ARCHITECTURE TO IMPLEMENT
+==================================================
+
+A. INTRODUCE A TRUE DRAFT ASSESSMENT LAYER
+
+Create a draft workflow for the builder.
+
+The draft must hold:
+- draft assessment metadata
+- draft questions
+- chat history
+- selected syllabus context
+- session summary or state summary
+- unsaved edits
+
+This draft may be stored in the safest way supported by the current architecture:
+- draft tables in DB, OR
+- a draft-specific persistence layer, OR
+- a clearly isolated server-side draft store
+
+Choose the safest additive option for this repo.
+
+Important:
+Do not treat published/live assessment questions as the draft workspace.
+
+B. COPILOT MUST RETURN EDIT ACTIONS, NOT ONLY RAW QUESTIONS
+
+Implement a structured copilot action model.
+
+Copilot should be able to return operations such as:
+- ADD_QUESTIONS
+- UPDATE_QUESTION
+- REPLACE_QUESTIONS
+- DELETE_QUESTIONS
+- REORDER_QUESTIONS
+- UPDATE_ASSESSMENT_METADATA
+
+Each action should be structured and machine-applied.
+
+Examples:
+- “make all questions graphs” should transform existing draft questions where possible, or replace them with graph questions
+- “delete question 4 and 6” should remove those draft questions
+- “replace the last 3 questions” should target the current draft state
+- “change all questions to be harder” should update or replace draft questions coherently
+
+Do not rely on vague natural-language-only side effects.
+
+C. CURRENT DRAFT STATE MUST ALWAYS BE PASSED TO COPILOT
+
+Before every Copilot call, include:
+- recent conversation history
+- draft metadata
+- current draft question list
+- each draft question’s:
+  - draft question id
+  - stem
+  - question type
+  - topic/subtopic
+  - difficulty
+  - marks
+  - graph presence
+- a state summary:
+  - number of questions
+  - topics covered
+  - subtopics covered
+  - difficulty spread
+  - graph question count
+
+This is essential.
+
+D. MAKE THE BUILDER A TRUE EDITOR
+
+In the builder UI:
+- show draft questions
+- support live updates after AI actions
+- reflect add/update/delete/reorder operations immediately
+- do not auto-publish or permanently save final questions on every turn
+
+If needed, keep a lightweight “draft saved” concept separate from “published”.
+
+E. ADD AN EXPLICIT FINALIZATION STEP
+
+Only when the tutor explicitly clicks or confirms:
+- Save and publish assessment
+
+should the app:
+- persist the final assessment structure
+- persist final questions
+- mark the assessment published/live
+- finalize the session
+
+Before that, the assessment remains editable as a draft.
+
+F. SESSION MEMORY RULES
+
+Copilot memory must remain active for the current draft session.
+Preview must not reset the session.
+Exit builder must end the session.
+New draft session must not reuse prior session state.
+
+==================================================
+GRAPH-SPECIFIC REQUIREMENTS
+==================================================
+
+This redesign must also improve graph editing.
+
+When the tutor says:
+- make all questions graph questions
+- convert question 2 and 5 to graph questions
+- remove graphs
+- add more graph-based questions
+
+the system must be able to apply those changes to the draft state properly.
+
+Validate graph questions strictly before final publish.
+
+==================================================
+TEST CASES TO SUPPORT
+==================================================
+
+You must verify these real flows:
+
+1. Create draft assessment
+2. Ask for 5 questions
+3. Ask to change all of them
+4. Ask to make all questions graph questions
+5. Ask to delete 2 questions
+6. Ask to add 3 harder questions
+7. Ask to reorder them
+8. Preview
+9. Continue editing after preview
+10. Save and publish assessment
+
+Expected result:
+- Copilot acts on the existing draft state
+- questions can be added/edited/deleted/replaced
+- nothing is finalized too early
+- final publish works cleanly
+
+==================================================
+IMPLEMENTATION RULES
+==================================================
+
+1. Keep this additive and safe
+2. Reuse current architecture wherever possible
+3. Avoid unrelated refactors
+4. Add or update tests
+5. Run build, tests, and manual verification
+6. Return a final report with:
+   - root cause of current limitations
+   - architecture added for drafts
+   - action model implemented
+   - files changed
+   - tests added/updated
+   - manual verification done
+   - any remaining limitations
+
+Important:
+This is not just a UI tweak.
+This is an assessment-draft architecture improvement.
+Implement it carefully so the tutor can truly collaborate with the AI before final publish.
