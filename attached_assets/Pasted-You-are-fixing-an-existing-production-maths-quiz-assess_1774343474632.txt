@@ -1,0 +1,158 @@
+You are fixing an existing production maths quiz / assessment app in Replit.
+
+The graph questions are rendering badly and must be corrected with minimal, safe code changes.
+
+Do NOT broadly refactor the app.
+Do NOT change unrelated architecture.
+Do NOT break existing MCQ flows.
+
+==================================================
+PROBLEM TO FIX
+==================================================
+
+The graph question UI is not plotting the actual intended graph properly.
+
+Current visible issues:
+1. The actual curve/line is not being plotted correctly
+2. The plotted graph is too faint / low contrast
+3. The axis title "y" is visually sitting between tick numbers and is hard to read
+4. Overall graph readability is poor
+
+The graph must be mathematically correct and visually clear for students.
+
+==================================================
+GOAL
+==================================================
+
+Fix the graph rendering code so that:
+
+1. The actual graph from the question data is plotted correctly
+2. The plotted line/curve is shown in a high-contrast colour
+3. Axis labels are clearly visible and not overlapping tick labels
+4. The graph remains readable in dark mode
+5. Grid, axes, ticks, and plotted function work together cleanly
+6. Existing non-graph questions are unaffected
+
+==================================================
+STRICT RULES
+==================================================
+
+1. Make only minimal, targeted fixes
+2. Reuse the current graph component if possible
+3. Do not redesign the whole UI
+4. Do not remove current graph-question support
+5. Keep changes backward-compatible with the current graph_spec format
+6. Run tests/build after fixes
+7. If a chart library is already in use, fix the configuration before replacing the library
+
+==================================================
+WHAT TO INVESTIGATE
+==================================================
+
+Inspect the current graph rendering pipeline and identify:
+
+1. How graph_spec is parsed
+2. How equation strings are converted into plotted data points
+3. Whether the chart is actually using the equation or only showing axes/grid
+4. Whether line/curve data is being generated incorrectly
+5. Whether the chart line stroke is too dim or blending into the dark background
+6. Whether axis labels are being positioned incorrectly
+7. Whether margins/padding are too small around the chart
+8. Whether the y-axis label placement is colliding with tick labels
+9. Whether the x/y domains and sampling points are correct
+
+==================================================
+REQUIRED FIXES
+==================================================
+
+A. PLOT THE ACTUAL GRAPH PROPERLY
+- Ensure the graph uses the graph_spec data to generate plotted points
+- If graph_spec contains an equation such as y = -2x + 3, compute points across the specified xRange
+- Plot the actual line/curve, not just the axes/grid
+- Use enough sample points for smooth rendering where needed
+- Ensure straight lines render correctly and exactly
+
+B. HIGH-CONTRAST PLOTTED CURVE/LINE
+- The plotted function/line must be clearly visible against the dark background
+- Use a high-contrast stroke colour already compatible with the app theme
+- Do not leave it too dim, too thin, or visually lost in the grid
+- Make stroke width readable
+
+C. FIX AXIS LABEL POSITIONING
+- The y-axis title must not sit between tick numbers
+- Reposition axis labels so they are clearly separated from ticks
+- Ensure x and y axis labels are readable and properly aligned
+- Add chart margins/padding if needed
+
+D. KEEP GRID/AXES READABLE
+- Tick values must remain readable
+- Grid should support reading the graph but not overpower the plotted line
+- Axes should be visually distinct enough from the grid
+
+E. DARK MODE READABILITY
+- Ensure all graph text and lines are legible in dark mode
+- Do not introduce low-contrast styling
+
+==================================================
+TEST CASES TO VERIFY
+==================================================
+
+Use at least these graph examples:
+
+1. Straight line:
+- equation: y = -2x + 3
+- xRange: [-1, 4]
+- yRange: [-5, 5]
+
+2. Positive gradient line:
+- equation: y = 2x + 1
+
+3. Horizontal line:
+- equation: y = 3
+
+4. Negative and positive x-values visible together
+
+For each case verify:
+- actual line is visible
+- graph is mathematically correct
+- axis labels do not overlap tick labels
+- chart is readable on dark background
+
+==================================================
+MANUAL QA CHECKS
+==================================================
+
+After fixing, manually verify:
+
+1. The graph question in preview now shows the actual plotted line
+2. The plotted line is easy to see
+3. The y-axis title is not trapped between numbers
+4. Students can clearly interpret the graph
+5. Non-graph MCQs still render normally
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Return your work in this structure:
+
+1. Overall result
+- PASS / PASS WITH FIXES / FAIL
+
+2. Root cause
+- exact reason the graph was not plotting correctly
+- exact reason readability was poor
+
+3. Fixes made
+- concise list of code changes
+
+4. Files changed
+- every file modified
+
+5. Verification performed
+- tests run
+- build run
+- manual graph checks performed
+
+6. Remaining risks
+- anything still needing follow-up
