@@ -1,0 +1,203 @@
+You are performing a full stabilization and repair pass on my maths quiz / assessment app.
+
+This is a high-priority reliability task.
+Do NOT do a broad refactor.
+Do NOT clean up unrelated code just for style.
+Do NOT break working areas while fixing broken ones.
+Keep all changes minimal, targeted, and safe.
+
+PRIMARY GOAL
+
+Do a thorough end-to-end check of all the changes we worked on today, make sure they actually work, and if anything is broken, fix it.
+
+Current major problems:
+1. Graph rendering/layout has regressed badly again in the published Replit app.
+2. Graph generation/editing is unreliable.
+3. The app now sometimes does not even create quizzes/questions at all.
+4. The assistant may claim success even when draft state is empty or unchanged.
+
+I need a full stabilization pass, not another small patch.
+
+==================================================
+WHAT YOU MUST CHECK
+==================================================
+
+A. GRAPH RENDERING
+Inspect the graph rendering pipeline end to end and fix it properly.
+
+Verify and fix:
+- x-axis title position
+- y-axis title position
+- y-axis padding
+- tick label spacing
+- plot area margins
+- overlap/clipping
+- axes placement when 0 is outside the visible range
+- line/curve/points actually rendering
+- production/deployed layout consistency
+
+Do not just tweak a few numbers randomly.
+Make the graph layout logic robust enough for production.
+
+B. QUESTION GENERATION FLOW
+Inspect the full question-generation path:
+
+- builder sends request
+- backend copilot route runs
+- model response is parsed
+- drafts are validated
+- drafts are applied to the draft/current state
+- questions appear in builder UI
+- preview works
+- save/publish works
+
+Find out why the app is sometimes returning responses conversationally but not actually creating any questions at all.
+
+Possible failure points:
+- model response parsing
+- draft extraction
+- validation silently dropping everything
+- graph validation rejecting drafts
+- draft action application failing
+- frontend state not updating after backend success
+- preview reading stale or empty state
+- save/publish path broken
+
+C. GRAPH QUESTION GENERATION
+Verify:
+- requests for graph questions produce real graph questions
+- graph questions contain valid graphSpec
+- graph questions actually render in preview
+- graph replacement/edit requests mutate the real draft state
+- assistant reply matches actual resulting state
+
+D. DRAFT / STATE CONSISTENCY
+Inspect whether the system is claiming:
+- questions added
+- questions replaced
+- graph questions created
+
+when in reality:
+- draft is unchanged
+- draft is empty
+- preview has no questions
+
+Fix this so the user-facing reply is based on verified resulting state.
+
+E. DEPLOYED/PUBLISHED REPLIT CONSISTENCY
+Check whether the published Replit app is serving stale or inconsistent code/assets.
+
+Verify:
+- latest frontend bundle is being built
+- latest backend code is being used
+- no stale cache/build artifact is causing live behaviour to differ from source
+- deployed behaviour matches current fixed code
+
+==================================================
+DEBUGGING APPROACH
+==================================================
+
+Do not guess.
+Add targeted debug instrumentation if needed, then use it to identify the real failure points.
+
+Use clear log prefixes like:
+- [COPILOT_DEBUG]
+- [GRAPH_DEBUG]
+- [DRAFT_DEBUG]
+- [SAVE_DEBUG]
+- [PREVIEW_DEBUG]
+- [DEPLOY_DEBUG]
+
+Log at least:
+1. incoming copilot request
+2. raw drafts returned
+3. valid drafts after parsing/validation
+4. graph draft count
+5. draft state after mutation
+6. preview question count
+7. graph question count in preview
+8. save/publish result
+
+==================================================
+TEST FLOWS YOU MUST RUN
+==================================================
+
+1. Standard generation
+- create a new assessment
+- ask for 5 normal questions
+- confirm 5 questions actually appear
+- confirm preview works
+
+2. Graph generation
+- ask for 5 questions on linear graphical equations
+- confirm real graph questions are created
+- confirm graphs render
+
+3. Graph replacement
+- start with non-graph questions
+- request 3 graph replacements
+- verify resulting total question count
+- verify resulting graph count
+- verify preview shows plotted graphs
+
+4. All-graph flow
+- ask to make all questions graphs
+- verify all are valid graph questions
+- verify preview works
+
+5. Save/publish flow
+- verify questions persist correctly
+- reopen assessment and confirm same questions remain
+
+6. Regression checks
+- builder still loads
+- tutor quiz list still works
+- non-graph questions still work
+- syllabus upload/selection still works if affected
+- dark mode / button sizing still okay if touched
+
+==================================================
+QUALITY REQUIREMENTS
+==================================================
+
+The final result must:
+- actually create questions reliably
+- actually persist them reliably
+- actually render graphs correctly
+- not falsely claim success when nothing changed
+- be stable in both development and published Replit deployment
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+When finished, return a structured report:
+
+1. Overall result
+- PASS / PASS WITH FIXES / PARTIAL / FAIL
+
+2. Root causes found
+For each broken area:
+- graph rendering
+- graph generation
+- question creation/saving
+- draft state mismatch
+- deployed build inconsistency
+
+3. Exact files changed
+
+4. Fixes applied
+Be specific.
+
+5. Tests and manual verification performed
+
+6. Remaining risks or limitations
+
+IMPORTANT:
+Do not stop at “it builds”.
+Do not stop at “tests pass”.
+Actually verify that:
+- questions are being created
+- graphs are being generated
+- graphs are rendering properly
+- deployed Replit behaviour matches the fixed code

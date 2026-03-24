@@ -256,13 +256,20 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
   let correctAnswer = String(raw.correct_answer || raw.correctAnswer || raw.answer || "");
   if (!opts.includes(correctAnswer)) correctAnswer = opts[0];
 
-  let questionType: "multiple_choice" | "graph" = raw.question_type === "graph" ? "graph" : "multiple_choice";
+  // Determine question type and graphSpec
+  // Always start as multiple_choice; upgrade to "graph" only when we have a valid spec
+  let questionType: "multiple_choice" | "graph" = "multiple_choice";
   let graphSpec: import("@shared/schema").GraphQuestionSpec | null = null;
   if (raw.graph_spec) {
     const repaired = repairGraphSpec(raw.graph_spec);
-    if (repaired) { graphSpec = repaired; questionType = "graph"; }
-    else { questionType = "multiple_choice"; }
+    if (repaired) {
+      graphSpec = repaired;
+      questionType = "graph";
+    }
+    // If repair failed, stays as "multiple_choice" — prevents ghost "graph" questions with no spec
   }
+  // Note: raw.question_type === "graph" without a graph_spec means the AI omitted the spec;
+  // we treat it as multiple_choice so the draft count is honest (no blank graph slots)
 
   return {
     draftId: `draft-${crypto.randomUUID()}`,
@@ -564,42 +571,101 @@ interface ParsedCopilotResponse {
   positions: number[];    // 1-based position numbers (for REPLACE_SELECTED, DELETE, REORDER)
 }
 
-function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
-  const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
-  const EMPTY: ParsedCopilotResponse = { reply: "Assessment draft prepared.", action: "NONE", questions: [], positions: [] };
+/**
+ * Walk the string and find the first balanced { ... } JSON object.
+ * Returns the parsed object or null if no valid JSON object found.
+ * This handles AI responses where JSON is wrapped in prose or markdown.
+ */
+function extractJsonObject(text: string): any | null {
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          // This balanced block wasn't valid JSON — keep scanning
+          start = -1;
+        }
+      }
+    }
+  }
+  return null;
+}
 
-  try {
-    const parsed = JSON.parse(cleaned);
+function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const VALID_ACTIONS: CopilotActionType[] = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED", "DELETE", "REORDER", "NONE"];
+  const rawAction = typeof parsed.action === "string" ? parsed.action.toUpperCase().trim() : "";
+  const action: CopilotActionType = VALID_ACTIONS.includes(rawAction as CopilotActionType)
+    ? (rawAction as CopilotActionType)
+    : "ADD";
 
-    const reply: string =
-      typeof parsed.reply === "string" && parsed.reply.trim()
-        ? parsed.reply.trim()
-        : "Assessment draft prepared.";
+  const reply: string =
+    typeof parsed.reply === "string" && parsed.reply.trim()
+      ? parsed.reply.trim()
+      : "";
 
-    // Determine action type
-    const rawAction = typeof parsed.action === "string" ? parsed.action.toUpperCase().trim() : "";
-    const VALID_ACTIONS: CopilotActionType[] = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED", "DELETE", "REORDER", "NONE"];
-    const action: CopilotActionType = VALID_ACTIONS.includes(rawAction as CopilotActionType)
-      ? (rawAction as CopilotActionType)
-      : "ADD";
-
-    // Raw questions array — accept drafts or questions key for compatibility
-    const questions: any[] = Array.isArray(parsed.questions)
-      ? parsed.questions
-      : Array.isArray(parsed.drafts)
-        ? parsed.drafts
-        : [];
-
-    // Positions array (1-based)
-    const positions: number[] = Array.isArray(parsed.positions)
-      ? parsed.positions.map(Number).filter((n) => Number.isInteger(n) && n >= 1)
+  const questions: any[] = Array.isArray(parsed.questions)
+    ? parsed.questions
+    : Array.isArray(parsed.drafts)
+      ? parsed.drafts
       : [];
 
-    return { reply, action, questions, positions };
-  } catch {
-    const questions = extractJsonArray(cleaned) || [];
-    return { ...EMPTY, action: questions.length > 0 ? "ADD" : "NONE", questions };
+  const positions: number[] = Array.isArray(parsed.positions)
+    ? parsed.positions.map(Number).filter((n) => Number.isInteger(n) && n >= 1)
+    : [];
+
+  // Accept as a structured response only if it has the key fields
+  if (!reply && questions.length === 0 && action === "ADD") return null;
+
+  return { reply: reply || "Here are your questions.", action, questions, positions };
+}
+
+function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
+  console.log(`[COPILOT_DEBUG] Raw AI response length: ${text.length} chars`);
+  const EMPTY: ParsedCopilotResponse = { reply: "Assessment draft prepared.", action: "NONE", questions: [], positions: [] };
+
+  // Strip markdown code fences then try direct parse
+  const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+
+  // Attempt 1: Direct JSON.parse (handles clean responses)
+  try {
+    const parsed = JSON.parse(cleaned);
+    const result = parseCopilotObject(parsed);
+    if (result) {
+      console.log(`[COPILOT_DEBUG] Parsed directly: action=${result.action}, questions=${result.questions.length}`);
+      return result;
+    }
+  } catch { /* fall through */ }
+
+  // Attempt 2: Extract first balanced JSON object from mixed text (handles prose-wrapped JSON)
+  try {
+    const obj = extractJsonObject(cleaned);
+    if (obj) {
+      const result = parseCopilotObject(obj);
+      if (result) {
+        console.log(`[COPILOT_DEBUG] Extracted JSON object from mixed text: action=${result.action}, questions=${result.questions.length}`);
+        return result;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Attempt 3: Fall back to extracting a raw questions array
+  const questions = extractJsonArray(cleaned) || [];
+  if (questions.length > 0) {
+    console.log(`[COPILOT_DEBUG] Extracted raw questions array: ${questions.length} questions`);
+    return { ...EMPTY, action: "ADD", questions };
   }
+
+  console.log(`[COPILOT_DEBUG] All extraction attempts failed — returning NONE fallback. First 200 chars: ${text.slice(0, 200)}`);
+  return EMPTY;
 }
 
 function sanitizeStudentIds(studentIds: unknown): string[] {
@@ -1632,10 +1698,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
 
+CRITICAL OUTPUT RULE: Your ENTIRE response must be a single valid JSON object. Do NOT write any prose, markdown, or explanation outside the JSON. All explanations go inside the "reply" field within the JSON. Do NOT start with text like "Here are your questions:" — start immediately with the opening "{".
+
 You operate on a DRAFT layer — questions are NOT saved to the database until the tutor clicks "Save & Publish".
 Your job is to return a JSON object that describes what action to take on the draft.
 
-## RESPONSE FORMAT (always return exactly this JSON structure):
+## RESPONSE FORMAT (your ENTIRE response must be exactly this JSON structure — nothing before or after):
 {
   "reply": "<friendly conversational reply explaining what you did>",
   "action": "<one of: ADD | REPLACE_ALL | REPLACE_SELECTED | DELETE | REORDER | NONE>",
@@ -1748,6 +1816,8 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 
       const structured = extractStructuredCopilotResponse(data);
 
+      console.log(`[COPILOT_DEBUG] Structured response: action=${structured.action}, raw_questions=${structured.questions.length}, draftSize=${currentDraft.length}`);
+
       // ── Step 1: Normalise raw question objects into DraftQuestion shape,
       //    tracking which attempted to be graph questions but failed validation
       type NormResult = { normalised: DraftQuestion | null; attemptedGraph: boolean; isValidGraph: boolean };
@@ -1755,6 +1825,9 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
         const normalised = normaliseToDraftQuestion(q);
         const attemptedGraph = q.question_type === "graph" || (q.graph_spec && typeof q.graph_spec === "object");
         const isValidGraph = normalised?.questionType === "graph" && normalised?.graphSpec != null;
+        if (attemptedGraph && !isValidGraph) {
+          console.log(`[GRAPH_DEBUG] Graph question failed validation — stem: "${String(q.prompt_text || q.stem || "").slice(0, 60)}", graph_spec keys: ${q.graph_spec ? Object.keys(q.graph_spec).join(",") : "missing"}`);
+        }
         return { normalised, attemptedGraph, isValidGraph };
       });
 
@@ -1763,11 +1836,17 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
         .filter((q): q is DraftQuestion => q !== null)
         .filter((q) => allowGraphs || q.questionType !== "graph");
 
+      console.log(`[DRAFT_DEBUG] After normalization: total=${normalisedQuestions.length}, graphs=${normalisedQuestions.filter((q) => q.questionType === "graph").length}`);
+
       // ── Step 2: Graph shortfall detection + targeted retry
       const requestedAsGraphCount = normResults.filter((r) => r.attemptedGraph).length;
       const validGraphAfterNorm = normalisedQuestions.filter((q) => q.questionType === "graph").length;
       const graphShortfall = requestedAsGraphCount - validGraphAfterNorm;
       const graphRequest = isGraphRequestMessage(text);
+
+      if (requestedAsGraphCount > 0) {
+        console.log(`[GRAPH_DEBUG] Requested as graph: ${requestedAsGraphCount}, valid after norm: ${validGraphAfterNorm}, shortfall: ${graphShortfall}, retry needed: ${allowGraphs && graphRequest && graphShortfall > 0}`);
+      }
 
       if (allowGraphs && graphRequest && graphShortfall > 0) {
         // Some graph questions failed repairGraphSpec — retry with an explicit spec prompt
@@ -1815,6 +1894,8 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
         .filter((x) => x.isGraph)
         .map((x) => x.pos);
       const finalGraphCount = graphPositionsInDraft.length;
+
+      console.log(`[DRAFT_DEBUG] Simulated draft: total=${simulatedDraft.length}, graphPositions=[${graphPositionsInDraft.join(",")}], currentDraftBefore=${currentDraft.length}`);
 
       // ── Step 4: Build an honest verified reply (based on actual draft state,
       //    not the AI's claimed narrative)

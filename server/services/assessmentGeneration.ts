@@ -1,17 +1,10 @@
 import { z } from "zod";
+import { graphQuestionSpecSchema } from "@shared/schema";
 import type { GraphQuestionSpec } from "@shared/schema";
 
-export const graphSpecSchema: z.ZodType<GraphQuestionSpec> = z.object({
-  plotType: z.enum(["line", "curve", "points"]),
-  equation: z.string().optional(),
-  points: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),
-  xRange: z.tuple([z.number(), z.number()]),
-  yRange: z.tuple([z.number(), z.number()]),
-  axisLabels: z.object({ x: z.string(), y: z.string() }),
-  showGrid: z.boolean(),
-  tickInterval: z.number().positive(),
-  highlightedPoints: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),
-});
+// Re-export the canonical schema so all imports use the same definition
+// (the old local schema was missing the `curves` field, which caused silent data loss)
+export const graphSpecSchema = graphQuestionSpecSchema;
 
 export const copilotDraftSchema = z.object({
   prompt_text: z.string(),

@@ -137,9 +137,16 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
       className="rounded-2xl border border-cyan-500/20 bg-slate-950/70 p-3 md:p-4"
       data-testid="graph-plot"
     >
+      {/*
+        SVG sizing: `w-full` + no fixed height → browser computes height from viewBox aspect
+        ratio (620:340 ≈ 1.82:1), so the graph scales proportionally on every screen size.
+        A max-width wrapper caps the graph at its natural 620 px width so it never stretches
+        into an ultra-wide canvas on large monitors.
+      */}
+      <div className="w-full max-w-[620px] mx-auto">
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full h-[230px] md:h-[340px]"
+        className="w-full block"
         role="img"
         aria-label="Cartesian graph"
       >
@@ -318,6 +325,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           ))}
         </div>
       )}
+      </div>{/* end max-w-[620px] wrapper */}
     </div>
   );
 }
