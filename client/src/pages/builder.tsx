@@ -162,6 +162,8 @@ export default function BuilderPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [completedStages, setCompletedStages] = useState<Set<number>>(new Set());
 
+  const [includeGraphQuestions, setIncludeGraphQuestions] = useState(false);
+
   const [showPreview, setShowPreview] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastSavedCount, setLastSavedCount] = useState(0);
@@ -276,13 +278,15 @@ export default function BuilderPage() {
     const quizRes = await authApiRequest("POST", "/api/tutor/quizzes", {
       title: title.trim(),
       topic: title.trim(),
-      syllabus: syllabus || "IEB",
-      level: level || "Grade 6-12",
+      syllabus: syllabus || null,
+      level: level || null,
       subject: subject || null,
       timeLimitMinutes,
     });
     const quiz = await quizRes.json();
     setActiveQuizId(quiz.id);
+    // Update URL so refresh preserves the quiz
+    navigate(`/tutor/assessments/edit/${quiz.id}`);
     return quiz.id;
   };
 
@@ -324,6 +328,7 @@ export default function BuilderPage() {
           level: selectedSyllabus.level,
           syllabusCode: selectedSyllabus.syllabusCode,
         } : undefined,
+        includeGraphQuestions,
       });
       const data = await res.json();
 
@@ -770,7 +775,7 @@ export default function BuilderPage() {
             </div>
 
             {/* Chat input */}
-            <div className="p-3 md:p-4 border-t border-white/5">
+            <div className="p-3 md:p-4 border-t border-white/5 space-y-2">
               <div className="flex gap-2">
                 <Textarea
                   value={msg}
@@ -790,6 +795,16 @@ export default function BuilderPage() {
                   {chatMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </Button>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none w-fit" data-testid="label-include-graph-questions">
+                <input
+                  type="checkbox"
+                  checked={includeGraphQuestions}
+                  onChange={(e) => setIncludeGraphQuestions(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-violet-500"
+                  data-testid="checkbox-include-graph-questions"
+                />
+                <span className="text-xs text-slate-400">Include some questions with graphs</span>
+              </label>
             </div>
           </div>
 

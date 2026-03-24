@@ -1443,3 +1443,234 @@ describe("Tutor syllabus grounding and copilot session support", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── GRAPH CONTROL: includeGraphQuestions flag ────────────────────────────────
+describe("Graph question control via includeGraphQuestions flag", () => {
+  let token: string;
+  let generateWithFallback: any;
+
+  beforeAll(async () => {
+    token = await getTutorToken();
+    const mod = await import("../server/services/aiOrchestrator");
+    generateWithFallback = mod.generateWithFallback;
+  });
+
+  const graphQuestion = {
+    prompt_text: "Which line has gradient 2?",
+    options: ["y = x + 1", "y = 2x + 3", "y = 3x", "y = x - 2"],
+    correct_answer: "y = 2x + 3",
+    marks_worth: 2,
+    explanation: "Gradient is the coefficient of x.",
+    topic_tag: "Linear graphs",
+    subtopic_tag: "Gradient",
+    difficulty_tag: "Medium",
+    question_type: "graph",
+    graph_spec: {
+      plotType: "line",
+      equation: "2x+3",
+      xRange: [-5, 5],
+      yRange: [-10, 10],
+      axisLabels: { x: "x", y: "y" },
+      showGrid: true,
+      tickInterval: 1,
+    },
+  };
+
+  const mcqQuestion = {
+    prompt_text: "What is $2 + 2$?",
+    options: ["3", "4", "5", "6"],
+    correct_answer: "4",
+    marks_worth: 1,
+    explanation: "Basic arithmetic.",
+    topic_tag: "Arithmetic",
+    subtopic_tag: "Addition",
+    difficulty_tag: "Easy",
+    question_type: "multiple_choice",
+  };
+
+  it("checkbox OFF: graph questions are filtered out even if AI returns them", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Here are your questions.",
+        drafts: [graphQuestion, mcqQuestion],
+        summary: { numberOfQuestionsAdded: 2, questionTypesUsed: ["graph", "multiple_choice"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: false });
+    expect(res.status).toBe(200);
+    const drafts = res.body.drafts as any[];
+    expect(drafts.every((d: any) => d.question_type !== "graph")).toBe(true);
+    expect(drafts.every((d: any) => d.graph_spec === undefined)).toBe(true);
+  });
+
+  it("checkbox OFF: system prompt forbids graph questions (no graph_spec in response)", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Here are MCQ questions.",
+        drafts: [mcqQuestion],
+        summary: { numberOfQuestionsAdded: 1, questionTypesUsed: ["multiple_choice"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: false });
+    expect(res.status).toBe(200);
+    expect(res.body.drafts.every((d: any) => !d.graph_spec)).toBe(true);
+  });
+
+  it("checkbox ON: graph questions are permitted and returned", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Here are questions including a graph.",
+        drafts: [mcqQuestion, graphQuestion],
+        summary: { numberOfQuestionsAdded: 2, questionTypesUsed: ["multiple_choice", "graph"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    const drafts = res.body.drafts as any[];
+    const graphDrafts = drafts.filter((d: any) => d.question_type === "graph");
+    expect(graphDrafts.length).toBeGreaterThan(0);
+    expect(graphDrafts[0].graph_spec).toBeDefined();
+  });
+
+  it("checkbox ON: graph questions still have valid MCQ structure (4 options, correct answer)", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Graph MCQ question.",
+        drafts: [graphQuestion],
+        summary: { numberOfQuestionsAdded: 1, questionTypesUsed: ["graph"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    const drafts = res.body.drafts as any[];
+    expect(drafts.length).toBe(1);
+    expect(drafts[0].prompt_text).toBeTruthy();
+    expect(drafts[0].options).toHaveLength(4);
+    expect(drafts[0].correct_answer).toBeTruthy();
+    expect(drafts[0].options).toContain(drafts[0].correct_answer);
+  });
+
+  it("graph-only output (no prompt_text) is rejected regardless of checkbox", async () => {
+    const graphOnlyItem = {
+      // No prompt_text — graph-only item that should be rejected
+      options: [],
+      correct_answer: "",
+      marks_worth: 1,
+      explanation: "",
+      question_type: "graph",
+      graph_spec: { plotType: "line", xRange: [-5, 5], yRange: [-10, 10], axisLabels: { x: "x", y: "y" }, showGrid: true, tickInterval: 1 },
+    };
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Graph output.",
+        drafts: [graphOnlyItem],
+        summary: { numberOfQuestionsAdded: 1, questionTypesUsed: ["graph"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: true });
+    expect(res.status).toBe(200);
+    // Should be filtered out — no prompt_text and no valid options
+    expect(res.body.drafts).toHaveLength(0);
+  });
+
+  it("question with fewer than 4 options is rejected", async () => {
+    const badQuestion = { ...mcqQuestion, options: ["A", "B"] };
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Bad question.",
+        drafts: [badQuestion],
+        summary: { numberOfQuestionsAdded: 1, questionTypesUsed: ["multiple_choice"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: false });
+    expect(res.status).toBe(200);
+    expect(res.body.drafts).toHaveLength(0);
+  });
+
+  it("default (no flag sent) treats graphs as disabled", async () => {
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({
+        reply: "Questions.",
+        drafts: [graphQuestion, mcqQuestion],
+        summary: { numberOfQuestionsAdded: 2, questionTypesUsed: ["graph", "multiple_choice"], topicsCovered: [], subtopicsCovered: [], difficultyMix: [], syllabusContextUsed: [] },
+      }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    // No includeGraphQuestions field — defaults to false
+    const res = await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics" });
+    expect(res.status).toBe(200);
+    const drafts = res.body.drafts as any[];
+    expect(drafts.every((d: any) => d.question_type !== "graph")).toBe(true);
+  });
+});
+
+// ─── AUTOSAVE: Quiz creation persists on new assessment ───────────────────────
+describe("Autosave: quiz created via POST /api/tutor/quizzes is persisted", () => {
+  it("creates a quiz and returns an ID that can be fetched again", async () => {
+    const token = await getTutorToken();
+    const createRes = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Autosave Test Quiz", topic: "Algebra", timeLimitMinutes: 30 });
+    expect(createRes.status).toBe(200);
+    const quizId = createRes.body.id;
+    expect(typeof quizId).toBe("number");
+
+    // Adding questions (simulating what ensureQuizExists + chatMutation does)
+    const qRes = await request.post(`/api/tutor/quizzes/${quizId}/questions`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: [{ prompt_text: "What is 7 * 7?", options: ["42", "49", "56", "63"], correct_answer: "49", marks_worth: 1 }] });
+    expect(qRes.status).toBe(200);
+
+    // Simulate refresh: fetch quiz detail by ID — questions must be present
+    const detailRes = await request.get(`/api/tutor/quizzes/${quizId}/detail`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body.questions).toHaveLength(1);
+    expect(detailRes.body.questions[0].stem).toBe("What is 7 * 7?");
+  });
+
+  it("successive question saves do not create duplicate records", async () => {
+    const token = await getTutorToken();
+    const createRes = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "No Duplicate Quiz", topic: "Geometry", timeLimitMinutes: 45 });
+    const quizId = createRes.body.id;
+
+    // Save once
+    await request.post(`/api/tutor/quizzes/${quizId}/questions`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: [{ prompt_text: "Area of circle?", options: ["pi*r", "pi*r^2", "2*pi*r", "r^2"], correct_answer: "pi*r^2", marks_worth: 1 }] });
+
+    // Save again (regeneration scenario)
+    await request.post(`/api/tutor/quizzes/${quizId}/questions`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: [{ prompt_text: "Circumference of circle?", options: ["pi*r", "pi*r^2", "2*pi*r", "r^2"], correct_answer: "2*pi*r", marks_worth: 1 }] });
+
+    const detailRes = await request.get(`/api/tutor/quizzes/${quizId}/detail`)
+      .set("Authorization", `Bearer ${token}`);
+    // Both questions added, no duplicates of either
+    expect(detailRes.body.questions).toHaveLength(2);
+    const stems = detailRes.body.questions.map((q: any) => q.stem);
+    expect(new Set(stems).size).toBe(2);
+  });
+});

@@ -1,0 +1,218 @@
+You are working inside an existing production maths quiz / assessment app.
+
+There are TWO CRITICAL ISSUES to fix:
+
+1. Copilot-generated questions are NOT being automatically saved.
+2. Copilot question generation is BROKEN — it is generating graphs only and NOT proper MCQ questions.
+
+This is a high-priority bug fix task.
+
+You must fix both issues carefully WITHOUT breaking the app, its architecture, existing flows, existing variable names, or current working behaviour.
+
+==================================================
+STRICT RULES
+==================================================
+
+1. Do NOT refactor broadly.
+2. Do NOT rename core models, routes, env vars, state keys, DB fields, or service contracts.
+3. Reuse existing architecture.
+4. Make minimal, precise fixes only.
+5. Any schema changes must be additive and backward-compatible.
+6. Add tests for both fixes.
+7. Run build, lint, and tests after changes.
+
+==================================================
+ISSUE 1: AUTOSAVE NOT WORKING
+==================================================
+
+Problem:
+Generated questions exist only in temporary state and are not persisted.
+
+Expected behaviour:
+- After copilot generates questions → automatically save to draft
+- After regeneration/edit → update draft
+- Preview uses latest saved data
+- Refresh does NOT lose questions
+- No duplicate drafts or duplicate questions
+
+Fix requirements:
+- Identify where generation returns results
+- Hook into existing draft save/update logic
+- Ensure idempotent saves
+- Prevent save loops
+- Handle save failures safely
+
+==================================================
+ISSUE 2: MCQ GENERATION IS BROKEN
+==================================================
+
+Problem:
+Copilot is generating graph-related output but NOT producing valid MCQ questions.
+
+This likely happened after adding graph support.
+
+You must fix this so that graph questions are OPTIONAL and controlled ONLY by the tutor via a checkbox.
+
+==================================================
+GRAPH QUESTION RULES (VERY IMPORTANT)
+==================================================
+
+1. Graph questions must ONLY be included if a specific checkbox is ticked by the tutor.
+   Example intent:
+   - "Include some questions with graphs" = checkbox ON
+   - checkbox OFF = no graph questions at all
+
+2. If the checkbox is OFF:
+   - generate normal MCQ questions only
+   - do NOT include graph specs
+   - do NOT generate graph-based questions
+
+3. If the checkbox is ON:
+   - generate SOME graphical questions, not all questions
+   - keep a sensible mix of question types
+   - graph questions must still be full MCQs
+
+4. A graph question is NOT a graph by itself.
+   It must still include:
+   - question text
+   - 4 options (A, B, C, D)
+   - exactly one correct answer
+   - optional graph spec as supporting content
+
+Correct example shape:
+{
+  question: "Which line has gradient 2?",
+  options: {
+    A: "...",
+    B: "...",
+    C: "...",
+    D: "..."
+  },
+  correctAnswer: "B",
+  graph: {
+    ...optional graph spec...
+  }
+}
+
+5. INVALID outputs that must be rejected:
+   - graph only
+   - graph with no MCQ options
+   - question with fewer than 4 options
+   - missing correct answer
+   - malformed answer structure
+
+==================================================
+REQUIRED FIXES
+==================================================
+
+1. Inspect the current copilot generation pipeline:
+   - prompt construction
+   - request payload
+   - UI form inputs
+   - response parsing
+   - validation
+   - rendering
+
+2. Add or fix the checkbox input in the assessment-generation UI:
+   - label it clearly, e.g. "Include some questions with graphs"
+   - ensure its value is passed into the generation request
+   - default should be OFF unless current UX already requires otherwise
+
+3. Fix generation prompt / request logic so that:
+   - graph questions are only permitted when checkbox = true
+   - checkbox = false explicitly forbids graph questions
+   - checkbox = true requests only some graph questions, not all
+   - MCQ structure is always mandatory
+
+4. Add a validation layer after generation:
+   validate every generated question:
+   - has question text
+   - has 4 answer options
+   - has exactly one correct answer
+   - if graph exists, it is supplemental only
+   - reject graph-only outputs
+
+5. Add fallback:
+   - if invalid output is returned, retry once with stricter instruction
+   - do not silently accept broken question payloads
+
+6. Ensure renderer compatibility:
+   - standard MCQ renders normally
+   - graph+MCQ renders correctly
+   - graph-only items never reach UI
+
+==================================================
+AUTOSAVE IMPLEMENTATION REQUIREMENTS
+==================================================
+
+1. After successful generation, autosave generated questions into the current draft/session
+2. After regeneration/edit, autosave updates to the draft
+3. Preview must read from latest saved draft
+4. Refresh must not lose generated questions
+5. Prevent duplicate draft/question creation
+6. Prevent save loops and repeated autosave spam
+7. Show minimal save-state feedback if the app already has that pattern:
+   - Saving draft...
+   - Draft saved
+   - Save failed
+
+==================================================
+TESTING REQUIREMENTS
+==================================================
+
+Add or update tests for:
+
+AUTOSAVE
+- first generation autosaves
+- regeneration updates saved draft
+- refresh persists
+- preview shows latest saved data
+- no duplicate saves/questions
+- save failure handled safely
+
+GRAPH CONTROL
+- checkbox OFF → no graph questions generated
+- checkbox ON → some graph questions generated, not all
+- graph questions are still valid MCQs
+- graph-only output is rejected
+
+MCQ VALIDATION
+- every question has 4 options
+- exactly one correct answer
+- malformed output rejected
+- fallback retry works
+
+UI
+- checkbox state reaches backend/generation pipeline
+- standard MCQ rendering still works
+- graph+MCQ rendering works
+
+==================================================
+ACCEPTANCE CRITERIA
+==================================================
+
+Fix is complete ONLY if all are true:
+
+1. Copilot generates proper MCQs again
+2. Graph questions appear ONLY when the checkbox is ticked
+3. When checkbox is not ticked, no graph questions appear
+4. When checkbox is ticked, only some questions include graphs
+5. Graph questions are still proper MCQs, not standalone graphs
+6. Generated questions autosave correctly
+7. Refresh does not lose work
+8. Preview matches saved draft
+9. No duplicate records are created
+10. Existing flows still work
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+Return:
+1. root cause of MCQ failure
+2. root cause of autosave failure
+3. files changed
+4. exact fix made
+5. tests added/updated
+6. manual verification steps
+7. any remaining risks

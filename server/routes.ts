@@ -1131,7 +1131,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Copilot chat for tutor quiz builder
   app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
     try {
-      const { message, documentIds, chatHistory, syllabusSelection } = req.body;
+      const { message, documentIds, chatHistory, syllabusSelection, includeGraphQuestions } = req.body;
+      const allowGraphs = includeGraphQuestions === true;
       if (!message) return res.status(400).json({ message: "message is required" });
 
       const text = String(message);
@@ -1196,10 +1197,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
 Return one JSON object with keys "reply", "drafts", and "summary".
-Each draft must include prompt_text, options, correct_answer, marks_worth, explanation, topic_tag, subtopic_tag, difficulty_tag, and question_type.
-question_type may be "multiple_choice" or "graph".
-For graph questions, include graph_spec for deterministic XY Cartesian rendering only: plotType, equation or points, xRange, yRange, axisLabels, showGrid, tickInterval, and optional highlightedPoints.
-Do not generate graph images.
+Each draft MUST include: prompt_text (the question text), options (array of exactly 4 answer strings), correct_answer (one of the 4 options verbatim), marks_worth (integer 1-10), explanation (non-empty string), topic_tag, subtopic_tag, difficulty_tag, and question_type.
+CRITICAL MCQ RULES — every question without exception must have:
+  - A non-empty prompt_text (the question)
+  - Exactly 4 distinct answer options
+  - A correct_answer that exactly matches one of the 4 options
+  - A non-empty explanation
+${allowGraphs
+  ? `Graph questions are ALLOWED but must be used sparingly (at most 1-3 out of all questions).
+A graph question is still a full MCQ: it must have prompt_text, 4 options, correct_answer, and explanation.
+The graph_spec is SUPPLEMENTAL visual context only — it never replaces the MCQ structure.
+Set question_type to "graph" and include graph_spec (plotType, equation or points, xRange, yRange, axisLabels, showGrid, tickInterval).
+Do NOT output a graph_spec without a complete MCQ structure — such items will be rejected.`
+  : `question_type MUST be "multiple_choice" for every question.
+Do NOT include any graph_spec, graph questions, or graph-related content whatsoever.
+All questions must be standard text-based MCQs.`}
 Summary must reflect the actual drafts produced.`;
 
       const { data, metadata } = await generateWithFallback(
@@ -1248,9 +1260,14 @@ Summary must reflect the actual drafts produced.`;
           subtopic_tag: d.subtopic_tag ? String(d.subtopic_tag) : undefined,
           difficulty_tag: d.difficulty_tag ? String(d.difficulty_tag) : undefined,
           question_type: String(d.question_type || (d.graph_spec ? "graph" : "multiple_choice")),
-          graph_spec: d.graph_spec ?? undefined,
+          graph_spec: allowGraphs ? (d.graph_spec ?? undefined) : undefined,
         };
-      }).filter((draft): draft is NonNullable<typeof draft> => Boolean(draft));
+      }).filter((draft): draft is NonNullable<typeof draft> => {
+        if (!draft) return false;
+        // When graphs are disabled, silently drop any graph questions that slipped through
+        if (!allowGraphs && (draft.question_type === "graph" || draft.graph_spec !== undefined)) return false;
+        return true;
+      });
       const summary = buildCopilotSummary({ drafts, syllabusContextLabel });
       const reply = `${structured.reply}\n\nSummary:\n- Questions added: ${summary.numberOfQuestionsAdded}\n- Types: ${summary.questionTypesUsed.join(", ") || "multiple_choice"}\n- Topics: ${summary.topicsCovered.join(", ") || "Mixed"}\n- Subtopics: ${summary.subtopicsCovered.join(", ") || "Mixed"}\n- Difficulty: ${summary.difficultyMix.join(", ") || "Mixed"}${summary.syllabusContextUsed.length ? `\n- Syllabus grounding: ${summary.syllabusContextUsed.join(", ")}` : ""}`;
       res.json({ reply, drafts, summary, metadata, needsClarification: false });
