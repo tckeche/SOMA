@@ -1,0 +1,192 @@
+You are fixing an existing maths quiz / assessment app.
+
+This is a targeted stabilization and bug-fix task.
+Do NOT do a broad refactor.
+Do NOT rewrite the architecture.
+Do NOT rename major routes, database fields, env vars, or core components unless absolutely necessary.
+
+Your job is to fix two concrete defects in the current pushed codebase:
+
+1. Graph questions are still not plotting reliably.
+2. Copilot still does not have real assessment-session memory/context.
+
+You must inspect the actual current implementation and fix the real root causes, not guess.
+
+==================================================
+ISSUE 1 — GRAPH QUESTIONS NOT PLOTTING
+==================================================
+
+Current likely problem:
+The app has graph UI and a graph component, but graph questions are still getting through with incomplete or invalid graph payloads.
+The graph area may show, but the plotted line/curve/points are missing.
+
+You must inspect all of these stages carefully:
+
+- builder UI request payload
+- copilot generation route
+- graph-question prompt instructions
+- normalization of draft data
+- validation of graph questions
+- save route for quiz questions
+- storage/database persistence
+- quiz detail fetch route
+- preview question mapping
+- graph rendering component
+
+Your task:
+Find the exact stage where graph data becomes invalid, incomplete, or mismatched.
+
+Required fixes:
+1. Introduce strict validation for graph questions before save.
+2. A graph question must only be saved if:
+   - question_type === "graph"
+   - graph_spec exists
+   - graph_spec has a valid shape
+3. Validate these graph spec fields at minimum:
+   - plotType
+   - xRange
+   - yRange
+   - axisLabels
+   - tickInterval
+   - and at least one of:
+     - equation
+     - points
+4. If question_type is graph but graph_spec is missing or malformed:
+   - reject it clearly before save, or
+   - repair it safely if a deterministic repair is genuinely possible
+5. Do not silently save broken graph questions.
+6. Add a visible safe fallback in preview for invalid graph data instead of just showing an empty graph plane.
+7. Ensure the graph renderer handles:
+   - straight lines
+   - simple curves
+   - plotted points
+8. Verify axis calculations safely:
+   - do not assume 0 is always inside the visible range
+   - if 0 is outside range, axes should still render sensibly
+9. Verify equation parsing:
+   - support common expressions like:
+     - y = 2x + 1
+     - y = x^2 - 4
+     - y = 3(x + 1)
+   - fail safely on bad expressions
+10. Ensure preview, saved questions, and reopened questions all still plot correctly.
+
+Important:
+Do NOT rely on the AI to “draw” the graph.
+The graph must be rendered deterministically by application code from structured graph data.
+
+==================================================
+ISSUE 2 — COPILOT STILL LACKS REAL MEMORY
+==================================================
+
+Current likely problem:
+The app is still mostly sending recent chat text as a transcript.
+That is not enough.
+The copilot needs awareness of the active assessment state.
+
+You must upgrade the current copilot request flow so that each generation turn includes real structured session context.
+
+The copilot must be aware of:
+1. recent chat messages in the current builder session
+2. current assessment metadata:
+   - title
+   - subject
+   - level
+   - syllabus
+   - selected syllabus document/context
+3. current saved/generated questions already in the assessment:
+   - stem/prompt
+   - question type
+   - marks
+   - topic_tag
+   - subtopic_tag
+   - difficulty_tag
+   - whether graphSpec exists
+4. a generated summary of the current assessment state:
+   - number of questions already present
+   - topics already covered
+   - subtopics already covered
+   - difficulty spread
+   - number of graph questions already present
+   - recently requested edits or replacements if inferable
+
+Required behaviour after fix:
+- if the tutor says “make 2 of them graph questions”, Copilot must know what “them” refers to
+- if the tutor says “replace the last set”, Copilot must know what was previously generated
+- if the tutor says “make them harder”, Copilot must use the current assessment state
+- it should avoid duplicating already-generated questions unless explicitly told to
+- it should preserve the same session through preview
+- it should reset only when the tutor truly exits the builder session
+
+Implementation guidance:
+1. Do not rely only on raw chat transcript.
+2. Build a structured `assessmentContext` or similar object on the client and/or server.
+3. Include both:
+   - recent conversation
+   - current assessment snapshot
+4. Add a helper that summarizes saved questions before calling the model.
+5. Use this structured context in the copilot route prompt.
+6. Keep memory session-scoped only.
+7. Do not make it permanent across future assessments.
+
+==================================================
+TESTING AND VERIFICATION
+==================================================
+
+You must not stop at “code looks fine”.
+You must verify behaviour.
+
+A. GRAPH VERIFICATION
+1. Generate at least one straight-line graph MCQ
+2. Generate at least one simple curve graph MCQ
+3. Generate at least one plotted-points graph MCQ
+4. Confirm in preview that:
+   - the plane shows
+   - the graph actually plots
+   - labels and ticks are readable
+5. Save the questions, reload/reopen the assessment, and confirm the graph still plots
+6. Confirm invalid graph payloads fail safely
+
+B. COPILOT MEMORY VERIFICATION
+Run a real multi-turn flow:
+1. ask for 5 algebra questions
+2. ask to make 2 of them graph questions
+3. ask to make the last 2 harder
+4. ask to replace one subtopic
+5. preview
+6. continue editing
+Confirm:
+- Copilot remembers earlier turns
+- it is aware of what is already saved/generated
+- it does not behave like every turn is a fresh prompt
+- preview does not wipe context
+- exiting the builder does wipe/reset context
+
+C. REGRESSION VERIFICATION
+Confirm these still work:
+- normal MCQ generation
+- question saving
+- question preview
+- syllabus grounding flow
+- non-graph questions
+- existing assessment architecture
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+When finished, return:
+
+1. root cause of graph plotting failure
+2. root cause of copilot memory failure
+3. exact files changed
+4. what validation was added
+5. what session-context changes were added
+6. tests added/updated
+7. manual verification performed
+8. any remaining limitations
+
+Important:
+Be meticulous.
+Keep changes minimal and safe.
+Do not leave the app in a half-fixed state.

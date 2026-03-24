@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -15,6 +15,78 @@ import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilot
 import { generateWithFallback } from "./services/aiOrchestrator";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import type { GraphQuestionSpec } from "@shared/schema";
+
+/**
+ * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
+ * Returns the parsed spec on success, or null if it cannot be repaired.
+ */
+function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSpec | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+
+  // Normalise xRange / yRange — AI sometimes returns {min,max} objects instead of tuples
+  const normaliseRange = (v: unknown): [number, number] | null => {
+    if (Array.isArray(v) && v.length >= 2 && typeof v[0] === "number" && typeof v[1] === "number") {
+      return [v[0], v[1]];
+    }
+    if (v && typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      const keys = Object.keys(obj);
+      // {min,max} or {0,1} or first two numeric values
+      const nums = [obj.min ?? obj[0] ?? obj.from, obj.max ?? obj[1] ?? obj.to]
+        .map(Number)
+        .filter((n) => Number.isFinite(n));
+      if (nums.length === 2) return [nums[0], nums[1]];
+      const allNums = keys.map((k) => Number(obj[k])).filter((n) => Number.isFinite(n));
+      if (allNums.length >= 2) return [allNums[0], allNums[1]];
+    }
+    return null;
+  };
+
+  const xRange = normaliseRange(r.xRange);
+  const yRange = normaliseRange(r.yRange);
+  if (!xRange || !yRange) return null;
+
+  // plotType — default to "line" for equation-based, "points" if only points
+  const rawPlotType = String(r.plotType || "");
+  const validPlotTypes = ["line", "curve", "points"] as const;
+  const plotType: "line" | "curve" | "points" = validPlotTypes.includes(rawPlotType as never)
+    ? (rawPlotType as "line" | "curve" | "points")
+    : r.equation
+    ? "line"
+    : "points";
+
+  // Require at least equation or points
+  const equation = r.equation && typeof r.equation === "string" ? r.equation : undefined;
+  const points = Array.isArray(r.points) ? r.points : undefined;
+  if (!equation && (!points || points.length === 0)) return null;
+
+  // axisLabels — default to x/y if missing
+  const rawLabels = r.axisLabels && typeof r.axisLabels === "object" ? (r.axisLabels as Record<string, unknown>) : {};
+  const axisLabels = {
+    x: String(rawLabels.x || "x"),
+    y: String(rawLabels.y || "y"),
+  };
+
+  const tickInterval = typeof r.tickInterval === "number" && r.tickInterval > 0 ? r.tickInterval : 1;
+  const showGrid = r.showGrid !== false;
+  const highlightedPoints = Array.isArray(r.highlightedPoints) ? r.highlightedPoints : undefined;
+
+  const repaired = {
+    plotType,
+    equation,
+    points: points as { x: number; y: number; label?: string }[] | undefined,
+    xRange,
+    yRange,
+    axisLabels,
+    showGrid,
+    tickInterval,
+    highlightedPoints: highlightedPoints as { x: number; y: number; label?: string }[] | undefined,
+  };
+
+  const parsed = graphQuestionSpecSchema.safeParse(repaired);
+  return parsed.success ? parsed.data : null;
+}
 
 const adminRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -1050,18 +1122,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           return res.status(400).json({ message: "Each question must have exactly 4 options" });
         }
       }
-      const rawMapped = questions.map((q: any) => ({
-        stem: q.prompt_text || q.stem || "",
-        options: Array.isArray(q.options) ? [...q.options] : [],
-        correct_answer: String(q.correct_answer || q.correctAnswer || ""),
-        explanation: String(q.explanation || ""),
-        marks: Number(q.marks_worth || q.marks || 1) || 1,
-        question_type: String(q.question_type || (q.graph_spec ? "graph" : "multiple_choice")),
-        graph_spec: (q.graph_spec ?? null) as GraphQuestionSpec | null,
-        topic_tag: q.topic_tag ? String(q.topic_tag) : null,
-        subtopic_tag: q.subtopic_tag ? String(q.subtopic_tag) : null,
-        difficulty_tag: q.difficulty_tag ? String(q.difficulty_tag) : null,
-      }));
+      const rawMapped = questions.map((q: any) => {
+        // Validate and repair graph_spec — reject broken specs, downgrade type if needed
+        let questionType = String(q.question_type || (q.graph_spec ? "graph" : "multiple_choice"));
+        let graphSpec: GraphQuestionSpec | null = null;
+        if (q.graph_spec) {
+          const repaired = repairGraphSpec(q.graph_spec);
+          if (repaired) {
+            graphSpec = repaired;
+            questionType = "graph";
+          } else {
+            // Cannot repair — downgrade to MCQ so it still saves as a usable question
+            questionType = "multiple_choice";
+          }
+        }
+        return {
+          stem: q.prompt_text || q.stem || "",
+          options: Array.isArray(q.options) ? [...q.options] : [],
+          correct_answer: String(q.correct_answer || q.correctAnswer || ""),
+          explanation: String(q.explanation || ""),
+          marks: Number(q.marks_worth || q.marks || 1) || 1,
+          question_type: questionType,
+          graph_spec: graphSpec,
+          topic_tag: q.topic_tag ? String(q.topic_tag) : null,
+          subtopic_tag: q.subtopic_tag ? String(q.subtopic_tag) : null,
+          difficulty_tag: q.difficulty_tag ? String(q.difficulty_tag) : null,
+        };
+      });
       const balanced = balanceAnswerOptions(rawMapped);
       const validated = validateAndCorrectMcqAnswers(balanced);
       const mapped = validated.map((q, index) => ({
@@ -1150,7 +1237,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Copilot chat for tutor quiz builder
   app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
     try {
-      const { message, documentIds, chatHistory, syllabusSelection, includeGraphQuestions } = req.body;
+      const { message, documentIds, chatHistory, syllabusSelection, includeGraphQuestions, assessmentContext } = req.body;
       const allowGraphs = includeGraphQuestions === true;
       if (!message) return res.status(400).json({ message: "message is required" });
 
@@ -1214,6 +1301,37 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           .join("\n")
         : "";
 
+      // Build structured assessment snapshot from client-supplied context
+      let assessmentSnapshot = "";
+      if (assessmentContext && typeof assessmentContext === "object") {
+        const ac = assessmentContext as Record<string, any>;
+        const lines: string[] = ["=== CURRENT ASSESSMENT STATE ==="];
+        if (ac.assessmentMeta) {
+          const m = ac.assessmentMeta;
+          lines.push(`Assessment: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"}`);
+        }
+        lines.push(`Questions already saved: ${ac.questionCount ?? 0}`);
+        if (ac.graphQuestionCount) lines.push(`Graph questions already present: ${ac.graphQuestionCount}`);
+        if (Array.isArray(ac.topicsCovered) && ac.topicsCovered.length > 0) {
+          lines.push(`Topics already covered: ${ac.topicsCovered.join(", ")}`);
+        }
+        if (Array.isArray(ac.subtopicsCovered) && ac.subtopicsCovered.length > 0) {
+          lines.push(`Subtopics already covered: ${ac.subtopicsCovered.join(", ")}`);
+        }
+        if (ac.difficultySpread && typeof ac.difficultySpread === "object") {
+          const ds = ac.difficultySpread as Record<string, number>;
+          lines.push(`Difficulty spread: easy=${ds.easy ?? 0}, medium=${ds.medium ?? 0}, hard=${ds.hard ?? 0}`);
+        }
+        if (Array.isArray(ac.recentQuestions) && ac.recentQuestions.length > 0) {
+          lines.push("Most recent questions in this assessment:");
+          for (const q of ac.recentQuestions) {
+            lines.push(`  - [${q.type || "MCQ"}] ${String(q.stem || "").slice(0, 90)}${String(q.stem || "").length > 90 ? "…" : ""} (topic: ${q.topic || "—"})`);
+          }
+        }
+        lines.push("=================================");
+        assessmentSnapshot = lines.join("\n");
+      }
+
       const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
 Return one JSON object with keys "reply", "drafts", and "summary".
 Each draft MUST include: prompt_text (the question text), options (array of exactly 4 answer strings), correct_answer (one of the 4 options verbatim), marks_worth (integer 1-10), explanation (non-empty string), topic_tag, subtopic_tag, difficulty_tag, and question_type.
@@ -1235,7 +1353,7 @@ Summary must reflect the actual drafts produced.`;
 
       const { data, metadata } = await generateWithFallback(
         copilotSystemPrompt,
-        `Current request:\n${text}\n\nConversation memory for this assessment session:\n${memoryTranscript || "No previous turns."}\n\nSupporting context:\n${supportingText || "No extra context."}`,
+        `${assessmentSnapshot ? `${assessmentSnapshot}\n\n` : ""}Current request:\n${text}\n\nConversation memory for this assessment session:\n${memoryTranscript || "No previous turns."}\n\nSupporting context:\n${supportingText || "No extra context."}`,
       );
 
       const structured = extractStructuredCopilotResponse(data);
@@ -1258,8 +1376,6 @@ Summary must reflect the actual drafts produced.`;
         if (!promptText) return null;
 
         let correctAnswer = String(d.correct_answer || d.correctAnswer || d.answer || "");
-
-        // Use shared validation to correct mismatched answers
         const validated = validateAndCorrectMcqAnswers([{
           stem: String(promptText),
           options: opts,
@@ -1268,6 +1384,19 @@ Summary must reflect the actual drafts produced.`;
           marks: Number(d.marks_worth || d.marksWorth || d.marks || 1) || 1,
         }]);
         correctAnswer = validated[0].correct_answer;
+
+        // Validate and repair graph_spec; downgrade to MCQ if spec is unrepairable
+        let questionType: "multiple_choice" | "graph" = d.question_type === "graph" ? "graph" : "multiple_choice";
+        let graphSpec: import("@shared/schema").GraphQuestionSpec | undefined;
+        if (allowGraphs && d.graph_spec) {
+          const repaired = repairGraphSpec(d.graph_spec);
+          if (repaired) {
+            graphSpec = repaired;
+            questionType = "graph";
+          } else {
+            questionType = "multiple_choice";
+          }
+        }
 
         return {
           prompt_text: String(promptText),
@@ -1278,12 +1407,11 @@ Summary must reflect the actual drafts produced.`;
           topic_tag: d.topic_tag ? String(d.topic_tag) : undefined,
           subtopic_tag: d.subtopic_tag ? String(d.subtopic_tag) : undefined,
           difficulty_tag: d.difficulty_tag ? String(d.difficulty_tag) : undefined,
-          question_type: (d.question_type === "graph" ? "graph" : "multiple_choice") as "multiple_choice" | "graph",
-          graph_spec: allowGraphs ? (d.graph_spec ?? undefined) : undefined,
+          question_type: questionType,
+          graph_spec: graphSpec,
         };
       }).filter((draft): draft is NonNullable<typeof draft> => {
         if (!draft) return false;
-        // When graphs are disabled, silently drop any graph questions that slipped through
         if (!allowGraphs && (draft.question_type === "graph" || draft.graph_spec !== undefined)) return false;
         return true;
       });

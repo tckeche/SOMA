@@ -318,6 +318,32 @@ export default function BuilderPage() {
       const docIds = docContext.map((d) => d.fileId);
       const selectedSyllabus = syllabusDocs.find((doc) => String(doc.id) === selectedSyllabusId);
 
+      // Build structured assessment context so copilot knows what's already saved
+      const topicsCovered = Array.from(new Set(savedQuestions.map((q) => (q as any).topicTag).filter(Boolean))) as string[];
+      const subtopicsCovered = Array.from(new Set(savedQuestions.map((q) => (q as any).subtopicTag).filter(Boolean))) as string[];
+      const difficultySpread = savedQuestions.reduce((acc, q) => {
+        const d = String((q as any).difficultyTag || "").toLowerCase();
+        if (d.includes("easy")) acc.easy++;
+        else if (d.includes("hard")) acc.hard++;
+        else acc.medium++;
+        return acc;
+      }, { easy: 0, medium: 0, hard: 0 });
+      const graphQuestionCount = savedQuestions.filter((q) => (q as any).questionType === "graph").length;
+      const recentQuestions = savedQuestions.slice(-6).map((q) => ({
+        stem: q.stem,
+        type: (q as any).questionType || "multiple_choice",
+        topic: (q as any).topicTag || null,
+      }));
+      const assessmentContext = {
+        assessmentMeta: { title, subject, level, syllabus },
+        questionCount: savedQuestions.length,
+        topicsCovered,
+        subtopicsCovered,
+        difficultySpread,
+        graphQuestionCount,
+        recentQuestions,
+      };
+
       animatePipeline(2);
       const res = await authApiRequest("POST", "/api/tutor/copilot-chat", {
         message: enrichedMessage,
@@ -329,6 +355,7 @@ export default function BuilderPage() {
           syllabusCode: selectedSyllabus.syllabusCode,
         } : undefined,
         includeGraphQuestions,
+        assessmentContext,
       });
       const data = await res.json();
 

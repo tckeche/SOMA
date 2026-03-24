@@ -29,7 +29,8 @@ function evaluateEquation(equation: string, x: number): number | null {
 export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const [xMin, xMax] = spec.xRange;
   const [yMin, yMax] = spec.yRange;
-  const tick = spec.tickInterval;
+  const tick = spec.tickInterval ?? 1;
+  const axisLabels = spec.axisLabels ?? { x: "x", y: "y" };
 
   const xToSvg = (x: number) =>
     plotLeft + ((x - xMin) / (xMax - xMin)) * (plotRight - plotLeft);
@@ -97,18 +98,18 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             />
           ))}
 
-        {/* Axes — more visible than grid */}
+        {/* Axes — clamp to plot area when 0 is outside visible range */}
         <line
           x1={plotLeft}
           x2={plotRight}
-          y1={yToSvg(0)}
-          y2={yToSvg(0)}
+          y1={Math.max(plotTop, Math.min(plotBottom, yToSvg(0)))}
+          y2={Math.max(plotTop, Math.min(plotBottom, yToSvg(0)))}
           stroke="rgba(226,232,240,0.55)"
           strokeWidth="1.5"
         />
         <line
-          x1={xToSvg(0)}
-          x2={xToSvg(0)}
+          x1={Math.max(plotLeft, Math.min(plotRight, xToSvg(0)))}
+          x2={Math.max(plotLeft, Math.min(plotRight, xToSvg(0)))}
           y1={plotTop}
           y2={plotBottom}
           stroke="rgba(226,232,240,0.55)"
@@ -174,7 +175,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           fontSize="13"
           fontWeight="500"
         >
-          {spec.axisLabels.x}
+          {axisLabels.x}
         </text>
 
         {/* Y-axis title — rotated, well to the left of tick labels */}
@@ -187,7 +188,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           fontWeight="500"
           transform={`rotate(-90 13 ${(plotTop + plotBottom) / 2})`}
         >
-          {spec.axisLabels.y}
+          {axisLabels.y}
         </text>
       </svg>
     </div>

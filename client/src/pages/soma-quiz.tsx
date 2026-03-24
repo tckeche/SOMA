@@ -577,10 +577,16 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           <div className="text-lg text-slate-100 leading-relaxed mb-2" data-testid="text-question-stem">
             <MarkdownRenderer content={currentQuestion.stem} />
           </div>
-          {currentQuestion.questionType === "graph" && currentQuestion.graphSpec ? (
-            <div className="mt-6" data-testid="graph-question-layout">
-              <GraphPlot spec={currentQuestion.graphSpec} />
-            </div>
+          {currentQuestion.questionType === "graph" ? (
+            currentQuestion.graphSpec ? (
+              <div className="mt-6" data-testid="graph-question-layout">
+                <GraphPlot spec={currentQuestion.graphSpec} />
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-slate-700/50 bg-slate-900/60 p-4 text-center text-slate-400 text-sm" data-testid="graph-unavailable">
+                Graph data unavailable for this question.
+              </div>
+            )
           ) : null}
         </div>
 
