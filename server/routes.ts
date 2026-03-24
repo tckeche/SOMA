@@ -1541,11 +1541,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         supportingText += `\n${await fetchPaperContext(paperCode)}`;
       }
 
+      // Strip server-appended mechanical suffixes from AI turns before feeding
+      // them back to the model — "**Draft action:**" and "**Verified:**" blocks
+      // make the AI think the draft is already in the target state and return NONE.
+      const stripMechanicalSuffixes = (text: string): string =>
+        text
+          .replace(/\n\n\*\*Draft action:\*\*[\s\S]*$/, "")
+          .replace(/\n\n\*\*Verified:\*\*[\s\S]*$/, "")
+          .replace(/\n\n⚠️ \*\*Graph validation failed:\*\*[\s\S]*$/, "")
+          .trim();
+
       const memoryTranscript = Array.isArray(chatHistory)
         ? chatHistory
           .filter((item: any) => item && (item.role === "user" || item.role === "ai"))
           .slice(-8)
-          .map((item: any) => `${String(item.role).toUpperCase()}: ${String(item.text || "")}`)
+          .map((item: any) => {
+            const text = String(item.text || "");
+            const clean = item.role === "ai" ? stripMechanicalSuffixes(text) : text;
+            return `${String(item.role).toUpperCase()}: ${clean}`;
+          })
           .join("\n")
         : "";
 

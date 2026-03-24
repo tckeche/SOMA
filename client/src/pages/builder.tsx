@@ -82,9 +82,9 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
     marks: Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1,
     questionType: (raw.question_type === "graph" || raw.questionType === "graph") ? "graph" : "multiple_choice",
     graphSpec: raw.graphSpec ?? raw.graph_spec ?? null,
-    topicTag: raw.topic_tag ? String(raw.topic_tag) : null,
-    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : null,
-    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : null,
+    topicTag: raw.topic_tag ? String(raw.topic_tag) : raw.topicTag ? String(raw.topicTag) : null,
+    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : raw.subtopicTag ? String(raw.subtopicTag) : null,
+    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : raw.difficultyTag ? String(raw.difficultyTag) : null,
   };
 }
 
