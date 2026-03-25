@@ -194,6 +194,7 @@ Return ONLY this JSON structure, with no extra text:
       "graph_spec": {
         "plotType": "line",
         "equation": "2*x + 1",
+        "label": "y = 2x + 1",
         "xRange": [-5, 5],
         "yRange": [-10, 10],
         "axisLabels": {"x": "x", "y": "y"},
@@ -234,13 +235,20 @@ CRITICAL FORMAT RULES (breaking any of these means your output is INVALID):
 8. When using "curves", each entry needs at least "equation" and "label"
 9. equations use variable x only (the renderer evaluates f(x))
 10. RANGE CHECK — evaluate EVERY equation at xMin and xMax; set yRange to contain ALL y-values plus 10% padding. Example: x² on [-3,4] reaches y=16 at x=4, so yMin ≥ -2, yMax ≥ 18
+11. SINGLE-CURVE LABEL — when using "equation" (not "curves"), you MUST also include a "label" field: a clean, human-readable string shown on the graph. Use standard math notation (not JS code). Examples:
+    - equation: "Math.sin(x * Math.PI / 180)"  →  label: "y = sin x°"
+    - equation: "2*x**2 - 3*x + 1"              →  label: "y = 2x² − 3x + 1"
+    - equation: "Math.exp(x)"                   →  label: "y = eˣ"
+    - equation: "Math.log(x)"                   →  label: "y = ln x"
+    - equation: "3*x + 2"                        →  label: "y = 3x + 2"
 
 MATH FORMATTING — MANDATORY:
 ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX delimiters.
 - Inline math: $x^2 + 3$ (single dollar signs)
 - Display/standalone math: $$\\frac{a}{b}$$ (double dollar signs)
 - NEVER write maths without delimiters. WRONG: "2x + 1"  RIGHT: "$2x + 1$"
-- IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression — do NOT use LaTeX there.`;
+- IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression — do NOT use LaTeX there.
+- The "label" field inside graph_spec is plain text (Unicode math symbols like °, ², ³, π, ˣ are fine).`;
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
@@ -1815,6 +1823,7 @@ SINGLE-CURVE graph (use "equation"):
   "graph_spec": {
     "plotType": "line",
     "equation": "3*x",
+    "label": "v = 3t",
     "xRange": [0, 5],
     "yRange": [0, 16],
     "axisLabels": {"x": "t (s)", "y": "v (m/s)"},
@@ -1860,7 +1869,13 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 5. graph_spec is REQUIRED — do NOT omit it or leave it null/empty
 6. Set question_type to "graph" ONLY when you have included a valid graph_spec
 7. RANGE CHECK — before setting yRange, evaluate every equation at xMin AND xMax to find the true y-min and y-max; set yRange with at least 10% padding so NO curve is clipped. Example: y=x² on xRange[-3,4] reaches y=16 at x=4, so yRange must be at least [-1,18] not [-1,10]
-8. Keep xRange and yRange spans within a 3:1 ratio of each other (avoid extreme aspect ratios)`
+8. Keep xRange and yRange spans within a 3:1 ratio of each other (avoid extreme aspect ratios)
+9. SINGLE-CURVE LABEL — when using "equation" (not "curves"), you MUST include a "label" field with a clean, human-readable name for the curve shown on the graph. Use standard math notation — NOT raw JavaScript. Examples:
+   - "equation": "Math.sin(x * Math.PI / 180)"  →  "label": "y = sin x°"
+   - "equation": "2*x**2 - 3*x + 1"              →  "label": "y = 2x² − 3x + 1"
+   - "equation": "Math.exp(x)"                   →  "label": "y = eˣ"
+   - "equation": "Math.log(x)"                   →  "label": "y = ln x"
+   - "equation": "3*x"                            →  "label": "v = 3t"  (use real variable names from context)`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
 ## MATH FORMATTING — MANDATORY:
@@ -1874,6 +1889,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 - NEVER write maths without delimiters. WRONG: "2x + 3 = 7"  RIGHT: "$2x + 3 = 7$"
 - Use proper LaTeX: $\\frac{1}{2}$ for fractions, $x^{-2}$ for powers, $\\sqrt{x}$ for roots
 - IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression (e.g. "2*x + 1") — do NOT use LaTeX delimiters there. LaTeX is only for prompt_text, options, and explanation.
+- The "label" field inside graph_spec is plain text with Unicode math notation (e.g. "y = sin x°", "y = x²") — no LaTeX, no JS code.
 
 ## CRITICAL RULES:
 - correct_answer must exactly match one of the 4 options (copy verbatim)
