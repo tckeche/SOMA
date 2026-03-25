@@ -69,7 +69,6 @@ function normalizeExpression(raw: string): string {
   return raw
     .replace(/^y\s*=\s*/i, "")
     .replace(/\s+/g, "")
-    .replace(/\^/g, "^")
     .replace(/(\d)(x|\()/gi, "$1*$2")
     .replace(/(x|\))(\d)/gi, "$1*$2")
     .replace(/(x|\))\(/gi, "$1*(")
