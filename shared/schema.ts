@@ -18,6 +18,9 @@ export const graphQuestionSpecSchema = z.object({
   plotType: graphPlotTypeSchema,
   // Single-curve shorthand (backward compat) — used when only one equation
   equation: z.string().optional(),
+  // Human-readable label for the single-curve case (e.g. "y = sin x", "y = 2x + 1")
+  // When provided, this is displayed instead of the raw JS equation expression.
+  label: z.string().optional(),
   // Multi-curve: 2–4 curves, each with own equation, optional label and color
   curves: z.array(graphCurveSchema).optional(),
   points: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),

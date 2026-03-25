@@ -64,8 +64,11 @@ describe("graph question rendering and theme/button safeguards", () => {
     // Equation label rendered italic on single-curve graph
     // React serializes fontStyle prop as font-style in SVG HTML output
     expect(html).toContain("font-style");
-    // Equation text (stripped of "y = " prefix) appears on graph
-    expect(html).toContain("2*x + 1");
+    // Equation text is prettified — raw JS multiplication (*) becomes implicit
+    // prettyEquation("y = 2*x + 1") → "2x + 1" (strips "y =", converts 2*x → 2x)
+    expect(html).toContain("2x + 1");
+    // Raw JS expression must NOT appear verbatim on the graph
+    expect(html).not.toContain("2*x + 1");
     // Unique clip/marker IDs — must NOT use bare hardcoded "plot-clip" or "arrowhead"
     expect(html).not.toContain('"plot-clip"');
     expect(html).not.toContain('"arrowhead"');
@@ -97,6 +100,43 @@ describe("graph question rendering and theme/button safeguards", () => {
     // Legacy hardcoded IDs must not appear
     expect(html).not.toContain('"plot-clip"');
     expect(html).not.toContain('"arrowhead"');
+  });
+
+  it("uses spec.label verbatim instead of raw JS equation when label is provided", () => {
+    const html = renderToStaticMarkup(React.createElement(GraphPlot, {
+      spec: {
+        plotType: "line",
+        equation: "Math.sin(x * Math.PI / 180)",
+        label: "y = sin x°",
+        xRange: [0, 360],
+        yRange: [-1.5, 1.5],
+        axisLabels: { x: "x (deg)", y: "y" },
+        showGrid: true,
+        tickInterval: 90,
+      },
+    }));
+    // The clean label should appear, not the raw JS
+    expect(html).toContain("sin x°");
+    expect(html).not.toContain("Math.sin");
+    expect(html).not.toContain("Math.PI");
+  });
+
+  it("prettyEquation converts Math.sin(x * Math.PI / 180) to sin x° when no label", () => {
+    const html = renderToStaticMarkup(React.createElement(GraphPlot, {
+      spec: {
+        plotType: "line",
+        equation: "Math.sin(x * Math.PI / 180)",
+        xRange: [0, 360],
+        yRange: [-1.5, 1.5],
+        axisLabels: { x: "x (deg)", y: "y" },
+        showGrid: true,
+        tickInterval: 90,
+      },
+    }));
+    // Prettified — raw JS must not appear
+    expect(html).toContain("sin x°");
+    expect(html).not.toContain("Math.sin");
+    expect(html).not.toContain("Math.PI");
   });
 
   it("shows a fallback when graphSpec is invalid", () => {
