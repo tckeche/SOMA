@@ -1,5 +1,6 @@
 import React, { useId } from "react";
 import type { GraphQuestionSpec } from "@shared/schema";
+import { applyGraphPreset } from "@/lib/graphPresets";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const WIDTH  = 620;
@@ -35,31 +36,203 @@ function niceInterval(span: number): number {
 }
 
 // ── Safe equation evaluator ───────────────────────────────────────────────────
-// Injects the full Math object so equations like sin(x), cos(x), exp(x),
-// sqrt(x), log(x), abs(x), PI etc. work without any extra pre-processing.
-function evaluateEquation(eq: string, x: number): number | null {
-  const expr = eq
-    .replace(/^y\s*=\s*/i, "")           // strip "y = " prefix
-    .replace(/\^/g, "**")                  // ^ → **
-    .replace(/([0-9])\s*x/g, "$1*x")      // 2x → 2*x
-    .replace(/([0-9])\s*\(/g, "$1*(");    // 2( → 2*(
-  try {
-    // Destructure Math so authors can write sin(x) instead of Math.sin(x).
-    // eslint-disable-next-line no-new-func
-    const fn = new Function(
-      "x",
-      `"use strict";
-       const {abs,acos,acosh,asin,asinh,atan,atanh,atan2,cbrt,ceil,clz32,cos,cosh,
-              exp,expm1,floor,fround,hypot,imul,log,log10,log1p,log2,max,min,pow,
-              random,round,sign,sin,sinh,sqrt,tan,tanh,trunc,
-              PI,E,LN2,LN10,LOG2E,LOG10E,SQRT2,SQRT1_2} = Math;
-       return (${expr});`,
-    ) as (x: number) => number;
-    const v = fn(x);
-    return Number.isFinite(v) ? v : null;
-  } catch {
+type MathFn = (v: number) => number;
+const FN_TABLE: Record<string, MathFn> = {
+  abs: Math.abs,
+  acos: Math.acos,
+  asin: Math.asin,
+  atan: Math.atan,
+  ceil: Math.ceil,
+  cos: Math.cos,
+  exp: Math.exp,
+  floor: Math.floor,
+  log: Math.log,   // natural log
+  log10: Math.log10,
+  round: Math.round,
+  sign: Math.sign,
+  sin: Math.sin,
+  sqrt: Math.sqrt,
+  tan: Math.tan,
+  trunc: Math.trunc,
+};
+
+type Token =
+  | { t: "num"; v: number }
+  | { t: "var"; n: "x" | "y" }
+  | { t: "const"; v: number }
+  | { t: "op"; v: "+" | "-" | "*" | "/" | "^" | "u-" }
+  | { t: "fn"; v: string }
+  | { t: "lp" }
+  | { t: "rp" };
+
+function normalizeExpression(raw: string): string {
+  return raw
+    .replace(/^y\s*=\s*/i, "")
+    .replace(/\s+/g, "")
+    .replace(/\^/g, "^")
+    .replace(/(\d)(x|\()/gi, "$1*$2")
+    .replace(/(x|\))(\d)/gi, "$1*$2")
+    .replace(/(x|\))\(/gi, "$1*(")
+    .replace(/\)(x)/gi, ")*$1");
+}
+
+function tokenize(expr: string): Token[] | null {
+  const out: Token[] = [];
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (/[0-9.]/.test(ch)) {
+      let j = i + 1;
+      while (j < expr.length && /[0-9.]/.test(expr[j])) j++;
+      const n = Number(expr.slice(i, j));
+      if (!Number.isFinite(n)) return null;
+      out.push({ t: "num", v: n });
+      i = j;
+      continue;
+    }
+    if (/[a-zA-Z_]/.test(ch)) {
+      let j = i + 1;
+      while (j < expr.length && /[a-zA-Z0-9_]/.test(expr[j])) j++;
+      const id = expr.slice(i, j);
+      if (/^x$/i.test(id)) out.push({ t: "var", n: "x" });
+      else if (/^y$/i.test(id)) out.push({ t: "var", n: "y" });
+      else if (/^pi$/i.test(id)) out.push({ t: "const", v: Math.PI });
+      else if (/^e$/i.test(id)) out.push({ t: "const", v: Math.E });
+      else if (FN_TABLE[id.toLowerCase()]) out.push({ t: "fn", v: id.toLowerCase() });
+      else return null;
+      i = j;
+      continue;
+    }
+    if (ch === "(") { out.push({ t: "lp" }); i++; continue; }
+    if (ch === ")") { out.push({ t: "rp" }); i++; continue; }
+    if ("+-*/^".includes(ch)) {
+      const prev = out[out.length - 1];
+      const unary = ch === "-" && (!prev || prev.t === "op" || prev.t === "lp");
+      out.push({ t: "op", v: unary ? "u-" : (ch as "+" | "-" | "*" | "/" | "^") });
+      i++;
+      continue;
+    }
     return null;
   }
+  return out;
+}
+
+function toRpn(tokens: Token[]): Token[] | null {
+  const out: Token[] = [];
+  const stack: Token[] = [];
+  type Op = "+" | "-" | "*" | "/" | "^" | "u-";
+  const prec = (op: Op) => (op === "u-" ? 4 : op === "^" ? 3 : op === "*" || op === "/" ? 2 : 1);
+  const rightAssoc = (op: Op) => op === "^" || op === "u-";
+
+  for (const tok of tokens) {
+    if (tok.t === "num" || tok.t === "var" || tok.t === "const") {
+      out.push(tok);
+      continue;
+    }
+    if (tok.t === "fn") {
+      stack.push(tok);
+      continue;
+    }
+    if (tok.t === "op") {
+      while (stack.length) {
+        const top = stack[stack.length - 1];
+        if (top.t === "fn") {
+          out.push(stack.pop()!);
+          continue;
+        }
+        if (top.t === "op" && (prec(top.v) > prec(tok.v) || (prec(top.v) === prec(tok.v) && !rightAssoc(tok.v)))) {
+          out.push(stack.pop()!);
+          continue;
+        }
+        break;
+      }
+      stack.push(tok);
+      continue;
+    }
+    if (tok.t === "lp") {
+      stack.push(tok);
+      continue;
+    }
+    if (tok.t === "rp") {
+      let found = false;
+      while (stack.length) {
+        const top = stack.pop()!;
+        if (top.t === "lp") { found = true; break; }
+        out.push(top);
+      }
+      if (!found) return null;
+      if (stack.length && stack[stack.length - 1].t === "fn") out.push(stack.pop()!);
+    }
+  }
+
+  while (stack.length) {
+    const top = stack.pop()!;
+    if (top.t === "lp" || top.t === "rp") return null;
+    out.push(top);
+  }
+  return out;
+}
+
+function evalRpn(rpn: Token[], vars: { x: number; y: number }): number | null {
+  const s: number[] = [];
+  for (const tok of rpn) {
+    if (tok.t === "num") { s.push(tok.v); continue; }
+    if (tok.t === "var") { s.push(tok.n === "x" ? vars.x : vars.y); continue; }
+    if (tok.t === "const") { s.push(tok.v); continue; }
+    if (tok.t === "fn") {
+      const a = s.pop();
+      if (a === undefined) return null;
+      const fn = FN_TABLE[tok.v];
+      if (!fn) return null;
+      s.push(fn(a));
+      continue;
+    }
+    if (tok.t === "op") {
+      if (tok.v === "u-") {
+        const a = s.pop();
+        if (a === undefined) return null;
+        s.push(-a);
+        continue;
+      }
+      const b = s.pop();
+      const a = s.pop();
+      if (a === undefined || b === undefined) return null;
+      switch (tok.v) {
+        case "+": s.push(a + b); break;
+        case "-": s.push(a - b); break;
+        case "*": s.push(a * b); break;
+        case "/": s.push(a / b); break;
+        case "^": s.push(Math.pow(a, b)); break;
+      }
+    }
+  }
+  if (s.length !== 1) return null;
+  return Number.isFinite(s[0]) ? s[0] : null;
+}
+
+function compileEquation(eq: string, variable: "x" | "t" = "x"): ((x: number) => number | null) | null {
+  const source = variable === "t" ? eq.replace(/\bt\b/gi, "x") : eq;
+  const normalized = normalizeExpression(source);
+  const tokens = tokenize(normalized);
+  if (!tokens) return null;
+  const rpn = toRpn(tokens);
+  if (!rpn) return null;
+  return (x: number) => evalRpn(rpn, { x, y: 0 });
+}
+
+function compileImplicitEquation(eq: string): ((x: number, y: number) => number | null) | null {
+  const source = eq.includes("=")
+    ? (() => {
+      const [lhs, rhs] = eq.split("=");
+      return `(${lhs})-(${rhs})`;
+    })()
+    : eq;
+  const normalized = normalizeExpression(source);
+  const tokens = tokenize(normalized);
+  if (!tokens) return null;
+  const rpn = toRpn(tokens);
+  if (!rpn) return null;
+  return (x: number, y: number) => evalRpn(rpn, { x, y });
 }
 
 // ── SVG path with pen-lift on discontinuities ─────────────────────────────────
@@ -76,15 +249,23 @@ function buildCurvePath(
   const parts: string[] = [];
   let penDown  = false;
   let prevY: number | null = null;
+  const fn = compileEquation(eq);
+  if (!fn) return null;
 
   for (let i = 0; i <= numSamples; i++) {
     const x = xMin + ((xMax - xMin) * i) / numSamples;
-    const y = evaluateEquation(eq, x);
+    const y = fn(x);
 
     if (y === null) { penDown = false; prevY = null; continue; }
 
     // Lift pen on asymptote-like discontinuity
-    if (prevY !== null && Math.abs(y - prevY) > ySpan * 4) penDown = false;
+    const tooSteepJump = prevY !== null && Math.abs(y - prevY) > ySpan * 2.25;
+    const outOfView = y < yMin - ySpan * 0.25 || y > yMax + ySpan * 0.25;
+    if (tooSteepJump || outOfView) {
+      penDown = false;
+      prevY = y;
+      continue;
+    }
 
     parts.push(penDown
       ? `L ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`
@@ -93,6 +274,112 @@ function buildCurvePath(
     prevY   = y;
   }
   return parts.length > 0 ? parts.join(" ") : null;
+}
+
+function buildCirclePath(
+  h: number,
+  k: number,
+  r: number,
+  xToSvg: (x: number) => number,
+  yToSvg: (y: number) => number,
+  samples = 360,
+): string {
+  const parts: string[] = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = (2 * Math.PI * i) / samples;
+    const x = h + r * Math.cos(t);
+    const y = k + r * Math.sin(t);
+    parts.push(i === 0
+      ? `M ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`
+      : `L ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`);
+  }
+  return parts.join(" ");
+}
+
+function buildParametricPath(
+  xEq: string,
+  yEq: string,
+  tMin: number,
+  tMax: number,
+  xToSvg: (x: number) => number,
+  yToSvg: (y: number) => number,
+  samples = 700,
+): string | null {
+  const xFn = compileEquation(xEq, "t");
+  const yFn = compileEquation(yEq, "t");
+  if (!xFn || !yFn || tMin >= tMax) return null;
+  const parts: string[] = [];
+  let penDown = false;
+  for (let i = 0; i <= samples; i++) {
+    const t = tMin + ((tMax - tMin) * i) / samples;
+    const x = xFn(t);
+    const y = yFn(t);
+    if (x === null || y === null) {
+      penDown = false;
+      continue;
+    }
+    parts.push(penDown
+      ? `L ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`
+      : `M ${xToSvg(x).toFixed(2)} ${yToSvg(y).toFixed(2)}`);
+    penDown = true;
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
+function buildImplicitEquationPath(
+  equation: string,
+  xMin: number, xMax: number,
+  yMin: number, yMax: number,
+  xToSvg: (x: number) => number,
+  yToSvg: (y: number) => number,
+  resolution = 84,
+): string | null {
+  const fn = compileImplicitEquation(equation);
+  if (!fn) return null;
+  const parts: string[] = [];
+  const dx = (xMax - xMin) / resolution;
+  const dy = (yMax - yMin) / resolution;
+
+  const val = (x: number, y: number) => fn(x, y);
+  const interp = (x1: number, y1: number, v1: number, x2: number, y2: number, v2: number) => {
+    const t = Math.abs(v1 - v2) < 1e-12 ? 0.5 : v1 / (v1 - v2);
+    return { x: x1 + (x2 - x1) * t, y: y1 + (y2 - y1) * t };
+  };
+
+  for (let ix = 0; ix < resolution; ix++) {
+    const x0 = xMin + ix * dx;
+    const x1 = x0 + dx;
+    for (let iy = 0; iy < resolution; iy++) {
+      const y0 = yMin + iy * dy;
+      const y1 = y0 + dy;
+      const v00 = val(x0, y0);
+      const v10 = val(x1, y0);
+      const v11 = val(x1, y1);
+      const v01 = val(x0, y1);
+      if (v00 === null || v10 === null || v11 === null || v01 === null) continue;
+      const corners = [
+        { x: x0, y: y0, v: v00 },
+        { x: x1, y: y0, v: v10 },
+        { x: x1, y: y1, v: v11 },
+        { x: x0, y: y1, v: v01 },
+      ];
+      const edges: { x: number; y: number }[] = [];
+      for (let e = 0; e < 4; e++) {
+        const a = corners[e];
+        const b = corners[(e + 1) % 4];
+        const crosses = (a.v <= 0 && b.v >= 0) || (a.v >= 0 && b.v <= 0);
+        if (crosses && a.v !== b.v) {
+          edges.push(interp(a.x, a.y, a.v, b.x, b.y, b.v));
+        }
+      }
+      if (edges.length >= 2) {
+        const p = edges[0];
+        const q = edges[1];
+        parts.push(`M ${xToSvg(p.x).toFixed(2)} ${yToSvg(p.y).toFixed(2)} L ${xToSvg(q.x).toFixed(2)} ${yToSvg(q.y).toFixed(2)}`);
+      }
+    }
+  }
+  return parts.length ? parts.join(" ") : null;
 }
 
 // ── Client-side graphSpec validator ───────────────────────────────────────────
@@ -105,17 +392,16 @@ function isValidSpec(spec: GraphQuestionSpec): boolean {
   const hasEquation = typeof spec.equation === "string" && spec.equation.trim().length > 0;
   const hasCurves   = Array.isArray(spec.curves) && spec.curves.length > 0;
   const hasPoints   = Array.isArray(spec.points)  && spec.points.length > 0;
-  if (!hasEquation && !hasCurves && !hasPoints) return false;
+  const hasImplicit = !!spec.implicit;
+  const hasParametric = !!spec.parametric;
+  const hasPiecewise = Array.isArray(spec.piecewise) && spec.piecewise.length > 0;
+  if (!hasEquation && !hasCurves && !hasPoints && !hasImplicit && !hasParametric && !hasPiecewise) return false;
   return true;
-}
-
-// ── Equation display label (strip "y = " prefix, keep the rest) ──────────────
-function equationLabel(eq: string): string {
-  return eq.replace(/^y\s*=\s*/i, "").trim();
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
+  const resolvedSpec = applyGraphPreset(spec);
   // Generate unique IDs per instance so multiple graphs on the same page
   // never share clipPath or marker IDs — SVG ID conflicts cause wrong clipping
   // and missing arrowheads on all but the first graph.
@@ -124,7 +410,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const markerId   = `arrowhead-${uid}`;
 
   // Validate spec client-side before attempting to render
-  if (!isValidSpec(spec)) {
+  if (!isValidSpec(resolvedSpec)) {
     return (
       <div
         className="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-6 text-center"
@@ -135,9 +421,9 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
     );
   }
 
-  const [xMin, xMax] = spec.xRange;
-  const [yMin, yMax] = spec.yRange;
-  const axisLabels   = spec.axisLabels ?? { x: "x", y: "y" };
+  const [xMin, xMax] = resolvedSpec.xRange;
+  const [yMin, yMax] = resolvedSpec.yRange;
+  const axisLabels   = resolvedSpec.axisLabels ?? { x: "x", y: "y" };
 
   // ── Coordinate transforms using the AI's exact ranges ────────────────────
   const xToSvg = (x: number) =>
@@ -150,8 +436,8 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const yAxisX = Math.max(plotLeft, Math.min(plotRight,  xToSvg(0)));
 
   // ── Smart tick intervals (independent per axis) ───────────────────────────
-  const xTick = niceInterval(xMax - xMin);
-  const yTick = niceInterval(yMax - yMin);
+  const xTick = resolvedSpec.tickInterval && Number.isFinite(resolvedSpec.tickInterval) ? resolvedSpec.tickInterval : niceInterval(xMax - xMin);
+  const yTick = resolvedSpec.tickInterval && Number.isFinite(resolvedSpec.tickInterval) ? resolvedSpec.tickInterval : niceInterval(yMax - yMin);
 
   const makeTicks = (lo: number, hi: number, step: number) => {
     const start = Math.ceil(lo / step) * step;
@@ -166,33 +452,22 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
   // ── Curves ────────────────────────────────────────────────────────────────
   const allCurves: { equation: string; label?: string; color: string }[] = [];
-  if (spec.curves && spec.curves.length > 0) {
-    spec.curves.forEach((c, i) => allCurves.push({
+  if (resolvedSpec.curves && resolvedSpec.curves.length > 0) {
+    resolvedSpec.curves.forEach((c, i) => allCurves.push({
       equation: c.equation,
       label:    c.label,
       color:    c.color ?? CURVE_COLORS[i % CURVE_COLORS.length],
     }));
-  } else if (spec.equation) {
-    allCurves.push({ equation: spec.equation, color: CURVE_COLORS[0] });
+  } else if (resolvedSpec.equation) {
+    allCurves.push({ equation: resolvedSpec.equation, color: CURVE_COLORS[0] });
   }
-
-  // ── Equation label (single-curve) — shown italic on graph ────────────────
-  // Only shown when there is exactly one curve derived from spec.equation
-  // (not spec.curves) to avoid collision with the multi-curve legend below.
-  const showSingleEquationLabel =
-    allCurves.length === 1 && !!spec.equation && !spec.curves?.length;
-  const singleEquationText = showSingleEquationLabel
-    ? equationLabel(spec.equation!)
-    : null;
-
-  // Pick a position for the label: upper-right area of the plot, away from Y-axis label
-  const eqLabelX = plotRight - 6;
-  const eqLabelY = plotTop + 18;
 
   const showLegend    = allCurves.length > 1 && allCurves.some((c) => c.label);
   const legendEntries = showLegend ? allCurves.filter((c) => c.label) : [];
-  const plotPoints    = [...(spec.points || []), ...(spec.highlightedPoints || [])];
+  const plotPoints    = [...(resolvedSpec.points || []), ...(resolvedSpec.highlightedPoints || [])];
   const TICK_SIZE     = 4; // half-length of tick cross-hairs (px)
+  const equationA11yText = resolvedSpec.equation ? normalizeExpression(resolvedSpec.equation) : "";
+  const asymptotes = resolvedSpec.asymptotes ?? { vertical: [], horizontal: [], oblique: [] };
 
   // Y-tick label x-position: left of y-axis, but at least 4px inside SVG viewport
   const yLabelX = Math.max(4, yAxisX - 9);
@@ -202,6 +477,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
       className="rounded-2xl border border-cyan-500/20 bg-slate-950/70 p-3 md:p-4"
       data-testid="graph-plot"
     >
+      {resolvedSpec.equation && <span className="sr-only">Equation: {resolvedSpec.equation}</span>}
       {/*
         SVG sizing: `w-full` + no fixed height → browser computes height from viewBox aspect
         ratio (620:340 ≈ 1.82:1), so the graph scales proportionally on every screen size.
@@ -214,6 +490,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         role="img"
         aria-label="Cartesian graph"
       >
+        {equationA11yText && <desc>{equationA11yText}</desc>}
         <defs>
           {/*
             Unique clipPath ID per instance prevents conflicts when multiple
@@ -241,13 +518,13 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
         {/* ── Grid lines ────────────────────────────────────────────────── */}
         <g clipPath={`url(#${clipId})`}>
-          {spec.showGrid && xTicks.map((x) => (
+          {resolvedSpec.showGrid && xTicks.map((x) => (
             <line key={`vg-${x}`}
               x1={xToSvg(x)} x2={xToSvg(x)} y1={plotTop} y2={plotBottom}
               stroke="rgba(148,163,184,0.10)" strokeWidth="1"
             />
           ))}
-          {spec.showGrid && yTicks.map((y) => (
+          {resolvedSpec.showGrid && yTicks.map((y) => (
             <line key={`hg-${y}`}
               x1={plotLeft} x2={plotRight} y1={yToSvg(y)} y2={yToSvg(y)}
               stroke="rgba(148,163,184,0.10)" strokeWidth="1"
@@ -346,6 +623,40 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
         {/* ── Curves, clipped to plot area ──────────────────────────────── */}
         <g clipPath={`url(#${clipId})`}>
+          {asymptotes.vertical.map((x, i) => (
+            <line
+              key={`asym-v-${x}-${i}`}
+              x1={xToSvg(x)} x2={xToSvg(x)}
+              y1={plotTop} y2={plotBottom}
+              stroke="rgba(248,113,113,0.75)"
+              strokeDasharray="7 5"
+              strokeWidth="1.2"
+            />
+          ))}
+          {asymptotes.horizontal.map((y, i) => (
+            <line
+              key={`asym-h-${y}-${i}`}
+              x1={plotLeft} x2={plotRight}
+              y1={yToSvg(y)} y2={yToSvg(y)}
+              stroke="rgba(248,113,113,0.75)"
+              strokeDasharray="7 5"
+              strokeWidth="1.2"
+            />
+          ))}
+          {asymptotes.oblique.map((eq, i) => {
+            const d = buildCurvePath(eq, xMin, xMax, yMin, yMax, xToSvg, yToSvg);
+            return d ? (
+              <path
+                key={`asym-o-${i}`}
+                d={d}
+                fill="none"
+                stroke="rgba(248,113,113,0.75)"
+                strokeDasharray="7 5"
+                strokeWidth="1.2"
+              />
+            ) : null;
+          })}
+
           {allCurves.map((c, i) => {
             const d = buildCurvePath(c.equation, xMin, xMax, yMin, yMax, xToSvg, yToSvg);
             return d ? (
@@ -356,6 +667,69 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
               />
             ) : null;
           })}
+
+          {Array.isArray(resolvedSpec.piecewise) && resolvedSpec.piecewise.map((seg, i) => {
+            const segMin = Math.max(xMin, seg.domain[0]);
+            const segMax = Math.min(xMax, seg.domain[1]);
+            if (!(segMin < segMax)) return null;
+            const d = buildCurvePath(seg.equation, segMin, segMax, yMin, yMax, xToSvg, yToSvg, 260);
+            return d ? (
+              <path
+                key={`piecewise-${i}`}
+                d={d}
+                fill="none"
+                stroke={CURVE_COLORS[i % CURVE_COLORS.length]}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : null;
+          })}
+
+          {resolvedSpec.implicit?.type === "circle" && (
+            <path
+              d={buildCirclePath(resolvedSpec.implicit.h, resolvedSpec.implicit.k, resolvedSpec.implicit.r, xToSvg, yToSvg)}
+              fill="none"
+              stroke={CURVE_COLORS[0]}
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+          {resolvedSpec.implicit?.type === "equation" && (() => {
+            const d = buildImplicitEquationPath(resolvedSpec.implicit.equation, xMin, xMax, yMin, yMax, xToSvg, yToSvg);
+            return d ? (
+              <path
+                d={d}
+                fill="none"
+                stroke={CURVE_COLORS[0]}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : null;
+          })()}
+
+          {resolvedSpec.parametric && (() => {
+            const d = buildParametricPath(
+              resolvedSpec.parametric.xEquation,
+              resolvedSpec.parametric.yEquation,
+              resolvedSpec.parametric.tRange[0],
+              resolvedSpec.parametric.tRange[1],
+              xToSvg,
+              yToSvg,
+            );
+            return d ? (
+              <path
+                d={d}
+                fill="none"
+                stroke={CURVE_COLORS[1]}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : null;
+          })()}
 
           {plotPoints.map((p, i) => (
             <g key={`pt-${p.x}-${p.y}-${i}`}>
@@ -375,20 +749,6 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           ))}
         </g>
 
-        {/* ── Single-curve equation label — italic, upper-right ─────────── */}
-        {singleEquationText && (
-          <text
-            x={eqLabelX} y={eqLabelY}
-            textAnchor="end"
-            fill={CURVE_COLORS[0]}
-            fontSize="12"
-            fontStyle="italic"
-            fontWeight="500"
-            opacity="0.90"
-          >
-            y = {singleEquationText}
-          </text>
-        )}
       </svg>
 
       {/* ── Legend — HTML below the SVG (no in-plot overlap) ─────────────── */}

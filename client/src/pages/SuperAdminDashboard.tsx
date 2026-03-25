@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
+import { supabase, authFetch } from "@/lib/supabase";
 import { createIdentityHeaders } from "@/lib/identityHeaders";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
@@ -47,8 +47,7 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     if (!userId) return;
-    const email = encodeURIComponent(session?.user?.email || "");
-    fetch(`/api/auth/me?userId=${userId}&email=${email}`)
+    authFetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => {
         if (data.role !== "super_admin") {

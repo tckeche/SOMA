@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Link } from "wouter";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import type { GraphQuestionSpec, SomaQuiz } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import {
 import 'katex/dist/katex.min.css';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import GraphPlot from "@/components/GraphPlot";
-import type { Session } from '@supabase/supabase-js';
+import { authFetch } from "@/lib/supabase";
 
 export type StudentQuestion = {
   id: number;
@@ -288,7 +288,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const { data: submissionCheck } = useQuery<{ submitted: boolean }>({
     queryKey: ["/api/soma/quizzes", quizId, "check-submission", userId],
     queryFn: async () => {
-      const res = await fetch(`/api/soma/quizzes/${quizId}/check-submission?studentId=${userId}`);
+      const res = await authFetch(`/api/soma/quizzes/${quizId}/check-submission`);
       if (!res.ok) return { submitted: false };
       return res.json();
     },
@@ -315,12 +315,19 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/soma/quizzes/${quizId}/submit`, {
-        studentId: userId,
-        studentName: displayName,
-        answers,
-        startedAt: quizStartedAt,
+      const res = await authFetch(`/api/soma/quizzes/${quizId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentName: displayName,
+          answers,
+          startedAt: quizStartedAt,
+        }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.message || "Submission failed");
+      }
       return res.json();
     },
     onSuccess: (data: any) => {
