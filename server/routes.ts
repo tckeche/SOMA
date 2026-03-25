@@ -82,6 +82,48 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   const tickInterval = typeof r.tickInterval === "number" && r.tickInterval > 0 ? r.tickInterval : 1;
   const showGrid = r.showGrid !== false;
   const highlightedPoints = Array.isArray(r.highlightedPoints) ? r.highlightedPoints : undefined;
+  const rawAsym = r.asymptotes && typeof r.asymptotes === "object" ? (r.asymptotes as Record<string, unknown>) : null;
+  const asymptotes = rawAsym ? {
+    vertical: Array.isArray(rawAsym.vertical) ? rawAsym.vertical.map(Number).filter(Number.isFinite) : [],
+    horizontal: Array.isArray(rawAsym.horizontal) ? rawAsym.horizontal.map(Number).filter(Number.isFinite) : [],
+    oblique: Array.isArray(rawAsym.oblique) ? rawAsym.oblique.map(String).filter(Boolean) : [],
+  } : undefined;
+  const rawImplicit = r.implicit && typeof r.implicit === "object" ? (r.implicit as Record<string, unknown>) : null;
+  const implicit =
+    rawImplicit && String(rawImplicit.type || "") === "circle"
+      ? {
+        type: "circle" as const,
+        h: Number(rawImplicit.h),
+        k: Number(rawImplicit.k),
+        r: Number(rawImplicit.r),
+      }
+      : rawImplicit && String(rawImplicit.type || "") === "equation" && String(rawImplicit.equation || "").trim()
+        ? {
+          type: "equation" as const,
+          equation: String(rawImplicit.equation),
+        }
+        : undefined;
+  const rawParametric = r.parametric && typeof r.parametric === "object" ? (r.parametric as Record<string, unknown>) : null;
+  const parametric = rawParametric
+    ? {
+      xEquation: String(rawParametric.xEquation || rawParametric.x || ""),
+      yEquation: String(rawParametric.yEquation || rawParametric.y || ""),
+      tRange: Array.isArray(rawParametric.tRange)
+        ? [Number(rawParametric.tRange[0]), Number(rawParametric.tRange[1])] as [number, number]
+        : [Number((rawParametric as any).tMin), Number((rawParametric as any).tMax)] as [number, number],
+    }
+    : undefined;
+  const piecewise = Array.isArray(r.piecewise)
+    ? r.piecewise
+      .map((seg: any) => ({
+        equation: String(seg?.equation || ""),
+        domain: Array.isArray(seg?.domain)
+          ? [Number(seg.domain[0]), Number(seg.domain[1])] as [number, number]
+          : [Number(seg?.xMin), Number(seg?.xMax)] as [number, number],
+        label: seg?.label ? String(seg.label) : undefined,
+      }))
+      .filter((seg) => seg.equation && Number.isFinite(seg.domain[0]) && Number.isFinite(seg.domain[1]) && seg.domain[0] < seg.domain[1])
+    : undefined;
 
   const repaired = {
     plotType,
@@ -94,6 +136,12 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
     showGrid,
     tickInterval,
     highlightedPoints: highlightedPoints as { x: number; y: number; label?: string }[] | undefined,
+    asymptotes,
+    implicit,
+    parametric: parametric && parametric.xEquation && parametric.yEquation ? parametric : undefined,
+    piecewise: piecewise && piecewise.length > 0 ? piecewise : undefined,
+    subjectPreset: typeof r.subjectPreset === "string" ? r.subjectPreset : undefined,
+    graphKind: typeof r.graphKind === "string" ? r.graphKind : undefined,
   };
 
   const parsed = graphQuestionSpecSchema.safeParse(repaired);

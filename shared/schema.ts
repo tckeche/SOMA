@@ -30,6 +30,35 @@ export const graphQuestionSpecSchema = z.object({
   showGrid: z.boolean().default(true),
   tickInterval: z.number().positive().default(1),
   highlightedPoints: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional(),
+  asymptotes: z.object({
+    vertical: z.array(z.number()).default([]),
+    horizontal: z.array(z.number()).default([]),
+    oblique: z.array(z.string()).default([]),
+  }).optional(),
+  implicit: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("circle"),
+      h: z.number(),
+      k: z.number(),
+      r: z.number().positive(),
+    }),
+    z.object({
+      type: z.literal("equation"),
+      equation: z.string(),
+    }),
+  ]).optional(),
+  parametric: z.object({
+    xEquation: z.string(),
+    yEquation: z.string(),
+    tRange: z.tuple([z.number(), z.number()]),
+  }).optional(),
+  piecewise: z.array(z.object({
+    equation: z.string(),
+    domain: z.tuple([z.number(), z.number()]),
+    label: z.string().optional(),
+  })).optional(),
+  subjectPreset: z.enum(["mathematics", "physics", "economics", "business", "chemistry", "biology"]).optional(),
+  graphKind: z.string().optional(),
 });
 
 export type GraphQuestionSpec = z.infer<typeof graphQuestionSpecSchema>;
