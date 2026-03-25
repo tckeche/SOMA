@@ -83,6 +83,51 @@ function normalizeExpression(raw: string): string {
     .replace(/(\d)(?=(?:abs|acos|asin|atan|ceil|cos|exp|floor|ln|log10|log|round|sign|sin|sqrt|tan|trunc)\()/gi, "$1*");
 }
 
+// ── Equation display label ─────────────────────────────────────────────────────
+// Converts a raw JS equation expression to human-readable Unicode math.
+// Used as a fallback when spec.label is not provided.
+function prettyEquation(eq: string): string {
+  let s = eq.replace(/^y\s*=\s*/i, "").trim();
+  // Trig in degrees
+  s = s.replace(/Math\.(sin|cos|tan)\(\s*x\s*\*\s*Math\.PI\s*\/\s*180\s*\)/gi, (_, fn) => `${fn} x°`);
+  s = s.replace(/Math\.(sin|cos|tan)\(\s*Math\.PI\s*\*\s*x\s*\/\s*180\s*\)/gi, (_, fn) => `${fn} x°`);
+  // Trig in radians
+  s = s.replace(/Math\.(sin|cos|tan)\(\s*x\s*\)/gi, (_, fn) => `${fn} x`);
+  s = s.replace(/Math\.(sin|cos|tan)\(/gi, (_, fn) => `${fn}(`);
+  // Exponential / log
+  s = s.replace(/Math\.exp\(\s*x\s*\)/gi, "eˣ");
+  s = s.replace(/Math\.exp\(/gi, "exp(");
+  s = s.replace(/Math\.log\(\s*x\s*\)/gi, "ln x");
+  s = s.replace(/Math\.log\(/gi, "ln(");
+  s = s.replace(/Math\.log10\(\s*x\s*\)/gi, "log x");
+  s = s.replace(/Math\.log10\(/gi, "log₁₀(");
+  // sqrt / abs
+  s = s.replace(/Math\.sqrt\(\s*x\s*\)/gi, "√x");
+  s = s.replace(/Math\.sqrt\(/gi, "√(");
+  s = s.replace(/Math\.abs\(\s*x\s*\)/gi, "|x|");
+  s = s.replace(/Math\.abs\(/gi, "|");
+  // Constants
+  s = s.replace(/Math\.PI/g, "π");
+  s = s.replace(/Math\.E\b/g, "e");
+  // Powers: x**2 → x², x**3 → x³
+  const supMap: Record<string, string> = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹"};
+  s = s.replace(/x\*\*(\d)/g, (_, d) => `x${supMap[d] ?? `^${d}`}`);
+  s = s.replace(/\*\*/g, "^");
+  // Implicit multiplication: 2*x → 2x
+  s = s.replace(/(\d)\s*\*\s*x/g, "$1x");
+  s = s.replace(/(\d)\s*\*\s*\(/g, "$1(");
+  // Remaining bare * → middle dot
+  s = s.replace(/\s*\*\s*/g, "·");
+  return s.trim();
+}
+
+// Prefer spec.label (AI-supplied clean name), fall back to prettyEquation()
+function equationDisplayLabel(spec: { equation?: string; label?: string }): string {
+  if (spec.label) return spec.label.replace(/^y\s*=\s*/i, "").trim();
+  if (spec.equation) return prettyEquation(spec.equation);
+  return "";
+}
+
 function tokenize(expr: string): Token[] | null {
   const out: Token[] = [];
   let i = 0;
@@ -755,6 +800,28 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             </g>
           ))}
         </g>
+
+        {/* ── Single-curve equation label — italic, upper-right ─────────── */}
+        {(() => {
+          const isSingleCurve = allCurves.length === 1 && !!resolvedSpec.equation && !resolvedSpec.curves?.length;
+          if (!isSingleCurve) return null;
+          const labelText = equationDisplayLabel(resolvedSpec);
+          if (!labelText) return null;
+          return (
+            <text
+              x={plotRight - 6}
+              y={plotTop + 18}
+              textAnchor="end"
+              fill={CURVE_COLORS[0]}
+              fontSize="12"
+              fontStyle="italic"
+              fontWeight="500"
+              opacity="0.90"
+            >
+              y = {labelText}
+            </text>
+          );
+        })()}
 
       </svg>
 

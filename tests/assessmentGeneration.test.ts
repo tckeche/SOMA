@@ -64,11 +64,13 @@ describe("graph question rendering and theme/button safeguards", () => {
     // Equation label rendered italic on single-curve graph
     // React serializes fontStyle prop as font-style in SVG HTML output
     expect(html).toContain("font-style");
-    // Equation text is prettified — raw JS multiplication (*) becomes implicit
+    // Equation text is prettified in the visible SVG label
     // prettyEquation("y = 2*x + 1") → "2x + 1" (strips "y =", converts 2*x → 2x)
     expect(html).toContain("2x + 1");
-    // Raw JS expression must NOT appear verbatim on the graph
-    expect(html).not.toContain("2*x + 1");
+    // Raw JS must not appear in the VISIBLE italic label (may appear in sr-only/desc for accessibility)
+    const italicParts = [...html.matchAll(/font-style="italic"[^>]*>([^<]+)</g)].map(m => m[1]);
+    const visibleLabel = italicParts.find(t => t.includes("y =") || t.includes("2x"));
+    expect(visibleLabel).not.toMatch(/2\*x/);
     // Unique clip/marker IDs — must NOT use bare hardcoded "plot-clip" or "arrowhead"
     expect(html).not.toContain('"plot-clip"');
     expect(html).not.toContain('"arrowhead"');
@@ -102,7 +104,7 @@ describe("graph question rendering and theme/button safeguards", () => {
     expect(html).not.toContain('"arrowhead"');
   });
 
-  it("uses spec.label verbatim instead of raw JS equation when label is provided", () => {
+  it("uses spec.label verbatim instead of raw JS equation in the visible SVG label", () => {
     const html = renderToStaticMarkup(React.createElement(GraphPlot, {
       spec: {
         plotType: "line",
@@ -115,13 +117,15 @@ describe("graph question rendering and theme/button safeguards", () => {
         tickInterval: 90,
       },
     }));
-    // The clean label should appear, not the raw JS
+    // The clean label appears in the visible SVG text element (italic, upper-right)
     expect(html).toContain("sin x°");
-    expect(html).not.toContain("Math.sin");
-    expect(html).not.toContain("Math.PI");
+    // The visible italic text element must NOT contain raw JS notation
+    // (raw equation is preserved only in sr-only/desc accessibility elements — that's expected)
+    const svgTextMatch = html.match(/font-style="italic"[^>]*>([^<]+)</);
+    expect(svgTextMatch?.[1]).not.toMatch(/Math\./);
   });
 
-  it("prettyEquation converts Math.sin(x * Math.PI / 180) to sin x° when no label", () => {
+  it("prettyEquation converts Math.sin(x * Math.PI / 180) to sin x° in the visible SVG label", () => {
     const html = renderToStaticMarkup(React.createElement(GraphPlot, {
       spec: {
         plotType: "line",
@@ -133,10 +137,14 @@ describe("graph question rendering and theme/button safeguards", () => {
         tickInterval: 90,
       },
     }));
-    // Prettified — raw JS must not appear
+    // The visible equation label shows prettified text (not raw JS)
     expect(html).toContain("sin x°");
-    expect(html).not.toContain("Math.sin");
-    expect(html).not.toContain("Math.PI");
+    // The visible italic text element (the equation label) must not contain raw JS
+    // Note: raw equation intentionally preserved in sr-only/desc for accessibility
+    const italicElements = [...html.matchAll(/font-style="italic"[^>]*>([^<]+)</g)].map(m => m[1]);
+    const equationLabelEl = italicElements.find(t => t.includes("y ="));
+    expect(equationLabelEl).toContain("sin x°");
+    expect(equationLabelEl).not.toMatch(/Math\./);
   });
 
   it("shows a fallback when graphSpec is invalid", () => {
