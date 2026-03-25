@@ -233,7 +233,14 @@ CRITICAL FORMAT RULES (breaking any of these means your output is INVALID):
 7. question_type MUST be "graph"
 8. When using "curves", each entry needs at least "equation" and "label"
 9. equations use variable x only (the renderer evaluates f(x))
-10. RANGE CHECK — evaluate EVERY equation at xMin and xMax; set yRange to contain ALL y-values plus 10% padding. Example: x² on [-3,4] reaches y=16 at x=4, so yMin ≥ -2, yMax ≥ 18`;
+10. RANGE CHECK — evaluate EVERY equation at xMin and xMax; set yRange to contain ALL y-values plus 10% padding. Example: x² on [-3,4] reaches y=16 at x=4, so yMin ≥ -2, yMax ≥ 18
+
+MATH FORMATTING — MANDATORY:
+ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX delimiters.
+- Inline math: $x^2 + 3$ (single dollar signs)
+- Display/standalone math: $$\\frac{a}{b}$$ (double dollar signs)
+- NEVER write maths without delimiters. WRONG: "2x + 1"  RIGHT: "$2x + 1$"
+- IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression — do NOT use LaTeX there.`;
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
@@ -1820,6 +1827,18 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 7. RANGE CHECK — before setting yRange, evaluate every equation at xMin AND xMax to find the true y-min and y-max; set yRange with at least 10% padding so NO curve is clipped. Example: y=x² on xRange[-3,4] reaches y=16 at x=4, so yRange must be at least [-1,18] not [-1,10]
 8. Keep xRange and yRange spans within a 3:1 ratio of each other (avoid extreme aspect ratios)`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
+
+## MATH FORMATTING — MANDATORY:
+ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX delimiters.
+- Inline math: $x^2 + 3x - 5$ (single dollar signs, within a sentence)
+- Display math: $$\\frac{a}{b} = c$$ (double dollar signs, for standalone equations)
+- Examples of CORRECT formatting:
+  - prompt_text: "Find the value of $x$ when $2x + 3 = 7$."
+  - option: "$x = 2$"
+  - explanation: "Rearranging: $2x = 4$, so $x = 2$."
+- NEVER write maths without delimiters. WRONG: "2x + 3 = 7"  RIGHT: "$2x + 3 = 7$"
+- Use proper LaTeX: $\\frac{1}{2}$ for fractions, $x^{-2}$ for powers, $\\sqrt{x}$ for roots
+- IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression (e.g. "2*x + 1") — do NOT use LaTeX delimiters there. LaTeX is only for prompt_text, options, and explanation.
 
 ## CRITICAL RULES:
 - correct_answer must exactly match one of the 4 options (copy verbatim)

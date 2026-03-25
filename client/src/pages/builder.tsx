@@ -18,7 +18,8 @@ import {
   Save, AlertCircle
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
-import { renderLatex, unescapeLatex } from '@/lib/render-latex';
+import { unescapeLatex } from '@/lib/render-latex';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 import SomaQuizEngine from "./soma-quiz";
 import type { StudentQuestion } from "./soma-quiz";
 import { createIdentityHeaders } from "@/lib/identityHeaders";
@@ -1193,7 +1194,7 @@ export default function BuilderPage() {
                   >
                     <span className="text-xs font-mono text-amber-400 font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs text-slate-300 line-clamp-2">{renderLatex(unescapeLatex(q.stem))}</div>
+                      <div className="text-xs text-slate-300 line-clamp-2"><MarkdownRenderer content={unescapeLatex(q.stem)} /></div>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px]">{q.options.length} opts</Badge>
                         <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px]">{q.marks}m</Badge>

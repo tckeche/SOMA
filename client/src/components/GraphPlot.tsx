@@ -1,18 +1,18 @@
-import React from "react";
+import React, { useId } from "react";
 import type { GraphQuestionSpec } from "@shared/schema";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const WIDTH  = 620;
 const HEIGHT = 340;
-// left=64 gives enough room for labels like "−100" without clipping
-const M = { top: 32, right: 50, bottom: 32, left: 64 };
+// left=72 gives enough room for labels like "−100" without clipping
+const M = { top: 36, right: 56, bottom: 36, left: 72 };
 
 const plotLeft   = M.left;
 const plotRight  = WIDTH  - M.right;
 const plotTop    = M.top;
 const plotBottom = HEIGHT - M.bottom;
-const plotW      = plotRight - plotLeft;   // 520
-const plotH      = plotBottom - plotTop;   // 276
+const plotW      = plotRight - plotLeft;   // 492
+const plotH      = plotBottom - plotTop;   // 268
 
 const CURVE_COLORS = [
   "#38bdf8", // sky blue
@@ -63,6 +63,7 @@ function evaluateEquation(eq: string, x: number): number | null {
 }
 
 // ── SVG path with pen-lift on discontinuities ─────────────────────────────────
+// Returns null (not "") when nothing can be plotted — callers skip rendering entirely.
 function buildCurvePath(
   eq: string,
   xMin: number, xMax: number,
@@ -70,7 +71,7 @@ function buildCurvePath(
   xToSvg: (x: number) => number,
   yToSvg: (y: number) => number,
   numSamples = 600,
-): string {
+): string | null {
   const ySpan  = yMax - yMin;
   const parts: string[] = [];
   let penDown  = false;
@@ -91,18 +92,54 @@ function buildCurvePath(
     penDown = true;
     prevY   = y;
   }
-  return parts.join(" ");
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+// ── Client-side graphSpec validator ───────────────────────────────────────────
+function isValidSpec(spec: GraphQuestionSpec): boolean {
+  if (!spec) return false;
+  const [xMin, xMax] = spec.xRange;
+  const [yMin, yMax] = spec.yRange;
+  if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMin >= xMax) return false;
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || yMin >= yMax) return false;
+  const hasEquation = typeof spec.equation === "string" && spec.equation.trim().length > 0;
+  const hasCurves   = Array.isArray(spec.curves) && spec.curves.length > 0;
+  const hasPoints   = Array.isArray(spec.points)  && spec.points.length > 0;
+  if (!hasEquation && !hasCurves && !hasPoints) return false;
+  return true;
+}
+
+// ── Equation display label (strip "y = " prefix, keep the rest) ──────────────
+function equationLabel(eq: string): string {
+  return eq.replace(/^y\s*=\s*/i, "").trim();
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
+  // Generate unique IDs per instance so multiple graphs on the same page
+  // never share clipPath or marker IDs — SVG ID conflicts cause wrong clipping
+  // and missing arrowheads on all but the first graph.
+  const uid        = useId().replace(/:/g, "");
+  const clipId     = `plot-clip-${uid}`;
+  const markerId   = `arrowhead-${uid}`;
+
+  // Validate spec client-side before attempting to render
+  if (!isValidSpec(spec)) {
+    return (
+      <div
+        className="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-6 text-center"
+        data-testid="graph-invalid"
+      >
+        <p className="text-slate-400 text-sm">Graph specification is invalid or incomplete.</p>
+      </div>
+    );
+  }
+
   const [xMin, xMax] = spec.xRange;
   const [yMin, yMax] = spec.yRange;
   const axisLabels   = spec.axisLabels ?? { x: "x", y: "y" };
 
   // ── Coordinate transforms using the AI's exact ranges ────────────────────
-  // We trust the AI to choose ranges that show all curves fully.
-  // We do NOT auto-correct the ranges — that caused incorrect clipping.
   const xToSvg = (x: number) =>
     plotLeft  + ((x - xMin) / (xMax - xMin)) * plotW;
   const yToSvg = (y: number) =>
@@ -139,10 +176,26 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
     allCurves.push({ equation: spec.equation, color: CURVE_COLORS[0] });
   }
 
+  // ── Equation label (single-curve) — shown italic on graph ────────────────
+  // Only shown when there is exactly one curve derived from spec.equation
+  // (not spec.curves) to avoid collision with the multi-curve legend below.
+  const showSingleEquationLabel =
+    allCurves.length === 1 && !!spec.equation && !spec.curves?.length;
+  const singleEquationText = showSingleEquationLabel
+    ? equationLabel(spec.equation!)
+    : null;
+
+  // Pick a position for the label: upper-right area of the plot, away from Y-axis label
+  const eqLabelX = plotRight - 6;
+  const eqLabelY = plotTop + 18;
+
   const showLegend    = allCurves.length > 1 && allCurves.some((c) => c.label);
   const legendEntries = showLegend ? allCurves.filter((c) => c.label) : [];
   const plotPoints    = [...(spec.points || []), ...(spec.highlightedPoints || [])];
   const TICK_SIZE     = 4; // half-length of tick cross-hairs (px)
+
+  // Y-tick label x-position: left of y-axis, but at least 4px inside SVG viewport
+  const yLabelX = Math.max(4, yAxisX - 9);
 
   return (
     <div
@@ -152,8 +205,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
       {/*
         SVG sizing: `w-full` + no fixed height → browser computes height from viewBox aspect
         ratio (620:340 ≈ 1.82:1), so the graph scales proportionally on every screen size.
-        A max-width wrapper caps the graph at its natural 620 px width so it never stretches
-        into an ultra-wide canvas on large monitors.
+        A max-width wrapper caps the graph at its natural 620 px width on large monitors.
       */}
       <div className="w-full max-w-[620px] mx-auto">
       <svg
@@ -164,24 +216,21 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
       >
         <defs>
           {/*
-            ClipPath restricted to exact plot rectangle.
-            Curves are drawn at full precision and then clipped here —
-            the AI sets yRange to encompass the whole curve, so nothing
-            meaningful is cut off; only out-of-range overflow is hidden.
+            Unique clipPath ID per instance prevents conflicts when multiple
+            GraphPlot components render on the same page.
           */}
-          <clipPath id="plot-clip">
+          <clipPath id={clipId}>
             <rect x={plotLeft} y={plotTop} width={plotW} height={plotH} />
           </clipPath>
 
           {/*
-            Single arrowhead for both axes.
-            orient="auto" rotates to match the line direction:
-              X axis (→ rightward)  →  0°   ✓
-              Y axis (↑ upward, y2 < y1 in SVG coords) → −90°  ✓
-            refX="8" places the triangle tip exactly at the line end.
+            Unique marker ID — same reason as clipPath above.
+            orient="auto" rotates to match line direction:
+              X axis (→ rightward)  →  0°
+              Y axis (↑ upward, y2 < y1 in SVG coords) → −90°
           */}
           <marker
-            id="arrowhead"
+            id={markerId}
             markerWidth="8" markerHeight="8"
             refX="8" refY="4"
             orient="auto"
@@ -191,7 +240,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         </defs>
 
         {/* ── Grid lines ────────────────────────────────────────────────── */}
-        <g clipPath="url(#plot-clip)">
+        <g clipPath={`url(#${clipId})`}>
           {spec.showGrid && xTicks.map((x) => (
             <line key={`vg-${x}`}
               x1={xToSvg(x)} x2={xToSvg(x)} y1={plotTop} y2={plotBottom}
@@ -211,7 +260,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           x1={plotLeft} x2={plotRight + 5}
           y1={xAxisY}   y2={xAxisY}
           stroke="rgba(226,232,240,0.55)" strokeWidth="1.5"
-          markerEnd="url(#arrowhead)"
+          markerEnd={`url(#${markerId})`}
         />
 
         {/* ── Y axis ↑ (drawn bottom→top so marker-end points up) ─────── */}
@@ -219,7 +268,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           x1={yAxisX} x2={yAxisX}
           y1={plotBottom} y2={plotTop - 5}
           stroke="rgba(226,232,240,0.55)" strokeWidth="1.5"
-          markerEnd="url(#arrowhead)"
+          markerEnd={`url(#${markerId})`}
         />
 
         {/* ── Tick marks on X axis ──────────────────────────────────────── */}
@@ -252,7 +301,8 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         {xTicks.map((x) => {
           const sx = xToSvg(x);
           if (sx < plotLeft - 1 || sx > plotRight + 1) return null;
-          const skipOrigin = x === 0 && yMin < 0 && yMax > 0;
+          // Skip origin label when both axes are visible (avoid "0" at intersection)
+          const skipOrigin = x === 0 && yMin < 0 && yMax > 0 && xMin < 0 && xMax > 0;
           return !skipOrigin ? (
             <text key={`xl-${x}`}
               x={sx} y={xAxisY + 16}
@@ -267,10 +317,10 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         {yTicks.map((y) => {
           const sy = yToSvg(y);
           if (sy < plotTop - 1 || sy > plotBottom + 1) return null;
-          const skipOrigin = y === 0 && xMin < 0 && xMax > 0;
+          const skipOrigin = y === 0 && xMin < 0 && xMax > 0 && yMin < 0 && yMax > 0;
           return !skipOrigin ? (
             <text key={`yl-${y}`}
-              x={yAxisX - 9} y={sy + 4}
+              x={yLabelX} y={sy + 4}
               textAnchor="end" fill="#94a3b8" fontSize="11"
             >
               {y}
@@ -287,7 +337,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           {axisLabels.x}
         </text>
         <text
-          x={yAxisX + 6} y={plotTop - 8}
+          x={yAxisX + 6} y={plotTop - 10}
           textAnchor="start" fill="#cbd5e1"
           fontSize="13" fontWeight="600" fontStyle="italic"
         >
@@ -295,13 +345,13 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         </text>
 
         {/* ── Curves, clipped to plot area ──────────────────────────────── */}
-        <g clipPath="url(#plot-clip)">
+        <g clipPath={`url(#${clipId})`}>
           {allCurves.map((c, i) => {
             const d = buildCurvePath(c.equation, xMin, xMax, yMin, yMax, xToSvg, yToSvg);
             return d ? (
               <path key={`curve-${i}`}
                 d={d} fill="none"
-                stroke={c.color} strokeWidth="1.4"
+                stroke={c.color} strokeWidth="1.8"
                 strokeLinecap="round" strokeLinejoin="round"
               />
             ) : null;
@@ -310,17 +360,35 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           {plotPoints.map((p, i) => (
             <g key={`pt-${p.x}-${p.y}-${i}`}>
               <circle
-                cx={xToSvg(p.x)} cy={yToSvg(p.y)} r="4"
-                fill="#a78bfa" stroke="#1e1b4b" strokeWidth="1"
+                cx={xToSvg(p.x)} cy={yToSvg(p.y)} r="4.5"
+                fill="#a78bfa" stroke="#1e1b4b" strokeWidth="1.2"
               />
               {p.label && (
-                <text x={xToSvg(p.x) + 8} y={yToSvg(p.y) - 6} fill="#e2e8f0" fontSize="11">
+                <text
+                  x={xToSvg(p.x) + 8} y={yToSvg(p.y) - 6}
+                  fill="#e2e8f0" fontSize="11"
+                >
                   {p.label}
                 </text>
               )}
             </g>
           ))}
         </g>
+
+        {/* ── Single-curve equation label — italic, upper-right ─────────── */}
+        {singleEquationText && (
+          <text
+            x={eqLabelX} y={eqLabelY}
+            textAnchor="end"
+            fill={CURVE_COLORS[0]}
+            fontSize="12"
+            fontStyle="italic"
+            fontWeight="500"
+            opacity="0.90"
+          >
+            y = {singleEquationText}
+          </text>
+        )}
       </svg>
 
       {/* ── Legend — HTML below the SVG (no in-plot overlap) ─────────────── */}
@@ -332,7 +400,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
                 className="inline-block rounded-full flex-shrink-0"
                 style={{ width: 20, height: 2, background: c.color }}
               />
-              <span className="text-xs text-slate-300 whitespace-nowrap">{c.label}</span>
+              <span className="text-xs text-slate-300 italic whitespace-nowrap">{c.label}</span>
             </div>
           ))}
         </div>

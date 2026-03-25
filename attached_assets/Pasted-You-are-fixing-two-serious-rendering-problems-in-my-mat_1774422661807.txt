@@ -1,0 +1,243 @@
+You are fixing two serious rendering problems in my maths quiz / assessment app.
+
+This is a targeted stabilization and hardening task.
+Do NOT do a broad refactor.
+Do NOT break unrelated features.
+Do NOT change working behaviour unless needed to fix these problems properly.
+
+PRIMARY PROBLEMS
+
+1. Maths is not rendering properly.
+2. Some graphs that do render are still rendered badly and unreliably.
+
+I want a fully integrated maths and graphing system that is robust, production-safe, and visually correct.
+
+==================================================
+GOALS
+==================================================
+
+A. Fix maths rendering so mathematical content displays correctly and consistently everywhere it should.
+
+B. Build a robust graphing/rendering system for graph questions so it does not bug out, break layout, or render inconsistently.
+
+C. When showing the graph equation on the graph itself, render the equation in italics.
+
+D. Verify this works in both:
+- development
+- production/published Replit deployment
+
+==================================================
+PART 1 — FIX MATHS RENDERING
+==================================================
+
+Inspect the full maths rendering pipeline end to end.
+
+Check:
+- how maths content is generated
+- how LaTeX/math text is stored
+- how it is normalized
+- where it is rendered in the UI
+- whether Markdown and KaTeX/Math rendering are interacting correctly
+- whether graph question text and normal question text both render maths properly
+- whether preview and saved/reloaded questions render the same way
+
+Find and fix issues such as:
+- broken math delimiters
+- escaped content rendering incorrectly
+- malformed rendering in question stems
+- malformed rendering in options
+- malformed rendering in explanations
+- mismatch between preview and saved versions
+- production rendering differing from development
+
+Make the maths rendering path robust and consistent.
+
+==================================================
+PART 2 — BUILD A ROBUST GRAPHING SYSTEM
+==================================================
+
+The graphing system must be reliable and fully integrated.
+
+Inspect and fix the full graph pipeline:
+- graph question generation
+- graphSpec validation
+- graph question persistence
+- graph question reload
+- preview mapping
+- actual graph rendering
+
+Make the graph renderer robust enough for production use.
+
+Required improvements:
+1. Robust layout
+- correct axis label placement
+- correct y-axis padding
+- correct x-axis padding
+- no overlap between tick labels, titles, and plot area
+- no clipping
+- no fragile hard-coded positioning where avoidable
+
+2. Robust plotting
+- line graphs
+- simple curves
+- plotted points
+- mixed positive/negative ranges
+- ranges where 0 is outside the visible domain/range
+- stable axis placement with proper clamping
+- no empty graph plane when valid data exists
+
+3. Robust validation
+A graph question should only render as graph if graphSpec is valid.
+Validate:
+- plotType
+- xRange
+- yRange
+- axisLabels
+- tickInterval
+- equation and/or points
+- optional highlighted points
+
+4. Safe fallback
+If graphSpec is invalid or incomplete:
+- do not show a broken graph
+- show a clear fallback state
+
+5. Production reliability
+Make sure the graphing system behaves the same in the published Replit site as in development.
+
+==================================================
+PART 3 — EQUATION LABEL ON THE GRAPH
+==================================================
+
+When the graph itself displays the graph equation, render that equation in italics.
+
+Requirements:
+- equation label on the graph should be visually distinct
+- use italic styling for the equation text
+- placement should not collide with axes, plotted line, or tick labels
+- keep it readable and elegant
+
+If equation labels are currently missing or inconsistent, implement them properly where graphSpec provides the needed equation.
+
+==================================================
+PART 4 — THOROUGH CHECK OF FRAGILITY
+==================================================
+
+I do not want only the obvious visible bug fixed.
+
+I want you to identify what makes the maths/graph system fragile and harden it.
+
+For each fragile area, identify:
+- what could make it break
+- under what conditions
+- what safeguard should be added
+
+Examples:
+- longer axis labels
+- large tick labels
+- very small or large ranges
+- malformed equation strings
+- saved/reloaded question data mismatch
+- dev vs production rendering differences
+- stale build assets
+- graph container resizing issues
+
+Add targeted safeguards where justified.
+
+==================================================
+PART 5 — VERIFY BOTH DEV AND PRODUCTION
+==================================================
+
+You must verify:
+- local/development app
+- published/production Replit site
+
+Check that:
+- latest code is actually deployed
+- latest frontend assets are being served
+- maths rendering works in production
+- graph rendering works in production
+- equation label italics work in production
+- production behaviour matches current fixed source
+
+If there is a stale build/cache/deploy issue, identify and fix it.
+
+==================================================
+MINIMUM TEST FLOWS
+==================================================
+
+You must verify these:
+
+1. Normal maths question
+- stem with maths
+- options with maths
+- explanation with maths
+- renders correctly
+
+2. Straight-line graph question
+- plotted line visible
+- axis labels correct
+- equation label visible and italic
+- preview correct
+- saved/reopened question still correct
+
+3. Simple curve graph question
+- curve visible
+- layout stable
+- no clipping
+
+4. Points graph question
+- points visible
+- labels visible
+- no overlap issues
+
+5. Range edge cases
+- 0 inside range
+- 0 outside range
+- negative and positive values
+
+6. Production verification
+- the same graph and maths examples work on the published site
+
+==================================================
+IMPLEMENTATION RULES
+==================================================
+
+- Keep changes targeted and safe
+- Prefer robust layout logic over hard-coded magic numbers
+- Do not stop at "it builds"
+- Do not stop at "tests pass"
+- Actually verify the rendered result
+- If logging/debug instrumentation is needed, add it and use it
+- Remove or reduce noisy debug logs before finalizing unless they are still useful
+
+==================================================
+OUTPUT REQUIRED
+==================================================
+
+When finished, return a structured report:
+
+1. Root causes found
+- maths rendering issue
+- graph rendering issue
+- production/deployment issue if any
+
+2. Exact files changed
+
+3. Fixes applied
+- maths rendering fixes
+- graphing system fixes
+- equation label italic fix
+- production consistency fixes
+
+4. Fragile areas found
+For each one:
+- what could break
+- safeguard added
+
+5. Tests and manual verification performed
+
+6. Whether the published Replit site now matches the fixed development behaviour
+
+IMPORTANT:
+I want a robust, fully integrated maths + graphing system, not another fragile patch.
