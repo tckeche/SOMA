@@ -799,7 +799,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/auth/sync", async (req, res) => {
     try {
-      const { id, email, user_metadata } = req.body;
+      const user_metadata = req.body?.user_metadata as { display_name?: string; full_name?: string } | undefined;
+      let id = "";
+      let email = "";
+
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        const decoded = await verifySupabaseToken(authHeader.slice(7));
+        if (!decoded?.sub || !decoded?.email) {
+          return res.status(401).json({ message: "Invalid or expired token" });
+        }
+        id = decoded.sub;
+        email = decoded.email;
+      } else if (process.env.NODE_ENV !== "production") {
+        // Legacy local/test fallback
+        id = String(req.body?.id || "");
+        email = String(req.body?.email || "");
+      } else {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
       if (!id || !email) {
         return res.status(400).json({ message: "Missing id or email" });
       }
@@ -822,17 +841,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get current user's role and info
   app.get("/api/auth/me", async (req, res) => {
     try {
-      const userId = req.query.userId as string;
-      const email = req.query.email as string;
-      if (!userId) return res.status(400).json({ message: "userId required" });
+      let userId = "";
+      let email = "";
+      let displayName: string | null = null;
+
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        const decoded = await verifySupabaseToken(authHeader.slice(7));
+        if (!decoded?.sub || !decoded?.email) return res.status(401).json({ message: "Invalid or expired token" });
+        userId = decoded.sub;
+        email = decoded.email;
+      } else if (process.env.NODE_ENV !== "production") {
+        // Legacy local/test fallback
+        userId = String(req.query.userId || "");
+        email = String(req.query.email || "");
+      } else {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!userId || !email) return res.status(400).json({ message: "userId required" });
       let user = await storage.getSomaUserById(userId);
-      if (!user && email) {
+      if (!user) {
         const role = determineRole(email);
         console.log(`[auth-me] auto-sync for missing user: email=${email} role=${role}`);
         const parsed = insertSomaUserSchema.parse({
           id: userId,
           email,
-          displayName: email.split("@")[0],
+          displayName: displayName || email.split("@")[0],
           role,
         });
         user = await storage.upsertSomaUser(parsed);
@@ -2561,14 +2596,16 @@ ${JSON.stringify({
     }
   });
 
-  app.post("/api/soma/quizzes/:id/submit", async (req, res) => {
+  app.post("/api/soma/quizzes/:id/submit", requireSupabaseAuth, async (req, res) => {
     try {
-      const quizId = parseInt(req.params.id);
+      const quizId = parseInt(String(req.params.id));
       if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
 
-      const { studentId, studentName, answers, startedAt } = req.body;
-      if (!studentId || !answers) {
-        return res.status(400).json({ message: "Missing studentId or answers" });
+      const authUser = (req as any).authUser as { id: string | string[]; displayName?: string | null };
+      const studentId = String(authUser.id);
+      const { studentName, answers, startedAt } = req.body;
+      if (!answers) {
+        return res.status(400).json({ message: "Missing answers" });
       }
 
       const dbUser = await storage.getSomaUserById(studentId);
@@ -2628,13 +2665,13 @@ ${JSON.stringify({
     }
   });
 
-  app.get("/api/soma/quizzes/:id/check-submission", async (req, res) => {
+  app.get("/api/soma/quizzes/:id/check-submission", requireSupabaseAuth, async (req, res) => {
     try {
-      const quizId = parseInt(req.params.id);
-      const studentId = req.query.studentId as string;
-      if (isNaN(quizId) || !studentId) {
-        return res.status(400).json({ message: "quizId and studentId required" });
+      const quizId = parseInt(String(req.params.id));
+      if (isNaN(quizId)) {
+        return res.status(400).json({ message: "quizId required" });
       }
+      const studentId = String((req as any).authUser.id);
       const exists = await storage.checkSomaSubmission(quizId, studentId);
       res.json({ submitted: exists });
     } catch (err: any) {
@@ -2651,14 +2688,15 @@ ${JSON.stringify({
       if (!report) return res.status(404).json({ message: "Report not found" });
 
       // Ownership check: student owns the report, OR tutor adopted the student, OR super_admin
-      const authUser = (req as any).authUser as { id: string; role: string };
-      const isOwner = report.studentId === authUser.id;
+      const authUser = (req as any).authUser as { id: string | string[]; role: string };
+      const authUserId = String(authUser.id);
+      const isOwner = report.studentId === authUserId;
       const isSuperAdmin = authUser.role === "super_admin";
 
       if (!isOwner && !isSuperAdmin) {
         // Check if requester is a tutor who adopted this student
         if (authUser.role === "tutor" && report.studentId) {
-          const adopted = await storage.getAdoptedStudents(authUser.id);
+          const adopted = await storage.getAdoptedStudents(authUserId);
           const isTutorOfStudent = adopted.some((s) => s.id === report.studentId);
           if (!isTutorOfStudent) {
             return res.status(403).json({ message: "Forbidden: you do not have access to this report" });
@@ -2686,13 +2724,25 @@ ${JSON.stringify({
     }
   });
 
-  app.post("/api/soma/reports/:reportId/retry", async (req, res) => {
+  app.post("/api/soma/reports/:reportId/retry", requireSupabaseAuth, async (req, res) => {
     try {
-      const reportId = parseInt(req.params.reportId);
+      const reportId = parseInt(String(req.params.reportId));
       if (isNaN(reportId)) return res.status(400).json({ message: "Invalid report ID" });
 
       const report = await storage.getSomaReportById(reportId);
       if (!report) return res.status(404).json({ message: "Report not found" });
+      const authUser = (req as any).authUser as { id: string | string[]; role: string };
+      const authUserId = String(authUser.id);
+      const isOwner = report.studentId === authUserId;
+      const isSuperAdmin = authUser.role === "super_admin";
+      let isTutorOfStudent = false;
+      if (authUser.role === "tutor" && report.studentId) {
+        const adopted = await storage.getAdoptedStudents(authUserId);
+        isTutorOfStudent = adopted.some((s) => s.id === report.studentId);
+      }
+      if (!isOwner && !isSuperAdmin && !isTutorOfStudent) {
+        return res.status(403).json({ message: "Forbidden: you do not have access to this report" });
+      }
 
       if (report.status !== "failed") {
         return res.status(400).json({ message: "Only failed reports can be retried" });
@@ -2713,10 +2763,25 @@ ${JSON.stringify({
     }
   });
 
-  app.post("/api/soma/global-tutor", async (req, res) => {
+  app.post("/api/soma/global-tutor", requireSupabaseAuth, async (req, res) => {
     try {
-      const { message, studentId } = req.body;
+      const authUser = (req as any).authUser as { id: string; role: string };
+      const { message, studentId: requestedStudentId } = req.body;
       if (!message) return res.status(400).json({ message: "Message is required" });
+      let studentId: string | null = null;
+      if (authUser.role === "student") {
+        studentId = authUser.id;
+      } else if (typeof requestedStudentId === "string" && requestedStudentId.trim()) {
+        if (authUser.role === "super_admin") {
+          studentId = requestedStudentId.trim();
+        } else if (authUser.role === "tutor") {
+          const adopted = await storage.getAdoptedStudents(authUser.id);
+          if (!adopted.some((s) => s.id === requestedStudentId.trim())) {
+            return res.status(403).json({ message: "Forbidden: you do not have access to this student" });
+          }
+          studentId = requestedStudentId.trim();
+        }
+      }
 
       let completedContext = "";
       let untestedContext = "";

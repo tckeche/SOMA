@@ -115,6 +115,12 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
         return next();
       }
 
+      // Header-based identity is a legacy fallback for local/dev setups only.
+      // In production this must stay disabled to prevent header spoofing.
+      if (process.env.NODE_ENV === "production") {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
       const headerUser = await findAuthorizedUserByHeader(req, config.identityHeaderName, config.allowedRoles);
       if (!headerUser) {
         const missingIdentity = !(req.headers[config.identityHeaderName] as string | undefined);

@@ -243,7 +243,7 @@ export default function StudentDashboard() {
 
   const retryMutation = useMutation({
     mutationFn: async (reportId: number) => {
-      const res = await fetch(`/api/soma/reports/${reportId}/retry`, { method: "POST" });
+      const res = await authFetch(`/api/soma/reports/${reportId}/retry`, { method: "POST" });
       if (!res.ok) throw new Error("Retry failed");
       return res.json();
     },
