@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format } from "date-fns";
@@ -43,7 +42,6 @@ export default function SuperAdminDashboard() {
   const [roleVerified, setRoleVerified] = useState(false);
 
   const { session, userId } = useSupabaseSession();
-  const headers = useMemo(() => createIdentityHeaders("x-admin-id", userId), [userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -62,7 +60,7 @@ export default function SuperAdminDashboard() {
   const { data: stats } = useQuery<AdminStats>({
     queryKey: ["/api/super-admin/stats", userId],
     queryFn: async () => {
-      const res = await fetch("/api/super-admin/stats", { headers });
+      const res = await authFetch("/api/super-admin/stats");
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -74,7 +72,7 @@ export default function SuperAdminDashboard() {
   const { data: users = [], isLoading: usersLoading } = useQuery<SomaUser[]>({
     queryKey: ["/api/super-admin/users", userId],
     queryFn: async () => {
-      const res = await fetch("/api/super-admin/users", { headers });
+      const res = await authFetch("/api/super-admin/users");
       if (!res.ok) return [];
       return res.json();
     },
@@ -86,7 +84,7 @@ export default function SuperAdminDashboard() {
   const { data: quizzes = [], isLoading: quizzesLoading } = useQuery<SomaQuiz[]>({
     queryKey: ["/api/super-admin/quizzes", userId],
     queryFn: async () => {
-      const res = await fetch("/api/super-admin/quizzes", { headers });
+      const res = await authFetch("/api/super-admin/quizzes");
       if (!res.ok) return [];
       return res.json();
     },
@@ -97,7 +95,7 @@ export default function SuperAdminDashboard() {
 
   const deleteUserMutation = useMutation({
     mutationFn: async (targetId: string) => {
-      const res = await fetch(`/api/super-admin/users/${targetId}`, { method: "DELETE", headers });
+      const res = await authFetch(`/api/super-admin/users/${targetId}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message || "Failed to delete");
@@ -117,7 +115,7 @@ export default function SuperAdminDashboard() {
 
   const deleteQuizMutation = useMutation({
     mutationFn: async (quizId: number) => {
-      const res = await fetch(`/api/super-admin/quizzes/${quizId}`, { method: "DELETE", headers });
+      const res = await authFetch(`/api/super-admin/quizzes/${quizId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
       return res.json();
     },

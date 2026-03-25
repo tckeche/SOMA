@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format } from "date-fns";
@@ -90,14 +90,12 @@ export default function TutorStudentDetail() {
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
 
   const { userId } = useSupabaseSession();
-  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
-  const jsonHeaders = useMemo(() => createIdentityHeaders("x-tutor-id", userId, { "Content-Type": "application/json" }), [userId]);
 
   // Fetch student report (assignments + stats)
   const { data: report, isLoading: reportLoading } = useQuery<StudentReport>({
     queryKey: ["/api/tutor/students", studentId, "report", userId],
     queryFn: async () => {
-      const res = await fetch(`/api/tutor/students/${studentId}/report`, { headers });
+      const res = await authFetch(`/api/tutor/students/${studentId}/report`);
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
@@ -108,7 +106,7 @@ export default function TutorStudentDetail() {
   const { data: comments = [], isLoading: commentsLoading } = useQuery<TutorComment[]>({
     queryKey: ["/api/tutor/students", studentId, "comments"],
     queryFn: async () => {
-      const res = await fetch(`/api/tutor/students/${studentId}/comments`, { headers });
+      const res = await authFetch(`/api/tutor/students/${studentId}/comments`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -118,9 +116,9 @@ export default function TutorStudentDetail() {
   // Add comment mutation
   const addCommentMutation = useMutation({
     mutationFn: async (comment: string) => {
-      const res = await fetch(`/api/tutor/students/${studentId}/comments`, {
+      const res = await authFetch(`/api/tutor/students/${studentId}/comments`, {
         method: "POST",
-        headers: jsonHeaders,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comment }),
       });
       if (!res.ok) throw new Error("Failed to add comment");
@@ -136,9 +134,8 @@ export default function TutorStudentDetail() {
   // Revoke assignment mutation
   const revokeMutation = useMutation({
     mutationFn: async (quizId: number) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/unassign/${studentId}`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/unassign/${studentId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) throw new Error("Failed to revoke");
       return res.json();

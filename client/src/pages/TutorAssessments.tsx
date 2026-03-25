@@ -1,8 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment } from "@shared/schema";
@@ -278,14 +277,13 @@ export default function TutorAssessments() {
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
-  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const { data: tutorQuizzes = [], isLoading: quizzesLoading } = useQuery<SomaQuiz[]>({
     queryKey: ["/api/tutor/quizzes", userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch("/api/tutor/quizzes", { headers });
+      const res = await authFetch("/api/tutor/quizzes");
       if (!res.ok) return [];
       return res.json();
     },
@@ -298,7 +296,7 @@ export default function TutorAssessments() {
     queryKey: ["/api/tutor/students", userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch("/api/tutor/students", { headers });
+      const res = await authFetch("/api/tutor/students");
       if (!res.ok) return [];
       return res.json();
     },
@@ -310,7 +308,7 @@ export default function TutorAssessments() {
   const { data: quizReportsData, isLoading: reportsLoading } = useQuery<QuizReportsData>({
     queryKey: ["/api/tutor/quizzes", expandedQuiz, "reports"],
     queryFn: async () => {
-      const res = await fetch(`/api/tutor/quizzes/${expandedQuiz}/reports`, { headers });
+      const res = await authFetch(`/api/tutor/quizzes/${expandedQuiz}/reports`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -321,9 +319,9 @@ export default function TutorAssessments() {
     mutationFn: async ({ quizId, studentIds, dueDate: dd }: { quizId: number; studentIds: string[]; dueDate?: string }) => {
       const payload: any = { studentIds };
       if (dd) payload.dueDate = new Date(dd).toISOString();
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/assign`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/assign`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Failed to assign");
@@ -342,7 +340,7 @@ export default function TutorAssessments() {
   const { data: quizAssignments = [], isLoading: assignmentsLoading } = useQuery<QuizAssignmentWithStudent[]>({
     queryKey: ["/api/tutor/quizzes", expandedQuiz, "assignments"],
     queryFn: async () => {
-      const res = await fetch(`/api/tutor/quizzes/${expandedQuiz}/assignments`, { headers });
+      const res = await authFetch(`/api/tutor/quizzes/${expandedQuiz}/assignments`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -351,9 +349,8 @@ export default function TutorAssessments() {
 
   const unassignMutation = useMutation({
     mutationFn: async ({ quizId, studentId }: { quizId: number; studentId: string }) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/assignments/${studentId}`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/assignments/${studentId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) throw new Error("Failed to unassign");
       return res.json();
@@ -368,9 +365,8 @@ export default function TutorAssessments() {
 
   const deleteQuizMutation = useMutation({
     mutationFn: async (quizId: number) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "Failed to delete" }));
@@ -387,9 +383,9 @@ export default function TutorAssessments() {
 
   const extendDeadlineMutation = useMutation({
     mutationFn: async (quizId: number) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/assignments/extend`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/assignments/extend`, {
         method: "PATCH",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hours: 24 }),
       });
       if (!res.ok) throw new Error("Failed to extend deadline");
@@ -404,9 +400,8 @@ export default function TutorAssessments() {
 
   const deleteQuestionMutation = useMutation({
     mutationFn: async (questionId: number) => {
-      const res = await fetch(`/api/tutor/questions/${questionId}`, {
+      const res = await authFetch(`/api/tutor/questions/${questionId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) throw new Error("Failed to delete question");
       return res.json();

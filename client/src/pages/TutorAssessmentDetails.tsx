@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz } from "@shared/schema";
 import {
@@ -122,14 +122,12 @@ export default function TutorAssessmentDetails() {
   const [assignDueDate, setAssignDueDate] = useState("");
 
   const { userId } = useSupabaseSession();
-  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
-  const jsonHeaders = useMemo(() => createIdentityHeaders("x-tutor-id", userId, { "Content-Type": "application/json" }), [userId]);
 
   const { data: details, isLoading } = useQuery<QuizDetails>({
     queryKey: [`/api/tutor/quizzes/${quizId}/details`, userId],
     queryFn: async () => {
       if (!userId) throw new Error("Not authenticated");
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/details`, { headers });
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/details`);
       if (!res.ok) throw new Error("Failed to load details");
       return res.json();
     },
@@ -140,7 +138,7 @@ export default function TutorAssessmentDetails() {
   const { data: adoptedStudents = [] } = useQuery<AdoptedStudent[]>({
     queryKey: ["/api/tutor/students", userId],
     queryFn: async () => {
-      const res = await fetch("/api/tutor/students", { headers });
+      const res = await authFetch("/api/tutor/students");
       if (!res.ok) throw new Error("Failed to load students");
       return res.json();
     },
@@ -150,9 +148,8 @@ export default function TutorAssessmentDetails() {
   // Revoke assignment mutation
   const revokeMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/assignments/${studentId}`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/assignments/${studentId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) throw new Error("Failed to revoke");
       return res.json();
@@ -166,9 +163,9 @@ export default function TutorAssessmentDetails() {
   // Archive toggle mutation
   const archiveMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/archive`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/archive`, {
         method: "PATCH",
-        headers: jsonHeaders,
+        headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error("Failed to toggle archive");
       return res.json();
@@ -181,9 +178,9 @@ export default function TutorAssessmentDetails() {
   // Due date update mutation
   const dueDateMutation = useMutation({
     mutationFn: async (dueDate: string) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/due-date`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/due-date`, {
         method: "PATCH",
-        headers: jsonHeaders,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dueDate: dueDate || null }),
       });
       if (!res.ok) throw new Error("Failed to update due date");
@@ -199,9 +196,9 @@ export default function TutorAssessmentDetails() {
   // Assign students mutation
   const assignMutation = useMutation({
     mutationFn: async ({ studentIds, dueDate }: { studentIds: string[]; dueDate?: string }) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/assign`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/assign`, {
         method: "POST",
-        headers: jsonHeaders,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ studentIds, dueDate }),
       });
       if (!res.ok) throw new Error("Failed to assign");

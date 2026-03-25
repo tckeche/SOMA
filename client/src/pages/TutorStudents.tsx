@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
   Users, UserPlus, X, Loader2, Check, ChevronRight,
@@ -27,14 +26,13 @@ export default function TutorStudents() {
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
-  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const { data: adoptedStudents = [], isLoading: studentsLoading } = useQuery<SomaUser[]>({
     queryKey: ["/api/tutor/students", userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch("/api/tutor/students", { headers });
+      const res = await authFetch("/api/tutor/students");
       if (!res.ok) return [];
       return res.json();
     },
@@ -45,7 +43,7 @@ export default function TutorStudents() {
     queryKey: ["/api/tutor/students/available", userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch("/api/tutor/students/available", { headers });
+      const res = await authFetch("/api/tutor/students/available");
       if (!res.ok) return [];
       return res.json();
     },
@@ -54,9 +52,9 @@ export default function TutorStudents() {
 
   const adoptMutation = useMutation({
     mutationFn: async (studentIds: string[]) => {
-      const res = await fetch("/api/tutor/students/adopt", {
+      const res = await authFetch("/api/tutor/students/adopt", {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ studentIds }),
       });
       if (!res.ok) throw new Error("Failed to adopt");
@@ -72,9 +70,8 @@ export default function TutorStudents() {
 
   const removeMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const res = await fetch(`/api/tutor/students/${studentId}`, {
+      const res = await authFetch(`/api/tutor/students/${studentId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) throw new Error("Failed to remove");
       return res.json();

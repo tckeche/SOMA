@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
   AlertDialog,
@@ -141,13 +140,12 @@ export default function TutorDashboard() {
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
-  const headers = useMemo(() => createIdentityHeaders("x-tutor-id", userId), [userId]);
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/tutor/dashboard-stats", userId],
     queryFn: async () => {
-      const res = await fetch("/api/tutor/dashboard-stats", { headers });
+      const res = await authFetch("/api/tutor/dashboard-stats");
       if (!res.ok) throw new Error("Failed to load stats");
       return res.json();
     },
@@ -160,7 +158,7 @@ export default function TutorDashboard() {
     queryKey: ["/api/tutor/quizzes", userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch("/api/tutor/quizzes", { headers });
+      const res = await authFetch("/api/tutor/quizzes");
       if (!res.ok) return [];
       return res.json();
     },
@@ -173,7 +171,7 @@ export default function TutorDashboard() {
     queryKey: ["/api/tutor/students", userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch("/api/tutor/students", { headers });
+      const res = await authFetch("/api/tutor/students");
       if (!res.ok) return [];
       return res.json();
     },
@@ -186,9 +184,9 @@ export default function TutorDashboard() {
     mutationFn: async ({ quizId, studentIds, dueDate: dd }: { quizId: number; studentIds: string[]; dueDate?: string }) => {
       const payload: any = { studentIds };
       if (dd) payload.dueDate = new Date(dd).toISOString();
-      const res = await fetch(`/api/tutor/quizzes/${quizId}/assign`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/assign`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Failed to assign");
@@ -205,9 +203,8 @@ export default function TutorDashboard() {
   // Delete quiz mutation
   const deleteQuizMutation = useMutation({
     mutationFn: async (quizId: number) => {
-      const res = await fetch(`/api/tutor/quizzes/${quizId}`, {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}`, {
         method: "DELETE",
-        headers,
       });
       if (!res.ok) throw new Error("Failed to delete");
       return res.json();
