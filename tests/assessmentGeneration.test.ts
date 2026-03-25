@@ -61,6 +61,58 @@ describe("graph question rendering and theme/button safeguards", () => {
     }));
     expect(html).toContain("Cartesian graph");
     expect(html).toContain("svg");
+    // Equation label rendered italic on single-curve graph
+    // React serializes fontStyle prop as font-style in SVG HTML output
+    expect(html).toContain("font-style");
+    // Equation text (stripped of "y = " prefix) appears on graph
+    expect(html).toContain("2*x + 1");
+    // Unique clip/marker IDs — must NOT use bare hardcoded "plot-clip" or "arrowhead"
+    expect(html).not.toContain('"plot-clip"');
+    expect(html).not.toContain('"arrowhead"');
+  });
+
+  it("renders two GraphPlot instances in the same tree with distinct SVG IDs (no conflicts)", () => {
+    const spec = {
+      plotType: "line" as const,
+      equation: "x^2",
+      xRange: [-3, 3] as [number, number],
+      yRange: [-1, 10] as [number, number],
+      axisLabels: { x: "x", y: "y" },
+      showGrid: false,
+      tickInterval: 1,
+    };
+    // Render BOTH in the same tree so useId() increments its counter across instances
+    const html = renderToStaticMarkup(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(GraphPlot, { spec }),
+        React.createElement(GraphPlot, { spec }),
+      )
+    );
+    // Extract all clip IDs
+    const clipIds = [...html.matchAll(/id="(plot-clip-[^"]+)"/g)].map(m => m[1]);
+    expect(clipIds.length).toBe(2);
+    expect(clipIds[0]).not.toBe(clipIds[1]);
+    // Legacy hardcoded IDs must not appear
+    expect(html).not.toContain('"plot-clip"');
+    expect(html).not.toContain('"arrowhead"');
+  });
+
+  it("shows a fallback when graphSpec is invalid", () => {
+    const html = renderToStaticMarkup(React.createElement(GraphPlot, {
+      spec: {
+        plotType: "line",
+        equation: "",       // no equation
+        xRange: [5, 1],    // invalid (min > max)
+        yRange: [-5, 5],
+        axisLabels: { x: "x", y: "y" },
+        showGrid: false,
+        tickInterval: 1,
+      } as any,
+    }));
+    expect(html).toContain("invalid or incomplete");
+    expect(html).not.toContain("Cartesian graph");
   });
 
   it("forces dark mode and removes the light-mode toggle from the app shell", () => {

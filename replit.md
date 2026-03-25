@@ -83,3 +83,16 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - **Tutor Portal**: Multi-page navigation (Dashboard, Students, Assessments) with analytics, student management, comments.
 - **Super Admin Dashboard**: Global management with user/quiz data tables, hard delete.
 - **Legacy V1/V2 Purge Complete**: All legacy `quizzes`, `questions`, `students`, `submissions` tables, routes, storage methods, and frontend pages (`quiz.tsx`, `home.tsx`, `admin.tsx`, `analytics.tsx`) have been removed. The builder now creates soma quizzes directly.
+
+### Math & Graph Rendering System
+- **Math rendering pipeline**: All question stems, options, and explanations use `MarkdownRenderer` (ReactMarkdown + remark-math + rehype-katex). Supports `$...$` (inline) and `$$...$$` (display) math. The `MarkdownRenderer` normalizes `\(...\)` and `\[...\]` delimiters before parsing.
+- **AI math formatting**: Both the copilot system prompt and graph retry prompt now mandate `$...$` / `$$...$$` LaTeX delimiters for all math content in question text, options, and explanations. The `equation` field in `graphSpec` remains a plain JavaScript expression (not LaTeX).
+- **GraphPlot component** (`client/src/components/GraphPlot.tsx`):
+  - Uses `useId()` (React 18) to generate unique SVG `clipPath` and `marker` IDs per instance — prevents ID conflicts when multiple graphs appear on the same page (e.g., quiz review).
+  - Client-side validation with `isValidSpec()`: shows a graceful fallback for invalid/incomplete specs.
+  - Single-curve equation label: displayed italic in the upper-right of the plot area when `spec.equation` is present (not `spec.curves`).
+  - Multi-curve legend rendered in italic HTML below the SVG (no in-plot overlap).
+  - `buildCurvePath` returns `null` (not `""`) when no points can be plotted — skips rendering empty path elements.
+  - Margin increased: M = { top: 36, right: 56, bottom: 36, left: 72 } for label clearance on all sides.
+- **Builder sidebar preview**: Now uses `MarkdownRenderer` (same as quiz/review) for draft question stem previews — eliminates render inconsistency between builder and actual quiz.
+- **Duplicate syllabus upload**: Server returns `{duplicate: true}` with existing doc data; frontend shows "Already uploaded" toast and selects existing doc without adding duplicate to list.
