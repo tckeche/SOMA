@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
-import { apiRequest } from "@/lib/queryClient";
+import { supabase, authFetch } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
@@ -44,11 +43,14 @@ export default function StudentAuth() {
       if (error) throw error;
 
       if (data.user) {
-        const syncRes = await apiRequest("POST", "/api/auth/sync", {
-          id: data.user.id,
-          email: data.user.email,
-          user_metadata: data.user.user_metadata,
+        const syncRes = await authFetch("/api/auth/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_metadata: data.user.user_metadata,
+          }),
         });
+        if (!syncRes.ok) throw new Error("Failed to sync account");
         const syncData = await syncRes.json();
         if (syncData.role === "super_admin") {
           setLocation("/super-admin");
@@ -109,11 +111,14 @@ export default function StudentAuth() {
       if (error) throw error;
 
       if (data.session) {
-        const syncRes = await apiRequest("POST", "/api/auth/sync", {
-          id: data.user!.id,
-          email: data.user!.email,
-          user_metadata: data.user!.user_metadata,
+        const syncRes = await authFetch("/api/auth/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_metadata: data.user!.user_metadata,
+          }),
         });
+        if (!syncRes.ok) throw new Error("Failed to sync account");
         const syncData = await syncRes.json();
         toast({ title: "Welcome!", description: "Your account has been created." });
         if (syncData.role === "super_admin") {

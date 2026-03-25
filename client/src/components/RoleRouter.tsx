@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
+import { authFetch } from "@/lib/supabase";
 
 interface RoleRouterProps {
   studentComponent: React.ComponentType<any>;
@@ -21,8 +22,7 @@ export default function RoleRouter({ studentComponent: StudentComp, tutorCompone
     }
 
     setIsRoleLoading(true);
-    const email = encodeURIComponent(session.user.email || "");
-    fetch(`/api/auth/me?userId=${session.user.id}&email=${email}`)
+    authFetch("/api/auth/me")
       .then((res) => res.json())
       .then((data) => {
         setRole(data.role || "student");
@@ -32,7 +32,7 @@ export default function RoleRouter({ studentComponent: StudentComp, tutorCompone
         setRole("student");
         setIsRoleLoading(false);
       });
-  }, [session?.user?.id, session?.user?.email]);
+  }, [session?.user?.id]);
 
   if (isSessionLoading || isRoleLoading) {
     return (
