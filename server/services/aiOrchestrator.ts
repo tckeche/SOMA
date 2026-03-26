@@ -191,7 +191,7 @@ async function callAnthropic(
 
     const response = await client.messages.create({
       model,
-      max_tokens: 8192,
+      max_tokens: 16384,
       temperature: 0.1,
       system: systemPrompt,
       tools: [toolDef as any],
@@ -208,7 +208,7 @@ async function callAnthropic(
 
   const response = await client.messages.create({
     model,
-    max_tokens: 8192,
+    max_tokens: 16384,
     temperature: 0.1,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
