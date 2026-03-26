@@ -5,7 +5,7 @@ import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
   Users, UserPlus, X, Loader2, Check, ChevronRight,
-  BookOpen, LogOut, LayoutDashboard, Search,
+  BookOpen, LogOut, LayoutDashboard, Search, RotateCcw,
 } from "lucide-react";
 
 interface SomaUser {
@@ -24,7 +24,7 @@ export default function TutorStudents() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { session, userId } = useSupabaseSession();
+  const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
@@ -174,7 +174,7 @@ export default function TutorStudents() {
           </button>
         </div>
 
-        {adoptedStudents.length > 3 && (
+        {(adoptedStudents.length > 3 || searchQuery) && (
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
@@ -185,10 +185,20 @@ export default function TutorStudents() {
               className="w-full h-12 pl-11 pr-4 rounded-xl bg-slate-900/60 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40"
               data-testid="input-search-students"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300"
+                aria-label="Clear search"
+                data-testid="button-clear-search-students"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
           </div>
         )}
 
-        {studentsLoading ? (
+        {authLoading || studentsLoading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
           </div>

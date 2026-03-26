@@ -41,6 +41,7 @@ function Router() {
       <Route path="/tutor/assessments/edit/:id">{(params) => <ProtectedRoute component={BuilderPage} params={params} />}</Route>
       <Route path="/tutor/assessments/new">{() => <ProtectedRoute component={BuilderPage} />}</Route>
       <Route path="/tutor/assessments">{() => <ProtectedRoute component={TutorAssessments} />}</Route>
+      <Route path="/tutor/:rest*">{() => <ProtectedRoute component={NotFound} />}</Route>
       <Route path="/admin/:rest*">{() => <Redirect to="/login" />}</Route>
       <Route path="/admin">{() => <Redirect to="/login" />}</Route>
       <Route path="/soma/quiz/:id">{(params) => <ProtectedRoute component={SomaQuizEngine} params={params} />}</Route>

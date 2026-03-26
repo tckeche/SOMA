@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface StudentAssignment {
   assignmentId: number;
@@ -120,6 +121,7 @@ export default function TutorAssessmentDetails() {
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   const [newDueDate, setNewDueDate] = useState("");
   const [assignDueDate, setAssignDueDate] = useState("");
+  const { toast } = useToast();
 
   const { userId } = useSupabaseSession();
 
@@ -209,6 +211,10 @@ export default function TutorAssessmentDetails() {
       setShowAssignModal(false);
       setSelectedStudentIds(new Set());
       setAssignDueDate("");
+      toast({ title: "Students assigned", description: "Assessment assignment was successful." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -220,6 +226,7 @@ export default function TutorAssessmentDetails() {
       return next;
     });
   }
+  const selectedStudentList = Array.from(selectedStudentIds);
 
   if (isLoading) {
     return (
@@ -619,14 +626,14 @@ export default function TutorAssessmentDetails() {
                   />
                 </div>
                 <button
-                  onClick={() => assignMutation.mutate({ studentIds: Array.from(selectedStudentIds), dueDate: assignDueDate || undefined })}
-                  disabled={selectedStudentIds.size === 0 || assignMutation.isPending}
+                  onClick={() => assignMutation.mutate({ studentIds: selectedStudentList, dueDate: assignDueDate || undefined })}
+                  disabled={selectedStudentList.length === 0 || assignMutation.isPending}
                   className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   {assignMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin mx-auto" />
                   ) : (
-                    `Assign to ${selectedStudentIds.size} Student${selectedStudentIds.size !== 1 ? "s" : ""}`
+                    `Assign to ${selectedStudentList.length} Student${selectedStudentList.length !== 1 ? "s" : ""}`
                   )}
                 </button>
               </>

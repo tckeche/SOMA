@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { authFetch } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ interface ReviewData {
 export default function SomaQuizReview() {
   const reportRef = useRef<HTMLDivElement>(null);
   const params = useParams<{ reportId: string }>();
+  const [, setLocation] = useLocation();
   const reportId = parseInt(params.reportId || "0");
 
   const { data, isLoading, error } = useQuery<ReviewData>({
@@ -61,6 +62,14 @@ export default function SomaQuizReview() {
     if (!data?.questions) return 0;
     return data.questions.reduce((s, q) => s + q.marks, 0);
   }, [data]);
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    setLocation("/tutor/assessments");
+  };
 
   if (isLoading) {
     return (
@@ -126,12 +135,10 @@ export default function SomaQuizReview() {
     <div className="min-h-screen bg-background px-4 py-8">
       <div className="max-w-3xl mx-auto" ref={reportRef}>
         <div className="flex items-center justify-between mb-6">
-          <Link href="/dashboard">
-            <Button className={STANDARD_ACTION_BUTTON_CLASS} data-testid="button-review-back">
+          <Button className={STANDARD_ACTION_BUTTON_CLASS} data-testid="button-review-back" onClick={handleBack}>
               <ArrowLeft className="w-5 h-5" />
               Back
-            </Button>
-          </Link>
+          </Button>
           <span className={STANDARD_ACTION_BUTTON_CLASS} data-testid="badge-review-mode">
             <BookOpen className="w-5 h-5" />
             Review Mode

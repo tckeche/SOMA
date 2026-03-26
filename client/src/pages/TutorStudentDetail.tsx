@@ -81,6 +81,11 @@ function formatDate(dateStr: string | null) {
   });
 }
 
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "N/A";
+  return `${Math.round(value)}%`;
+}
+
 export default function TutorStudentDetail() {
   const params = useParams<{ id: string }>();
   const studentId = params.id || "";
@@ -195,14 +200,14 @@ export default function TutorStudentDetail() {
                 <Award className="w-4 h-4 text-violet-400" />
                 <span className="text-xs text-slate-400">Avg Grade</span>
               </div>
-              <p className="text-2xl font-bold text-violet-300">{stats?.avgScore !== null ? `${stats?.avgScore}%` : "—"}</p>
+              <p className="text-2xl font-bold text-violet-300">{formatPercent(stats?.avgScore)}</p>
             </div>
             <div className={`${CARD_CLASS} !p-4`}>
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-4 h-4 text-cyan-400" />
                 <span className="text-xs text-slate-400">Accuracy</span>
               </div>
-              <p className="text-2xl font-bold text-cyan-300">{stats?.accuracy !== null ? `${stats?.accuracy}%` : "—"}</p>
+              <p className="text-2xl font-bold text-cyan-300">{formatPercent(stats?.accuracy)}</p>
             </div>
             <div className={`${CARD_CLASS} !p-4`}>
               <div className="flex items-center gap-2 mb-2">

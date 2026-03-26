@@ -289,6 +289,23 @@ export default function BuilderPage() {
   const supaAccessToken = supaSession?.access_token;
   const isTutorAuth = !!tutorUserId;
   const backLink = "/tutor/assessments";
+  const handleBack = useCallback(() => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    navigate(backLink);
+  }, [navigate, backLink]);
+
+  const validateMeta = useCallback(() => {
+    if (!title.trim()) return "Assessment title is required.";
+    if (!subject.trim()) return "Please select a subject.";
+    if (!level.trim()) return "Please select a level.";
+    if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 300) {
+      return "Time limit must be between 1 and 300 minutes.";
+    }
+    return null;
+  }, [title, subject, level, timeLimitMinutes]);
 
   const authHeaders = useCallback((): Record<string, string> => {
     return createIdentityHeaders(
@@ -559,7 +576,8 @@ export default function BuilderPage() {
   const updateMetaMutation = useMutation({
     mutationFn: async () => {
       if (!activeQuizId) throw new Error("No quiz to update");
-      if (!title.trim()) throw new Error("Title is required");
+      const validationError = validateMeta();
+      if (validationError) throw new Error(validationError);
       await authApiRequest("PUT", `/api/tutor/quizzes/${activeQuizId}`, {
         title: title.trim(),
         syllabus: syllabus || null,
@@ -587,6 +605,11 @@ export default function BuilderPage() {
 
   // Publish draft → commit to DB
   const handlePublish = useCallback(async () => {
+    const validationError = validateMeta();
+    if (validationError) {
+      toast({ title: "Cannot publish yet", description: validationError, variant: "destructive" });
+      return;
+    }
     if (!activeQuizId) {
       toast({ title: "Create the quiz first", description: "Use the copilot to generate some questions before publishing.", variant: "destructive" });
       return;
@@ -614,7 +637,7 @@ export default function BuilderPage() {
     } finally {
       setIsPublishing(false);
     }
-  }, [activeQuizId, draftQuestions, authFetch, toast]);
+  }, [activeQuizId, draftQuestions, authFetch, toast, validateMeta]);
 
   const handleSupportingDoc = async (file: File, docType: string) => {
     const docEntry = { name: file.name, type: docType, processing: true };
@@ -768,12 +791,10 @@ export default function BuilderPage() {
       <header className="border-b border-white/5 bg-white/[0.02] backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            <Link href={backLink}>
-              <Button className="glow-button-outline" size="default" data-testid="button-back-admin">
+            <Button className="glow-button-outline" size="default" data-testid="button-back-admin" onClick={handleBack}>
                 <ArrowLeft className="w-4 h-4 md:mr-1" />
                 <span>Back</span>
-              </Button>
-            </Link>
+            </Button>
             <div className="flex items-center gap-2 md:gap-3 min-w-0">
               <img src="/MCEC - White Logo.png" alt="MCEC Logo" className="h-7 md:h-8 w-auto object-contain" />
               <div className="min-w-0">
@@ -892,11 +913,21 @@ export default function BuilderPage() {
                   min={1}
                   max={300}
                   value={timeLimitMinutes}
-                  onChange={(e) => { setTimeLimitMinutes(Math.max(1, parseInt(e.target.value) || 60)); markMeta(); }}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    const parsed = Number(raw);
+                    setTimeLimitMinutes(Number.isFinite(parsed) ? parsed : 0);
+                    markMeta();
+                  }}
                   className="glass-input text-sm h-12"
                   data-testid="input-quiz-time-limit"
                 />
+                <p className="text-[11px] text-slate-500">Allowed range: 1 to 300 minutes.</p>
               </div>
+            </div>
+            <div className="mt-3 text-xs text-slate-500 flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 text-violet-400" />
+              <span>To publish: add title, subject, level, valid time limit, and at least one question.</span>
             </div>
             {metaDirty && activeQuizId && (
               <div className="mt-3 flex justify-end">

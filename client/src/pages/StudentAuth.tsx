@@ -14,6 +14,7 @@ export default function StudentAuth() {
   const [displayName, setDisplayName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<{ email?: string; password?: string }>({});
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -22,6 +23,7 @@ export default function StudentAuth() {
     setPassword("");
     setDisplayName("");
     setShowPassword(false);
+    setFormErrors({});
   };
 
   const switchMode = (newMode: AuthMode) => {
@@ -31,7 +33,19 @@ export default function StudentAuth() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    const nextErrors: { email?: string; password?: string } = {};
+    if (!email.trim()) nextErrors.email = "Please enter your email address.";
+    if (!password.trim()) nextErrors.password = "Please enter your password.";
+    if (Object.keys(nextErrors).length > 0) {
+      setFormErrors(nextErrors);
+      toast({
+        title: "Missing required fields",
+        description: "Enter your email and password to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setFormErrors({});
     setLoading(true);
 
     try {
@@ -86,8 +100,21 @@ export default function StudentAuth() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    const nextErrors: { email?: string; password?: string } = {};
+    if (!email.trim()) nextErrors.email = "Please enter your email address.";
+    if (!password.trim()) nextErrors.password = "Please create a password.";
+    if (Object.keys(nextErrors).length > 0) {
+      setFormErrors(nextErrors);
+      toast({
+        title: "Missing required fields",
+        description: "Please complete all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setFormErrors({});
     if (password.length < 6) {
+      setFormErrors({ password: "Password must be at least 6 characters." });
       toast({
         title: "Password too short",
         description: "Password must be at least 6 characters.",
@@ -251,13 +278,17 @@ export default function StudentAuth() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (formErrors.email) setFormErrors((prev) => ({ ...prev, email: undefined }));
+                  }}
                   placeholder="student@example.com"
                   required
                   className="glass-input w-full pl-10 pr-4 py-3 text-sm"
                   data-testid="input-email"
                 />
               </div>
+              {formErrors.email && <p className="text-xs text-red-400 mt-1">{formErrors.email}</p>}
             </div>
 
             {mode !== "reset" && (
@@ -268,7 +299,10 @@ export default function StudentAuth() {
                   <input
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (formErrors.password) setFormErrors((prev) => ({ ...prev, password: undefined }));
+                    }}
                     placeholder="••••••••"
                     required
                     minLength={6}
@@ -284,6 +318,7 @@ export default function StudentAuth() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {formErrors.password && <p className="text-xs text-red-400 mt-1">{formErrors.password}</p>}
               </div>
             )}
 
