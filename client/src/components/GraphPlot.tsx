@@ -47,6 +47,7 @@ const FN_TABLE: Record<string, MathFn> = {
   exp: Math.exp,
   floor: Math.floor,
   log: Math.log,   // natural log
+  ln: Math.log,
   log10: Math.log10,
   round: Math.round,
   sign: Math.sign,
@@ -68,11 +69,16 @@ type Token =
 function normalizeExpression(raw: string): string {
   return raw
     .replace(/^y\s*=\s*/i, "")
+    .replace(/[−–—]/g, "-")
+    .replace(/[×⋅]/g, "*")
+    .replace(/[÷]/g, "/")
+    .replace(/π/gi, "pi")
     .replace(/\s+/g, "")
     .replace(/(\d)(x|\()/gi, "$1*$2")
     .replace(/(x|\))(\d)/gi, "$1*$2")
     .replace(/(x|\))\(/gi, "$1*(")
-    .replace(/\)(x)/gi, ")*$1");
+    .replace(/\)(x)/gi, ")*$1")
+    .replace(/(\d)\s*([a-zA-Z])/g, "$1*$2");
 }
 
 function tokenize(expr: string): Token[] | null {

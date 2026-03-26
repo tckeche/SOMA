@@ -13,6 +13,12 @@ function normalizeLatexDelimiters(text: string): string {
   let result = text;
   result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`);
   result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
+  // AI often returns LaTeX environments (array/tabular/aligned/cases) without delimiters.
+  // remark-math only parses them when wrapped in $...$ or $$...$$.
+  result = result.replace(
+    /(\\begin\{(?:array|tabular|aligned|cases)\}[\s\S]*?\\end\{(?:array|tabular|aligned|cases)\})/g,
+    (_, block) => `$$${block}$$`,
+  );
   return result;
 }
 
