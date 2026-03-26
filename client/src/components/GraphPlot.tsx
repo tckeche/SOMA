@@ -78,7 +78,9 @@ function normalizeExpression(raw: string): string {
     .replace(/(x|\))(\d)/gi, "$1*$2")
     .replace(/(x|\))\(/gi, "$1*(")
     .replace(/\)(x)/gi, ")*$1")
-    .replace(/(\d)\s*([a-zA-Z])/g, "$1*$2");
+    // Add implicit multiplication before known functions only (e.g. 2sin(x) -> 2*sin(x)),
+    // without breaking scientific notation like 1e-3.
+    .replace(/(\d)(?=(?:abs|acos|asin|atan|ceil|cos|exp|floor|ln|log10|log|round|sign|sin|sqrt|tan|trunc)\()/gi, "$1*");
 }
 
 function tokenize(expr: string): Token[] | null {
