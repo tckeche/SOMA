@@ -17,13 +17,13 @@ function normalizeLatexDelimiters(text: string): string {
   // remark-math only parses them when wrapped in $...$ or $$...$$.
   result = result.replace(
     /(\\begin\{(?:array|tabular|aligned|cases)\}[\s\S]*?\\end\{(?:array|tabular|aligned|cases)\})/g,
-    (block, offset, source) => {
-      const before = source.slice(0, offset);
-      const after = source.slice(offset + block.length);
+    (match, _group, offset, string) => {
+      const before = string.slice(0, offset);
+      const after = string.slice(offset + match.length);
       const alreadyDelimited =
         (before.endsWith("$$") && after.startsWith("$$")) ||
         (before.endsWith("\\[") && after.startsWith("\\]"));
-      return alreadyDelimited ? block : `$$${block}$$`;
+      return alreadyDelimited ? match : `$$${match}$$`;
     },
   );
   return result;
