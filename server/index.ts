@@ -81,6 +81,16 @@ httpServer.listen(
 
     await registerRoutes(httpServer, app);
 
+    app.use("/api/{*path}", (req, res) => {
+      res.status(404).json({
+        error: {
+          code: "API_NOT_FOUND",
+          message: `No API route for ${req.method} ${req.path}`,
+          details: null,
+        },
+      });
+    });
+
     app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

@@ -12,6 +12,7 @@ import {
   ClockArrowUp, Pencil,
 } from "lucide-react";
 import DOMPurify from "dompurify";
+import { useToast } from "@/hooks/use-toast";
 
 interface SomaUser {
   id: string;
@@ -267,6 +268,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
 export default function TutorAssessments() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
@@ -275,7 +277,7 @@ export default function TutorAssessments() {
   const [confirmDelete, setConfirmDelete] = useState<{ quizId: number; title: string } | null>(null);
   const [confirmDeleteQuestion, setConfirmDeleteQuestion] = useState<{ questionId: number; stem: string } | null>(null);
 
-  const { session, userId } = useSupabaseSession();
+  const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
@@ -331,9 +333,13 @@ export default function TutorAssessments() {
       setShowAssignModal(null);
       setSelectedStudentIds(new Set());
       setDueDate("");
+      toast({ title: "Assessment assigned", description: "Selected students were assigned successfully." });
       if (expandedQuiz) {
         queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", expandedQuiz, "assignments"] });
       }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -378,6 +384,10 @@ export default function TutorAssessments() {
       setConfirmDelete(null);
       setExpandedQuiz(null);
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
+      toast({ title: "Assessment deleted", description: "The assessment was removed." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -422,6 +432,7 @@ export default function TutorAssessments() {
       return next;
     });
   }, []);
+  const selectedStudentList = Array.from(selectedStudentIds);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -500,7 +511,7 @@ export default function TutorAssessments() {
           </Link>
         </div>
 
-        {quizzesLoading ? (
+        {authLoading || quizzesLoading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
           </div>
@@ -777,15 +788,15 @@ export default function TutorAssessments() {
                   />
                 </div>
                 <button
-                  onClick={() => assignMutation.mutate({ quizId: showAssignModal, studentIds: Array.from(selectedStudentIds), dueDate: dueDate || undefined })}
-                  disabled={selectedStudentIds.size === 0 || assignMutation.isPending}
+                  onClick={() => assignMutation.mutate({ quizId: showAssignModal, studentIds: selectedStudentList, dueDate: dueDate || undefined })}
+                  disabled={selectedStudentList.length === 0 || assignMutation.isPending}
                   className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   data-testid="button-confirm-assign"
                 >
                   {assignMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin mx-auto" />
                   ) : (
-                    `Assign to ${selectedStudentIds.size} Student${selectedStudentIds.size !== 1 ? "s" : ""}`
+                    `Assign to ${selectedStudentList.length} Student${selectedStudentList.length !== 1 ? "s" : ""}`
                   )}
                 </button>
               </>
