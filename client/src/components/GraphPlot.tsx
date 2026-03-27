@@ -441,6 +441,7 @@ function isValidSpec(spec: GraphQuestionSpec): boolean {
   const [yMin, yMax] = spec.yRange;
   if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMin >= xMax) return false;
   if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || yMin >= yMax) return false;
+  if (spec.tickInterval !== undefined && (!Number.isFinite(spec.tickInterval) || spec.tickInterval <= 0)) return false;
   const hasEquation = typeof spec.equation === "string" && spec.equation.trim().length > 0;
   const hasCurves   = Array.isArray(spec.curves) && spec.curves.length > 0;
   const hasPoints   = Array.isArray(spec.points)  && spec.points.length > 0;
@@ -488,10 +489,14 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const yAxisX = Math.max(plotLeft, Math.min(plotRight,  xToSvg(0)));
 
   // ── Smart tick intervals (independent per axis) ───────────────────────────
-  const xTick = resolvedSpec.tickInterval && Number.isFinite(resolvedSpec.tickInterval) ? resolvedSpec.tickInterval : niceInterval(xMax - xMin);
-  const yTick = resolvedSpec.tickInterval && Number.isFinite(resolvedSpec.tickInterval) ? resolvedSpec.tickInterval : niceInterval(yMax - yMin);
+  const fallbackXTick = niceInterval(xMax - xMin);
+  const fallbackYTick = niceInterval(yMax - yMin);
+  const safeTick = Number(resolvedSpec.tickInterval);
+  const xTick = Number.isFinite(safeTick) && safeTick > 0 ? safeTick : fallbackXTick;
+  const yTick = Number.isFinite(safeTick) && safeTick > 0 ? safeTick : fallbackYTick;
 
   const makeTicks = (lo: number, hi: number, step: number) => {
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || !Number.isFinite(step) || step <= 0 || lo >= hi) return [];
     const start = Math.ceil(lo / step) * step;
     const out: number[] = [];
     for (let v = start; v <= hi + 1e-9; v = parseFloat((v + step).toPrecision(10))) {
@@ -516,10 +521,15 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
   const showLegend    = allCurves.length > 1 && allCurves.some((c) => c.label);
   const legendEntries = showLegend ? allCurves.filter((c) => c.label) : [];
-  const plotPoints    = [...(resolvedSpec.points || []), ...(resolvedSpec.highlightedPoints || [])];
+  const plotPoints = [...(resolvedSpec.points || []), ...(resolvedSpec.highlightedPoints || [])]
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   const TICK_SIZE     = 4; // half-length of tick cross-hairs (px)
   const equationA11yText = resolvedSpec.equation ? normalizeExpression(resolvedSpec.equation) : "";
-  const asymptotes = resolvedSpec.asymptotes ?? { vertical: [], horizontal: [], oblique: [] };
+  const asymptotes = {
+    vertical: (resolvedSpec.asymptotes?.vertical ?? []).filter(Number.isFinite),
+    horizontal: (resolvedSpec.asymptotes?.horizontal ?? []).filter(Number.isFinite),
+    oblique: (resolvedSpec.asymptotes?.oblique ?? []).filter((eq): eq is string => typeof eq === "string" && eq.trim().length > 0),
+  };
 
   // Y-tick label x-position: left of y-axis, but at least 4px inside SVG viewport
   const yLabelX = Math.max(4, yAxisX - 9);
