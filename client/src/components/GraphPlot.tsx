@@ -487,9 +487,20 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const xAxisY = Math.max(plotTop,  Math.min(plotBottom, yToSvg(0)));
   const yAxisX = Math.max(plotLeft, Math.min(plotRight,  xToSvg(0)));
 
-  // ── Smart tick intervals (independent per axis) ───────────────────────────
-  const xTick = resolvedSpec.tickInterval && Number.isFinite(resolvedSpec.tickInterval) ? resolvedSpec.tickInterval : niceInterval(xMax - xMin);
-  const yTick = resolvedSpec.tickInterval && Number.isFinite(resolvedSpec.tickInterval) ? resolvedSpec.tickInterval : niceInterval(yMax - yMin);
+  // ── Smart tick intervals (independent per axis, capped at MAX_TICKS) ─────
+  // AI-provided tickInterval is used only when it keeps tick count ≤ MAX_TICKS.
+  // Otherwise niceInterval() is used so the axis never looks crowded.
+  const MAX_TICKS = 9;
+  function safeTick(span: number, hint?: number | null): number {
+    const nice = niceInterval(span);
+    if (hint && Number.isFinite(hint) && hint > 0 && Math.ceil(span / hint) + 1 <= MAX_TICKS) {
+      return hint;
+    }
+    return nice;
+  }
+  const hint = resolvedSpec.tickInterval ?? null;
+  const xTick = safeTick(xMax - xMin, hint);
+  const yTick = safeTick(yMax - yMin, hint);
 
   const makeTicks = (lo: number, hi: number, step: number) => {
     const start = Math.ceil(lo / step) * step;
@@ -657,18 +668,20 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           ) : null;
         })}
 
-        {/* ── Axis name labels (right next to arrowheads) ───────────────── */}
+        {/* ── Axis name labels ──────────────────────────────────────────── */}
+        {/* X label: anchored at right SVG edge, grows leftward → never clips  */}
         <text
-          x={plotRight + 12} y={xAxisY + 4}
-          textAnchor="start" fill="#cbd5e1"
-          fontSize="13" fontWeight="600" fontStyle="italic"
+          x={WIDTH - 4} y={xAxisY + 4}
+          textAnchor="end" fill="#cbd5e1"
+          fontSize="12" fontWeight="600" fontStyle="italic"
         >
           {axisLabels.x}
         </text>
+        {/* Y label: just above the arrowhead, anchored to left of axis line   */}
         <text
           x={yAxisX + 6} y={plotTop - 10}
           textAnchor="start" fill="#cbd5e1"
-          fontSize="13" fontWeight="600" fontStyle="italic"
+          fontSize="12" fontWeight="600" fontStyle="italic"
         >
           {axisLabels.y}
         </text>
