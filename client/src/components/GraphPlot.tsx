@@ -121,10 +121,12 @@ function prettyEquation(eq: string): string {
   return s.trim();
 }
 
-// Prefer spec.label (AI-supplied clean name), fall back to prettyEquation()
+// Prefer spec.label (AI-supplied clean name), fall back to "y = prettyEquation()".
+// Returns the FULL display string including any variable prefix (e.g. "s = 4θ", "A = ¾r²").
+// Callers must NOT prepend "y = " — this function owns the complete label text.
 function equationDisplayLabel(spec: { equation?: string; label?: string }): string {
-  if (spec.label) return spec.label.replace(/^y\s*=\s*/i, "").trim();
-  if (spec.equation) return prettyEquation(spec.equation);
+  if (spec.label) return spec.label.trim();
+  if (spec.equation) return `y = ${prettyEquation(spec.equation)}`;
   return "";
 }
 
@@ -831,7 +833,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
               fontWeight="500"
               opacity="0.90"
             >
-              y = {labelText}
+              {labelText}
             </text>
           );
         })()}

@@ -289,6 +289,12 @@ CRITICAL FORMAT RULES (breaking any of these means your output is INVALID):
     - equation: "Math.exp(x)"                   →  label: "y = eˣ"
     - equation: "Math.log(x)"                   →  label: "y = ln x"
     - equation: "3*x + 2"                        →  label: "y = 3x + 2"
+12. VARIABLE NAMES IN LABELS — the label must use the same variable names as the question text. NEVER use generic "x" and "y" when the question uses real variables. Examples:
+    - arc-length question (s = rθ) with axisLabels x="θ (rad)" y="s (cm)": label MUST be "s = rθ" (symbolic), NOT "y = 4x"
+    - sector-area question (A = ½r²θ) with axisLabels x="r (cm)" y="A (cm²)": label MUST be "A = ½θr²" (symbolic)
+    - velocity-time question: label "v = 3t", NOT "y = 3x"
+    - perimeter question with P = r(2+θ): label "P = r(2+θ)", NOT "y = 3x"
+13. DO NOT REVEAL THE ANSWER IN THE LABEL — if the question asks students to determine a value (gradient, radius, θ, etc.) by reading the graph, write the label symbolically. Example: question asks "find the radius from the slope" → label "s = rθ" not "s = 4θ" (which gives away r = 4).
 
 MATH FORMATTING — MANDATORY:
 ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX delimiters.
@@ -1923,7 +1929,12 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
    - "equation": "2*x**2 - 3*x + 1"              →  "label": "y = 2x² − 3x + 1"
    - "equation": "Math.exp(x)"                   →  "label": "y = eˣ"
    - "equation": "Math.log(x)"                   →  "label": "y = ln x"
-   - "equation": "3*x"                            →  "label": "v = 3t"  (use real variable names from context)`
+   - "equation": "3*x"                            →  "label": "v = 3t"  (use real variable names from context)
+10. VARIABLE NAMES IN LABELS — the label MUST use the same variable names as the question text. NEVER use generic "x" / "y" when the question uses real-world variables. Match the axisLabels exactly. Examples:
+    - axisLabels x="θ (rad)" y="s (cm)" → label "s = rθ" (NOT "y = 4x")
+    - axisLabels x="r (cm)"  y="A (cm²)" → label "A = ½θr²" (NOT "y = 0.75x²")
+    - axisLabels x="t (s)"   y="v (m/s)" → label "v = 3t" (NOT "y = 3x")
+11. DO NOT REVEAL THE ANSWER IN THE LABEL — if the question asks the student to read a value (radius, gradient, θ, etc.) from the graph, write the label with SYMBOLIC notation. Example: question asks "find the radius" → label "s = rθ", NOT "s = 4θ" (which gives away r = 4).`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
 ## MATH FORMATTING — MANDATORY:
