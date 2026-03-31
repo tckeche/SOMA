@@ -304,6 +304,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 - IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression — do NOT use LaTeX there.
 - The "label" field inside graph_spec is plain text (Unicode math symbols like °, ², ³, π, ˣ are fine).`;
 
+/** Fisher-Yates shuffle — returns a new shuffled array */
+function shuffleOptions<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
   let opts = raw.options;
@@ -324,6 +334,10 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
 
   let correctAnswer = String(raw.correct_answer || raw.correctAnswer || raw.answer || "");
   if (!opts.includes(correctAnswer)) correctAnswer = opts[0];
+
+  // Shuffle options so the correct answer is never pinned to position A.
+  // The correctAnswer string is unchanged — it travels with the shuffle.
+  opts = shuffleOptions(opts);
 
   // Determine question type and graphSpec
   // Always start as multiple_choice; upgrade to "graph" only when we have a valid spec
