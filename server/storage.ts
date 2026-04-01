@@ -23,6 +23,31 @@ type SomaQuizBundleQuestionInput = {
   marks?: number;
 };
 
+export interface TutorDashboardSummary {
+  tutorId: string;
+  tutorEmail: string;
+  tutorName: string | null;
+  adoptedStudentsCount: number;
+  assessmentsCompletedCount: number;
+  averageStudentGrade: number | null;
+  subjects: string[];
+  lastLoginAt: string | null;
+}
+
+export interface TutorDashboardDetail extends TutorDashboardSummary {
+  students: Array<{ id: string; name: string | null; email: string }>;
+  recentAssessments: Array<{
+    reportId: number;
+    studentName: string;
+    quizId: number;
+    quizTitle: string;
+    subject: string | null;
+    scorePercent: number;
+    completedAt: string | null;
+    createdAt: string;
+  }>;
+}
+
 export interface IStorage {
   upsertSomaUser(user: InsertSomaUser): Promise<SomaUser>;
 
@@ -82,6 +107,9 @@ export interface IStorage {
   deleteSomaUser(userId: string): Promise<void>;
   deleteSomaQuiz(quizId: number): Promise<void>;
   getAllSomaQuizzes(): Promise<SomaQuiz[]>;
+  touchUserLastLogin(userId: string): Promise<void>;
+  getTutorDashboardSummaries(): Promise<TutorDashboardSummary[]>;
+  getTutorDashboardDetail(tutorId: string): Promise<TutorDashboardDetail | undefined>;
 
   logPasswordResetRequest(email: string): Promise<void>;
   createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }>;
@@ -561,6 +589,114 @@ class DatabaseStorage implements IStorage {
     return this.database.select().from(somaQuizzes).orderBy(somaQuizzes.createdAt);
   }
 
+  async touchUserLastLogin(userId: string): Promise<void> {
+    await this.database.update(somaUsers).set({ lastLoginAt: new Date() }).where(eq(somaUsers.id, userId));
+  }
+
+  async getTutorDashboardSummaries(): Promise<TutorDashboardSummary[]> {
+    const tutors = await this.database.select().from(somaUsers).where(eq(somaUsers.role, "tutor"));
+    const summaries: TutorDashboardSummary[] = [];
+
+    for (const tutor of tutors) {
+      const adoptedStudents = await this.database
+        .select({ studentId: tutorStudents.studentId })
+        .from(tutorStudents)
+        .where(eq(tutorStudents.tutorId, tutor.id));
+      const adoptedStudentIds = adoptedStudents.map((row) => row.studentId);
+
+      const reportRows = adoptedStudentIds.length === 0
+        ? []
+        : await this.database
+          .select({
+            reportId: somaReports.id,
+            quizId: somaReports.quizId,
+            score: somaReports.score,
+            subject: somaQuizzes.subject,
+          })
+          .from(somaReports)
+          .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+          .where(inArray(somaReports.studentId, adoptedStudentIds));
+
+      const authoredSubjects = await this.database
+        .select({ subject: somaQuizzes.subject })
+        .from(somaQuizzes)
+        .where(eq(somaQuizzes.authorId, tutor.id));
+
+      const maxScoresByQuiz = await this.getSomaQuestionTotalsByQuizIds(
+        Array.from(new Set(reportRows.map((row) => row.quizId))),
+      );
+      const averageStudentGrade = reportRows.length === 0
+        ? null
+        : Math.round((reportRows.reduce((acc, row) => {
+          const max = maxScoresByQuiz[row.quizId] || 0;
+          return acc + (max > 0 ? (row.score / max) * 100 : 0);
+        }, 0) / reportRows.length) * 10) / 10;
+
+      const subjects = Array.from(new Set([
+        ...authoredSubjects.map((s) => s.subject).filter((s): s is string => Boolean(s)),
+        ...reportRows.map((r) => r.subject).filter((s): s is string => Boolean(s)),
+      ])).sort((a, b) => a.localeCompare(b));
+
+      summaries.push({
+        tutorId: tutor.id,
+        tutorEmail: tutor.email,
+        tutorName: tutor.displayName,
+        adoptedStudentsCount: adoptedStudentIds.length,
+        assessmentsCompletedCount: reportRows.length,
+        averageStudentGrade,
+        subjects,
+        lastLoginAt: tutor.lastLoginAt ? tutor.lastLoginAt.toISOString() : null,
+      });
+    }
+
+    return summaries.sort((a, b) => b.assessmentsCompletedCount - a.assessmentsCompletedCount);
+  }
+
+  async getTutorDashboardDetail(tutorId: string): Promise<TutorDashboardDetail | undefined> {
+    const summary = (await this.getTutorDashboardSummaries()).find((row) => row.tutorId === tutorId);
+    if (!summary) return undefined;
+
+    const students = await this.getAdoptedStudents(tutorId);
+    const studentIds = students.map((s) => s.id);
+    const recentRows = studentIds.length === 0
+      ? []
+      : await this.database
+        .select({
+          reportId: somaReports.id,
+          studentName: somaReports.studentName,
+          quizId: somaReports.quizId,
+          quizTitle: somaQuizzes.title,
+          subject: somaQuizzes.subject,
+          score: somaReports.score,
+          completedAt: somaReports.completedAt,
+          createdAt: somaReports.createdAt,
+        })
+        .from(somaReports)
+        .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+        .where(inArray(somaReports.studentId, studentIds))
+        .orderBy(sql`${somaReports.createdAt} desc`)
+        .limit(12);
+
+    const maxScoresByQuiz = await this.getSomaQuestionTotalsByQuizIds(
+      Array.from(new Set(recentRows.map((row) => row.quizId))),
+    );
+
+    return {
+      ...summary,
+      students: students.map((s) => ({ id: s.id, name: s.displayName, email: s.email })),
+      recentAssessments: recentRows.map((row) => ({
+        reportId: row.reportId,
+        studentName: row.studentName,
+        quizId: row.quizId,
+        quizTitle: row.quizTitle,
+        subject: row.subject,
+        scorePercent: maxScoresByQuiz[row.quizId] > 0 ? Math.round((row.score / maxScoresByQuiz[row.quizId]) * 1000) / 10 : 0,
+        completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
   async logPasswordResetRequest(email: string): Promise<void> {
     await this.database.execute(
       sql`INSERT INTO password_reset_requests (email) VALUES (${email})`
@@ -674,7 +810,7 @@ class MemoryStorage implements IStorage {
 
   async upsertSomaUser(user: InsertSomaUser): Promise<SomaUser> {
     const idx = this.somaUsersList.findIndex((u) => u.id === user.id);
-    const record: SomaUser = { createdAt: new Date(), displayName: null, role: "student", ...user };
+    const record: SomaUser = { createdAt: new Date(), displayName: null, role: "student", lastLoginAt: null, ...user };
     if (idx >= 0) {
       this.somaUsersList[idx] = { ...this.somaUsersList[idx], email: user.email, displayName: user.displayName ?? this.somaUsersList[idx].displayName, role: user.role ?? this.somaUsersList[idx].role };
       return this.somaUsersList[idx];
@@ -921,6 +1057,40 @@ class MemoryStorage implements IStorage {
 
   async getAllSomaQuizzes(): Promise<SomaQuiz[]> {
     return this.somaQuizzesList;
+  }
+
+  async touchUserLastLogin(userId: string): Promise<void> {
+    const user = this.somaUsersList.find((u) => u.id === userId);
+    if (user) user.lastLoginAt = new Date();
+  }
+
+  async getTutorDashboardSummaries(): Promise<TutorDashboardSummary[]> {
+    const tutors = this.somaUsersList.filter((u) => u.role === "tutor");
+    return tutors.map((tutor) => {
+      const adoptedIds = this.tutorStudentsList.filter((ts) => ts.tutorId === tutor.id).map((ts) => ts.studentId);
+      const completed = this.somaReportsList.filter((r) => r.studentId && adoptedIds.includes(r.studentId));
+      return {
+        tutorId: tutor.id,
+        tutorEmail: tutor.email,
+        tutorName: tutor.displayName,
+        adoptedStudentsCount: adoptedIds.length,
+        assessmentsCompletedCount: completed.length,
+        averageStudentGrade: completed.length ? Math.round((completed.reduce((sum, r) => sum + r.score, 0) / completed.length) * 10) / 10 : null,
+        subjects: [],
+        lastLoginAt: tutor.lastLoginAt ? tutor.lastLoginAt.toISOString() : null,
+      };
+    });
+  }
+
+  async getTutorDashboardDetail(tutorId: string): Promise<TutorDashboardDetail | undefined> {
+    const summary = (await this.getTutorDashboardSummaries()).find((row) => row.tutorId === tutorId);
+    if (!summary) return undefined;
+    const students = this.tutorStudentsList
+      .filter((ts) => ts.tutorId === tutorId)
+      .map((ts) => this.somaUsersList.find((u) => u.id === ts.studentId))
+      .filter((u): u is SomaUser => Boolean(u))
+      .map((u) => ({ id: u.id, name: u.displayName, email: u.email }));
+    return { ...summary, students, recentAssessments: [] };
   }
 
   async logPasswordResetRequest(_email: string): Promise<void> {

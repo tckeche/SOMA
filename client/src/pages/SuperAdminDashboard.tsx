@@ -4,14 +4,14 @@ import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import type { SomaQuiz } from "@shared/schema";
 import {
   Shield, Users, BookOpen, Trash2, LogOut,
   Loader2, AlertTriangle, Search, UserX, X,
-  ShieldCheck, GraduationCap, UserCog,
+  ShieldCheck, GraduationCap, UserCog, ChevronRight,
 } from "lucide-react";
 
 const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
@@ -32,11 +32,22 @@ interface AdminStats {
   publishedQuizzes: number;
 }
 
+interface TutorSummary {
+  tutorId: string;
+  tutorEmail: string;
+  tutorName: string | null;
+  adoptedStudentsCount: number;
+  assessmentsCompletedCount: number;
+  averageStudentGrade: number | null;
+  subjects: string[];
+  lastLoginAt: string | null;
+}
+
 export default function SuperAdminDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"users" | "quizzes">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "quizzes" | "tutors">("tutors");
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: "user" | "quiz"; id: string | number; name: string } | null>(null);
   const [roleVerified, setRoleVerified] = useState(false);
@@ -85,6 +96,18 @@ export default function SuperAdminDashboard() {
     queryKey: ["/api/super-admin/quizzes", userId],
     queryFn: async () => {
       const res = await authFetch("/api/super-admin/quizzes");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!userId && roleVerified,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: tutors = [], isLoading: tutorsLoading } = useQuery<TutorSummary[]>({
+    queryKey: ["/api/super-admin/tutors", userId],
+    queryFn: async () => {
+      const res = await authFetch("/api/super-admin/tutors");
       if (!res.ok) return [];
       return res.json();
     },
@@ -155,6 +178,16 @@ export default function SuperAdminDashboard() {
     );
   }, [quizzes, searchQuery]);
 
+  const filteredTutors = useMemo(() => {
+    if (!searchQuery.trim()) return tutors;
+    const q = searchQuery.toLowerCase();
+    return tutors.filter((t) =>
+      t.tutorEmail.toLowerCase().includes(q)
+      || (t.tutorName || "").toLowerCase().includes(q)
+      || t.subjects.some((s) => s.toLowerCase().includes(q))
+    );
+  }, [tutors, searchQuery]);
+
   const roleIcon = (role: string) => {
     if (role === "super_admin") return <ShieldCheck className="w-3.5 h-3.5" />;
     if (role === "tutor") return <UserCog className="w-3.5 h-3.5" />;
@@ -220,6 +253,18 @@ export default function SuperAdminDashboard() {
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex gap-2">
             <button
+              onClick={() => { setActiveTab("tutors"); setSearchQuery(""); }}
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+                activeTab === "tutors"
+                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  : "bg-slate-800/40 text-slate-400 border border-slate-700/50 hover:bg-slate-800/60"
+              }`}
+              data-testid="tab-tutors"
+            >
+              <UserCog className="w-4 h-4" />
+              Tutor Dashboard ({tutors.length})
+            </button>
+            <button
               onClick={() => { setActiveTab("users"); setSearchQuery(""); }}
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "users"
@@ -256,6 +301,65 @@ export default function SuperAdminDashboard() {
             />
           </div>
         </div>
+
+        {activeTab === "tutors" && (
+          <section>
+            {tutorsLoading ? (
+              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
+            ) : filteredTutors.length === 0 ? (
+              <div className={`${CARD_CLASS} text-center py-12`}>
+                <UserCog className="w-12 h-12 mx-auto text-slate-600 mb-4" />
+                <p className="text-sm text-slate-400">{searchQuery ? "No matching tutors" : "No tutors found yet"}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto bg-slate-900/50 border border-slate-800 rounded-xl">
+                <table className="w-full text-sm">
+                  <thead className="text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="text-left px-4 py-3">Tutor</th>
+                      <th className="text-left px-4 py-3">Students</th>
+                      <th className="text-left px-4 py-3">Completed</th>
+                      <th className="text-left px-4 py-3">Avg Grade</th>
+                      <th className="text-left px-4 py-3">Last Login</th>
+                      <th className="text-left px-4 py-3">Subjects</th>
+                      <th className="text-right px-4 py-3">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTutors.map((tutor) => (
+                      <tr key={tutor.tutorId} className="border-b border-slate-800/60 hover:bg-slate-800/40">
+                        <td className="px-4 py-3">
+                          <p className="text-slate-100 font-medium">{tutor.tutorName || tutor.tutorEmail.split("@")[0]}</p>
+                          <p className="text-xs text-slate-400">{tutor.tutorEmail}</p>
+                        </td>
+                        <td className="px-4 py-3 text-slate-200">{tutor.adoptedStudentsCount}</td>
+                        <td className="px-4 py-3 text-slate-200">{tutor.assessmentsCompletedCount}</td>
+                        <td className="px-4 py-3 text-slate-200">{tutor.averageStudentGrade !== null ? `${tutor.averageStudentGrade}%` : "—"}</td>
+                        <td className="px-4 py-3 text-slate-400 text-xs">
+                          {tutor.lastLoginAt ? formatDistanceToNow(new Date(tutor.lastLoginAt), { addSuffix: true }) : "Not tracked yet"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {tutor.subjects.length ? tutor.subjects.map((subj) => (
+                              <Badge key={subj} className="text-[10px] bg-slate-800 border-slate-700 text-slate-300">{subj}</Badge>
+                            )) : <span className="text-xs text-slate-500">No subjects</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link href={`/super-admin/tutors/${tutor.tutorId}`}>
+                            <button className="inline-flex items-center gap-1 text-red-300 hover:text-red-200">
+                              View <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         {activeTab === "users" && (
           <section>

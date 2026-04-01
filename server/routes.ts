@@ -519,7 +519,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 
 const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com";
 
-const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "admin.soma@melaniacalvin.com";
+const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
 
 function determineRole(email: string): "tutor" | "student" | "super_admin" {
   if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
@@ -935,6 +935,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         user = await storage.upsertSomaUser(parsed);
       }
       if (!user) return res.status(404).json({ message: "User not found" });
+      await storage.touchUserLastLogin(user.id);
       res.json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch user" });
@@ -2279,6 +2280,27 @@ You must rely ONLY on the provided PDF text. Do not generate fictitious data or 
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch stats" });
+    }
+  });
+
+  app.get("/api/super-admin/tutors", requireSuperAdmin, async (_req, res) => {
+    try {
+      const tutors = await storage.getTutorDashboardSummaries();
+      res.json(tutors);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch tutor dashboard data" });
+    }
+  });
+
+  app.get("/api/super-admin/tutors/:tutorId", requireSuperAdmin, async (req, res) => {
+    try {
+      const tutorId = String(req.params.tutorId || "");
+      if (!tutorId) return res.status(400).json({ message: "Invalid tutor ID" });
+      const detail = await storage.getTutorDashboardDetail(tutorId);
+      if (!detail) return res.status(404).json({ message: "Tutor not found" });
+      res.json(detail);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch tutor detail" });
     }
   });
 

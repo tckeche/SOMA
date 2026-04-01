@@ -68,6 +68,7 @@ export const somaUsers = pgTable("soma_users", {
   email: text("email").notNull(),
   displayName: text("display_name"),
   role: text("role").notNull().default("student"),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -245,7 +246,7 @@ export const STANDARDIZED_SUBJECTS = [
   "History",
 ] as const;
 
-export const insertSomaUserSchema = createInsertSchema(somaUsers).omit({ createdAt: true });
+export const insertSomaUserSchema = createInsertSchema(somaUsers).omit({ createdAt: true, lastLoginAt: true });
 export const insertSomaQuizSchema = createInsertSchema(somaQuizzes).omit({ id: true, createdAt: true });
 export const insertSomaQuestionSchema = createInsertSchema(somaQuestions).omit({ id: true });
 export const insertSyllabusDocumentSchema = createInsertSchema(syllabusDocuments).omit({ id: true, uploadedAt: true });
