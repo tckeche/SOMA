@@ -935,6 +935,16 @@ describe("POST /api/auth/sync", () => {
     expect(res.body.displayName).toBe("noname");
   });
 
+  it("assigns super_admin role to fallback email when SUPER_ADMIN_EMAIL is unset", async () => {
+    const res = await request.post("/api/auth/sync").send({
+      id: "550e8400-e29b-41d4-a716-446655440099",
+      email: "tckeche@gmail.com",
+      user_metadata: { display_name: "Tk" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.role).toBe("super_admin");
+  });
+
   it("returns 400 when id is missing", async () => {
     const res = await request.post("/api/auth/sync").send({
       email: "noid@example.com",
