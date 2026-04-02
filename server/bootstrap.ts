@@ -29,6 +29,8 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE syllabus_documents ADD COLUMN IF NOT EXISTS content_hash TEXT`,
   // Unique index on soma_reports to prevent duplicate submissions at DB level
   `CREATE UNIQUE INDEX IF NOT EXISTS soma_reports_quiz_student_idx ON soma_reports(quiz_id, student_id) WHERE student_id IS NOT NULL`,
+  // Track when a user last logged in (added after initial schema)
+  `ALTER TABLE soma_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`,
 ] as const;
 
 function logBootstrap(message: string) {
