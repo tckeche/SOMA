@@ -206,12 +206,19 @@ export default function TutorAssessmentDetails() {
       if (!res.ok) throw new Error("Failed to assign");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/details`] });
       setShowAssignModal(false);
       setSelectedStudentIds(new Set());
       setAssignDueDate("");
-      toast({ title: "Students assigned", description: "Assessment assignment was successful." });
+      const count = data?.assigned ?? 0;
+      toast({
+        title: count > 0 ? "Students assigned" : "Already assigned",
+        description: count > 0
+          ? `${count} student${count !== 1 ? "s" : ""} assigned successfully.`
+          : "All selected students already have an assignment for this quiz.",
+        variant: count > 0 ? "default" : "destructive",
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Assignment failed", description: err.message, variant: "destructive" });

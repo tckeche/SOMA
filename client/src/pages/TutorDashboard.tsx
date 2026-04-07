@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { useToast } from "@/hooks/use-toast";
 
 const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
 const SECTION_LABEL = "text-slate-400 text-xs font-semibold tracking-wider uppercase";
@@ -132,6 +133,7 @@ function DonutCard({ subject, percentage, color }: { subject: string; percentage
 
 export default function TutorDashboard() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -192,11 +194,22 @@ export default function TutorDashboard() {
       if (!res.ok) throw new Error("Failed to assign");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setShowAssignModal(null);
       setSelectedStudentIds(new Set());
       setDueDate("");
+      const count = data?.assigned ?? 0;
+      toast({
+        title: count > 0 ? "Assessment assigned" : "Already assigned",
+        description: count > 0
+          ? `${count} student${count !== 1 ? "s" : ""} assigned successfully.`
+          : "All selected students already have an assignment for this quiz.",
+        variant: count > 0 ? "default" : "destructive",
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
     },
   });
 
