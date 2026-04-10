@@ -15,6 +15,7 @@ export default function StudentAuth() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState<{ email?: string; password?: string }>({});
+  const [authError, setAuthError] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -24,6 +25,7 @@ export default function StudentAuth() {
     setDisplayName("");
     setShowPassword(false);
     setFormErrors({});
+    setAuthError(null);
   };
 
   const switchMode = (newMode: AuthMode) => {
@@ -88,6 +90,7 @@ export default function StudentAuth() {
       } else if (msg) {
         friendly = msg;
       }
+      setAuthError(friendly);
       toast({
         title: "Login failed",
         description: friendly,
@@ -281,6 +284,7 @@ export default function StudentAuth() {
                   onChange={(e) => {
                     setEmail(e.target.value);
                     if (formErrors.email) setFormErrors((prev) => ({ ...prev, email: undefined }));
+                    if (authError) setAuthError(null);
                   }}
                   placeholder="student@example.com"
                   required
@@ -302,6 +306,7 @@ export default function StudentAuth() {
                     onChange={(e) => {
                       setPassword(e.target.value);
                       if (formErrors.password) setFormErrors((prev) => ({ ...prev, password: undefined }));
+                      if (authError) setAuthError(null);
                     }}
                     placeholder="••••••••"
                     required
@@ -354,6 +359,16 @@ export default function StudentAuth() {
                 mode === "login" ? "Log In" : mode === "signup" ? "Create Account" : "Send Reset Link"
               )}
             </button>
+
+            {authError && (
+              <div
+                className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2.5"
+                data-testid="text-auth-error"
+                role="alert"
+              >
+                <span className="text-red-400 text-xs leading-relaxed">{authError}</span>
+              </div>
+            )}
           </form>
 
           <p className="text-center text-xs text-slate-400 mt-6">
