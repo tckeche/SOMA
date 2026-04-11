@@ -1502,7 +1502,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
-      const draft = getDraft(quizId);
+      // Prefer the server-side in-memory draft (most authoritative).
+      // Fall back to client-sent questions in the request body — this handles the case
+      // where the server was restarted (in-memory draft lost) or an earlier syncDraft
+      // call failed silently. The client always sends its local draft for safety.
+      let draft = getDraft(quizId);
+      if (draft.length === 0 && Array.isArray(req.body?.questions) && req.body.questions.length > 0) {
+        console.log(`[PUBLISH] Server draftStore empty for quiz ${quizId} — using ${req.body.questions.length} client-sent questions as fallback`);
+        draft = req.body.questions as DraftQuestion[];
+        // Persist the client draft to the server store so it's canonical
+        setDraft(quizId, draft);
+      }
       if (draft.length === 0) return res.status(400).json({ message: "Draft is empty — add questions before publishing" });
 
       // Validate each draft question before write

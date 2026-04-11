@@ -457,8 +457,8 @@ export default function BuilderPage() {
 
   const markMeta = () => { if (activeQuizId) setMetaDirty(true); };
 
-  const ensureQuizExists = async (): Promise<number> => {
-    if (activeQuizId) return activeQuizId;
+  const ensureQuizExists = async (): Promise<{ quizId: number; isNew: boolean }> => {
+    if (activeQuizId) return { quizId: activeQuizId, isNew: false };
     if (!title.trim()) throw new Error("Please fill in a quiz title before generating questions.");
     const quizRes = await authApiRequest("POST", "/api/tutor/quizzes", {
       title: title.trim(),
@@ -470,9 +470,9 @@ export default function BuilderPage() {
     });
     const quiz = await quizRes.json();
     setActiveQuizId(quiz.id);
-    // Update URL so refresh preserves the quiz
-    navigate(`/tutor/assessments/edit/${quiz.id}`);
-    return quiz.id;
+    // NOTE: We do NOT navigate here — navigation happens AFTER the draft is persisted
+    // to prevent a route remount that would wipe local state before the server has the draft.
+    return { quizId: quiz.id, isNew: true };
   };
 
   const animatePipeline = (stage: number) => {
@@ -549,13 +549,32 @@ export default function BuilderPage() {
 
       if (action !== "NONE" && (questions.length > 0 || positions.length > 0)) {
         animatePipeline(3);
-        // Ensure quiz shell exists (creates quiz in DB for URL persistence)
-        const quizId = await ensureQuizExists();
+        // Ensure quiz shell exists (creates quiz in DB for URL persistence).
+        // NOTE: navigate() is NOT called inside ensureQuizExists — we do it below
+        // AFTER the draft is persisted, to prevent a route remount wiping state.
+        const { quizId, isNew } = await ensureQuizExists();
         animatePipeline(4);
 
-        // Apply action to the draft
+        // Compute the new draft from the snapshot (captured before the AI call)
         const newDraft = applyDraftAction(currentDraftSnap, action, questions, positions);
-        await updateDraft(newDraft, quizId);
+
+        // ── CRITICAL: persist draft to server BEFORE navigating ──────────────
+        // Directly awaiting syncDraft here ensures the server has the draft
+        // before any route change that would remount this component.
+        await syncDraft(quizId, newDraft);
+
+        // Update local React state now that server is authoritative
+        setDraftQuestions(newDraft);
+        setIsDraftDirty(false); // draft is clean — just synced
+
+        // Update the browser URL without triggering a route change or component remount.
+        // Using history.replaceState instead of navigate() keeps React state intact
+        // (draftQuestions, chat history, form fields) while letting the user bookmark
+        // or refresh to the correct edit URL.
+        if (isNew) {
+          window.history.replaceState({}, "", `/tutor/assessments/edit/${quizId}`);
+        }
+
         finishPipeline();
         return { action, questions, positions, reply: data.reply, metadata: data.metadata, draftCount: newDraft.length };
       }
@@ -620,10 +639,16 @@ export default function BuilderPage() {
     }
     setIsPublishing(true);
     try {
+      // Always sync the latest local draft to the server immediately before publishing.
+      // This is the safety net: even if an earlier syncDraft failed silently,
+      // the server will get the current draft from the client here.
+      await syncDraft(activeQuizId, draftQuestions);
+
       const res = await authFetch(`/api/tutor/quizzes/${activeQuizId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        // Also send local draft in body as a double fallback
+        body: JSON.stringify({ questions: draftQuestions }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Publish failed");
@@ -684,12 +709,15 @@ export default function BuilderPage() {
 
       if (extractedDrafts.length > 0) {
         setUploadPipeline((p) => ({ ...p, stage: 5 }));
-        const quizId = await ensureQuizExists();
+        const { quizId, isNew } = await ensureQuizExists();
         // Add PDF-extracted questions to draft (no immediate DB write)
         const newDraftQs = extractedDrafts
           .map((d: any) => rawToDraftQuestion(d))
           .filter((q): q is DraftQuestion => q !== null);
         await updateDraft((prev) => [...prev, ...newDraftQs], quizId);
+        if (isNew) {
+          window.history.replaceState({}, "", `/tutor/assessments/edit/${quizId}`);
+        }
         toast({ title: `Added ${newDraftQs.length} question${newDraftQs.length === 1 ? "" : "s"} to draft from PDF`, description: "Click 'Save & Publish' when you're ready to commit." });
       }
       setUploadPipeline((p) => ({ ...p, stage: 6 }));
