@@ -280,6 +280,16 @@ export interface DraftQuestion {
 }
 
 const draftStore = new Map<number, { questions: DraftQuestion[]; updatedAt: Date }>();
+const verificationResendAttempts = new Map<string, number>();
+const verificationCodeStore = new Map<string, {
+  id: string;
+  codeHash: string;
+  salt: string;
+  expiresAt: number;
+  usedAt: number | null;
+  sentAt: number;
+  attempts: number;
+}>();
 
 function getDraft(quizId: number): DraftQuestion[] {
   return draftStore.get(quizId)?.questions ?? [];
@@ -287,6 +297,18 @@ function getDraft(quizId: number): DraftQuestion[] {
 
 function setDraft(quizId: number, questions: DraftQuestion[]): void {
   draftStore.set(quizId, { questions, updatedAt: new Date() });
+}
+
+function canonicalEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function hashCode(code: string, salt: string): string {
+  return crypto.createHash("sha256").update(`${salt}:${code}`).digest("hex");
+}
+
+function make7DigitCode(): string {
+  return `${crypto.randomInt(1000000, 10000000)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1059,6 +1081,145 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err: any) {
       console.error("[forgot-password]", err);
       res.status(500).json({ error: "Failed to process password reset request." });
+    }
+  });
+
+  app.post("/api/auth/resend-verification", async (req, res) => {
+    try {
+      const email = canonicalEmail(String(req.body?.email || ""));
+      if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !anonKey) {
+        return res.status(500).json({ message: "Verification service unavailable", code: "VERIFICATION_CONFIG_MISSING" });
+      }
+
+      const resp = await fetch(`${supabaseUrl}/auth/v1/resend`, {
+        method: "POST",
+        signal: AbortSignal.timeout(12_000),
+        headers: { "Content-Type": "application/json", apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+        body: JSON.stringify({ type: "signup", email }),
+      });
+      const body = await resp.text();
+      if (!resp.ok) {
+        console.error("[verification-resend-failed]", { email, status: resp.status, body: body.slice(0, 220) });
+        return res.status(502).json({ message: "Could not resend verification email. Please try again shortly.", code: "VERIFICATION_RESEND_FAILED" });
+      }
+
+      const attemptCount = (verificationResendAttempts.get(email) ?? 0) + 1;
+      verificationResendAttempts.set(email, attemptCount);
+      return res.json({ ok: true, attemptCount, canUseCodeFallback: attemptCount >= 3 });
+    } catch (err: any) {
+      console.error("[verification-resend-error]", err?.message || err);
+      return res.status(500).json({ message: "Verification resend failed", code: "VERIFICATION_RESEND_EXCEPTION" });
+    }
+  });
+
+  app.post("/api/auth/send-verification-code", async (req, res) => {
+    try {
+      const email = canonicalEmail(String(req.body?.email || ""));
+      if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
+      const resendAttempts = verificationResendAttempts.get(email) ?? 0;
+      if (resendAttempts < 3) {
+        return res.status(403).json({ message: "Fallback code unlocks after 3 failed resend attempts", code: "VERIFICATION_CODE_NOT_ELIGIBLE" });
+      }
+
+      const apiKey = process.env.RESEND_API_KEY;
+      if (!apiKey) return res.status(500).json({ message: "Code delivery unavailable", code: "VERIFICATION_CODE_DELIVERY_UNAVAILABLE" });
+
+      const now = Date.now();
+      const existing = verificationCodeStore.get(email);
+      if (existing && now - existing.sentAt < 60_000) {
+        return res.status(429).json({ message: "Please wait before requesting another code.", code: "VERIFICATION_CODE_RATE_LIMIT" });
+      }
+
+      const code = make7DigitCode();
+      const salt = crypto.randomBytes(16).toString("hex");
+      const id = crypto.randomUUID();
+      verificationCodeStore.set(email, {
+        id,
+        codeHash: hashCode(code, salt),
+        salt,
+        sentAt: now,
+        expiresAt: now + 10 * 60_000,
+        usedAt: null,
+        attempts: 0,
+      });
+
+      const sendResp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        signal: AbortSignal.timeout(12_000),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM_EMAIL || "SOMA <onboarding@resend.dev>",
+          to: [email],
+          subject: "Your SOMA verification code",
+          html: `<p>Your SOMA verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes and can be used once.</p>`,
+        }),
+      });
+      if (!sendResp.ok) {
+        verificationCodeStore.delete(email);
+        return res.status(502).json({ message: "Could not send verification code email.", code: "VERIFICATION_CODE_SEND_FAILED" });
+      }
+      return res.json({ ok: true, expiresInSeconds: 600 });
+    } catch (err: any) {
+      console.error("[verification-code-send-error]", err?.message || err);
+      return res.status(500).json({ message: "Could not send verification code", code: "VERIFICATION_CODE_SEND_EXCEPTION" });
+    }
+  });
+
+  app.post("/api/auth/verify-verification-code", async (req, res) => {
+    try {
+      const email = canonicalEmail(String(req.body?.email || ""));
+      const code = String(req.body?.code || "").trim();
+      if (!email || !/^\d{7}$/.test(code)) return res.status(400).json({ message: "Valid email and 7-digit code required", code: "VERIFICATION_CODE_INVALID_INPUT" });
+
+      const record = verificationCodeStore.get(email);
+      if (!record) return res.status(404).json({ message: "No active code found. Request a new code.", code: "VERIFICATION_CODE_NOT_FOUND" });
+      if (record.usedAt) return res.status(409).json({ message: "This code has already been used.", code: "VERIFICATION_CODE_USED" });
+      if (Date.now() > record.expiresAt) return res.status(410).json({ message: "This code has expired. Request a new code.", code: "VERIFICATION_CODE_EXPIRED" });
+      if (record.attempts >= 5) return res.status(429).json({ message: "Too many invalid attempts. Request a new code.", code: "VERIFICATION_CODE_BRUTEFORCE_LOCK" });
+
+      record.attempts += 1;
+      if (hashCode(code, record.salt) !== record.codeHash) {
+        verificationCodeStore.set(email, record);
+        return res.status(401).json({ message: "Invalid code. Please check and try again.", code: "VERIFICATION_CODE_MISMATCH" });
+      }
+
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ message: "Server verification config missing", code: "VERIFICATION_ADMIN_CONFIG_MISSING" });
+
+      let targetUserId = "";
+      for (let page = 1; page <= 5 && !targetUserId; page += 1) {
+        const usersResp = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`, {
+          headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+        });
+        if (!usersResp.ok) break;
+        const usersData = await usersResp.json();
+        const users = Array.isArray(usersData?.users) ? usersData.users : [];
+        const matched = users.find((u: any) => canonicalEmail(String(u.email || "")) === email);
+        if (matched?.id) targetUserId = matched.id;
+      }
+      if (!targetUserId) return res.status(404).json({ message: "Account not found for this email", code: "VERIFICATION_USER_NOT_FOUND" });
+
+      const confirmResp = await fetch(`${supabaseUrl}/auth/v1/admin/users/${targetUserId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+        body: JSON.stringify({ email_confirm: true }),
+      });
+      if (!confirmResp.ok) {
+        const body = await confirmResp.text();
+        console.error("[verification-code-confirm-failed]", body.slice(0, 240));
+        return res.status(502).json({ message: "Could not confirm account from code.", code: "VERIFICATION_CONFIRM_FAILED" });
+      }
+
+      record.usedAt = Date.now();
+      verificationCodeStore.set(email, record);
+      return res.json({ ok: true, message: "Code accepted. Your email is now verified. You can log in." });
+    } catch (err: any) {
+      console.error("[verification-code-verify-error]", err?.message || err);
+      return res.status(500).json({ message: "Code verification failed", code: "VERIFICATION_CODE_VERIFY_EXCEPTION" });
     }
   });
 
@@ -2193,7 +2354,9 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
-      const verificationState: "generation_failed" | "partial_success" | "ready_for_review" = (
+      const verificationState: "generation_failed" | "partial_success" | "validation_failed" | "ready_for_review" = (
+        structured.questions.length > 0 && normalisedQuestions.length === 0
+      ) ? "validation_failed" : (
         structured.action === "NONE" || appliedCount === 0
       ) ? "generation_failed" : (
         structured.action === "REPLACE_SELECTED" && appliedCount < normalisedQuestions.length

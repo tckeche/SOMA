@@ -17,6 +17,10 @@ export default function StudentAuth() {
   const [formErrors, setFormErrors] = useState<{ email?: string; password?: string }>({});
   const [authError, setAuthError] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<string | null>(null);
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const [resendAttempts, setResendAttempts] = useState(0);
+  const [codeSent, setCodeSent] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
   const activeRequestId = useRef(0);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -28,6 +32,10 @@ export default function StudentAuth() {
     setShowPassword(false);
     setFormErrors({});
     setAuthError(null);
+    setVerificationEmail(null);
+    setResendAttempts(0);
+    setCodeSent(false);
+    setCodeInput("");
   };
 
   const switchMode = (newMode: AuthMode) => {
@@ -185,11 +193,12 @@ export default function StudentAuth() {
           setLocation("/dashboard");
         }
       } else {
+        setVerificationEmail(email.trim().toLowerCase());
         toast({
           title: "Account created",
           description: "Please check your email to verify your account, then log in. If no email arrives in 2 minutes, retry sign up.",
         });
-        switchMode("login");
+        setMode("login");
       }
     } catch (err: any) {
       if (requestId !== activeRequestId.current) return;
@@ -213,6 +222,72 @@ export default function StudentAuth() {
         setLoading(false);
         setStatusNote(null);
       }
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!verificationEmail) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verificationEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || data?.message || "Could not resend verification email.");
+      setResendAttempts(data?.attemptCount ?? (resendAttempts + 1));
+      toast({ title: "Verification email sent", description: "Check your inbox and spam folder." });
+    } catch (err: any) {
+      toast({ title: "Resend failed", description: err?.message || "Please try again shortly.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendVerificationCode = async () => {
+    if (!verificationEmail) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/send-verification-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verificationEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || data?.message || "Could not send fallback code.");
+      setCodeSent(true);
+      toast({ title: "Code sent", description: "A 7-digit verification code has been sent to your email." });
+    } catch (err: any) {
+      toast({ title: "Code send failed", description: err?.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!verificationEmail || !/^\d{7}$/.test(codeInput)) {
+      toast({ title: "Invalid code", description: "Enter a valid 7-digit code.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/verify-verification-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verificationEmail, code: codeInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || data?.message || "Verification failed.");
+      toast({ title: "Email verified", description: "Verification complete. You can now log in." });
+      setVerificationEmail(null);
+      setResendAttempts(0);
+      setCodeSent(false);
+      setCodeInput("");
+    } catch (err: any) {
+      toast({ title: "Verification failed", description: err?.message || "Invalid, expired, or already-used code.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -417,6 +492,36 @@ export default function StudentAuth() {
                 role="alert"
               >
                 <span className="text-red-400 text-xs leading-relaxed">{authError}</span>
+              </div>
+            )}
+            {mode === "login" && verificationEmail && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                <p className="text-xs text-amber-100">Still waiting for verification at <strong>{verificationEmail}</strong>?</p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={handleResendVerification} disabled={loading} className="text-xs px-2.5 py-1.5 rounded-md border border-amber-500/30 bg-amber-500/20 text-amber-100">
+                    Resend verification email
+                  </button>
+                  {resendAttempts >= 3 && (
+                    <button type="button" onClick={handleSendVerificationCode} disabled={loading} className="text-xs px-2.5 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/20 text-violet-100">
+                      Get a code instead
+                    </button>
+                  )}
+                </div>
+                {codeSent && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 7))}
+                      className="flex-1 glass-input py-2 text-xs"
+                      placeholder="7-digit code"
+                    />
+                    <button type="button" onClick={handleVerifyCode} disabled={loading} className="text-xs px-3 py-2 rounded-md border border-emerald-500/30 bg-emerald-500/20 text-emerald-100">
+                      Verify
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </form>

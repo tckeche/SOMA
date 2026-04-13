@@ -41,7 +41,7 @@ export interface DraftQuestion {
 }
 
 type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
-type GenerationState = "generation_started" | "generation_in_progress" | "generation_failed" | "partial_success" | "ready_for_review";
+type GenerationState = "generation_started" | "generation_in_progress" | "generation_failed" | "partial_success" | "validation_failed" | "persistence_failed" | "ready_for_review";
 
 function makeDraftId(): string {
   return `draft-${Math.random().toString(36).slice(2)}-${Date.now()}`;
@@ -491,6 +491,8 @@ export default function BuilderPage() {
         .join("\n");
       if (verification?.state === "generation_failed") {
         setGenerationState("generation_failed");
+      } else if (verification?.state === "validation_failed") {
+        setGenerationState("validation_failed");
       } else if (verification?.state === "partial_success") {
         setGenerationState("partial_success");
       } else if (reviewReady) {
@@ -501,7 +503,7 @@ export default function BuilderPage() {
     },
     onError: (err: Error) => {
       setPipelineActive(false);
-      setGenerationState("generation_failed");
+      setGenerationState(err.message.toLowerCase().includes("draft") ? "persistence_failed" : "generation_failed");
       toast({ title: "Copilot failed", description: err.message, variant: "destructive" });
     },
   });
@@ -832,6 +834,8 @@ export default function BuilderPage() {
               {generationState === "generation_in_progress" && <span className="text-violet-300">Generation in progress…</span>}
               {generationState === "generation_failed" && <span className="text-red-400">Generation failed or produced no valid draft. Please refine your prompt.</span>}
               {generationState === "partial_success" && <span className="text-amber-300">Generation partially succeeded. Review the available questions before publishing.</span>}
+              {generationState === "validation_failed" && <span className="text-amber-300">Generation output failed validation. No trusted draft changes were applied.</span>}
+              {generationState === "persistence_failed" && <span className="text-red-400">Draft persistence failed. Please retry to sync questions.</span>}
               {generationState === "ready_for_review" && <span className="text-emerald-400">Draft is ready for review and publish.</span>}
               {generationState === "generation_started" && !pipelineActive && <span className="text-slate-500">Ready to generate when you send a prompt.</span>}
             </div>

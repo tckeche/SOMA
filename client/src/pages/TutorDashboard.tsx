@@ -52,6 +52,15 @@ interface DashboardStats {
     dueDate: string | null;
     createdAt: string;
   }[];
+  studentInsights: {
+    studentId: string;
+    studentName: string;
+    assigned: number;
+    completed: number;
+    awaiting: number;
+    trend: "improving" | "declining" | "stable";
+    weakTopics: string[];
+  }[];
 }
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
@@ -299,6 +308,53 @@ export default function TutorDashboard() {
                 </div>
               </section>
             )}
+
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={SECTION_LABEL}>At Risk Students & Workload</h3>
+              </div>
+              {(stats?.studentInsights?.length ?? 0) === 0 ? (
+                <div className={`${CARD_CLASS} text-center py-10`}>
+                  <Users className="w-10 h-10 mx-auto text-slate-600 mb-3" />
+                  <p className="text-sm text-slate-400">No student insight data yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {stats!.studentInsights.slice(0, 8).map((s) => {
+                    const total = Math.max(1, s.assigned);
+                    const completedPct = Math.round((s.completed / total) * 100);
+                    const awaitingPct = Math.round((s.awaiting / total) * 100);
+                    const risk = s.trend === "declining" || s.weakTopics.length > 0;
+                    return (
+                      <div key={s.studentId} className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-slate-200">{s.studentName}</p>
+                            <p className={`text-[11px] ${risk ? "text-red-400" : "text-slate-500"}`}>
+                              Trend: {s.trend}{s.weakTopics.length ? ` · Weak topics: ${s.weakTopics.join(", ")}` : ""}
+                            </p>
+                          </div>
+                          <Badge className={`${risk ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"} text-[10px]`}>
+                            {risk ? "At risk" : "On track"}
+                          </Badge>
+                        </div>
+                        <div className="mt-3">
+                          <div className="h-2 rounded-full bg-slate-800 overflow-hidden flex">
+                            <div className="bg-emerald-500" style={{ width: `${completedPct}%` }} />
+                            <div className="bg-amber-500" style={{ width: `${awaitingPct}%` }} />
+                          </div>
+                          <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+                            <span>Assigned: {s.assigned}</span>
+                            <span>Completed: {s.completed}</span>
+                            <span>Awaiting: {s.awaiting}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
             <section>
               <div className="flex items-center justify-between mb-4">
