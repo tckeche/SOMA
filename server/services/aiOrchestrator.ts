@@ -13,8 +13,9 @@ const AI_FALLBACK_CHAIN: ModelConfig[] = [
   { provider: "anthropic", model: "claude-sonnet-4-6" },
 
   // --- TIER 2: GOOGLE GEMINI (IMMEDIATE WORKING BACKUP) ---
+  // gemini-2.5-flash is the only confirmed-working Gemini model on this API key.
+  // gemini-2.0-flash-001 is deprecated (404), gemini-2.0-flash has network issues.
   { provider: "google", model: "gemini-2.5-flash" },
-  { provider: "google", model: "gemini-2.0-flash-001" },
 
   // --- TIER 3: DEEPSEEK (BACKGROUND) ---
   { provider: "deepseek", model: "deepseek-chat" },
