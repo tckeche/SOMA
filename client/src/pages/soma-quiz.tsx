@@ -17,6 +17,7 @@ import 'katex/dist/katex.min.css';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import GraphPlot from "@/components/GraphPlot";
 import { authFetch } from "@/lib/supabase";
+import { emitSomaMutation } from "@/lib/realtimeEvents";
 
 export type StudentQuestion = {
   id: number;
@@ -336,6 +337,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
       if (answersCacheKey) localStorage.removeItem(answersCacheKey);
       queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/soma/quizzes", quizId, "check-submission"] });
+      emitSomaMutation({ type: "assessment_submitted", quizId });
     },
     onError: (err: any) => {
       toast({ title: "Submission failed", description: err.message || "Please try again.", variant: "destructive" });

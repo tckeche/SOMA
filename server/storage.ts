@@ -12,7 +12,7 @@ import {
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum } from "drizzle-orm";
+import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
 
 
 type SomaQuizBundleQuestionInput = {
@@ -438,7 +438,7 @@ class DatabaseStorage implements IStorage {
   async getSomaQuizzesByAuthor(authorId: string): Promise<SomaQuiz[]> {
     return this.database.select().from(somaQuizzes)
       .where(eq(somaQuizzes.authorId, authorId))
-      .orderBy(somaQuizzes.createdAt);
+      .orderBy(desc(somaQuizzes.createdAt));
   }
 
   async addTutorComment(comment: InsertTutorComment): Promise<TutorComment> {
