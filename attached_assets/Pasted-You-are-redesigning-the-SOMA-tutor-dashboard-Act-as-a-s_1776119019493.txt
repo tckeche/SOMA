@@ -1,0 +1,299 @@
+You are redesigning the SOMA tutor dashboard.
+
+Act as a senior product designer, senior UX designer, and senior frontend engineer. I want you to completely rethink and rebuild the tutor dashboard so it feels premium, elegant, modern, operationally useful, and beautifully composed.
+
+Do not just restyle the current dashboard.
+Do not keep the same structure and only change colors.
+Rethink the information architecture, layout, visual hierarchy, chart usage, spacing, and interactions so the dashboard feels like a refined premium product.
+
+The current dashboard problem
+
+The current dashboard feels poor because it relies too heavily on long repetitive full width cards, weak visual hierarchy, low information density, and low elegance. It feels like a list instead of a command centre. It surfaces too many low value items and not enough decision making information.
+
+The new tutor dashboard must feel like a premium command centre for a tutor.
+
+Core objective
+
+Build a dashboard that helps the tutor immediately understand:
+
+1. What needs attention now
+2. Which students are at risk
+3. Which submissions need review
+4. How the cohort is performing
+5. What workload is pending
+6. What action the tutor should take next
+
+Design direction
+
+The dashboard must feel:
+
+1. Premium
+2. Elegant
+3. Sophisticated
+4. Clean
+5. Modern
+6. Calm
+7. Purposeful
+
+It must not feel busy, flat, repetitive, or generic.
+
+Use the existing dark SOMA aesthetic as a base, but elevate it significantly.
+
+Visual language requirements
+
+1. Use a strong 12 column layout with balanced composition
+2. Use fewer, better cards instead of many repetitive ones
+3. Give the page stronger hierarchy through card sizing, spacing, typography, and alignment
+4. Use subtle gradients, soft glassy depth, premium shadows, clean borders, and carefully controlled glow
+5. Use accent colors intentionally, not everywhere
+6. Keep animations subtle, elegant, and fast
+7. Make the design look like premium modern SaaS, not a student portal template
+
+Do not let the decorative background compete with the content.
+If needed, tone down, blur, or simplify the background so the dashboard content becomes the focus.
+
+Information architecture for the new dashboard
+
+Build the dashboard with this structure:
+
+Section 1. Top header row
+
+Create a refined header area with:
+1. Dashboard title
+2. Short subtitle such as cohort overview and recent activity
+3. Primary call to action, Create Assessment
+4. Optional secondary quick action such as View Students or Review Queue
+
+This top area must feel polished and spacious.
+
+Section 2. Top summary cards
+
+Create a premium summary row with 4 to 5 compact but strong metric cards.
+
+Include:
+1. Active students
+2. Assessments awaiting submission
+3. Reviews pending
+4. Cohort average
+5. Weekly completion rate
+
+These cards must:
+1. Feel elegant and consistent
+2. Have strong iconography
+3. Use subtle motion and count up transitions
+4. Have better spacing and proportion than the current version
+
+Do not make them too small or too cramped.
+
+Section 3. Hero panel, Attention Required
+
+This is the most important section of the dashboard.
+
+Create an Attention Required panel that shows only the students who genuinely need intervention.
+
+Do not show a long list of every student.
+Only surface the top students needing attention, ideally 3 to 5.
+
+For each student in this panel, show:
+1. Name
+2. Risk status
+3. Trend direction
+4. Recurring weak topics
+5. A compact visual for assigned, completed, and awaiting assessments
+6. Last activity or urgency cue
+7. Quick action such as View Profile
+
+This panel must feel premium and actionable.
+
+Important:
+Do not use huge repetitive full width bars like the current version.
+Design this section either as:
+1. A beautiful stacked card list with compact information density, or
+2. A split layout with a lead risk card and smaller supporting cards
+
+The graphic for assigned, completed, and awaiting work must be elegant.
+Think compact segmented progress visual, mini horizontal distribution chart, or a polished micro chart.
+It must be beautiful and immediately understandable.
+
+The At Risk logic should reflect:
+1. Declining performance
+2. Repeated weakness in the same topic
+3. High awaiting workload
+4. Low submission rate
+5. Any meaningful negative trend in performance data
+
+Do not use decorative labels with no real logic behind them.
+
+Section 4. Review Queue and Recent Submissions
+
+Create a strong section for tutor workflow.
+
+This should include:
+1. Recent submissions needing review
+2. Recently completed work
+3. Score or performance result where available
+4. Submission timestamp
+5. Quick actions such as Review or Open
+
+This section should be compact, clean, and highly scannable.
+
+Use either:
+1. Tabs inside one card, such as Review Queue and Recent Submissions, or
+2. Two coordinated cards side by side
+
+Prioritize elegance, readability, and actionability.
+
+Section 5. Cohort performance overview
+
+Create a polished performance section showing how the cohort is doing overall.
+
+Possible content:
+1. Subject averages
+2. Weekly performance trend
+3. Topic weakness summary
+4. Completion rate trend
+
+Do not over clutter this section.
+Choose 2 or 3 views that are genuinely useful and render them beautifully.
+
+Recommended chart directions:
+1. Elegant vertical bar chart for subject performance
+2. Smooth line or area chart for recent trend
+3. Topic weakness heat strip or compact ranked list
+
+These charts must feel premium and modern, with great spacing and restraint.
+
+Section 6. Student workload panel
+
+I want a clear graphical view of each student’s workload and completion state.
+
+For each student, show:
+1. Number assigned
+2. Number completed
+3. Number awaiting completion
+4. Completion rate
+5. Last activity
+
+This must be graphical and elegant.
+
+Do not use a huge repeated card per student.
+Instead, build this as one of the following:
+1. A refined table with mini visual bars inside cells
+2. A card based roster grid with compact workload visuals
+3. A ranked operational list with great typography and micro charts
+
+This section should be easy to scan quickly and should not dominate the page visually.
+
+Section 7. Quick actions panel
+
+Create a compact premium quick actions area with actions such as:
+1. Create Assessment
+2. Assign to Students
+3. Review Submissions
+4. View Students
+5. Add Student
+
+This should feel premium and useful, not like generic buttons thrown on the page.
+
+Section 8. My recent assessments
+
+Redesign the recent assessments section so that it feels intentional.
+The current oversized lonely card treatment is weak.
+
+Use a compact elegant card list or carousel style layout that shows:
+1. Assessment title
+2. Subject
+3. Level
+4. Number assigned
+5. Submission status
+6. Quick actions
+
+This section should feel secondary to the key operational panels, but still polished.
+
+Important UX rules
+
+1. The dashboard must surface exceptions, not noise
+2. On track students with zero activity should not dominate the page
+3. The tutor should be able to understand what matters in under 5 seconds
+4. Every section must have a clear reason to exist
+5. Deep analytics should live inside student profiles, not overload the dashboard
+6. Use beautiful empty states when a section has no data
+7. Use elegant loading skeletons
+8. Use meaningful hover states and transitions
+9. All status colors must be consistent and restrained
+10. Typography hierarchy must be much stronger than it is now
+
+What not to do
+
+1. Do not keep the current long repetitive at risk list design
+2. Do not use clumsy full width bars for every student
+3. Do not cram too many charts into one screen
+4. Do not use loud colors or too many glows
+5. Do not make everything the same visual weight
+6. Do not let the background overpower the content
+7. Do not produce a generic dashboard template
+
+Design details I want you to apply
+
+1. Increase whitespace and rhythm throughout the page
+2. Improve card proportions so they feel luxurious
+3. Make headings cleaner and more refined
+4. Use smaller supporting text and stronger key figures
+5. Use subtle transparency and layered depth carefully
+6. Add tasteful motion such as fade in, slight upward reveal, hover lift, and animated chart drawing
+7. Keep motion subtle and sophisticated, not flashy
+
+Technical implementation guidance
+
+1. Inspect the current frontend stack and build using the same stack and conventions where sensible
+2. Reuse existing design tokens if available, but improve them where necessary
+3. Refactor the dashboard structure if needed to support a better layout
+4. Ensure responsiveness across desktop and laptop first, then tablet
+5. Keep the code clean and modular
+6. Use high quality chart components and style them elegantly
+7. Avoid performance heavy visual effects
+
+Data and logic requirements
+
+1. Only show real data, no fake placeholder insights unless the system has no data
+2. If no data exists, design elegant empty states
+3. At risk logic must be based on real trend and weak topic recurrence
+4. Workload visuals must reflect real assigned, completed, and awaiting counts
+5. Review queue must reflect real recent submissions or pending reviews
+
+Student profile rule
+
+Do not move deep analytics such as large radar coverage charts into the main dashboard.
+Those belong in the student profile page.
+The dashboard should stay clean and operational.
+
+Build process
+
+1. First audit the current tutor dashboard and identify what is visually weak and structurally weak
+2. Then redesign the dashboard architecture before implementing styling
+3. Then implement the new layout and sections
+4. Then refine the visuals, spacing, charts, and motion
+5. Then test the result for responsiveness, readability, and elegance
+
+Acceptance criteria
+
+The redesign is successful only if:
+
+1. The page feels premium and beautiful at first glance
+2. The dashboard has a clear focal hierarchy
+3. The Attention Required section is elegant and actionable
+4. Student workload is shown graphically in a compact and beautiful way
+5. Review queue and recent submissions are easy to scan
+6. Cohort metrics feel polished and meaningful
+7. Recent assessments no longer feel awkward or oversized
+8. The overall page feels like a command centre, not a list
+9. The visual design feels significantly more sophisticated than the current version
+10. The page remains clean, fast, and readable
+
+When you finish
+
+Give me:
+1. A short explanation of the new dashboard structure
+2. Why each section was included
+3. What you removed or de emphasized from the old version
+4. Any further refinements you recommend
