@@ -1653,6 +1653,78 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.post("/api/tutor/ai/intervention-insights", requireTutor, async (req, res) => {
+    try {
+      const { students } = req.body;
+      if (!Array.isArray(students) || students.length === 0) {
+        return res.json({ insights: [] });
+      }
+      const truncated = students.slice(0, 8);
+      const dataPayload = truncated.map((s: any) => ({
+        name: s.studentName,
+        trend: s.trend,
+        weakTopics: s.weakTopics,
+        assigned: s.assigned,
+        completed: s.completed,
+        awaiting: s.awaiting,
+      }));
+      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based intervention explanations. You MUST only reference data provided to you. Never fabricate trends, topics, or scores. Each explanation must be 1-2 sentences, specific, and actionable. Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
+      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided metrics:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
+
+      const { generateWithFallback } = await import("./services/aiOrchestrator.js");
+      const result = await generateWithFallback(systemPrompt, userPrompt);
+      let parsed: any[];
+      try {
+        const cleaned = result.data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        parsed = [];
+      }
+      res.json({ insights: parsed, model: result.metadata });
+    } catch (err: any) {
+      console.error("[AI Intervention Insights] Error:", err.message);
+      res.json({ insights: [], error: err.message });
+    }
+  });
+
+  app.post("/api/tutor/ai/student-summary", requireTutor, async (req, res) => {
+    try {
+      const { studentName, stats, topicPerformance, assignments } = req.body;
+      if (!studentName) return res.status(400).json({ message: "studentName required" });
+
+      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based academic summaries for tutors. You MUST only reference data provided. Never fabricate trends, topics, or scores. Return a JSON object with these fields:
+- "narrative" (string, 2-3 sentences summarising overall performance)
+- "weaknesses" (string, 1-2 sentences on recurring weak areas)
+- "improvements" (string, 1-2 sentences on positive trends or strengths)
+- "focusAreas" (array of strings, 2-4 suggested teaching focus topics)
+- "nextSteps" (string, 1-2 sentences on recommended next intervention)`;
+
+      const userPrompt = `Generate an academic summary for student "${studentName}" based on this data:
+
+Stats: ${JSON.stringify(stats || {})}
+Topic Performance: ${JSON.stringify(topicPerformance || [])}
+Recent Assignments (last 10): ${JSON.stringify((assignments || []).slice(0, 10).map((a: any) => ({
+        title: a.quizTitle, subject: a.quizSubject, score: a.score, maxScore: a.maxScore, status: a.assignmentStatus
+      })))}
+
+Return JSON object with fields: narrative, weaknesses, improvements, focusAreas, nextSteps`;
+
+      const { generateWithFallback } = await import("./services/aiOrchestrator.js");
+      const result = await generateWithFallback(systemPrompt, userPrompt);
+      let parsed: any;
+      try {
+        const cleaned = result.data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        parsed = null;
+      }
+      res.json({ summary: parsed, model: result.metadata });
+    } catch (err: any) {
+      console.error("[AI Student Summary] Error:", err.message);
+      res.json({ summary: null, error: err.message });
+    }
+  });
+
   // ─── Tutor Quiz Builder Routes (replaces /api/admin/* for tutors) ──
 
   // Session check for tutor auth

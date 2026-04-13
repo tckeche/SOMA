@@ -592,6 +592,16 @@ class DatabaseStorage implements IStorage {
       });
     }
 
+    const belowThresholdCount = insights.filter((s) => s.weakTopics.length > 0 || s.trend === "declining").length;
+    const topicWeaknessMap: Record<string, number> = {};
+    for (const s of insights) {
+      for (const t of s.weakTopics) {
+        topicWeaknessMap[t] = (topicWeaknessMap[t] || 0) + 1;
+      }
+    }
+    const weakestTopic = Object.entries(topicWeaknessMap)
+      .sort(([, a], [, b]) => b - a)[0]?.[0] || null;
+
     return {
       totalStudents,
       totalQuizzes: quizCountResult[0]?.cnt ?? 0,
@@ -599,6 +609,8 @@ class DatabaseStorage implements IStorage {
       recentSubmissions,
       pendingAssignments,
       studentInsights: insights.sort((a, b) => (b.awaiting + (b.trend === "declining" ? 2 : 0)) - (a.awaiting + (a.trend === "declining" ? 2 : 0))),
+      belowThresholdCount,
+      weakestTopic,
     };
   }
 
@@ -1038,7 +1050,7 @@ class MemoryStorage implements IStorage {
 
   async getDashboardStatsForTutor(tutorId: string) {
     const adoptedIds = this.tutorStudentsList.filter((ts) => ts.tutorId === tutorId).map((ts) => ts.studentId);
-    return { totalStudents: adoptedIds.length, totalQuizzes: 0, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [] };
+    return { totalStudents: adoptedIds.length, totalQuizzes: 0, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [], belowThresholdCount: 0, weakestTopic: null };
   }
 
 

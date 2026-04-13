@@ -1,0 +1,506 @@
+You are redesigning and rebuilding the SOMA tutor dashboard and the tutor facing student profile experience.
+
+Act as a senior product designer, senior UX strategist, senior frontend engineer, data visualization designer, and AI assisted analytics engineer.
+
+This is not a cosmetic redesign.
+This is a full rethink of the tutor operating experience.
+
+I want SOMA to feel like a premium academic control centre for a serious tutor.
+It must feel elegant, robust, sophisticated, glassy, data rich, and deeply purposeful.
+It must not feel gimmicky, empty, decorative, or like a student portal template.
+
+You must rebuild the tutor dashboard and the student profile page around one principle:
+
+Every component must help the tutor teach better, assess better, intervene faster, or understand the student more clearly.
+
+If a section does not help the tutor do that, remove it.
+
+Core product philosophy
+
+The tutor dashboard is a command centre.
+It is not a decorative analytics page.
+It is not a feed.
+It is not a vague overview.
+It must immediately tell the tutor:
+
+1. What needs action now
+2. Which students need intervention and why
+3. Which submissions need marking
+4. Which assessments are outstanding
+5. How the cohort is performing
+6. Where topic weakness is recurring
+7. What the tutor should do next
+
+The student profile page is a diagnostic teaching workspace.
+It must show real academic evidence, not gimmicks.
+It must help the tutor understand:
+1. How the student is performing
+2. Which topics are weak
+3. Which topics are improving
+4. What has been covered
+5. What has not been covered
+6. What kind of intervention is needed next
+
+Non negotiable design direction
+
+The visual design must be:
+1. Bold
+2. Elegant
+3. Striking
+4. Robust
+5. Sophisticated
+6. Premium
+7. Glassmorphic, but readable and controlled
+
+I want stronger colours, richer depth, better composition, more intentional glow, more refined gradients, better contrast, stronger card separation, and more luxurious spacing.
+
+Do not make it noisy.
+Do not make it cyberpunk.
+Do not make it childish.
+Do not make it gimmicky.
+
+Think premium dark mode academic intelligence platform with confident glass surfaces and precise information hierarchy.
+
+Glassmorphism requirements
+
+Use layered glass panels with:
+1. Soft but controlled blur
+2. Deeper translucent navy and midnight bases
+3. Carefully chosen accent colours for meaning
+4. Inner highlights and refined borders
+5. Stronger shadow separation between layers
+6. High readability at all times
+
+Maintain proper contrast for text, labels, chips, charts, icons, and controls.
+Do not let glow or blur reduce legibility.
+The interface must feel premium and serious, not hazy or washed out.
+
+Information architecture to implement
+
+PART 1. Tutor dashboard redesign
+
+Rebuild the tutor dashboard into these purposeful sections.
+
+Section A. Strategic top band
+
+At the very top, create a powerful summary band that surfaces the tutor’s critical operating state immediately.
+
+This must include:
+1. Active students
+2. Assessments awaiting submission
+3. Reviews pending
+4. Cohort average
+5. Completion rate this week
+6. Students below threshold
+7. Fastest falling topic or weakest cohort topic
+
+These should not be generic stat cards.
+Design them as premium command tiles with:
+1. Strong hierarchy
+2. Bold numbers
+3. Short labels
+4. Tiny sparkline or trend cue where appropriate
+5. Beautiful hover and reveal motion
+6. Immediate readability
+
+The tutor must understand the state of the cohort in under five seconds.
+
+Section B. Intervention Queue
+
+Do not call this “students needing attention.”
+
+Label it something stronger and more purposeful such as:
+Intervention Queue
+Priority Learners
+Teaching Focus
+Intervention Board
+
+Choose the best title, but keep it premium and serious.
+
+This is the hero section of the dashboard.
+
+Only surface students who matter right now.
+Do not show everyone.
+Rank and display the top few students requiring intervention based on real data.
+
+The ranking model must use real platform data such as:
+1. Falling scores
+2. Repeated weakness in the same topic
+3. Growing awaiting workload
+4. Low completion rate
+5. Missing submissions
+6. Deteriorating trend
+7. Low confidence in recently tested topics
+
+For each surfaced student show:
+1. Full name
+2. Risk or priority status
+3. Short AI assisted explanation of why the student appears here, based only on real data
+4. Recurring weak topics
+5. Assigned, completed, awaiting counts
+6. Submission reliability
+7. Trend direction
+8. Last activity
+9. Quick actions, View Profile, Assign Work, Review Latest, Message if applicable
+
+This section must feel like a real intervention surface, not a list of bars.
+
+Design approach:
+1. Use a refined stacked card layout or split hero panel
+2. Each student card should feel substantial, elegant, and information rich
+3. Use mini visualizations intelligently
+4. Do not use those current long empty bars that say very little
+5. Use stronger color meaning, red, amber, green, indigo, but in a premium restrained way
+
+Section C. Review Queue and Submission Flow
+
+Create a highly usable review area that helps the tutor move directly into marking.
+
+This must show:
+1. Newest submissions
+2. Pending review items
+3. Assessment title
+4. Student
+5. Subject and level
+6. Submission time
+7. Time spent if available
+8. Score if already auto marked
+9. Review priority
+10. Quick action to open
+
+This should be one of the most actionable sections on the page.
+
+Use a two state design such as:
+Review Queue
+Recent Submissions
+
+Make it elegant, scannable, and operational.
+
+Section D. Cohort Signals
+
+Create a clean but powerful cohort insight area.
+
+Only include visuals that genuinely help teaching decisions.
+
+This section should contain:
+1. Subject performance overview
+2. Weak topic leaderboard across the cohort
+3. Cohort trend over recent assessments
+4. Completion trend or participation signal
+
+Do not overload this area.
+Make it clean and sharp.
+
+Preferred chart forms:
+1. Refined vertical bar chart for subject averages
+2. Elegant line or area chart for performance trend
+3. Ranked topic weakness panel
+4. Compact contribution or variance visuals where helpful
+
+Every chart must have a clear question it answers.
+
+Section E. Cohort Workload Matrix
+
+The tutor needs to see workload clearly, but the current table is too flat and lifeless.
+
+Redesign this as a more premium and useful operational matrix.
+
+For each student show:
+1. Name
+2. Assigned
+3. Completed
+4. Awaiting
+5. Completion rate
+6. Last activity
+7. Current trend
+8. Quick access to profile
+
+This must be visually stronger and easier to scan.
+
+Do not show raw text only.
+Use elegant embedded visuals such as:
+1. Mini segmented workload bars
+2. Completion ring plus count
+3. Tiny trend sparkline
+4. Status chip
+5. Compact heat indicators
+
+Design it as a serious operations table with premium styling, not a plain admin grid.
+
+Only show names, no email addresses.
+
+Section F. Quick actions
+
+Keep a compact action area with:
+1. Create Assessment
+2. Assign to Students
+3. Review Submissions
+4. View Students
+5. Add Student
+
+These actions should feel premium, weighted, and obvious.
+
+Section G. Recent assessments
+
+Redesign this section completely.
+It currently feels empty and awkward.
+
+Show recent assessments as compact premium cards or a refined horizontal list.
+
+For each assessment show:
+1. Title
+2. Subject
+3. Level
+4. Number assigned
+5. Number submitted
+6. Completion rate
+7. Last updated
+8. Quick actions
+
+Do not let this section visually dominate the page.
+It is supportive, not primary.
+
+PART 2. Student profile redesign
+
+The student profile page must be rebuilt as a proper academic profile, not a gimmicky page.
+
+It must feel like a diagnostic workspace for the tutor.
+
+Structure the profile clearly into these areas.
+
+Section A. Student identity header
+
+Show:
+1. Full name
+2. Subject and level context where relevant
+3. Overall current standing
+4. Recent trend
+5. Completion reliability
+6. Average score
+7. Last activity
+8. Priority flag if needed
+
+This header must feel premium and clear.
+
+Section B. Performance by topic
+
+The current bar graph that says little must go.
+
+Replace it with a serious and interpretable topic performance view.
+
+This section must show:
+1. Topic name
+2. Average score on that topic
+3. Number of assessments touching that topic
+4. Trend for that topic
+5. Confidence or evidence strength
+6. Whether the topic is improving, stable, or declining
+
+Preferred visual form:
+A ranked horizontal performance table with embedded bars, trend arrows, evidence counts, and score bands.
+
+This is better than a decorative chart because it actually says something.
+
+The tutor must instantly see:
+1. Strongest topics
+2. Weakest topics
+3. Most volatile topics
+4. Topics with too little evidence
+
+Section C. Coverage intelligence
+
+Coverage graphs must be properly made.
+
+Do not create fake or decorative coverage visuals.
+
+Coverage must be computed from real syllabus mapping and real assessment data, including:
+1. Which topics have been assessed
+2. How often they have been assessed
+3. How recently they have been assessed
+4. The depth of assessment coverage
+5. The student’s performance within those topics
+
+I want this area to feel premium and analytically serious.
+
+Use a dual system:
+
+1. A beautiful syllabus coverage overview visual
+2. A detailed topic coverage matrix below it
+
+For the overview visual:
+1. Use a polygon or radar style chart only if the syllabus topic count is low enough for clarity
+2. If the topic count is too high, automatically switch to a more readable segmented radial or matrix view
+3. Never force a radar chart where it becomes unreadable
+4. The chart must look high quality, deliberate, and refined
+5. Use layered glass and premium glow treatments carefully
+
+For the detailed coverage matrix:
+Show each major topic with:
+1. Coverage percentage
+2. Number of questions attempted
+3. Number of assessments touching the topic
+4. Last assessed date
+5. Student performance in that topic
+6. Confidence of the coverage estimate
+
+This section must be one of the strongest parts of the profile.
+
+Section D. Assessment history
+
+Show a clean evidence based timeline of recent assessments with:
+1. Title
+2. Date
+3. Score
+4. Time spent
+5. Topics covered
+6. Tutor feedback snippet
+7. Quick open action
+
+Section E. AI academic summary
+
+Use AI to help interpret the real data, but not to invent data.
+
+This must be a serious assistive layer, not a guess generator.
+
+The AI model may use platform data to generate:
+1. Concise performance narrative
+2. Recurrent weakness summary
+3. Improvement trend summary
+4. Suggested teaching focus areas
+5. Suggested next assessment target
+6. Suggested intervention priority
+
+Critical rule:
+AI must only interpret actual platform data.
+It must not fabricate trends, scores, weaknesses, or recommendations.
+Every AI statement must be traceable to real inputs in the system.
+
+This AI layer must be human in the loop.
+The tutor remains the final decision maker.
+The AI should support interpretation, not replace judgment.
+
+PART 3. AI assisted dashboard intelligence
+
+I want AI in the dashboard, but used properly.
+
+Use ChatGPT or another suitable model as an intelligence and explanation layer over real website data.
+
+AI should help with:
+1. Ranking intervention priority
+2. Summarizing risk factors
+3. Explaining why a learner is in the intervention queue
+4. Summarizing topic weakness recurrence
+5. Generating short narrative insights from actual performance data
+6. Recommending where tutor attention should go next
+
+AI must not:
+1. Guess missing facts
+2. Invent trends
+3. Hallucinate weak topics
+4. Replace actual analytics logic
+5. Drive decisions without transparent evidence
+
+Build the AI system so that:
+1. Raw metrics are computed deterministically from the platform database
+2. AI receives those real metrics as input
+3. AI produces explanation and prioritization support
+4. The tutor can always inspect the underlying signals
+5. The output is overridable and transparent
+
+PART 4. Add Student sub window
+
+In the Add Student mini window or modal:
+
+1. Show only student name and surname
+2. Do not show email addresses
+3. Do not show usernames
+4. Do not show raw IDs
+5. Make the selection list stable, tidy, elegant, and easy to scan
+6. Sort naturally by name unless another clearly better ordering exists
+
+This is non negotiable.
+
+PART 5. Visual system requirements
+
+The whole experience must feel significantly more premium than it does now.
+
+Implement:
+1. More striking accent colors
+2. Better glass depth
+3. Better layering
+4. Stronger visual hierarchy
+5. Cleaner typography scale
+6. Better whitespace rhythm
+7. Stronger composition across columns and rows
+8. Softer but clearer chart glow
+9. Richer microinteractions
+10. Better card states, hover, focus, active, selected
+
+Color system guidance:
+1. Deep navy and midnight as main base
+2. Violet or indigo for primary actions
+3. Emerald for healthy completion or strong performance
+4. Amber for caution
+5. Crimson for urgent intervention
+6. Cyan or electric blue for analytical highlights where appropriate
+
+Do not overuse all colours at once.
+They must be purposeful and controlled.
+
+PART 6. Layout principles
+
+1. Avoid long scroll fatigue
+2. Fit the most important information above the fold on desktop
+3. Put highest value information where the eye lands first
+4. Use progressive disclosure for secondary detail
+5. Remove low value noise
+6. Do not display sections that communicate nothing
+7. Give the tutor immediate routes into action
+
+PART 7. What to remove or replace
+
+Remove or redesign any of the following if they remain weak:
+1. Meaningless bars
+2. Repetitive full width student strips
+3. Empty decorative cards
+4. Analytics that do not support action
+5. Cards that repeat information without adding insight
+6. Overly vague charts
+7. Student profile widgets that do not help diagnosis or intervention
+
+PART 8. Engineering and data requirements
+
+1. Use only real data from the platform
+2. Compute metrics deterministically in the application layer or backend
+3. Use AI only after the structured metrics are produced
+4. Make all charts responsive and high performance
+5. Use elegant loading states and empty states
+6. Ensure everything works together coherently
+7. Ensure all sections update correctly with live data
+8. Ensure chart legends, labels, scales, and tooltips are actually useful
+9. Keep code modular, maintainable, and consistent with the existing stack
+
+PART 9. Final acceptance criteria
+
+This redesign is successful only if:
+
+1. The dashboard feels like a serious tutor control centre
+2. The most important information is visible immediately
+3. The intervention area is truly actionable and evidence based
+4. The student workload and completion state are easy to understand
+5. The review queue speeds up tutor workflow
+6. The student profile feels robust, elegant, and diagnostic
+7. Topic performance is clearly stated and easy to interpret
+8. Coverage graphs are properly made and based on real data
+9. AI assisted insights are grounded in actual platform data only
+10. The visual design feels premium, striking, and sophisticated
+11. The add student modal shows only name and surname
+12. Nothing remains on the dashboard unless it helps the tutor teach or assess better
+
+When you finish, give me:
+
+1. A short explanation of the new dashboard structure
+2. A short explanation of the new student profile structure
+3. Which old components you removed or downgraded
+4. How the AI assisted analytics layer works
+5. Any further refinements you recommend

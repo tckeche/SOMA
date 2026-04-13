@@ -275,7 +275,10 @@ export default function TutorStudents() {
             ) : (
               <>
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                  {[...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b))).map((student) => (
+                  {[...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b))).map((student) => {
+                    const name = formatStudentName(student);
+                    const si = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+                    return (
                     <button
                       key={student.id}
                       onClick={() => toggleStudentSelection(student.id)}
@@ -291,11 +294,13 @@ export default function TutorStudents() {
                       }`}>
                         {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-200">{formatStudentName(student)}</p>
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[10px] font-bold text-emerald-300 shrink-0">
+                        {si}
                       </div>
+                      <p className="text-sm font-medium text-slate-200">{name}</p>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
                 <button
                   onClick={() => adoptMutation.mutate(Array.from(selectedStudentIds))}

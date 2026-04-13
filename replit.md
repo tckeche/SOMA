@@ -35,9 +35,9 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - `client/src/pages/StudentDashboard.tsx` - Student dashboard: available quizzes via auth-gated `/api/quizzes/available`, completed items (soma reports only), subject donut charts, AI analysis.
 - `client/src/pages/StudentAuth.tsx` - Student login/signup with Supabase Auth (glassmorphism UI)
 - `client/src/components/ProtectedRoute.tsx` - Auth-gated route wrapper
-- `client/src/pages/TutorDashboard.tsx` - Tutor analytics dashboard with cohort donut charts, stat cards, recent submissions feed
-- `client/src/pages/TutorStudents.tsx` - Tutor student roster with adopt/remove, search
-- `client/src/pages/TutorStudentDetail.tsx` - Student drill-down: assessment history, private tutor notes
+- `client/src/pages/TutorDashboard.tsx` - Premium "Command Centre" dashboard: 7 command tiles (active students, awaiting submission, reviews pending, cohort average, completion rate, below threshold, weakest topic), AI-powered Intervention Queue with risk cards and GPT-4o explanations, tabbed Review Queue + Pending Submissions, Subject Performance bars, Recurring Weak Topics leaderboard, Cohort Workload Matrix table, Quick Actions, Recent Assessments. Deep glassmorphism UI.
+- `client/src/pages/TutorStudents.tsx` - Tutor student roster with adopt/remove, search. Add Student modal shows only name/surname (no emails).
+- `client/src/pages/TutorStudentDetail.tsx` - Diagnostic teaching workspace: identity header with trend/stats, Topic Performance table with score bars/trends/evidence badges, Coverage Intelligence with coverage bars, Assessment History timeline, AI Academic Summary (on-demand GPT-4o analysis of real data), Private Notes.
 - `client/src/pages/TutorAssessments.tsx` - Tutor assessment management with assign-to-students modal
 - `client/src/pages/SuperAdminDashboard.tsx` - Super admin global management. Route: `/super-admin`
 - `client/src/pages/soma-quiz.tsx` - Student quiz engine
@@ -71,6 +71,8 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - `PUT /api/tutor/quizzes/:quizId/draft` - Save (replace) entire draft array to in-memory store
 - `POST /api/tutor/quizzes/:quizId/publish` - Publish draft to soma_questions (deletes existing, inserts draft, clears draft store)
 - `GET /api/tutor/*` - Tutor endpoints (students, performance, dashboard-stats, comments, quizzes/:quizId/reports)
+- `POST /api/tutor/ai/intervention-insights` - AI-powered intervention explanations for at-risk students (sends real metrics to GPT-4o, returns per-student explanations)
+- `POST /api/tutor/ai/student-summary` - AI-powered academic summary for student profile (narrative, weaknesses, improvements, focusAreas, nextSteps)
 - `GET /api/super-admin/*` - Super admin endpoints (users, quizzes, delete)
 
 ### Key Features
@@ -84,7 +86,8 @@ A full-stack educational assessment platform (SOMA). Students take interactive M
 - **AI Copilot (Draft Architecture)**: Builder page uses a draft layer — copilot never writes directly to `soma_questions`. Instead it returns structured actions (`ADD`, `REPLACE_ALL`, `REPLACE_SELECTED`, `DELETE`, `REORDER`, `NONE`) applied to an in-memory `draftQuestions` state. Drafts are auto-saved to the server's in-memory `draftStore` (`Map<quizId, DraftQuestion[]>`). The explicit "Save & Publish" button commits the draft to `soma_questions` via `POST /api/tutor/quizzes/:id/publish`.
 - **AI Orchestrator**: Centralized dynamic fallback chain (`server/services/aiOrchestrator.ts`). Model order: GPT-4o (primary) → Claude claude-sonnet-4-6 → Gemini 2.5 Flash → o3-mini → DeepSeek → GPT-4o-mini. Reasoning models (o-series) auto-detected to skip unsupported `temperature` param. Maker-Checker pipeline in `server/services/aiPipeline.ts`.
 - **Syllabus grounding**: Syllabus PDFs are stored as hard files in the Replit workspace (not uploaded via the builder UI). The AI reads from these files at generation time. The builder's syllabus upload tab has been removed.
-- **Tutor Portal**: Multi-page navigation (Dashboard, Students, Assessments) with analytics, student management, comments.
+- **Tutor Portal**: Multi-page navigation (Dashboard, Students, Assessments). Dashboard is a premium "Command Centre" with 7 KPI tiles, AI-powered Intervention Queue, Review Queue, Subject Performance charts, Recurring Weak Topics, Cohort Workload Matrix, Quick Actions, Recent Assessments. Student profile is a diagnostic workspace with topic performance table, coverage intelligence, assessment history, AI academic summary (on-demand), and private notes. Add Student modal shows only name/surname.
+- **AI Dashboard Intelligence**: Two AI endpoints for tutor analytics. `/api/tutor/ai/intervention-insights` generates per-student intervention explanations from real metrics. `/api/tutor/ai/student-summary` generates academic narratives, weakness analysis, focus areas, and next steps from real assessment data. Both use `generateWithFallback()` with the GPT-4o primary chain. AI output is always grounded in real platform data — never fabricated.
 - **Super Admin Dashboard**: Global management with user/quiz data tables, hard delete.
 - **Legacy V1/V2 Purge Complete**: All legacy `quizzes`, `questions`, `students`, `submissions` tables, routes, storage methods, and frontend pages (`quiz.tsx`, `home.tsx`, `admin.tsx`, `analytics.tsx`) have been removed. The builder now creates soma quizzes directly.
 
