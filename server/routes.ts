@@ -2030,6 +2030,20 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         normalisedQuestions,
         structured.positions,
       );
+      const beforeCount = currentDraft.length;
+      const afterCount = simulatedDraft.length;
+      const changed = JSON.stringify(currentDraft) !== JSON.stringify(simulatedDraft);
+      const replaceablePositions = structured.positions
+        .map((p) => p - 1)
+        .filter((idx) => idx >= 0 && idx < currentDraft.length).length;
+      const appliedCount = ({
+        ADD: normalisedQuestions.length,
+        REPLACE_ALL: normalisedQuestions.length,
+        REPLACE_SELECTED: Math.min(replaceablePositions, normalisedQuestions.length),
+        DELETE: beforeCount - afterCount,
+        REORDER: changed ? beforeCount : 0,
+        NONE: 0,
+      } as Record<CopilotActionType, number>)[structured.action];
       const graphPositionsInDraft = simulatedDraft
         .map((q, i) => ({ pos: i + 1, isGraph: q.questionType === "graph" && q.graphSpec != null }))
         .filter((x) => x.isGraph)
@@ -2041,11 +2055,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       // ── Step 4: Build an honest verified reply (based on actual draft state,
       //    not the AI's claimed narrative)
       const actionVerb = {
-        ADD: `Added ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
-        REPLACE_ALL: `Replaced all questions (${normalisedQuestions.length} new)`,
-        REPLACE_SELECTED: `Replaced ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
-        DELETE: `Removed ${structured.positions.length} question${structured.positions.length !== 1 ? "s" : ""}`,
-        REORDER: "Reordered questions",
+        ADD: `Added ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        REPLACE_ALL: `Replaced draft with ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        REPLACE_SELECTED: `Replaced ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        DELETE: `Removed ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        REORDER: appliedCount > 0 ? "Reordered draft questions" : "Could not reorder draft with the provided positions",
         NONE: "",
       }[structured.action];
 
@@ -2075,9 +2089,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
+      const verificationState: "generation_failed" | "partial_success" | "ready_for_review" = (
+        structured.action === "NONE" || appliedCount === 0
+      ) ? "generation_failed" : (
+        structured.action === "REPLACE_SELECTED" && appliedCount < normalisedQuestions.length
+      ) ? "partial_success" : "ready_for_review";
+
+      const reviewReady = afterCount > 0;
       const replySuffix = actionVerb
-        ? `\n\n**Draft action:** ${actionVerb}. Click "Save & Publish" when you're happy with the full set.`
-        : "";
+        ? `\n\n**Draft action:** ${actionVerb}. Draft count is now ${afterCount}. ${reviewReady ? 'Open Review to inspect questions, then publish when satisfied.' : 'No reviewable questions are currently in draft.'}`
+        : `\n\n**Draft action:** No changes were applied to your draft.`;
 
       const summary = buildCopilotSummary({
         drafts: normalisedQuestions.map((q) => ({
@@ -2100,6 +2121,15 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         action: structured.action,
         questions: normalisedQuestions,
         positions: structured.positions,
+        verification: {
+          state: verificationState,
+          beforeCount,
+          afterCount,
+          appliedCount,
+          reviewReady,
+          persistedToDatabase: false,
+          persistedToDraftStore: changed,
+        },
         // Legacy field for backward-compat (builder.tsx migration)
         drafts: normalisedQuestions.map((q) => ({
           prompt_text: q.stem,

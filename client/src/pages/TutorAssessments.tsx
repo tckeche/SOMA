@@ -278,6 +278,9 @@ export default function TutorAssessments() {
   const [confirmDelete, setConfirmDelete] = useState<{ quizId: number; title: string } | null>(null);
   const [confirmDeleteQuestion, setConfirmDeleteQuestion] = useState<{ questionId: number; stem: string } | null>(null);
   const [reportSortBy, setReportSortBy] = useState<"student" | "time_allocated" | "time_submitted">("time_submitted");
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
+  const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
+  const [allocationDateFilter, setAllocationDateFilter] = useState("");
 
   const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -551,6 +554,21 @@ export default function TutorAssessments() {
               const avgScore = reports.length > 0 ? Math.round(reports.reduce((s, r) => s + r.score, 0) / reports.length) : 0;
               const avgPct = reports.length > 0 && maxScore > 0 ? Math.round((avgScore / maxScore) * 100) : 0;
               const currentAssignments = isExpanded ? quizAssignments : [];
+              const filteredAssignments = currentAssignments.filter((a) => {
+                if (assignmentStudentFilter !== "all" && a.studentId !== assignmentStudentFilter) return false;
+                if (assignmentStatusFilter === "submitted" && a.status !== "submitted") return false;
+                if (assignmentStatusFilter === "not_submitted" && a.status === "submitted") return false;
+                if (allocationDateFilter) {
+                  const created = new Date(a.createdAt);
+                  const selected = new Date(`${allocationDateFilter}T00:00:00`);
+                  if (
+                    created.getUTCFullYear() !== selected.getUTCFullYear() ||
+                    created.getUTCMonth() !== selected.getUTCMonth() ||
+                    created.getUTCDate() !== selected.getUTCDate()
+                  ) return false;
+                }
+                return true;
+              });
 
               return (
                 <div key={quiz.id} className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl overflow-hidden" data-testid={`quiz-card-${quiz.id}`}>
@@ -613,7 +631,7 @@ export default function TutorAssessments() {
                       {/* Assigned Students Section */}
                       {(() => {
                         const currentAssignments = expandedQuiz === quiz.id ? quizAssignments : [];
-                        const pendingAssignments = currentAssignments.filter(a => a.status === "pending");
+                        const pendingAssignments = filteredAssignments.filter(a => a.status === "pending");
                         if (assignmentsLoading) return null;
                         if (pendingAssignments.length === 0) return null;
                         return (
@@ -638,6 +656,20 @@ export default function TutorAssessments() {
                                   {pendingAssignments.length} pending
                                 </span>
                               </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <select value={assignmentStudentFilter} onChange={(e) => setAssignmentStudentFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300">
+                                <option value="all">All students</option>
+                                {currentAssignments.map((a) => (
+                                  <option key={a.studentId} value={a.studentId}>{a.student.displayName || a.student.email}</option>
+                                ))}
+                              </select>
+                              <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as any)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300">
+                                <option value="all">All statuses</option>
+                                <option value="submitted">Submitted</option>
+                                <option value="not_submitted">Not submitted</option>
+                              </select>
+                              <input type="date" value={allocationDateFilter} onChange={(e) => setAllocationDateFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300" />
                             </div>
                             <div className="space-y-1.5">
                               {pendingAssignments.map(assignment => (
