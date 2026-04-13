@@ -12,7 +12,7 @@ import {
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum } from "drizzle-orm";
+import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
 
 
 type SomaQuizBundleQuestionInput = {
@@ -101,6 +101,7 @@ export interface IStorage {
     cohortAverages: { subject: string; average: number; count: number }[];
     recentSubmissions: { reportId: number; studentName: string; score: number; quizTitle: string; subject: string | null; createdAt: string; startedAt: string | null; completedAt: string | null }[];
     pendingAssignments: { assignmentId: number; quizId: number; quizTitle: string; subject: string | null; studentId: string; studentName: string; dueDate: string | null; createdAt: string }[];
+    studentInsights: { studentId: string; studentName: string; assigned: number; completed: number; awaiting: number; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[];
   }>;
 
   getAllSomaUsers(): Promise<SomaUser[]>;
@@ -438,7 +439,7 @@ class DatabaseStorage implements IStorage {
   async getSomaQuizzesByAuthor(authorId: string): Promise<SomaQuiz[]> {
     return this.database.select().from(somaQuizzes)
       .where(eq(somaQuizzes.authorId, authorId))
-      .orderBy(somaQuizzes.createdAt);
+      .orderBy(desc(somaQuizzes.createdAt));
   }
 
   async addTutorComment(comment: InsertTutorComment): Promise<TutorComment> {
@@ -461,12 +462,18 @@ class DatabaseStorage implements IStorage {
     const totalStudents = adoptedIds.length;
 
     if (totalStudents === 0) {
-      const tutorQuizzes = await this.database.select({ id: somaQuizzes.id }).from(somaQuizzes);
-      return { totalStudents: 0, totalQuizzes: tutorQuizzes.length, cohortAverages: [], recentSubmissions: [], pendingAssignments: [] };
+      const tutorQuizzes = await this.database
+        .select({ id: somaQuizzes.id })
+        .from(somaQuizzes)
+        .where(eq(somaQuizzes.authorId, tutorId));
+      return { totalStudents: 0, totalQuizzes: tutorQuizzes.length, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [] };
     }
 
     const [quizCountResult, subjectAvgRows, recentRows, pendingRows] = await Promise.all([
-      this.database.select({ cnt: sql<number>`count(*)::int` }).from(somaQuizzes),
+      this.database
+        .select({ cnt: sql<number>`count(*)::int` })
+        .from(somaQuizzes)
+        .where(eq(somaQuizzes.authorId, tutorId)),
 
       this.database
         .select({
@@ -477,7 +484,10 @@ class DatabaseStorage implements IStorage {
         })
         .from(somaReports)
         .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
-        .where(inArray(somaReports.studentId, adoptedIds))
+        .where(and(
+          inArray(somaReports.studentId, adoptedIds),
+          eq(somaQuizzes.authorId, tutorId),
+        ))
         .groupBy(sql`coalesce(${somaQuizzes.subject}, 'General')`),
 
       this.database
@@ -495,7 +505,10 @@ class DatabaseStorage implements IStorage {
         .from(somaReports)
         .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
         .leftJoin(somaUsers, eq(somaReports.studentId, somaUsers.id))
-        .where(inArray(somaReports.studentId, adoptedIds))
+        .where(and(
+          inArray(somaReports.studentId, adoptedIds),
+          eq(somaQuizzes.authorId, tutorId),
+        ))
         .orderBy(sql`${somaReports.createdAt} desc`)
         .limit(10),
 
@@ -516,6 +529,7 @@ class DatabaseStorage implements IStorage {
         .where(and(
           inArray(quizAssignments.studentId, adoptedIds),
           eq(quizAssignments.status, "pending"),
+          eq(somaQuizzes.authorId, tutorId),
         ))
         .orderBy(sql`${quizAssignments.createdAt} desc`),
     ]);
@@ -546,12 +560,68 @@ class DatabaseStorage implements IStorage {
       createdAt: r.assignedAt.toISOString(),
     }));
 
+    const insights: { studentId: string; studentName: string; assigned: number; completed: number; awaiting: number; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[] = [];
+    for (const sid of adoptedIds) {
+      const [student] = await this.database.select().from(somaUsers).where(eq(somaUsers.id, sid));
+      const studentAssignments = await this.database
+        .select({ status: quizAssignments.status })
+        .from(quizAssignments)
+        .innerJoin(somaQuizzes, eq(quizAssignments.quizId, somaQuizzes.id))
+        .where(and(
+          eq(quizAssignments.studentId, sid),
+          eq(somaQuizzes.authorId, tutorId),
+        ));
+      const assigned = studentAssignments.length;
+      const completed = studentAssignments.filter((a) => a.status === "completed").length;
+      const awaiting = studentAssignments.filter((a) => a.status !== "completed").length;
+
+      const reportRows = await this.database
+        .select({ score: somaReports.score, quizId: somaReports.quizId, subject: somaQuizzes.subject })
+        .from(somaReports)
+        .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+        .where(and(
+          eq(somaReports.studentId, sid),
+          eq(somaQuizzes.authorId, tutorId),
+        ))
+        .orderBy(desc(somaReports.createdAt))
+        .limit(6);
+      const recent = reportRows.slice(0, 3).map((r) => r.score);
+      const prev = reportRows.slice(3, 6).map((r) => r.score);
+      const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+      const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : recentAvg;
+      const trend: "improving" | "declining" | "stable" = recentAvg - prevAvg > 5 ? "improving" : prevAvg - recentAvg > 5 ? "declining" : "stable";
+
+      const weakTopics = Object.entries(reportRows.reduce<Record<string, { s: number; c: number }>>((acc, row) => {
+        const k = row.subject || "General";
+        if (!acc[k]) acc[k] = { s: 0, c: 0 };
+        acc[k].s += row.score;
+        acc[k].c += 1;
+        return acc;
+      }, {}))
+        .map(([topic, v]) => ({ topic, avg: v.c ? v.s / v.c : 0 }))
+        .filter((x) => x.avg < 55)
+        .sort((a, b) => a.avg - b.avg)
+        .map((x) => x.topic)
+        .slice(0, 3);
+
+      insights.push({
+        studentId: sid,
+        studentName: student?.displayName || student?.email || "Student",
+        assigned,
+        completed,
+        awaiting,
+        trend,
+        weakTopics,
+      });
+    }
+
     return {
       totalStudents,
       totalQuizzes: quizCountResult[0]?.cnt ?? 0,
       cohortAverages,
       recentSubmissions,
       pendingAssignments,
+      studentInsights: insights.sort((a, b) => (b.awaiting + (b.trend === "declining" ? 2 : 0)) - (a.awaiting + (a.trend === "declining" ? 2 : 0))),
     };
   }
 
@@ -991,7 +1061,7 @@ class MemoryStorage implements IStorage {
 
   async getDashboardStatsForTutor(tutorId: string) {
     const adoptedIds = this.tutorStudentsList.filter((ts) => ts.tutorId === tutorId).map((ts) => ts.studentId);
-    return { totalStudents: adoptedIds.length, totalQuizzes: 0, cohortAverages: [], recentSubmissions: [], pendingAssignments: [] };
+    return { totalStudents: adoptedIds.length, totalQuizzes: 0, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [] };
   }
 
 

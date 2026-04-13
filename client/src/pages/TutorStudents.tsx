@@ -15,6 +15,18 @@ interface SomaUser {
   role: string;
 }
 
+function formatStudentName(student: SomaUser): string {
+  const fromDisplay = (student.displayName || "").trim();
+  if (fromDisplay) return fromDisplay;
+  const local = student.email.split("@")[0] || "Student";
+  return local
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
 const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
 
 export default function TutorStudents() {
@@ -92,10 +104,11 @@ export default function TutorStudents() {
   }, []);
 
   const filteredStudents = useMemo(() => {
-    if (!searchQuery.trim()) return adoptedStudents;
+    const sorted = [...adoptedStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b)));
+    if (!searchQuery.trim()) return sorted;
     const q = searchQuery.toLowerCase();
-    return adoptedStudents.filter((s) =>
-      (s.displayName || "").toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
+    return sorted.filter((s) =>
+      formatStudentName(s).toLowerCase().includes(q)
     );
   }, [adoptedStudents, searchQuery]);
 
@@ -211,7 +224,7 @@ export default function TutorStudents() {
         ) : (
           <div className="grid gap-3">
             {filteredStudents.map((student) => {
-              const name = student.displayName || student.email.split("@")[0] || "Student";
+              const name = formatStudentName(student);
               const si = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
               return (
                 <div
@@ -224,7 +237,6 @@ export default function TutorStudents() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-200">{name}</p>
-                    <p className="text-xs text-slate-400">{student.email}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
@@ -263,7 +275,7 @@ export default function TutorStudents() {
             ) : (
               <>
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                  {availableStudents.map((student) => (
+                  {[...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b))).map((student) => (
                     <button
                       key={student.id}
                       onClick={() => toggleStudentSelection(student.id)}
@@ -280,8 +292,7 @@ export default function TutorStudents() {
                         {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-200">{student.displayName || "Student"}</p>
-                        <p className="text-xs text-slate-400">{student.email}</p>
+                        <p className="text-sm font-medium text-slate-200">{formatStudentName(student)}</p>
                       </div>
                     </button>
                   ))}

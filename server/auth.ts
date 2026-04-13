@@ -51,6 +51,7 @@ export async function verifySupabaseToken(token: string): Promise<{ sub: string;
 
   try {
     const resp = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      signal: AbortSignal.timeout(10_000),
       headers: { Authorization: `Bearer ${token}`, apikey: process.env.VITE_SUPABASE_ANON_KEY || "" },
     });
     if (!resp.ok) return null;
