@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { supabase, authFetch } from "@/lib/supabase";
+import { AuthRequestError, supabase, authFetch, withTimeout } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
@@ -16,6 +16,8 @@ export default function StudentAuth() {
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState<{ email?: string; password?: string }>({});
   const [authError, setAuthError] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
+  const activeRequestId = useRef(0);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -30,7 +32,13 @@ export default function StudentAuth() {
 
   const switchMode = (newMode: AuthMode) => {
     resetForm();
+    setStatusNote(null);
     setMode(newMode);
+  };
+
+  const nextRequestId = () => {
+    activeRequestId.current += 1;
+    return activeRequestId.current;
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -48,23 +56,29 @@ export default function StudentAuth() {
       return;
     }
     setFormErrors({});
+    const requestId = nextRequestId();
+    setAuthError(null);
+    setStatusNote("Signing you in securely...");
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await withTimeout(() => supabase.auth.signInWithPassword({
         email,
         password,
-      });
+      }), { timeoutMs: 15000, stage: "supabase_signin" });
+      if (requestId !== activeRequestId.current) return;
 
       if (error) throw error;
 
       if (data.user) {
+        setStatusNote("Finalizing your account...");
         const syncRes = await authFetch("/api/auth/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             user_metadata: data.user.user_metadata,
           }),
+          timeoutMs: 12000,
         });
         if (!syncRes.ok) throw new Error("Failed to sync account");
         const syncData = await syncRes.json();
@@ -79,6 +93,7 @@ export default function StudentAuth() {
 
       setLocation("/dashboard");
     } catch (err: any) {
+      if (requestId !== activeRequestId.current) return;
       const msg = err?.message || "";
       let friendly = "Something went wrong. Please try again.";
       if (msg.includes("Invalid login credentials")) {
@@ -87,6 +102,8 @@ export default function StudentAuth() {
         friendly = "Please check your email and verify your account first.";
       } else if (msg.includes("User not found")) {
         friendly = "No account found with that email address.";
+      } else if (err instanceof AuthRequestError && err.code === "TIMEOUT") {
+        friendly = "Login timed out. Please try again.";
       } else if (msg) {
         friendly = msg;
       }
@@ -97,7 +114,10 @@ export default function StudentAuth() {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      if (requestId === activeRequestId.current) {
+        setLoading(false);
+        setStatusNote(null);
+      }
     }
   };
 
@@ -125,10 +145,13 @@ export default function StudentAuth() {
       });
       return;
     }
+    const requestId = nextRequestId();
+    setAuthError(null);
+    setStatusNote("Creating your account...");
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await withTimeout(() => supabase.auth.signUp({
         email,
         password,
         options: {
@@ -136,17 +159,20 @@ export default function StudentAuth() {
             display_name: displayName || email.split("@")[0],
           },
         },
-      });
+      }), { timeoutMs: 18000, stage: "supabase_signup" });
+      if (requestId !== activeRequestId.current) return;
 
       if (error) throw error;
 
       if (data.session) {
+        setStatusNote("Finalizing your account...");
         const syncRes = await authFetch("/api/auth/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             user_metadata: data.user!.user_metadata,
           }),
+          timeoutMs: 12000,
         });
         if (!syncRes.ok) throw new Error("Failed to sync account");
         const syncData = await syncRes.json();
@@ -161,25 +187,32 @@ export default function StudentAuth() {
       } else {
         toast({
           title: "Account created",
-          description: "Please check your email to verify your account, then log in.",
+          description: "Please check your email to verify your account, then log in. If no email arrives in 2 minutes, retry sign up.",
         });
         switchMode("login");
       }
     } catch (err: any) {
+      if (requestId !== activeRequestId.current) return;
       const msg = err?.message || "";
       let friendly = "Could not create account.";
       if (msg.includes("already registered") || msg.includes("already been registered")) {
         friendly = "An account with this email already exists. Try logging in instead.";
+      } else if (err instanceof AuthRequestError && err.code === "TIMEOUT") {
+        friendly = "Sign up timed out. Please retry. If this keeps happening, check your email for a verification link before retrying.";
       } else if (msg) {
         friendly = msg;
       }
+      setAuthError(friendly);
       toast({
         title: "Sign up failed",
         description: friendly,
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      if (requestId === activeRequestId.current) {
+        setLoading(false);
+        setStatusNote(null);
+      }
     }
   };
 
@@ -189,18 +222,30 @@ export default function StudentAuth() {
       toast({ title: "Email required", description: "Please enter your email address.", variant: "destructive" });
       return;
     }
+    const requestId = nextRequestId();
+    setAuthError(null);
+    setStatusNote("Sending reset email...");
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await withTimeout(() => supabase.auth.resetPasswordForEmail(email, {
         redirectTo: window.location.origin + "/reset-password",
-      });
+      }), { timeoutMs: 15000, stage: "supabase_reset" });
+      if (requestId !== activeRequestId.current) return;
       if (error) throw error;
       toast({ title: "Reset email sent", description: "Check your inbox for a password reset link." });
       switchMode("login");
     } catch (err: any) {
-      toast({ title: "Reset failed", description: err?.message || "Something went wrong.", variant: "destructive" });
+      if (requestId !== activeRequestId.current) return;
+      const friendly = err instanceof AuthRequestError
+        ? "Reset request timed out. Please try again."
+        : err?.message || "Something went wrong.";
+      setAuthError(friendly);
+      toast({ title: "Reset failed", description: friendly, variant: "destructive" });
     } finally {
-      setLoading(false);
+      if (requestId === activeRequestId.current) {
+        setLoading(false);
+        setStatusNote(null);
+      }
     }
   };
 
@@ -257,6 +302,11 @@ export default function StudentAuth() {
           )}
 
           <form onSubmit={mode === "login" ? handleLogin : mode === "signup" ? handleSignup : handleResetPassword} className="space-y-4">
+            {statusNote && (
+              <div className="text-xs rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 px-3 py-2">
+                {statusNote}
+              </div>
+            )}
             {mode === "signup" && (
               <div>
                 <label className="text-xs text-slate-400 mb-1.5 block font-medium">Display Name</label>

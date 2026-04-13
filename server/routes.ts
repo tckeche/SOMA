@@ -763,11 +763,11 @@ async function runBackgroundGrading(
       return `Question ${questionNumber}: ${q.stem}\nStudent Answer: ${studentAnswer}\nCorrect Answer: ${q.correctAnswer}\nResult: ${isCorrect ? "CORRECT" : "INCORRECT"} (${q.marks} marks)`;
     }).join("\n\n");
 
-    const systemPrompt = `You are a mathematics tutor providing feedback to a student.
+    const systemPrompt = `You are a mathematics tutor speaking directly to one student.
 
-Write in simple plain English.
-Be brief and direct.
-Use short bullet points instead of long paragraphs.
+Write in second person ("you"), with warmth and precision.
+Be concise but personal and constructive.
+Use short paragraphs and bullet points.
 Return clean HTML using <h3>, <ul>, <li>, <p>, and <strong>.
 
 CRITICAL: When referencing specific questions, you MUST use the sequential question numbers provided in the data (e.g., "Question 1", "Question 4"). Never invent numbers and never use database IDs like Q156.`;
@@ -1836,6 +1836,13 @@ Your job is to return a JSON object that describes what action to take on the dr
 - "move Q3 to the top" / "reorder so easy questions come first" → REORDER
 - No question change needed → NONE
 
+## DEFAULT DIFFICULTY RULE:
+Unless the tutor explicitly specifies a different mix, default to:
+- 25% easy
+- 50% medium
+- 25% hard
+Hard questions must require reasoning/application, not recall only.
+
 ## QUESTION OBJECT FORMAT (for ADD, REPLACE_ALL, REPLACE_SELECTED):
 Each question MUST have:
 - prompt_text: the question text (non-empty)
@@ -2436,6 +2443,13 @@ ${JSON.stringify({
     syllabus: z.string().min(1).default("IEB"),
     level: z.string().min(1).default("Grade 6-12"),
     curriculumContext: z.string().optional(),
+    subtopic: z.string().optional(),
+    questionCount: z.number().int().min(1).max(40).default(8),
+    difficultyDistribution: z.object({
+      easy: z.number().min(0).max(100),
+      medium: z.number().min(0).max(100),
+      hard: z.number().min(0).max(100),
+    }).optional(),
   });
 
   app.post("/api/soma/generate", requireAdmin, async (req, res) => {
@@ -2445,7 +2459,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
       const result = await generateAuditedQuiz({
@@ -2454,6 +2468,9 @@ ${JSON.stringify({
         syllabus,
         level,
         copilotPrompt: curriculumContext,
+        questionCount,
+        difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
+        subtopic,
       });
 
       const quiz = await storage.createSomaQuiz({
@@ -2501,13 +2518,16 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
+        questionCount,
+        difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
+        subtopic,
       });
 
       const adopted = await storage.getAdoptedStudents(tutorId);
