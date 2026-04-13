@@ -23,64 +23,155 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
 
-  // Normalise xRange / yRange — AI sometimes returns {min,max} objects instead of tuples
-  const normaliseRange = (v: unknown): [number, number] | null => {
-    if (Array.isArray(v) && v.length >= 2 && typeof v[0] === "number" && typeof v[1] === "number") {
-      return [v[0], v[1]];
-    }
-    if (v && typeof v === "object") {
-      const obj = v as Record<string, unknown>;
-      const keys = Object.keys(obj);
-      // {min,max} or {0,1} or first two numeric values
-      const nums = [obj.min ?? obj[0] ?? obj.from, obj.max ?? obj[1] ?? obj.to]
-        .map(Number)
-        .filter((n) => Number.isFinite(n));
-      if (nums.length === 2) return [nums[0], nums[1]];
-      const allNums = keys.map((k) => Number(obj[k])).filter((n) => Number.isFinite(n));
-      if (allNums.length >= 2) return [allNums[0], allNums[1]];
-    }
-    return null;
+  const asFinite = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const asString = (v: unknown): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const trimmed = v.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   };
 
-  const xRange = normaliseRange(r.xRange);
-  const yRange = normaliseRange(r.yRange);
+  // Normalise xRange / yRange — AI often returns alt keys, object ranges, or reversed bounds.
+  const normaliseRange = (v: unknown): [number, number] | null => {
+    let values: number[] = [];
+    if (Array.isArray(v)) {
+      values = v.map((item) => asFinite(item)).filter((n): n is number => n !== null);
+    } else if (v && typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      const ordered = [
+        obj.min, obj.max,
+        obj.from, obj.to,
+        obj.start, obj.end,
+        obj.low, obj.high,
+        obj.lower, obj.upper,
+        obj[0], obj[1],
+      ]
+        .map((item) => asFinite(item))
+        .filter((n): n is number => n !== null);
+      values = ordered.length >= 2
+        ? ordered
+        : Object.values(obj).map((item) => asFinite(item)).filter((n): n is number => n !== null);
+    }
+    if (values.length < 2) return null;
+    let lo = values[0];
+    let hi = values[1];
+    if (lo === hi) {
+      lo -= 1;
+      hi += 1;
+    }
+    if (lo > hi) [lo, hi] = [hi, lo];
+    return [lo, hi];
+  };
+
+  const xRange = normaliseRange(r.xRange ?? r.xrange ?? r.domain ?? r.xDomain);
+  const yRange = normaliseRange(r.yRange ?? r.yrange ?? r.range ?? r.yDomain);
   if (!xRange || !yRange) return null;
 
   // plotType — default to "line" for equation-based, "points" if only points
-  const rawPlotType = String(r.plotType || "");
+  const rawPlotType = String(r.plotType || r.plot_type || "");
   const validPlotTypes = ["line", "curve", "scatter", "points"] as const;
+  const equationCandidate =
+    asString(r.equation)
+    ?? asString(r.expression)
+    ?? asString(r.formula)
+    ?? asString(r.function)
+    ?? asString((r as Record<string, unknown>).fn);
   const plotType: "line" | "curve" | "scatter" | "points" = validPlotTypes.includes(rawPlotType as never)
     ? (rawPlotType as "line" | "curve" | "scatter" | "points")
-    : r.equation || r.curves
+    : equationCandidate || r.curves
     ? "line"
     : "points";
 
-  // Multi-curve support: parse the `curves` array if present
-  const curves = Array.isArray(r.curves)
-    ? (r.curves as any[])
-        .filter((c: any) => c && typeof c === "object" && typeof c.equation === "string" && c.equation.trim())
-        .map((c: any) => ({
-          equation: String(c.equation),
-          label: c.label ? String(c.label) : undefined,
-          color: c.color ? String(c.color) : undefined,
-        }))
+  // Multi-curve support: parse arrays, keyed objects, or string equations.
+  const rawCurves = Array.isArray(r.curves)
+    ? r.curves
+    : r.curves && typeof r.curves === "object"
+      ? Object.entries(r.curves as Record<string, unknown>).map(([key, value]) => {
+          if (typeof value === "string") return { equation: value, label: key };
+          if (value && typeof value === "object") return { label: key, ...(value as Record<string, unknown>) };
+          return null;
+        }).filter(Boolean)
+      : undefined;
+  const curves = Array.isArray(rawCurves)
+    ? rawCurves
+      .map((c) => {
+        if (typeof c === "string") return { equation: c };
+        if (!c || typeof c !== "object") return null;
+        const curve = c as Record<string, unknown>;
+        const curveEquation =
+          asString(curve.equation)
+          ?? asString(curve.expression)
+          ?? asString(curve.formula)
+          ?? asString(curve.function);
+        if (!curveEquation) return null;
+        return {
+          equation: curveEquation,
+          label: asString(curve.label) ?? asString(curve.name) ?? asString(curve.title),
+          color: asString(curve.color),
+        };
+      })
+      .filter((c): c is { equation: string; label?: string; color?: string } => c !== null)
     : undefined;
 
   // Require at least equation, curves, or points
-  const equation = r.equation && typeof r.equation === "string" ? r.equation : undefined;
-  const points = Array.isArray(r.points) ? r.points : undefined;
+  const equation = equationCandidate;
+  const rawPoints = Array.isArray(r.points)
+    ? r.points
+    : Array.isArray(r.dataPoints)
+      ? r.dataPoints
+      : Array.isArray(r.coordinates)
+        ? r.coordinates
+        : undefined;
+  const points = rawPoints
+    ?.map((point) => {
+      if (Array.isArray(point) && point.length >= 2) {
+        const x = asFinite(point[0]);
+        const y = asFinite(point[1]);
+        if (x === null || y === null) return null;
+        return { x, y };
+      }
+      if (!point || typeof point !== "object") return null;
+      const p = point as Record<string, unknown>;
+      const x = asFinite(p.x ?? p.xValue ?? p.x_value ?? p.t);
+      const y = asFinite(p.y ?? p.yValue ?? p.y_value ?? p.value);
+      if (x === null || y === null) return null;
+      const label = asString(p.label) ?? asString(p.name);
+      return label ? { x, y, label } : { x, y };
+    })
+    .filter((p): p is { x: number; y: number; label?: string } => p !== null);
   if (!equation && (!curves || curves.length === 0) && (!points || points.length === 0)) return null;
 
   // axisLabels — default to x/y if missing
-  const rawLabels = r.axisLabels && typeof r.axisLabels === "object" ? (r.axisLabels as Record<string, unknown>) : {};
+  const rawLabels = (
+    r.axisLabels
+    ?? r.axis_labels
+    ?? r.axes
+    ?? r.axis
+  );
+  const labelsObj = rawLabels && typeof rawLabels === "object" ? (rawLabels as Record<string, unknown>) : {};
   const axisLabels = {
-    x: String(rawLabels.x || "x"),
-    y: String(rawLabels.y || "y"),
+    x: asString(labelsObj.x ?? labelsObj.xAxis ?? labelsObj.horizontal ?? labelsObj.h) ?? "x",
+    y: asString(labelsObj.y ?? labelsObj.yAxis ?? labelsObj.vertical ?? labelsObj.v) ?? "y",
   };
 
-  const tickInterval = typeof r.tickInterval === "number" && r.tickInterval > 0 ? r.tickInterval : 1;
+  const tickIntervalCandidate = asFinite(r.tickInterval ?? r.tick_interval ?? r.ticks);
+  const tickInterval = tickIntervalCandidate !== null && tickIntervalCandidate > 0 ? tickIntervalCandidate : 1;
   const showGrid = r.showGrid !== false;
-  const highlightedPoints = Array.isArray(r.highlightedPoints) ? r.highlightedPoints : undefined;
+  const highlightedPoints = Array.isArray(r.highlightedPoints)
+    ? r.highlightedPoints
+      .map((point) => {
+        if (!point || typeof point !== "object") return null;
+        const p = point as Record<string, unknown>;
+        const x = asFinite(p.x);
+        const y = asFinite(p.y);
+        if (x === null || y === null) return null;
+        const label = asString(p.label);
+        return label ? { x, y, label } : { x, y };
+      })
+    .filter((p): p is { x: number; y: number; label?: string } => p !== null)
+    : undefined;
   const rawAsym = r.asymptotes && typeof r.asymptotes === "object" ? (r.asymptotes as Record<string, unknown>) : null;
   const asymptotes = rawAsym ? {
     vertical: Array.isArray(rawAsym.vertical) ? rawAsym.vertical.map(Number).filter(Number.isFinite) : [],
@@ -105,11 +196,9 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   const rawParametric = r.parametric && typeof r.parametric === "object" ? (r.parametric as Record<string, unknown>) : null;
   const parametric = rawParametric
     ? {
-      xEquation: String(rawParametric.xEquation || rawParametric.x || ""),
-      yEquation: String(rawParametric.yEquation || rawParametric.y || ""),
-      tRange: Array.isArray(rawParametric.tRange)
-        ? [Number(rawParametric.tRange[0]), Number(rawParametric.tRange[1])] as [number, number]
-        : [Number((rawParametric as any).tMin), Number((rawParametric as any).tMax)] as [number, number],
+      xEquation: asString(rawParametric.xEquation ?? rawParametric.x ?? rawParametric.xEq) ?? "",
+      yEquation: asString(rawParametric.yEquation ?? rawParametric.y ?? rawParametric.yEq) ?? "",
+      tRange: normaliseRange(rawParametric.tRange ?? [rawParametric.tMin, rawParametric.tMax]) ?? [0, 1] as [number, number],
     }
     : undefined;
   const piecewise = Array.isArray(r.piecewise)
@@ -127,20 +216,35 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   const repaired = {
     plotType,
     equation,
+    label: asString(r.label) ?? asString(r.curveLabel) ?? asString(r.displayLabel),
     curves: curves && curves.length > 0 ? curves : undefined,
-    points: points as { x: number; y: number; label?: string }[] | undefined,
+    points,
     xRange,
     yRange,
     axisLabels,
     showGrid,
     tickInterval,
-    highlightedPoints: highlightedPoints as { x: number; y: number; label?: string }[] | undefined,
+    highlightedPoints,
     asymptotes,
     implicit,
-    parametric: parametric && parametric.xEquation && parametric.yEquation ? parametric : undefined,
+    parametric: parametric && parametric.xEquation && parametric.yEquation && parametric.tRange[0] < parametric.tRange[1] ? parametric : undefined,
     piecewise: piecewise && piecewise.length > 0 ? piecewise : undefined,
-    subjectPreset: typeof r.subjectPreset === "string" ? r.subjectPreset : undefined,
-    graphKind: typeof r.graphKind === "string" ? r.graphKind : undefined,
+    subjectPreset: (() => {
+      const rawSubject = String(r.subjectPreset ?? r.subject ?? "").trim().toLowerCase();
+      if (!rawSubject) return undefined;
+      const mapping: Record<string, GraphQuestionSpec["subjectPreset"]> = {
+        mathematics: "mathematics",
+        maths: "mathematics",
+        math: "mathematics",
+        physics: "physics",
+        economics: "economics",
+        business: "business",
+        chemistry: "chemistry",
+        biology: "biology",
+      };
+      return mapping[rawSubject];
+    })(),
+    graphKind: asString(r.graphKind) ?? asString(r.kind) ?? asString(r.graphType),
   };
 
   const parsed = graphQuestionSpecSchema.safeParse(repaired);
