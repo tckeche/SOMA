@@ -13,6 +13,9 @@ import {
   Trash2, Eye, FileText, Award, Target, CheckCircle2,
 } from "lucide-react";
 import {
+  ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+} from "recharts";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -93,6 +96,7 @@ export default function TutorStudentDetail() {
   const { toast } = useToast();
   const [newComment, setNewComment] = useState("");
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
+  const [coveragePage, setCoveragePage] = useState(0);
 
   const { userId } = useSupabaseSession();
 
@@ -157,6 +161,30 @@ export default function TutorStudentDetail() {
   const assignments = report?.assignments || [];
   const displayName = toProperCase(student?.displayName || student?.email?.split("@")[0] || "Student");
   const initials = displayName.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
+  const topicPerformance = assignments.reduce<Record<string, { score: number; max: number; count: number }>>((acc, a) => {
+    const key = (a.quizSubject || "General").trim();
+    if (!acc[key]) acc[key] = { score: 0, max: 0, count: 0 };
+    if (typeof a.score === "number" && a.maxScore > 0) {
+      acc[key].score += a.score;
+      acc[key].max += a.maxScore;
+      acc[key].count += 1;
+    }
+    return acc;
+  }, {});
+  const topicBarData = Object.entries(topicPerformance).map(([topic, v]) => ({
+    topic,
+    performance: v.max > 0 ? Math.round((v.score / v.max) * 100) : 0,
+    tested: v.count,
+  })).sort((a, b) => b.performance - a.performance);
+  const coverageDataRaw = Object.entries(topicPerformance).map(([topic, v]) => ({
+    topic,
+    coverage: Math.min(100, v.count * 20),
+  }));
+  const coverageChunks = Array.from({ length: Math.max(1, Math.ceil(coverageDataRaw.length / 12)) }, (_, i) =>
+    coverageDataRaw.slice(i * 12, i * 12 + 12),
+  );
+  const safeCoveragePage = Math.min(coveragePage, Math.max(0, coverageChunks.length - 1));
+  const currentCoverageChunk = coverageChunks[safeCoveragePage] || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 to-slate-900">
@@ -229,6 +257,54 @@ export default function TutorStudentDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Assignment Table */}
           <div className="lg:col-span-2 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Topic Performance</h3>
+            <div className={CARD_CLASS}>
+              {topicBarData.length === 0 ? (
+                <p className="text-sm text-slate-500">No completed submissions yet for performance chart.</p>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topicBarData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
+                      <XAxis dataKey="topic" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#94a3b8" />
+                      <Tooltip />
+                      <Bar dataKey="performance" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Syllabus Coverage Polygon</h3>
+            <div className={CARD_CLASS}>
+              {currentCoverageChunk.length === 0 ? (
+                <p className="text-sm text-slate-500">No topic coverage yet.</p>
+              ) : (
+                <>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={currentCoverageChunk}>
+                        <PolarGrid stroke="rgba(148,163,184,0.2)" />
+                        <PolarAngleAxis dataKey="topic" tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                        <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                        <Radar name="Coverage" dataKey="coverage" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.35} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {coverageChunks.length > 1 && (
+                    <div className="mt-2 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-500">Segment {safeCoveragePage + 1} of {coverageChunks.length} (12-topic max per view)</p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setCoveragePage((p) => Math.max(0, p - 1))} disabled={safeCoveragePage === 0} className="text-[11px] px-2 py-1 rounded border border-slate-700 text-slate-300 disabled:opacity-40">Prev</button>
+                        <button type="button" onClick={() => setCoveragePage((p) => Math.min(coverageChunks.length - 1, p + 1))} disabled={safeCoveragePage >= coverageChunks.length - 1} className="text-[11px] px-2 py-1 rounded border border-slate-700 text-slate-300 disabled:opacity-40">Next</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Assignment History</h3>
 
             {reportLoading ? (

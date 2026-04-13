@@ -8,6 +8,9 @@ export const QuestionSchema = z.object({
   correct_answer: z.string(),
   explanation: z.string().min(1),
   marks: z.number().int().min(1).max(10),
+  difficulty_tag: z.enum(["easy", "medium", "hard"]).optional(),
+  topic_tag: z.string().optional(),
+  subtopic_tag: z.string().optional(),
 });
 
 export const QuizResultSchema = z.object({
@@ -22,6 +25,9 @@ export interface SomaGenerationContext {
   level: string;
   copilotPrompt?: string;
   supportingDocText?: string;
+  questionCount?: number;
+  subtopic?: string;
+  difficultyDistribution?: { easy: number; medium: number; hard: number };
 }
 
 const jsonSchema = zodToJsonSchema(QuizResultSchema, "QuizResult");
@@ -247,19 +253,43 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
     : input;
 
-  const makerPrompt = `You are Claude (Maker), an expert mathematics assessment designer. Generate MCQ quiz JSON for ${context.subject}. Use syllabus ${context.syllabus} and level ${context.level}. For each question, the "explanation" field MUST be exactly 1–2 sentences: briefly state why the correct answer is right, AND explicitly point out the mathematical or logical error that leads to each incorrect distractor.`;
+  const questionCount = Math.max(1, context.questionCount ?? 8);
+  const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
+  const makerPrompt = `You are Claude (Maker), an expert mathematics assessment designer.
+Generate exactly ${questionCount} MCQ questions for ${context.subject}.
+STRICT SCOPE: syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+Never drift to adjacent topics not explicitly in scope.
+Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
+Hard questions must involve reasoning/application (not recall).
+For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.`;
   const checkerPrompt = `You are Gemini (Checker). Audit the Maker JSON with strict accuracy.
 You must evaluate ONLY the provided topic/context and input JSON.
 Do not hallucinate facts, syllabus requirements, or missing context.
 Reject or correct anything unsupported by the provided data.
 Enforce mathematical correctness, strict JSON structure, and syllabus-level alignment (${context.syllabus}/${context.level}).
 Return only validated JSON that is fully supported by the given input.`;
-  const finalizerPrompt = `Perform final curriculum compliance and syllabus audit. Return strictly valid JSON only.`;
+  const finalizerPrompt = `Perform final curriculum compliance and syllabus audit.
+Reject questions outside topic/subtopic scope.
+Return strictly valid JSON only with exactly ${questionCount} questions.`;
 
   const { data: maker } = await generateWithFallback(makerPrompt, `Topic: ${context.topic}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`, jsonSchema);
   const { data: checker } = await generateWithFallback(checkerPrompt, `Topic: ${context.topic}\nInput JSON:\n${maker}`, jsonSchema);
   const { data: final } = await generateWithFallback(finalizerPrompt, `Topic: ${context.topic}\nInput JSON:\n${checker}`, jsonSchema);
   const parsed = extractJson(final);
+  const scopeTokens = [context.topic, context.subtopic].filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
+  if (scopeTokens.length > 0) {
+    const scoped = parsed.questions.filter((q) => {
+      const hay = `${q.stem} ${q.explanation} ${q.topic_tag || ""} ${q.subtopic_tag || ""}`.toLowerCase();
+      return scopeTokens.some((token) => hay.includes(token));
+    });
+    if (scoped.length > 0) {
+      parsed.questions = scoped;
+    }
+  }
+  if (parsed.questions.length < questionCount && parsed.questions.length > 0) {
+    console.warn(`[SOMA_GENERATION_SCOPE] Only ${parsed.questions.length}/${questionCount} questions strongly matched topic scope; keeping best validated set.`);
+  }
+  parsed.questions = parsed.questions.slice(0, questionCount);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
   return parsed;
 }

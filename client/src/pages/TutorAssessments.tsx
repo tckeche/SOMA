@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { useToast } from "@/hooks/use-toast";
+import { emitSomaMutation } from "@/lib/realtimeEvents";
 
 interface SomaUser {
   id: string;
@@ -276,6 +277,10 @@ export default function TutorAssessments() {
   const [viewingReport, setViewingReport] = useState<{ report: SomaReport & { quiz: SomaQuiz }; questions: SomaQuestion[]; maxScore: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ quizId: number; title: string } | null>(null);
   const [confirmDeleteQuestion, setConfirmDeleteQuestion] = useState<{ questionId: number; stem: string } | null>(null);
+  const [reportSortBy, setReportSortBy] = useState<"student" | "time_allocated" | "time_submitted">("time_submitted");
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
+  const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
+  const [allocationDateFilter, setAllocationDateFilter] = useState("");
 
   const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -343,6 +348,7 @@ export default function TutorAssessments() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", variables.quizId, "assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
+      emitSomaMutation({ type: "assessment_assigned", quizId: variables.quizId });
     },
     onError: (err: Error) => {
       toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
@@ -372,6 +378,7 @@ export default function TutorAssessments() {
         queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", expandedQuiz, "assignments"] });
         queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", expandedQuiz, "reports"] });
       }
+      emitSomaMutation({ type: "status_changed", quizId: expandedQuiz ?? undefined });
     },
   });
 
@@ -391,6 +398,7 @@ export default function TutorAssessments() {
       setExpandedQuiz(null);
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
       toast({ title: "Assessment deleted", description: "The assessment was removed." });
+      emitSomaMutation({ type: "assessment_deleted" });
     },
     onError: (err: Error) => {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
@@ -507,7 +515,15 @@ export default function TutorAssessments() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-100">My Assessments</h2>
-            <p className="text-sm text-slate-400 mt-1">{tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""} · Click to expand</p>
+            <p className="text-sm text-slate-400 mt-1">{tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""} · Newest first</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-400">Sort submissions</label>
+            <select value={reportSortBy} onChange={(e) => setReportSortBy(e.target.value as any)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+              <option value="time_submitted">Time submitted</option>
+              <option value="student">Student</option>
+              <option value="time_allocated">Time allocated</option>
+            </select>
           </div>
           <Link href="/tutor/assessments/new">
             <span className="glow-button flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-semibold cursor-pointer" data-testid="button-create-new">
@@ -528,7 +544,7 @@ export default function TutorAssessments() {
           </div>
         ) : (
           <div className="space-y-3">
-            {tutorQuizzes.map((quiz) => {
+            {[...tutorQuizzes].sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()).map((quiz) => {
               const sc = getSubjectColor(quiz.subject);
               const SubIcon = getSubjectIcon(quiz.subject);
               const isExpanded = expandedQuiz === quiz.id;
@@ -538,6 +554,21 @@ export default function TutorAssessments() {
               const avgScore = reports.length > 0 ? Math.round(reports.reduce((s, r) => s + r.score, 0) / reports.length) : 0;
               const avgPct = reports.length > 0 && maxScore > 0 ? Math.round((avgScore / maxScore) * 100) : 0;
               const currentAssignments = isExpanded ? quizAssignments : [];
+              const filteredAssignments = currentAssignments.filter((a) => {
+                if (assignmentStudentFilter !== "all" && a.studentId !== assignmentStudentFilter) return false;
+                if (assignmentStatusFilter === "submitted" && a.status !== "submitted") return false;
+                if (assignmentStatusFilter === "not_submitted" && a.status === "submitted") return false;
+                if (allocationDateFilter) {
+                  const created = new Date(a.createdAt);
+                  const selected = new Date(`${allocationDateFilter}T00:00:00`);
+                  if (
+                    created.getUTCFullYear() !== selected.getUTCFullYear() ||
+                    created.getUTCMonth() !== selected.getUTCMonth() ||
+                    created.getUTCDate() !== selected.getUTCDate()
+                  ) return false;
+                }
+                return true;
+              });
 
               return (
                 <div key={quiz.id} className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl overflow-hidden" data-testid={`quiz-card-${quiz.id}`}>
@@ -600,7 +631,7 @@ export default function TutorAssessments() {
                       {/* Assigned Students Section */}
                       {(() => {
                         const currentAssignments = expandedQuiz === quiz.id ? quizAssignments : [];
-                        const pendingAssignments = currentAssignments.filter(a => a.status === "pending");
+                        const pendingAssignments = filteredAssignments.filter(a => a.status === "pending");
                         if (assignmentsLoading) return null;
                         if (pendingAssignments.length === 0) return null;
                         return (
@@ -625,6 +656,20 @@ export default function TutorAssessments() {
                                   {pendingAssignments.length} pending
                                 </span>
                               </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <select value={assignmentStudentFilter} onChange={(e) => setAssignmentStudentFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300">
+                                <option value="all">All students</option>
+                                {currentAssignments.map((a) => (
+                                  <option key={a.studentId} value={a.studentId}>{a.student.displayName || a.student.email}</option>
+                                ))}
+                              </select>
+                              <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as any)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300">
+                                <option value="all">All statuses</option>
+                                <option value="submitted">Submitted</option>
+                                <option value="not_submitted">Not submitted</option>
+                              </select>
+                              <input type="date" value={allocationDateFilter} onChange={(e) => setAllocationDateFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300" />
                             </div>
                             <div className="space-y-1.5">
                               {pendingAssignments.map(assignment => (
@@ -721,7 +766,15 @@ export default function TutorAssessments() {
                           <p className="text-xs text-slate-500 py-2">No submissions yet. Students will appear here once they complete this assessment.</p>
                         ) : (
                           <div className="space-y-2">
-                            {reports.map(report => (
+                            {[...reports].sort((a, b) => {
+                              if (reportSortBy === "student") return a.studentName.localeCompare(b.studentName);
+                              if (reportSortBy === "time_allocated") {
+                                const aDur = ((new Date(a.completedAt as any).getTime() || 0) - (new Date(a.startedAt as any).getTime() || 0));
+                                const bDur = ((new Date(b.completedAt as any).getTime() || 0) - (new Date(b.startedAt as any).getTime() || 0));
+                                return bDur - aDur;
+                              }
+                              return new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime();
+                            }).map(report => (
                               <StudentReportCard
                                 key={report.id}
                                 report={report}

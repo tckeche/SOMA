@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
@@ -22,8 +22,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
+import { emitSomaMutation, subscribeToSomaMutations } from "@/lib/realtimeEvents";
 
 const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
 const SECTION_LABEL = "text-slate-400 text-xs font-semibold tracking-wider uppercase";
@@ -52,6 +52,15 @@ interface DashboardStats {
     dueDate: string | null;
     createdAt: string;
   }[];
+  studentInsights: {
+    studentId: string;
+    studentName: string;
+    assigned: number;
+    completed: number;
+    awaiting: number;
+    trend: "improving" | "declining" | "stable";
+    weakTopics: string[];
+  }[];
 }
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
@@ -62,73 +71,6 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   const secs = Math.floor((diffMs % 60000) / 1000);
   if (mins === 0) return `${secs}s`;
   return `${mins}m ${secs}s`;
-}
-
-function DonutCard({ subject, percentage, color }: { subject: string; percentage: number; color: string }) {
-  const data = [
-    { value: percentage },
-    { value: 100 - percentage },
-  ];
-  const SubIcon = getSubjectIcon(subject);
-  return (
-    <div
-      className={CARD_CLASS}
-      style={{
-        background: `linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7))`,
-        boxShadow: `0 8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px ${color}10`,
-      }}
-      data-testid={`card-donut-${subject}`}
-    >
-      <div className="flex flex-col items-center">
-        <div
-          className="w-28 h-28 relative"
-          style={{
-            filter: `drop-shadow(0 4px 12px ${color}30)`,
-            transform: "perspective(400px) rotateX(5deg)",
-          }}
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <defs>
-                <linearGradient id={`grad-tutor-${subject}`} x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor={color} stopOpacity={1} />
-                  <stop offset="100%" stopColor={color} stopOpacity={0.6} />
-                </linearGradient>
-              </defs>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                innerRadius={32}
-                outerRadius={48}
-                startAngle={90}
-                endAngle={-270}
-                dataKey="value"
-                stroke="none"
-                cornerRadius={4}
-              >
-                <Cell fill={`url(#grad-tutor-${subject})`} />
-                <Cell fill="rgba(255,255,255,0.04)" />
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span
-              className="text-lg font-bold text-white"
-              style={{ textShadow: `0 0 20px ${color}60, 0 2px 4px rgba(0,0,0,0.5)` }}
-              data-testid={`text-donut-value-${subject}`}
-            >
-              {Math.round(percentage)}%
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 mt-3">
-          <SubIcon className="w-3.5 h-3.5" style={{ color }} />
-          <p className={`${SECTION_LABEL}`} style={{ color }}>{subject}</p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export default function TutorDashboard() {
@@ -207,6 +149,7 @@ export default function TutorDashboard() {
         variant: count > 0 ? "default" : "destructive",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
+      emitSomaMutation({ type: "assessment_assigned" });
     },
     onError: (err: Error) => {
       toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
@@ -225,6 +168,7 @@ export default function TutorDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
       setDeleteQuizId(null);
+      emitSomaMutation({ type: "assessment_deleted" });
     },
   });
 
@@ -248,6 +192,13 @@ export default function TutorDashboard() {
     const count = stats.cohortAverages.reduce((s, c) => s + c.count, 0);
     return count > 0 ? Math.round(total / count) : null;
   }, [stats]);
+
+  useEffect(() => {
+    return subscribeToSomaMutations(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
+    });
+  }, [queryClient]);
 
 
   return (
@@ -336,15 +287,74 @@ export default function TutorDashboard() {
 
             {(stats?.cohortAverages?.length ?? 0) > 0 && (
               <section>
-                <h3 className={`${SECTION_LABEL} mb-4`}>Cohort Performance by Subject</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {stats!.cohortAverages.map((ca) => {
+                <h3 className={`${SECTION_LABEL} mb-4`}>Subject Performance Snapshot</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {stats!.cohortAverages.slice().sort((a, b) => b.average - a.average).map((ca) => {
                     const sc = getSubjectColor(ca.subject);
-                    return <DonutCard key={ca.subject} subject={ca.subject} percentage={ca.average} color={sc.hex} />;
+                    const SubIcon = getSubjectIcon(ca.subject);
+                    return (
+                      <div key={ca.subject} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
+                          <div>
+                            <p className="text-sm text-slate-200">{ca.subject}</p>
+                            <p className="text-[11px] text-slate-500">{ca.count} marked submission{ca.count !== 1 ? "s" : ""}</p>
+                          </div>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-100">{Math.round(ca.average)}%</p>
+                      </div>
+                    );
                   })}
                 </div>
               </section>
             )}
+
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={SECTION_LABEL}>At Risk Students & Workload</h3>
+              </div>
+              {(stats?.studentInsights?.length ?? 0) === 0 ? (
+                <div className={`${CARD_CLASS} text-center py-10`}>
+                  <Users className="w-10 h-10 mx-auto text-slate-600 mb-3" />
+                  <p className="text-sm text-slate-400">No student insight data yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {stats!.studentInsights.slice(0, 8).map((s) => {
+                    const total = Math.max(1, s.assigned);
+                    const completedPct = Math.round((s.completed / total) * 100);
+                    const awaitingPct = Math.round((s.awaiting / total) * 100);
+                    const risk = s.trend === "declining" || s.weakTopics.length > 0;
+                    return (
+                      <div key={s.studentId} className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-slate-200">{s.studentName}</p>
+                            <p className={`text-[11px] ${risk ? "text-red-400" : "text-slate-500"}`}>
+                              Trend: {s.trend}{s.weakTopics.length ? ` · Weak topics: ${s.weakTopics.join(", ")}` : ""}
+                            </p>
+                          </div>
+                          <Badge className={`${risk ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"} text-[10px]`}>
+                            {risk ? "At risk" : "On track"}
+                          </Badge>
+                        </div>
+                        <div className="mt-3">
+                          <div className="h-2 rounded-full bg-slate-800 overflow-hidden flex">
+                            <div className="bg-emerald-500" style={{ width: `${completedPct}%` }} />
+                            <div className="bg-amber-500" style={{ width: `${awaitingPct}%` }} />
+                          </div>
+                          <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+                            <span>Assigned: {s.assigned}</span>
+                            <span>Completed: {s.completed}</span>
+                            <span>Awaiting: {s.awaiting}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
             <section>
               <div className="flex items-center justify-between mb-4">
