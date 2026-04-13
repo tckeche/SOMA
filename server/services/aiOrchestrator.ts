@@ -9,21 +9,19 @@ interface ModelConfig {
 }
 
 const AI_FALLBACK_CHAIN: ModelConfig[] = [
-  // --- TIER 1: ANTHROPIC (PRIMARY SOMA AGENT) ---
+  // --- TIER 1: OPENAI (PRIMARY) ---
+  { provider: "openai", model: "gpt-4o" },
+
+  // --- TIER 2: ANTHROPIC ---
   { provider: "anthropic", model: "claude-sonnet-4-6" },
 
-  // --- TIER 2: GOOGLE GEMINI (IMMEDIATE WORKING BACKUP) ---
-  // gemini-2.5-flash is the only confirmed-working Gemini model on this API key.
-  // gemini-2.0-flash-001 is deprecated (404), gemini-2.0-flash has network issues.
+  // --- TIER 3: GOOGLE GEMINI ---
   { provider: "google", model: "gemini-2.5-flash" },
 
-  // --- TIER 3: DEEPSEEK (BACKGROUND) ---
+  // --- TIER 4: REMAINING FALLBACKS ---
+  { provider: "openai", model: "o3-mini" },
   { provider: "deepseek", model: "deepseek-chat" },
-
-  // --- TIER 4: OPENAI (FAILSAFE) ---
-  { provider: "openai", model: "o3-mini" },   // Second-best reasoning model
-  { provider: "openai", model: "gpt-4o" },    // Best standard model
-  { provider: "openai", model: "gpt-4o-mini" }, // Lightweight fallback
+  { provider: "openai", model: "gpt-4o-mini" },
 ];
 
 function convertToGeminiSchema(schema: any): any {
