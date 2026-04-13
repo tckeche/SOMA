@@ -41,6 +41,7 @@ export interface DraftQuestion {
 }
 
 type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
+type GenerationState = "generation_started" | "generation_in_progress" | "generation_failed" | "partial_success" | "ready_for_review";
 
 function makeDraftId(): string {
   return `draft-${Math.random().toString(36).slice(2)}-${Date.now()}`;
@@ -128,6 +129,16 @@ function applyDraftAction(
   }
 }
 
+function getDraftValidationError(questions: DraftQuestion[]): string | null {
+  if (questions.length === 0) return "Draft is empty.";
+  for (const q of questions) {
+    if (!q.stem?.trim()) return "A draft question is missing a prompt.";
+    if (!Array.isArray(q.options) || q.options.length !== 4) return "Each question must have exactly 4 options.";
+    if (!q.correctAnswer || !q.options.includes(q.correctAnswer)) return "Each question must have a valid correct answer.";
+  }
+  return null;
+}
+
 const LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
 
 const PIPELINE_STAGES = [
@@ -171,6 +182,7 @@ export default function BuilderPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastSavedCount, setLastSavedCount] = useState(0);
   const [metaDirty, setMetaDirty] = useState(false);
+  const [generationState, setGenerationState] = useState<GenerationState>("generation_started");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -375,6 +387,7 @@ export default function BuilderPage() {
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
+      setGenerationState("generation_started");
       animatePipeline(1);
       const context = [
         subject && `Subject: ${subject}`,
@@ -398,6 +411,7 @@ export default function BuilderPage() {
       };
 
       animatePipeline(2);
+      setGenerationState("generation_in_progress");
       const res = await authApiRequest("POST", "/api/tutor/copilot-chat", {
         message: enrichedMessage,
         chatHistory: chat,
@@ -410,6 +424,7 @@ export default function BuilderPage() {
 
       if (data.needsClarification) {
         setPipelineActive(false);
+        setGenerationState("generation_failed");
         return { action: "NONE" as CopilotAction, questions: [], positions: [], reply: data.reply, metadata: data.metadata };
       }
 
@@ -449,18 +464,44 @@ export default function BuilderPage() {
         }
 
         finishPipeline();
-        return { action, questions, positions, reply: data.reply, metadata: data.metadata, draftCount: newDraft.length };
+        return { action, questions, positions, reply: data.reply, metadata: data.metadata, draftCount: newDraft.length, verification: data.verification };
       }
 
       setPipelineActive(false);
-      return { action, questions, positions, reply: data.reply, metadata: data.metadata };
+      return { action, questions, positions, reply: data.reply, metadata: data.metadata, verification: data.verification };
     },
     onSuccess: (data, message) => {
-      setChat((prev) => [...prev, { role: "user", text: message }, { role: "ai", text: data.reply, metadata: data.metadata }]);
+      const verification = (data as any).verification;
+      const afterCount = verification?.afterCount ?? draftQuestions.length;
+      const appliedCount = verification?.appliedCount ?? 0;
+      const reviewReady = verification?.reviewReady === true;
+      const generatedSummary = verification
+        ? `${appliedCount > 0 ? `Created/updated ${appliedCount} question${appliedCount !== 1 ? "s" : ""}.` : "No new draft questions were created."} Draft now has ${afterCount} question${afterCount !== 1 ? "s" : ""}.`
+        : "";
+      const skills = new Set(
+        draftQuestions
+          .map((q) => q.topicTag || q.subtopicTag || q.difficultyTag || "")
+          .filter(Boolean),
+      );
+      const guidance = reviewReady
+        ? `Review is ready. Open Review tab, inspect alignment, and publish when satisfied.`
+        : `Review is not ready yet because there are no valid draft questions. Ask for regeneration with tighter constraints.`;
+      const polishedFollowup = [generatedSummary, skills.size > 0 ? `Focus areas: ${Array.from(skills).slice(0, 4).join(", ")}.` : "", guidance]
+        .filter(Boolean)
+        .join("\n");
+      if (verification?.state === "generation_failed") {
+        setGenerationState("generation_failed");
+      } else if (verification?.state === "partial_success") {
+        setGenerationState("partial_success");
+      } else if (reviewReady) {
+        setGenerationState("ready_for_review");
+      }
+      setChat((prev) => [...prev, { role: "user", text: message }, { role: "ai", text: `${data.reply}\n\n${polishedFollowup}`, metadata: data.metadata }]);
       setMsg("");
     },
     onError: (err: Error) => {
       setPipelineActive(false);
+      setGenerationState("generation_failed");
       toast({ title: "Copilot failed", description: err.message, variant: "destructive" });
     },
   });
@@ -510,6 +551,11 @@ export default function BuilderPage() {
       toast({ title: "Draft is empty", description: "Add at least one question before publishing.", variant: "destructive" });
       return;
     }
+    const draftError = getDraftValidationError(draftQuestions);
+    if (draftError) {
+      toast({ title: "Draft not publishable", description: draftError, variant: "destructive" });
+      return;
+    }
     setIsPublishing(true);
     try {
       // Always sync the latest local draft to the server immediately before publishing.
@@ -525,8 +571,12 @@ export default function BuilderPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Publish failed");
+      if (!Array.isArray(data.questions) || data.questions.length === 0) {
+        throw new Error("Publish did not return reviewable questions. Draft remains unpublished.");
+      }
       setIsDraftDirty(false);
       setLastSavedCount(data.publishedCount ?? draftQuestions.length);
+      setGenerationState("ready_for_review");
       setShowSuccessModal(true);
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", activeQuizId] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
@@ -551,6 +601,7 @@ export default function BuilderPage() {
   };
 
   const totalQuestions = draftQuestions.length;
+  const draftValidationError = useMemo(() => getDraftValidationError(draftQuestions), [draftQuestions]);
 
   const previewQuestions = useMemo(() =>
     draftQuestions.map((q, idx) => ({
@@ -641,7 +692,7 @@ export default function BuilderPage() {
               className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold"
               size="default"
               onClick={handlePublish}
-              disabled={isPublishing || totalQuestions === 0 || !activeQuizId}
+              disabled={isPublishing || !activeQuizId || !!draftValidationError}
               data-testid="button-save-publish"
             >
               {isPublishing ? (
@@ -776,6 +827,13 @@ export default function BuilderPage() {
                   {totalQuestions} saved
                 </Badge>
               )}
+            </div>
+            <div className="px-4 py-2 border-b border-white/5 text-xs">
+              {generationState === "generation_in_progress" && <span className="text-violet-300">Generation in progress…</span>}
+              {generationState === "generation_failed" && <span className="text-red-400">Generation failed or produced no valid draft. Please refine your prompt.</span>}
+              {generationState === "partial_success" && <span className="text-amber-300">Generation partially succeeded. Review the available questions before publishing.</span>}
+              {generationState === "ready_for_review" && <span className="text-emerald-400">Draft is ready for review and publish.</span>}
+              {generationState === "generation_started" && !pipelineActive && <span className="text-slate-500">Ready to generate when you send a prompt.</span>}
             </div>
 
             {/* Pipeline Progress */}
@@ -975,7 +1033,7 @@ export default function BuilderPage() {
                   )}
                 </Button>
                 <p className="text-[10px] text-slate-600 text-center mt-2">
-                  Questions are in draft until you publish. Keep editing freely.
+                  {draftValidationError ? `Cannot publish: ${draftValidationError}` : "Questions are in draft until you publish. Keep editing freely."}
                 </p>
               </div>
             )}

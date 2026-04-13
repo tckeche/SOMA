@@ -763,11 +763,11 @@ async function runBackgroundGrading(
       return `Question ${questionNumber}: ${q.stem}\nStudent Answer: ${studentAnswer}\nCorrect Answer: ${q.correctAnswer}\nResult: ${isCorrect ? "CORRECT" : "INCORRECT"} (${q.marks} marks)`;
     }).join("\n\n");
 
-    const systemPrompt = `You are a mathematics tutor providing feedback to a student.
+    const systemPrompt = `You are a mathematics tutor speaking directly to one student.
 
-Write in simple plain English.
-Be brief and direct.
-Use short bullet points instead of long paragraphs.
+Write in second person ("you"), with warmth and precision.
+Be concise but personal and constructive.
+Use short paragraphs and bullet points.
 Return clean HTML using <h3>, <ul>, <li>, <p>, and <strong>.
 
 CRITICAL: When referencing specific questions, you MUST use the sequential question numbers provided in the data (e.g., "Question 1", "Question 4"). Never invent numbers and never use database IDs like Q156.`;
@@ -1836,6 +1836,13 @@ Your job is to return a JSON object that describes what action to take on the dr
 - "move Q3 to the top" / "reorder so easy questions come first" → REORDER
 - No question change needed → NONE
 
+## DEFAULT DIFFICULTY RULE:
+Unless the tutor explicitly specifies a different mix, default to:
+- 25% easy
+- 50% medium
+- 25% hard
+Hard questions must require reasoning/application, not recall only.
+
 ## QUESTION OBJECT FORMAT (for ADD, REPLACE_ALL, REPLACE_SELECTED):
 Each question MUST have:
 - prompt_text: the question text (non-empty)
@@ -2023,6 +2030,20 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         normalisedQuestions,
         structured.positions,
       );
+      const beforeCount = currentDraft.length;
+      const afterCount = simulatedDraft.length;
+      const changed = JSON.stringify(currentDraft) !== JSON.stringify(simulatedDraft);
+      const replaceablePositions = structured.positions
+        .map((p) => p - 1)
+        .filter((idx) => idx >= 0 && idx < currentDraft.length).length;
+      const appliedCount = ({
+        ADD: normalisedQuestions.length,
+        REPLACE_ALL: normalisedQuestions.length,
+        REPLACE_SELECTED: Math.min(replaceablePositions, normalisedQuestions.length),
+        DELETE: beforeCount - afterCount,
+        REORDER: changed ? beforeCount : 0,
+        NONE: 0,
+      } as Record<CopilotActionType, number>)[structured.action];
       const graphPositionsInDraft = simulatedDraft
         .map((q, i) => ({ pos: i + 1, isGraph: q.questionType === "graph" && q.graphSpec != null }))
         .filter((x) => x.isGraph)
@@ -2034,11 +2055,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       // ── Step 4: Build an honest verified reply (based on actual draft state,
       //    not the AI's claimed narrative)
       const actionVerb = {
-        ADD: `Added ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
-        REPLACE_ALL: `Replaced all questions (${normalisedQuestions.length} new)`,
-        REPLACE_SELECTED: `Replaced ${normalisedQuestions.length} question${normalisedQuestions.length !== 1 ? "s" : ""}`,
-        DELETE: `Removed ${structured.positions.length} question${structured.positions.length !== 1 ? "s" : ""}`,
-        REORDER: "Reordered questions",
+        ADD: `Added ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        REPLACE_ALL: `Replaced draft with ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        REPLACE_SELECTED: `Replaced ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        DELETE: `Removed ${appliedCount} question${appliedCount !== 1 ? "s" : ""}`,
+        REORDER: appliedCount > 0 ? "Reordered draft questions" : "Could not reorder draft with the provided positions",
         NONE: "",
       }[structured.action];
 
@@ -2068,9 +2089,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
+      const verificationState: "generation_failed" | "partial_success" | "ready_for_review" = (
+        structured.action === "NONE" || appliedCount === 0
+      ) ? "generation_failed" : (
+        structured.action === "REPLACE_SELECTED" && appliedCount < normalisedQuestions.length
+      ) ? "partial_success" : "ready_for_review";
+
+      const reviewReady = afterCount > 0;
       const replySuffix = actionVerb
-        ? `\n\n**Draft action:** ${actionVerb}. Click "Save & Publish" when you're happy with the full set.`
-        : "";
+        ? `\n\n**Draft action:** ${actionVerb}. Draft count is now ${afterCount}. ${reviewReady ? 'Open Review to inspect questions, then publish when satisfied.' : 'No reviewable questions are currently in draft.'}`
+        : `\n\n**Draft action:** No changes were applied to your draft.`;
 
       const summary = buildCopilotSummary({
         drafts: normalisedQuestions.map((q) => ({
@@ -2093,6 +2121,15 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         action: structured.action,
         questions: normalisedQuestions,
         positions: structured.positions,
+        verification: {
+          state: verificationState,
+          beforeCount,
+          afterCount,
+          appliedCount,
+          reviewReady,
+          persistedToDatabase: false,
+          persistedToDraftStore: changed,
+        },
         // Legacy field for backward-compat (builder.tsx migration)
         drafts: normalisedQuestions.map((q) => ({
           prompt_text: q.stem,
@@ -2436,6 +2473,13 @@ ${JSON.stringify({
     syllabus: z.string().min(1).default("IEB"),
     level: z.string().min(1).default("Grade 6-12"),
     curriculumContext: z.string().optional(),
+    subtopic: z.string().optional(),
+    questionCount: z.number().int().min(1).max(40).default(8),
+    difficultyDistribution: z.object({
+      easy: z.number().min(0).max(100),
+      medium: z.number().min(0).max(100),
+      hard: z.number().min(0).max(100),
+    }).optional(),
   });
 
   app.post("/api/soma/generate", requireAdmin, async (req, res) => {
@@ -2445,7 +2489,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
       const result = await generateAuditedQuiz({
@@ -2454,6 +2498,9 @@ ${JSON.stringify({
         syllabus,
         level,
         copilotPrompt: curriculumContext,
+        questionCount,
+        difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
+        subtopic,
       });
 
       const quiz = await storage.createSomaQuiz({
@@ -2501,13 +2548,16 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
+        questionCount,
+        difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
+        subtopic,
       });
 
       const adopted = await storage.getAdoptedStudents(tutorId);

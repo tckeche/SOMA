@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
@@ -14,6 +14,7 @@ import {
   Eye, FileText, Calendar,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { subscribeToSomaMutations } from "@/lib/realtimeEvents";
 
 interface ReportWithQuiz {
   id: number;
@@ -110,6 +111,13 @@ export default function StudentDashboard() {
   const [loadingAnalysisId, setLoadingAnalysisId] = useState<string | null>(null);
 
   const { session, userId } = useSupabaseSession();
+
+  useEffect(() => {
+    return subscribeToSomaMutations(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/quizzes/available"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
+    });
+  }, [queryClient]);
 
   const fetchAnalysis = useCallback(async (item: { quizId: number; title: string }) => {
     const cacheKey = `ai_analysis_soma_${item.quizId}`;
