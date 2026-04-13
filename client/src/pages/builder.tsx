@@ -12,8 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation, useParams } from "wouter";
 import {
-  ArrowLeft, Send, Loader2, Sparkles, FileStack, Upload, Trash2,
-  FileText, X, Pencil, BookOpen,
+  ArrowLeft, Send, Loader2, Sparkles, FileStack, Trash2,
+  X, Pencil, BookOpen,
   Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard,
   Save, AlertCircle
 } from "lucide-react";
@@ -137,111 +137,6 @@ const PIPELINE_STAGES = [
   { stage: 4, icon: "pencil", label: "Preparing summary & saving", aiName: "Summary" },
 ];
 
-const PDF_PIPELINE_STAGES = [
-  { label: "Uploading document", detail: "Sending PDF to the server...", icon: Upload },
-  { label: "Reading pages", detail: "Parsing document structure and text content...", icon: FileText },
-  { label: "Extracting questions", detail: "Gemini AI is analysing the paper and identifying each question...", icon: Brain },
-  { label: "Verifying accuracy", detail: "Running two-pass verification against the original document...", icon: Search },
-  { label: "Formatting output", detail: "Structuring questions into MCQ format with KaTeX notation...", icon: Scan },
-  { label: "Saving questions", detail: "Writing verified questions to the database...", icon: CheckCircle2 },
-  { label: "Complete", detail: "All questions imported successfully!", icon: PartyPopper },
-];
-
-function PdfExtractionPipeline({ stage, fileName, startTime }: { stage: number; fileName: string; startTime: number }) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
-    return () => clearInterval(iv);
-  }, [startTime]);
-
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  const progress = Math.min(((stage + 1) / PDF_PIPELINE_STAGES.length) * 100, 100);
-  const isDone = stage >= 6;
-
-  return (
-    <div className="mt-4 rounded-2xl border border-violet-500/20 bg-slate-900/90 backdrop-blur-xl overflow-hidden" data-testid="pdf-extraction-pipeline">
-      <div className="px-5 pt-4 pb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="relative w-8 h-8">
-            <div className="absolute inset-0 rounded-lg bg-violet-500/20 animate-pulse" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              {isDone ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <Brain className="w-5 h-5 text-violet-400 animate-pulse" />}
-            </div>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-100">
-              {isDone ? "Extraction Complete" : "AI Extraction Pipeline"}
-            </p>
-            <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{fileName}</p>
-          </div>
-        </div>
-        <div className="text-right">
-          <span className="text-xs font-mono text-slate-400">{mins}:{secs.toString().padStart(2, "0")}</span>
-        </div>
-      </div>
-
-      <div className="mx-5 mb-4">
-        <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-1000 ease-out"
-            style={{
-              width: `${progress}%`,
-              background: isDone
-                ? "linear-gradient(90deg, #10b981, #34d399)"
-                : "linear-gradient(90deg, #8b5cf6, #a78bfa, #c4b5fd)",
-            }}
-          />
-        </div>
-        <div className="flex justify-between mt-1">
-          <span className="text-[10px] text-slate-600">{Math.round(progress)}%</span>
-          {!isDone && <span className="text-[10px] text-slate-600">This may take 1-2 minutes</span>}
-        </div>
-      </div>
-
-      <div className="px-5 pb-4 space-y-1">
-        {PDF_PIPELINE_STAGES.map((s, i) => {
-          const isActive = i === stage;
-          const isComplete = i < stage;
-          const isPending = i > stage;
-          const Icon = s.icon;
-          return (
-            <div
-              key={i}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-500 ${
-                isActive ? "bg-violet-500/10 border border-violet-500/20" : isComplete ? "opacity-60" : "opacity-30"
-              }`}
-              data-testid={`pipeline-stage-${i}`}
-            >
-              <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-                isComplete ? "bg-emerald-500/20" : isActive ? "bg-violet-500/20" : "bg-slate-800/50"
-              }`}>
-                {isComplete ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                ) : isActive ? (
-                  <Icon className="w-4 h-4 text-violet-400 animate-pulse" />
-                ) : (
-                  <Icon className="w-4 h-4 text-slate-600" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-xs font-medium ${isComplete ? "text-emerald-400" : isActive ? "text-slate-200" : "text-slate-600"}`}>
-                  {s.label}
-                </p>
-                {isActive && (
-                  <p className="text-[11px] text-slate-400 mt-0.5 animate-fadeIn">{s.detail}</p>
-                )}
-              </div>
-              {isActive && !isDone && (
-                <Loader2 className="w-4 h-4 text-violet-400 animate-spin shrink-0" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default function BuilderPage() {
   const { toast } = useToast();
@@ -276,9 +171,6 @@ export default function BuilderPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastSavedCount, setLastSavedCount] = useState(0);
   const [metaDirty, setMetaDirty] = useState(false);
-  const [supportingDocs, setSupportingDocs] = useState<{ name: string; type: string; processing: boolean }[]>([]);
-  const [docContext, setDocContext] = useState<{ name: string; type: string; fileId: string }[]>([]);
-  const [uploadPipeline, setUploadPipeline] = useState<{ active: boolean; stage: number; fileName: string; startTime: number }>({ active: false, stage: 0, fileName: "", startTime: 0 });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -490,8 +382,6 @@ export default function BuilderPage() {
         syllabus && `Syllabus: ${syllabus}`,
       ].filter(Boolean).join(", ");
       const enrichedMessage = context ? `[${context}]\n\n${message}` : message;
-      const docIds = docContext.map((d) => d.fileId);
-
       // Snapshot current draft for context
       const currentDraftSnap = draftQuestions;
       const difficultySpread = currentDraftSnap.reduce((acc, q) => {
@@ -510,9 +400,7 @@ export default function BuilderPage() {
       animatePipeline(2);
       const res = await authApiRequest("POST", "/api/tutor/copilot-chat", {
         message: enrichedMessage,
-        documentIds: docIds.length > 0 ? docIds : undefined,
         chatHistory: chat,
-        syllabusSelection: undefined,
         includeGraphQuestions,
         assessmentContext,
         // Send the full current draft so the AI knows what exists
@@ -649,71 +537,6 @@ export default function BuilderPage() {
     }
   }, [activeQuizId, draftQuestions, authFetch, toast, validateMeta]);
 
-  const handleSupportingDoc = async (file: File, docType: string) => {
-    const docEntry = { name: file.name, type: docType, processing: true };
-    setSupportingDocs((prev) => [...prev, docEntry]);
-    setUploadPipeline({ active: true, stage: 0, fileName: file.name, startTime: Date.now() });
-    try {
-      const uploadForm = new FormData();
-      uploadForm.append("pdf", file);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 270_000);
-
-      const stageTimer1 = setTimeout(() => setUploadPipeline((p) => ({ ...p, stage: 1 })), 2000);
-      const stageTimer2 = setTimeout(() => setUploadPipeline((p) => ({ ...p, stage: 2 })), 8000);
-      const stageTimer3 = setTimeout(() => setUploadPipeline((p) => ({ ...p, stage: 3 })), 30000);
-
-      const uploadRes = await authFetch("/api/tutor/upload-doc", {
-        method: "POST",
-        body: uploadForm,
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
-      clearTimeout(stageTimer3);
-
-      setUploadPipeline((p) => ({ ...p, stage: 4 }));
-
-      let fileId: string | null = null;
-      let extractedDrafts: any[] = [];
-      if (uploadRes.ok) {
-        const uploadData = await uploadRes.json();
-        fileId = uploadData.id;
-        extractedDrafts = Array.isArray(uploadData.drafts) ? uploadData.drafts : [];
-      } else {
-        const errData = await uploadRes.json().catch(() => null);
-        toast({ title: "PDF extraction failed", description: errData?.message || `Server error (${uploadRes.status})`, variant: "destructive" });
-      }
-      setSupportingDocs((prev) =>
-        prev.map((d) => (d.name === file.name && d.type === docType ? { ...d, processing: false } : d))
-      );
-      if (fileId) {
-        setDocContext((prev) => [...prev, { name: file.name, type: docType, fileId }]);
-      }
-
-      if (extractedDrafts.length > 0) {
-        setUploadPipeline((p) => ({ ...p, stage: 5 }));
-        const { quizId, isNew } = await ensureQuizExists();
-        // Add PDF-extracted questions to draft (no immediate DB write)
-        const newDraftQs = extractedDrafts
-          .map((d: any) => rawToDraftQuestion(d))
-          .filter((q): q is DraftQuestion => q !== null);
-        await updateDraft((prev) => [...prev, ...newDraftQs], quizId);
-        if (isNew) {
-          window.history.replaceState({}, "", `/tutor/assessments/edit/${quizId}`);
-        }
-        toast({ title: `Added ${newDraftQs.length} question${newDraftQs.length === 1 ? "" : "s"} to draft from PDF`, description: "Click 'Save & Publish' when you're ready to commit." });
-      }
-      setUploadPipeline((p) => ({ ...p, stage: 6 }));
-      setTimeout(() => setUploadPipeline({ active: false, stage: 0, fileName: "", startTime: 0 }), 2500);
-    } catch (err: any) {
-      const isTimeout = err?.name === "AbortError";
-      toast({ title: isTimeout ? "Upload timed out" : "Upload failed", description: isTimeout ? "The PDF was too large to process. Try a smaller file." : "Something went wrong during extraction.", variant: "destructive" });
-      setSupportingDocs((prev) => prev.filter((d) => !(d.name === file.name && d.type === docType)));
-      setUploadPipeline({ active: false, stage: 0, fileName: "", startTime: 0 });
-    }
-  };
 
   const handleSend = () => {
     if (!msg.trim() || chatMutation.isPending || !authenticated) return;
@@ -1001,12 +824,6 @@ export default function BuilderPage() {
                   <p className="text-xs text-slate-600 italic">"Generate 5 IGCSE quadratics MCQs"</p>
                 </div>
               )}
-              {docContext.length > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                  <FileText className="w-3.5 h-3.5 shrink-0" />
-                  {docContext.length} document{docContext.length > 1 ? "s" : ""} loaded as context
-                </div>
-              )}
               {chat.map((m, i) => (
                 <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
                   <div className={`inline-block max-w-[90%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
@@ -1061,77 +878,6 @@ export default function BuilderPage() {
             </div>
           </div>
 
-          {/* 3. Supporting Documents — Below Copilot */}
-          <div className="glass-card p-4 md:p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Upload className="w-4 h-4 text-violet-400" />
-              <h2 className="font-semibold text-slate-100 text-sm">Supporting Documents</h2>
-            </div>
-            <p className="text-xs text-slate-500 mb-3">
-              Upload a past paper or supporting document the AI can use to generate questions.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                id="doc-type-select"
-                className="glass-input px-3 py-2 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm min-h-[44px]"
-                defaultValue="past-paper"
-                data-testid="select-doc-type"
-              >
-                <option value="past-paper">Past Exam Paper</option>
-                <option value="syllabus">Cambridge Syllabus</option>
-                <option value="textbook">Textbook Excerpt</option>
-                <option value="notes">Custom Notes</option>
-              </select>
-              <Label htmlFor="supporting-doc-input" className="cursor-pointer">
-                <div className="flex items-center gap-1.5 text-sm text-violet-300 border border-violet-500/30 bg-violet-500/10 rounded-lg px-4 py-2.5 min-h-[44px] hover:bg-violet-500/20 transition-colors">
-                  <Upload className="w-4 h-4" />
-                  Upload PDF
-                </div>
-                <input
-                  id="supporting-doc-input"
-                  type="file"
-                  accept=".pdf"
-                  className="hidden"
-                  disabled={pipelineActive}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    const docType = (document.getElementById("doc-type-select") as HTMLSelectElement)?.value || "past-paper";
-                    if (file) handleSupportingDoc(file, docType);
-                    e.target.value = "";
-                  }}
-                  data-testid="input-supporting-doc"
-                />
-              </Label>
-            </div>
-            {uploadPipeline.active && <PdfExtractionPipeline stage={uploadPipeline.stage} fileName={uploadPipeline.fileName} startTime={uploadPipeline.startTime} />}
-
-            {supportingDocs.length > 0 && !uploadPipeline.active && (
-              <div className="mt-3 space-y-2">
-                {supportingDocs.map((doc, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-slate-400 bg-white/[0.03] border border-white/5 rounded-lg px-4 py-2.5 min-h-[44px]">
-                    <FileText className="w-4 h-4 text-violet-400 shrink-0" />
-                    <span className="truncate flex-1">{doc.name}</span>
-                    <span className="text-[10px] uppercase text-slate-500 shrink-0">{doc.type}</span>
-                    {doc.processing ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-violet-400 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    )}
-                    <button
-                      className="text-slate-500 hover:text-red-400 shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                      onClick={() => {
-                        const removed = supportingDocs[i];
-                        setSupportingDocs((prev) => prev.filter((_, j) => j !== i));
-                        setDocContext((prev) => prev.filter((d) => !(d.name === removed.name && d.type === removed.type)));
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* RIGHT COLUMN — Draft Questions (desktop sidebar) */}

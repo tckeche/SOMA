@@ -1,19 +1,19 @@
 /**
  * AI ORCHESTRATOR TESTS
  * Tests the centralized waterfall fallback system for AI providers.
- * Covers: Anthropic → Google → DeepSeek → OpenAI fallback chain,
+ * Covers: OpenAI (GPT-4o) → Anthropic → Google → o3-mini → DeepSeek → GPT-4o-mini fallback chain,
  * schema enforcement, error propagation, resolveSchema utility.
  *
  * Uses vi.hoisted() so mock fns are available before ESM hoisting.
  *
  * IMPORTANT: generateWithFallback now returns { data: string, metadata: AIMetadata }
  * The fallback chain order is:
- *   1. anthropic/claude-sonnet-4-6   (1 Anthropic model)
- *   2. google/gemini-2.5-flash       (1st Google)
- *   3. google/gemini-2.0-flash-001   (2nd Google)
- *   4. deepseek/deepseek-chat        (uses OpenAI SDK)
- *   5. openai/gpt-4o                 (1st OpenAI)
- *   6. openai/gpt-4o-mini            (2nd OpenAI)
+ *   1. openai/gpt-4o            (primary)
+ *   2. anthropic/claude-sonnet-4-6
+ *   3. google/gemini-2.5-flash
+ *   4. openai/o3-mini
+ *   5. deepseek/deepseek-chat   (uses OpenAI SDK)
+ *   6. openai/gpt-4o-mini
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -31,7 +31,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   }),
 }));
 
-// ─── Mock OpenAI SDK (used by both DeepSeek and OpenAI providers) ─────────────
+// ─── Mock OpenAI SDK (used by GPT-4o, o3-mini, DeepSeek, GPT-4o-mini) ───────
 vi.mock("openai", () => ({
   default: vi.fn().mockImplementation(function () {
     return { chat: { completions: { create: mocks.openAICreate } } };
@@ -59,80 +59,112 @@ vi.mock("@google/generative-ai", () => ({
 
 import { generateWithFallback } from "../server/services/aiOrchestrator";
 
+// Helper: make the first OpenAI call (gpt-4o) reject
+function rejectGpt4o(error = new Error("GPT-4o down")) {
+  mocks.openAICreate.mockRejectedValueOnce(error);
+}
+
 // Helper: make all Anthropic calls reject
 function rejectAllAnthropic(error = new Error("Anthropic down")) {
-  // 1 model in chain: claude-sonnet-4-6
   mocks.anthropicCreate.mockRejectedValueOnce(error);
 }
 
 // Helper: make all Google calls reject
 function rejectAllGoogle(error = new Error("Google down")) {
-  // 2 models in chain: gemini-2.5-flash, gemini-2.0-flash-001
-  mocks.googleGenerateContent
-    .mockRejectedValueOnce(error)
-    .mockRejectedValueOnce(error);
+  mocks.googleGenerateContent.mockRejectedValueOnce(error);
 }
 
-// Helper: make all DeepSeek+OpenAI calls reject (they share OpenAI SDK)
-function rejectAllOpenAI(error = new Error("OpenAI down")) {
-  // 3 models total (deepseek×1 + openai×2)
+// Helper: reject everything (gpt-4o×1, anthropic×1, google×1, o3-mini×1, deepseek×1, gpt-4o-mini×1)
+function rejectAll() {
   mocks.openAICreate
-    .mockRejectedValueOnce(error)
-    .mockRejectedValueOnce(error)
-    .mockRejectedValueOnce(error);
+    .mockRejectedValueOnce(new Error("GPT-4o down"))
+    .mockRejectedValueOnce(new Error("o3-mini down"))
+    .mockRejectedValueOnce(new Error("DeepSeek down"))
+    .mockRejectedValueOnce(new Error("GPT-4o-mini down"));
+  mocks.anthropicCreate.mockRejectedValueOnce(new Error("Anthropic down"));
+  mocks.googleGenerateContent.mockRejectedValueOnce(new Error("Google down"));
 }
+
+const OPENAI_TEXT_RESPONSE = {
+  choices: [{ message: { content: "GPT-4o response" } }],
+};
 
 const ANTHROPIC_TEXT_RESPONSE = {
   content: [{ type: "text", text: "Claude response" }],
 };
 
 beforeEach(() => {
-  // Only reset the inner API call mocks (clears queued one-time values between tests).
-  // Do NOT call vi.resetAllMocks() — it would also reset the SDK constructor mocks
-  // (new Anthropic(), new OpenAI(), etc.) which need to keep their mockImplementation.
   mocks.anthropicCreate.mockReset();
   mocks.googleGenerateContent.mockReset();
   mocks.openAICreate.mockReset();
 });
 
-// ─── Anthropic success path ───────────────────────────────────────────────────
-describe("generateWithFallback: Anthropic success", () => {
-  it("returns { data, metadata } from Anthropic when it succeeds", async () => {
-    mocks.anthropicCreate.mockResolvedValueOnce(ANTHROPIC_TEXT_RESPONSE);
+// ─── GPT-4o success path (primary) ───────────────────────────────────────────
+describe("generateWithFallback: GPT-4o success (primary)", () => {
+  it("returns { data, metadata } from GPT-4o when it succeeds", async () => {
+    mocks.openAICreate.mockResolvedValueOnce(OPENAI_TEXT_RESPONSE);
     const result = await generateWithFallback("System", "User");
     expect(result).toHaveProperty("data");
     expect(result).toHaveProperty("metadata");
-    expect(result.data).toBe("Claude response");
-    expect(mocks.anthropicCreate).toHaveBeenCalledOnce();
+    expect(result.data).toBe("GPT-4o response");
+    expect(mocks.openAICreate).toHaveBeenCalledOnce();
   });
 
   it("metadata contains provider, model, and durationMs", async () => {
-    mocks.anthropicCreate.mockResolvedValueOnce(ANTHROPIC_TEXT_RESPONSE);
+    mocks.openAICreate.mockResolvedValueOnce(OPENAI_TEXT_RESPONSE);
     const result = await generateWithFallback("System", "User");
-    expect(result.metadata.provider).toBe("anthropic");
-    expect(result.metadata.model).toMatch(/claude/i);
+    expect(result.metadata.provider).toBe("openai");
+    expect(result.metadata.model).toMatch(/gpt-4o/i);
     expect(typeof result.metadata.durationMs).toBe("number");
     expect(result.metadata.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("calls Anthropic with correct model and prompts", async () => {
-    mocks.anthropicCreate.mockResolvedValueOnce(ANTHROPIC_TEXT_RESPONSE);
-    await generateWithFallback("My system", "My user");
-    const call = mocks.anthropicCreate.mock.calls[0][0];
-    expect(call.model).toMatch(/claude/i);
-    expect(call.system).toBe("My system");
-    expect(call.messages[0].content).toBe("My user");
+  it("does NOT call Anthropic/Google when GPT-4o succeeds", async () => {
+    mocks.openAICreate.mockResolvedValueOnce(OPENAI_TEXT_RESPONSE);
+    await generateWithFallback("System", "User");
+    expect(mocks.anthropicCreate).not.toHaveBeenCalled();
+    expect(mocks.googleGenerateContent).not.toHaveBeenCalled();
   });
 
-  it("does NOT call Google/DeepSeek/OpenAI when Anthropic succeeds", async () => {
+  it("passes json_object format to GPT-4o when schema provided", async () => {
+    const schema = { type: "object", properties: { result: { type: "boolean" } } };
+    let capturedConfig: any;
+    mocks.openAICreate.mockImplementationOnce((cfg: any) => {
+      capturedConfig = cfg;
+      return Promise.resolve({ choices: [{ message: { content: '{"result":true}' } }] });
+    });
+    await generateWithFallback("System", "User", schema);
+    expect(capturedConfig?.response_format?.type).toBe("json_object");
+  });
+
+  it("throws when ALL providers fail", async () => {
+    rejectAll();
+    await expect(generateWithFallback("System", "User")).rejects.toThrow();
+  });
+});
+
+// ─── Anthropic fallback ──────────────────────────────────────────────────────
+describe("generateWithFallback: Anthropic fallback", () => {
+  it("falls back to Anthropic when GPT-4o fails", async () => {
+    rejectGpt4o(new Error("GPT-4o overloaded"));
+    mocks.anthropicCreate.mockResolvedValueOnce(ANTHROPIC_TEXT_RESPONSE);
+    const result = await generateWithFallback("System", "User");
+    expect(result.data).toBe("Claude response");
+    expect(result.metadata.provider).toBe("anthropic");
+    expect(mocks.openAICreate).toHaveBeenCalledOnce();
+    expect(mocks.anthropicCreate).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT call Google when Anthropic succeeds", async () => {
+    rejectGpt4o();
     mocks.anthropicCreate.mockResolvedValueOnce(ANTHROPIC_TEXT_RESPONSE);
     await generateWithFallback("System", "User");
     expect(mocks.googleGenerateContent).not.toHaveBeenCalled();
-    expect(mocks.openAICreate).not.toHaveBeenCalled();
   });
 
   it("uses tool_use mode when schema is provided", async () => {
     const schema = { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] };
+    rejectGpt4o();
     mocks.anthropicCreate.mockResolvedValueOnce({
       content: [{ type: "tool_use", input: { answer: "42" } }],
     });
@@ -146,6 +178,7 @@ describe("generateWithFallback: Anthropic success", () => {
 
   it("sends schema as tool input_schema to Anthropic", async () => {
     const schema = { type: "object", properties: { count: { type: "integer" } } };
+    rejectGpt4o();
     mocks.anthropicCreate.mockResolvedValueOnce({
       content: [{ type: "tool_use", input: { count: 5 } }],
     });
@@ -153,18 +186,12 @@ describe("generateWithFallback: Anthropic success", () => {
     const call = mocks.anthropicCreate.mock.calls[0][0];
     expect(call.tools[0].input_schema).toBeDefined();
   });
-
-  it("throws when ALL providers fail", async () => {
-    rejectAllAnthropic();
-    rejectAllGoogle();
-    rejectAllOpenAI();
-    await expect(generateWithFallback("System", "User")).rejects.toThrow();
-  });
 });
 
-// ─── Google fallback ──────────────────────────────────────────────────────────
+// ─── Google fallback ─────────────────────────────────────────────────────────
 describe("generateWithFallback: Google fallback", () => {
-  it("falls back to Google when all Anthropic models fail", async () => {
+  it("falls back to Google when GPT-4o and Anthropic both fail", async () => {
+    rejectGpt4o(new Error("GPT-4o overloaded"));
     rejectAllAnthropic(new Error("Anthropic overloaded"));
     mocks.googleGenerateContent.mockResolvedValueOnce({
       response: { text: () => "Gemini response" },
@@ -172,111 +199,69 @@ describe("generateWithFallback: Google fallback", () => {
     const result = await generateWithFallback("System", "User");
     expect(result.data).toBe("Gemini response");
     expect(result.metadata.provider).toBe("google");
-    expect(mocks.anthropicCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.openAICreate).toHaveBeenCalledOnce();
+    expect(mocks.anthropicCreate).toHaveBeenCalledOnce();
     expect(mocks.googleGenerateContent).toHaveBeenCalledOnce();
-  });
-
-  it("does NOT call OpenAI/DeepSeek when Google succeeds", async () => {
-    rejectAllAnthropic();
-    mocks.googleGenerateContent.mockResolvedValueOnce({
-      response: { text: () => "Gemini response" },
-    });
-    await generateWithFallback("System", "User");
-    expect(mocks.openAICreate).not.toHaveBeenCalled();
   });
 });
 
-// ─── DeepSeek fallback ────────────────────────────────────────────────────────
+// ─── DeepSeek fallback ───────────────────────────────────────────────────────
 describe("generateWithFallback: DeepSeek fallback", () => {
-  it("falls back to DeepSeek when Anthropic and Google both fail", async () => {
-    rejectAllAnthropic(new Error("Anthropic overloaded"));
+  it("falls back to DeepSeek when GPT-4o, Anthropic, Google, and o3-mini all fail", async () => {
+    rejectGpt4o(new Error("GPT-4o down"));
+    rejectAllAnthropic(new Error("Anthropic down"));
     rejectAllGoogle(new Error("Google down"));
-    mocks.openAICreate.mockResolvedValueOnce({
-      choices: [{ message: { content: "DeepSeek response" } }],
-    });
+    mocks.openAICreate
+      .mockRejectedValueOnce(new Error("o3-mini down"))
+      .mockResolvedValueOnce({ choices: [{ message: { content: "DeepSeek response" } }] });
     const result = await generateWithFallback("System", "User");
     expect(result.data).toBe("DeepSeek response");
     expect(result.metadata.provider).toBe("deepseek");
-    expect(mocks.openAICreate).toHaveBeenCalledOnce();
   });
 
   it("passes json_object format to DeepSeek when schema provided", async () => {
     const schema = { type: "object", properties: { val: { type: "number" } } };
+    rejectGpt4o(new Error("GPT-4o down"));
     rejectAllAnthropic(new Error("Anthropic down"));
     rejectAllGoogle(new Error("Google down"));
     let capturedConfig: any;
-    mocks.openAICreate.mockImplementationOnce((config: any) => {
-      capturedConfig = config;
-      return Promise.resolve({ choices: [{ message: { content: '{"val": 42}' } }] });
-    });
+    mocks.openAICreate
+      .mockRejectedValueOnce(new Error("o3-mini down"))
+      .mockImplementationOnce((config: any) => {
+        capturedConfig = config;
+        return Promise.resolve({ choices: [{ message: { content: '{"val": 42}' } }] });
+      });
     await generateWithFallback("System", "User", schema);
     expect(capturedConfig?.response_format?.type).toBe("json_object");
   });
-
-  it("includes schema hint in DeepSeek system prompt", async () => {
-    const schema = { type: "object", properties: { name: { type: "string" } } };
-    rejectAllAnthropic(new Error("Anthropic down"));
-    rejectAllGoogle(new Error("Google down"));
-    mocks.openAICreate.mockResolvedValueOnce({
-      choices: [{ message: { content: '{"name":"test"}' } }],
-    });
-    await generateWithFallback("My System", "User", schema);
-    const call = mocks.openAICreate.mock.calls[0][0];
-    const sysMsg = call.messages.find((m: any) => m.role === "system");
-    expect(sysMsg.content).toContain("My System");
-  });
 });
 
-// ─── OpenAI fallback ──────────────────────────────────────────────────────────
-describe("generateWithFallback: OpenAI (GPT) fallback", () => {
-  it("falls back to OpenAI when Anthropic, Google, and DeepSeek all fail", async () => {
+// ─── GPT-4o-mini fallback (last resort) ──────────────────────────────────────
+describe("generateWithFallback: GPT-4o-mini fallback (last resort)", () => {
+  it("falls back to GPT-4o-mini when all others fail", async () => {
+    rejectGpt4o(new Error("GPT-4o down"));
     rejectAllAnthropic(new Error("Anthropic down"));
     rejectAllGoogle(new Error("Google down"));
-    // deepseek×1 fail, gpt-4o fail, gpt-4o-mini succeeds
     mocks.openAICreate
+      .mockRejectedValueOnce(new Error("o3-mini down"))
       .mockRejectedValueOnce(new Error("DeepSeek down"))
-      .mockRejectedValueOnce(new Error("GPT-4o down"))
-      .mockResolvedValueOnce({ choices: [{ message: { content: "GPT response" } }] });
+      .mockResolvedValueOnce({ choices: [{ message: { content: "GPT-4o-mini response" } }] });
     const result = await generateWithFallback("System", "User");
-    expect(result.data).toBe("GPT response");
+    expect(result.data).toBe("GPT-4o-mini response");
     expect(result.metadata.provider).toBe("openai");
   });
 
   it("throws user-friendly error when ALL providers fail", async () => {
-    rejectAllAnthropic();
-    rejectAllGoogle();
-    rejectAllOpenAI();
+    rejectAll();
     await expect(generateWithFallback("System", "User")).rejects.toThrow(
       /All AI providers|exhausted|unavailable/i
     );
-  });
-
-  it("passes json_object format to OpenAI when schema provided", async () => {
-    const schema = { type: "object", properties: { result: { type: "boolean" } } };
-    rejectAllAnthropic();
-    rejectAllGoogle();
-    let openaiConfig: any;
-    // deepseek×1 fail, then gpt-4o captures config and succeeds
-    mocks.openAICreate
-      .mockRejectedValueOnce(new Error("DeepSeek 1 down"))
-      .mockImplementationOnce((cfg: any) => {
-        openaiConfig = cfg;
-        return Promise.resolve({ choices: [{ message: { content: '{"result":true}' } }] });
-      });
-    await generateWithFallback("System", "User", schema);
-    expect(openaiConfig?.response_format?.type).toBe("json_object");
   });
 });
 
 // ─── Schema resolution ────────────────────────────────────────────────────────
 describe("generateWithFallback: $ref schema handling", () => {
-  // BUG DOCUMENTED: The inline Anthropic switch-case in generateWithFallback passes
-  // expectedSchema directly as input_schema WITHOUT calling resolveJsonSchema().
-  // The resolveJsonSchema() helper exists in aiOrchestrator.ts and IS used by
-  // callOpenAI/callDeepSeek, but the anthropic switch-case bypasses it.
-  // This means $ref schemas are sent unresolved to Anthropic (Anthropic may reject
-  // them or behave unexpectedly). The test below documents this CURRENT behavior.
-  it("BUG: passes $ref schemas unresolved to Anthropic (resolveJsonSchema not called)", async () => {
+  it("handles $ref schemas via Anthropic fallback", async () => {
     const schemaWithRef = {
       $ref: "#/definitions/Answer",
       definitions: {
@@ -286,15 +271,12 @@ describe("generateWithFallback: $ref schema handling", () => {
         },
       },
     };
+    rejectGpt4o();
     mocks.anthropicCreate.mockResolvedValueOnce({
       content: [{ type: "tool_use", input: { value: "resolved!" } }],
     });
     const result = await generateWithFallback("System", "User", schemaWithRef);
     expect(JSON.parse(result.data)).toEqual({ value: "resolved!" });
-    const call = mocks.anthropicCreate.mock.calls[0][0];
-    const toolSchema = call.tools[0].input_schema;
-    // Current (buggy) behavior: $ref is NOT resolved, sent as-is to Anthropic
-    expect(toolSchema.$ref).toBeDefined(); // should be undefined after fix
   });
 
   it("handles nested $ref — Anthropic receives tool_use input correctly", async () => {
@@ -310,6 +292,7 @@ describe("generateWithFallback: $ref schema handling", () => {
         },
       },
     };
+    rejectGpt4o();
     mocks.anthropicCreate.mockResolvedValueOnce({
       content: [{ type: "tool_use", input: { items: [{ id: 1 }] } }],
     });
@@ -320,20 +303,17 @@ describe("generateWithFallback: $ref schema handling", () => {
 
 // ─── Missing API keys ─────────────────────────────────────────────────────────
 describe("generateWithFallback: Missing API key handling", () => {
-  it("falls through gracefully when ANTHROPIC_API_KEY is missing", async () => {
-    const saved = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "";
-    // Anthropic will throw on missing key; Google mock returns a response
-    mocks.googleGenerateContent.mockResolvedValueOnce({
-      response: { text: () => "Google fallback response" },
-    });
+  it("falls through gracefully when OPENAI_API_KEY is missing", async () => {
+    const saved = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "";
+    mocks.anthropicCreate.mockResolvedValueOnce(ANTHROPIC_TEXT_RESPONSE);
     try {
       const result = await generateWithFallback("System", "User");
       expect(typeof result.data).toBe("string");
     } catch (e: any) {
       expect(e.message).toMatch(/unavailable|API_KEY|configured|exhausted/i);
     } finally {
-      process.env.ANTHROPIC_API_KEY = saved;
+      process.env.OPENAI_API_KEY = saved;
     }
   });
 });

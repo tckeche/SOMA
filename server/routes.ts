@@ -13,7 +13,6 @@ import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers } from "./services/aiPipeline";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { generateWithFallback } from "./services/aiOrchestrator";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import type { GraphQuestionSpec } from "@shared/schema";
 
 /**
@@ -435,37 +434,6 @@ const upload = multer({
 
 const pdfUpload = multer({ storage: multer.memoryStorage() });
 
-const pdfExtractionResponseSchema: any = {
-  type: SchemaType.ARRAY,
-  items: {
-    type: SchemaType.OBJECT,
-    properties: {
-      question: { type: SchemaType.STRING },
-      options: {
-        type: SchemaType.ARRAY,
-        items: { type: SchemaType.STRING },
-      },
-      correct_answer: { type: SchemaType.STRING },
-      explanation: { type: SchemaType.STRING },
-    },
-    required: ["question", "options", "correct_answer", "explanation"],
-  },
-};
-
-const supportingDocUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      const dir = path.resolve(process.cwd(), "supporting-docs");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    },
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  }),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit for supporting docs
-});
 
 const ADMIN_COOKIE_NAME = "admin_session";
 
@@ -1734,7 +1702,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Copilot chat for tutor quiz builder
   app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
     try {
-      const { message, documentIds, chatHistory, syllabusSelection, includeGraphQuestions, assessmentContext, draftQuestions } = req.body;
+      const { message, chatHistory, syllabusSelection, includeGraphQuestions, assessmentContext, draftQuestions } = req.body;
       const allowGraphs = includeGraphQuestions === true;
       // draftQuestions is the current in-progress question list (may be empty for new assessments)
       const currentDraft: DraftQuestion[] = Array.isArray(draftQuestions) ? draftQuestions : [];
@@ -1761,16 +1729,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       let supportingText = "";
-      const pdfFileIds = Array.isArray(documentIds) ? documentIds : [];
-      const docsDir = path.resolve(process.cwd(), "supporting-docs");
-      for (const fileId of pdfFileIds) {
-        if (typeof fileId !== "string" || fileId.includes("..") || fileId.includes("/")) continue;
-        const filePath = path.join(docsDir, fileId);
-        if (fs.existsSync(filePath)) {
-          supportingText += `\n${await parsePdfTextFromBuffer(fs.readFileSync(filePath))}`;
-        }
-      }
-
       let syllabusContextLabel = "";
       if (syllabusSelection?.board && syllabusSelection?.level && syllabusSelection?.syllabusCode) {
         const syllabusDocument = await storage.getSyllabusDocumentBySelection({
@@ -2157,91 +2115,6 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
-  // Upload supporting document for tutor quiz builder
-  app.post("/api/tutor/upload-doc", requireTutor, supportingDocUpload.single("pdf"), async (req, res) => {
-    req.setTimeout(300_000);
-    res.setTimeout(300_000);
-    try {
-      if (!req.file) return res.status(400).json({ message: "No PDF uploaded" });
-
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return res.status(500).json({ message: "GEMINI_API_KEY is not configured" });
-
-      const SUPPORTING_DOCS_ROOT = path.resolve(process.cwd(), "supporting-docs");
-      const resolvedPath = fs.realpathSync(req.file.path);
-      if (!resolvedPath.startsWith(SUPPORTING_DOCS_ROOT + path.sep)) {
-        return res.status(400).json({ message: "Invalid file path" });
-      }
-      const pdfBuffer = fs.readFileSync(resolvedPath);
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: "application/json",
-          responseSchema: pdfExtractionResponseSchema,
-        },
-      });
-
-      const extractionPrompt = `You are a precise document extraction tool that follows a strict Two-Pass Verification process.
-
-=== PASS 1: CONTEXTUAL EXTRACTION ===
-Read the provided document carefully and extract the exact questions found within it.\n\nRules for Pass 1:\n\n- Preserve the precise technical meaning and context of every question.\n- If the questions are already multiple-choice, extract the exact options verbatim.\n- If they are open-ended, generate 3 plausible but incorrect distractor options to format them as MCQs.\n- Format all mathematical equations, variables, and formulas strictly in KaTeX syntax.\n- Provide a concise 2-3 sentence explanation for the correct answer.
-
-=== PASS 2: VERIFICATION & FORMATTING ===
-Before finalizing your output, scan your extracted text against the original document.\n\nVerification checklist:\n\n1. Confirm that no context, qualifiers, or technical meaning was lost during extraction.\n2. Confirm that each correct_answer exactly matches one of the four options.\n3. Confirm that explanations are factually accurate and grounded in the source material.
-
-Markdown Formatting Rules (apply to all text fields):\n\n- Use \\n\\n to separate paragraphs and distinct thoughts.\n- Use \`- \` (dash space) or \`1. \` for any lists or sequential steps within a question or explanation.\n- Do not mash sentences together. Ensure high readability.\n- Preserve line breaks where they exist in the original document.
-
-=== STRICT JSON SCHEMA ===
-Output the verified, Markdown-formatted text as a JSON array of objects with this exact schema:\n\n- question (string) \u2014 the full question text with Markdown formatting\n- options (string[] with exactly 4 options)\n- correct_answer (string that exactly matches one option)\n- explanation (string) \u2014 Markdown-formatted explanation
-
-=== NO HALLUCINATIONS ===
-You must rely ONLY on the provided PDF text. Do not generate fictitious data or simulated examples to fill in gaps. If a question is ambiguous or incomplete in the source, extract it as-is and note the ambiguity in the explanation.`;
-
-      const result = await model.generateContent([
-        { text: extractionPrompt },
-        {
-          inlineData: {
-            mimeType: req.file.mimetype || "application/pdf",
-            data: pdfBuffer.toString("base64"),
-          },
-        },
-      ]);
-
-      const raw = result.response.text();
-      const parsed = JSON.parse(raw);
-      const drafts = Array.isArray(parsed)
-        ? parsed.map((item: any) => ({
-            prompt_text: String(item?.question || "").trim(),
-            options: Array.isArray(item?.options) ? item.options.map((opt: any) => String(opt)).slice(0, 4) : [],
-            correct_answer: String(item?.correct_answer || "").trim(),
-            marks_worth: 1,
-            explanation: String(item?.explanation || "").trim(),
-          })).filter((item: any) =>
-            item.prompt_text.length > 0
-            && Array.isArray(item.options)
-            && item.options.length === 4
-            && item.options.every((opt: string) => opt.length > 0)
-            && item.correct_answer.length > 0
-            && item.options.includes(item.correct_answer)
-            && item.explanation.length > 0
-          )
-        : [];
-
-      try { fs.unlinkSync(resolvedPath); } catch {}
-
-      res.json({
-        id: req.file.filename,
-        originalName: req.file.originalname,
-        drafts,
-        metadata: { provider: "google", model: "gemini-2.5-flash" },
-      });
-    } catch (err: any) {
-      if (req.file?.path) { try { fs.unlinkSync(req.file.path); } catch {} }
-      res.status(500).json({ message: err.message || "Failed to extract questions from PDF" });
-    }
-  });
 
   // ─── Super Admin Routes ──────────────────────────────────────────
 
