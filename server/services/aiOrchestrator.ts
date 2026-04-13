@@ -21,8 +21,9 @@ const AI_FALLBACK_CHAIN: ModelConfig[] = [
   { provider: "deepseek", model: "deepseek-chat" },
 
   // --- TIER 4: OPENAI (FAILSAFE) ---
-  { provider: "openai", model: "gpt-4o" },
-  { provider: "openai", model: "gpt-4o-mini" },
+  { provider: "openai", model: "o3-mini" },   // Second-best reasoning model
+  { provider: "openai", model: "gpt-4o" },    // Best standard model
+  { provider: "openai", model: "gpt-4o-mini" }, // Lightweight fallback
 ];
 
 function convertToGeminiSchema(schema: any): any {
@@ -139,6 +140,12 @@ async function callGoogle(
   return text;
 }
 
+// o-series reasoning models (o1, o3-mini, etc.) do not accept a `temperature`
+// parameter — passing it causes a 400 error. Detect them by model name prefix.
+function isReasoningModel(model: string): boolean {
+  return /^o\d/i.test(model);
+}
+
 async function callOpenAI(
   model: string,
   systemPrompt: string,
@@ -161,10 +168,10 @@ async function callOpenAI(
     { role: "user", content: userPrompt },
   ];
 
-  const config: any = { model, messages, temperature: 0.1 };
-  if (expectedSchema) {
-    config.response_format = { type: "json_object" };
-  }
+  // Reasoning models don't support temperature; standard models default to 0.1
+  const config: any = { model, messages };
+  if (!isReasoningModel(model)) config.temperature = 0.1;
+  if (expectedSchema) config.response_format = { type: "json_object" };
 
   const response = await client.chat.completions.create(config);
   const content = response.choices[0]?.message?.content;
