@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Clock, Send, Award, Eye,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, ArrowRight, BarChart3, Target, CheckCircle2,
-  Sparkles, Shield, Zap, CalendarDays,
+  CalendarDays, ExternalLink,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -71,31 +71,61 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   return `${mins}m ${secs}s`;
 }
 
-function AnimatedNumber({ value, suffix = "" }: { value: number; suffix?: string }) {
-  const [display, setDisplay] = useState(0);
-  const ref = useRef<number>(0);
-  useEffect(() => {
-    const target = value;
-    const start = ref.current;
-    const duration = 800;
-    const startTime = performance.now();
-    let rafId: number;
-    const animate = (now: number) => {
-      const elapsed = now - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const current = Math.round(start + (target - start) * eased);
-      setDisplay(current);
-      if (progress < 1) { rafId = requestAnimationFrame(animate); }
-      else ref.current = target;
-    };
-    rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
-  }, [value]);
-  return <>{display}{suffix}</>;
+const GLASS_PANEL = "rounded-2xl border border-white/[0.06] bg-gradient-to-b from-slate-900/95 to-[#0c1222]/95 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]";
+
+function getStatusChip(s: DashboardStats["studentInsights"][0]): { text: string; color: string } {
+  const hasSubmissions = s.completed > 0;
+  const allDone = s.assigned > 0 && s.awaiting === 0 && s.completed === s.assigned;
+
+  if (!hasSubmissions && s.assigned > 0) return { text: "Awaiting", color: "bg-amber-500/12 text-amber-400 border-amber-500/20" };
+  if (s.trend === "declining" && s.completed >= 2) return { text: "Trend down", color: "bg-red-500/12 text-red-400 border-red-500/20" };
+  if (s.completed < 3 && s.assigned > 0) return { text: "Low evidence", color: "bg-slate-500/12 text-slate-400 border-slate-500/20" };
+  if (s.awaiting > 0 && !allDone) return { text: "Needs marking", color: "bg-violet-500/12 text-violet-400 border-violet-500/20" };
+  if (s.trend === "improving") return { text: "Trend up", color: "bg-emerald-500/12 text-emerald-400 border-emerald-500/20" };
+  if (allDone) return { text: "On track", color: "bg-emerald-500/12 text-emerald-400 border-emerald-500/20" };
+  return { text: "Stable", color: "bg-slate-500/12 text-slate-400 border-slate-500/20" };
 }
 
-const GLASS_PANEL = "rounded-2xl border border-white/[0.06] bg-gradient-to-b from-slate-900/95 to-[#0c1222]/95 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]";
+function MiniSparkline({ scores }: { scores: number[] }) {
+  if (scores.length < 2) return null;
+  const w = 64, h = 24, pad = 2;
+  const min = Math.min(...scores), max = Math.max(...scores);
+  const range = max - min || 1;
+  const pts = scores.map((v, i) => {
+    const x = pad + (i / (scores.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+    return `${x},${y}`;
+  });
+  const last = scores[scores.length - 1];
+  const color = last >= 70 ? "#34d399" : last >= 50 ? "#fbbf24" : "#f87171";
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+      <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+      <circle cx={pts[pts.length - 1].split(",")[0]} cy={pts[pts.length - 1].split(",")[1]} r="2.5" fill={color} />
+    </svg>
+  );
+}
+
+function WorkloadBar({ assigned, completed, awaiting }: { assigned: number; completed: number; awaiting: number }) {
+  const total = assigned || 1;
+  const cPct = (completed / total) * 100;
+  const aPct = (awaiting / total) * 100;
+  const pPct = Math.max(0, 100 - cPct - aPct);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-[6px] rounded-full bg-slate-800/80 overflow-hidden flex">
+        {cPct > 0 && <div className="h-full bg-emerald-500/70" style={{ width: `${cPct}%` }} />}
+        {aPct > 0 && <div className="h-full bg-amber-500/70" style={{ width: `${aPct}%` }} />}
+        {pPct > 0 && <div className="h-full bg-slate-600/40" style={{ width: `${pPct}%` }} />}
+      </div>
+      <div className="flex items-center gap-1.5 text-[9px] font-bold tabular-nums shrink-0">
+        <span className="text-emerald-400">{completed}</span>
+        <span className="text-slate-700">/</span>
+        <span className="text-slate-400">{assigned}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function TutorDashboard() {
   const queryClient = useQueryClient();
@@ -104,7 +134,6 @@ export default function TutorDashboard() {
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
-  const [activeTab, setActiveTab] = useState<"submissions" | "pending">("submissions");
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -148,30 +177,22 @@ export default function TutorDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  const atRiskStudents = useMemo(() => {
-    if (!stats?.studentInsights?.length) return [];
-    return stats.studentInsights
-      .filter((s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.awaiting > 0 && s.completed === 0))
-      .sort((a, b) => {
-        const aScore = (a.trend === "declining" ? 3 : 0) + a.weakTopics.length + (a.awaiting > a.completed ? 2 : 0);
-        const bScore = (b.trend === "declining" ? 3 : 0) + b.weakTopics.length + (b.awaiting > b.completed ? 2 : 0);
-        return bScore - aScore;
-      })
-      .slice(0, 6);
-  }, [stats]);
-
-  const { data: aiInsights, isLoading: aiLoading } = useQuery<{ insights: AIInsight[] }>({
-    queryKey: ["/api/tutor/ai/intervention-insights", atRiskStudents.map((s) => s.studentId).join(",")],
+  const { data: aiInsights } = useQuery<{ insights: AIInsight[] }>({
+    queryKey: ["/api/tutor/ai/intervention-insights", stats?.studentInsights?.map((s) => s.studentId).join(",")],
     queryFn: async () => {
+      const atRisk = (stats?.studentInsights || []).filter(
+        (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.awaiting > 0 && s.completed === 0)
+      ).slice(0, 6);
+      if (atRisk.length === 0) return { insights: [] };
       const res = await authFetch("/api/tutor/ai/intervention-insights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ students: atRiskStudents }),
+        body: JSON.stringify({ students: atRisk }),
       });
       if (!res.ok) return { insights: [] };
       return res.json();
     },
-    enabled: atRiskStudents.length > 0,
+    enabled: (stats?.studentInsights?.length ?? 0) > 0,
     staleTime: 120000,
     refetchOnWindowFocus: false,
   });
@@ -222,20 +243,6 @@ export default function TutorDashboard() {
     });
   }, []);
 
-  const overallAvg = useMemo(() => {
-    if (!stats?.cohortAverages?.length) return null;
-    const total = stats.cohortAverages.reduce((s, c) => s + c.average * c.count, 0);
-    const count = stats.cohortAverages.reduce((s, c) => s + c.count, 0);
-    return count > 0 ? Math.round(total / count) : null;
-  }, [stats]);
-
-  const completionRate = useMemo(() => {
-    if (!stats?.studentInsights?.length) return null;
-    const totalAssigned = stats.studentInsights.reduce((s, i) => s + i.assigned, 0);
-    const totalCompleted = stats.studentInsights.reduce((s, i) => s + i.completed, 0);
-    return totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : null;
-  }, [stats]);
-
   const overdueCount = useMemo(() => {
     if (!stats?.pendingAssignments?.length) return 0;
     const now = new Date();
@@ -253,7 +260,7 @@ export default function TutorDashboard() {
     return Object.entries(topicMap)
       .map(([topic, count]) => ({ topic, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
+      .slice(0, 5);
   }, [stats]);
 
   useEffect(() => {
@@ -263,12 +270,35 @@ export default function TutorDashboard() {
     });
   }, [queryClient]);
 
-  const getAIReason = (studentId: string, studentName: string): string | null => {
+  const getInsightChip = (studentName: string): string | null => {
     if (!aiInsights?.insights?.length) return null;
-    const match = aiInsights.insights.find((i) => i.name === studentName) 
+    const match = aiInsights.insights.find((i) => i.name === studentName)
       || aiInsights.insights.find((i) => i.name?.toLowerCase() === studentName?.toLowerCase());
     return match?.reason || null;
   };
+
+  const studentPlaques = useMemo(() => {
+    return (stats?.studentInsights || []).map((s) => {
+      const chip = getStatusChip(s);
+      const completionPct = s.assigned > 0 ? Math.round((s.completed / s.assigned) * 100) : 0;
+      const recentScores: number[] = [];
+      const submissions = (stats?.recentSubmissions || []).filter(
+        (sub) => sub.studentName === s.studentName
+      );
+      for (const sub of submissions.slice(-5)) {
+        recentScores.push(sub.score);
+      }
+      const lastScore = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
+      const coveragePct = s.assigned > 0 ? Math.min(100, Math.round((s.completed / Math.max(s.assigned, 1)) * 100)) : 0;
+
+      const lowestCoverage = s.weakTopics.slice(0, 3);
+
+      const lastSubmission = submissions.length > 0 ? submissions[submissions.length - 1] : null;
+      const lastActivity = lastSubmission ? lastSubmission.createdAt : null;
+
+      return { ...s, chip, completionPct, recentScores, lastScore, coveragePct, lowestCoverage, lastActivity, lastSubmission };
+    });
+  }, [stats, aiInsights]);
 
   return (
     <div className="min-h-screen bg-[#080d1a]">
@@ -337,15 +367,14 @@ export default function TutorDashboard() {
               <div className="w-12 h-12 rounded-full border-2 border-violet-500/20 border-t-violet-500 animate-spin" />
               <div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-transparent border-b-indigo-400/30 animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
             </div>
-            <p className="text-sm text-slate-500 font-medium">Loading command centre...</p>
+            <p className="text-sm text-slate-500 font-medium">Loading dashboard...</p>
           </div>
         ) : (
           <div className="space-y-7 animate-in fade-in duration-500">
 
-            {/* ── Header ─────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-slate-100 tracking-tight">Command Centre</h2>
+                <h2 className="text-2xl font-bold text-slate-100 tracking-tight">Dashboard</h2>
                 <p className="text-[13px] text-slate-500 mt-1 font-medium">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -364,473 +393,157 @@ export default function TutorDashboard() {
               </div>
             </div>
 
-            {/* ── SECTION A: Strategic Command Tiles ────────────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-              <CommandTile icon={Users} label="Active Students" value={stats?.totalStudents ?? 0} accent="violet" testId="stat-students" />
-              <CommandTile icon={Send} label="Awaiting Submission" value={stats?.pendingAssignments?.length ?? 0} accent="amber" testId="stat-assigned" alert={overdueCount > 0 ? `${overdueCount} overdue` : undefined} />
-              <CommandTile icon={Eye} label="Reviews Pending" value={stats?.recentSubmissions?.length ?? 0} accent="blue" testId="stat-reviews" />
-              <CommandTile icon={Award} label="Cohort Average" value={overallAvg ?? 0} suffix="%" accent="emerald" testId="stat-cohort-avg" noValue={overallAvg === null} />
-              <CommandTile icon={Target} label="Completion Rate" value={completionRate ?? 0} suffix="%" accent="cyan" testId="stat-completion" noValue={completionRate === null} />
-              <CommandTile icon={Shield} label="Below Threshold" value={stats?.belowThresholdCount ?? 0} accent="red" testId="stat-below" />
-              <CommandTile icon={AlertTriangle} label="Weakest Topic" textValue={stats?.weakestTopic || null} accent="orange" testId="stat-weakest" />
-            </div>
-
-            {/* ── SECTION B: Intervention Queue ─────────────────────── */}
-            <div className={GLASS_PANEL}>
-              <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-white/[0.04]">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.08))", border: "1px solid rgba(239,68,68,0.15)" }}>
-                    <Zap className="w-4.5 h-4.5 text-red-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-[15px] font-semibold text-slate-100 tracking-tight">Intervention Queue</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Priority learners requiring tutor action</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {aiLoading && <Loader2 className="w-3.5 h-3.5 text-violet-400/60 animate-spin" />}
-                  {aiInsights?.insights?.length ? (
-                    <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/15 text-[10px] gap-1">
-                      <Sparkles className="w-3 h-3" /> AI Insights
-                    </Badge>
-                  ) : null}
-                  {atRiskStudents.length > 0 && (
-                    <Badge className="bg-red-500/10 text-red-400 border-red-500/15 text-[10px] font-semibold">
-                      {atRiskStudents.length}
-                    </Badge>
-                  )}
-                </div>
+            {/* ── STUDENT PLAQUE GRID ──────────────────────────────── */}
+            {studentPlaques.length === 0 ? (
+              <div className={`${GLASS_PANEL} px-6 py-16 text-center`}>
+                <Users className="w-12 h-12 mx-auto text-slate-700 mb-4" />
+                <p className="text-sm text-slate-400 font-medium">No students yet</p>
+                <p className="text-xs text-slate-600 mt-1">Go to the Students tab to adopt students</p>
               </div>
-
-              {atRiskStudents.length === 0 ? (
-                <div className="px-6 py-14 text-center">
-                  <CheckCircle2 className="w-11 h-11 mx-auto text-emerald-500/30 mb-3" />
-                  <p className="text-sm text-slate-400 font-medium">All students are on track</p>
-                  <p className="text-xs text-slate-600 mt-1">No interventions required at this time</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-px bg-white/[0.02]">
-                  {atRiskStudents.map((s) => {
-                    const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
-                    const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-slate-500";
-                    const trendBg = s.trend === "declining" ? "bg-red-500/8" : s.trend === "improving" ? "bg-emerald-500/8" : "bg-slate-500/8";
-                    const aiReason = getAIReason(s.studentId, s.studentName);
-                    const completionPct = s.assigned > 0 ? Math.round((s.completed / s.assigned) * 100) : 0;
-                    return (
-                      <div key={s.studentId} className="p-5 hover:bg-white/[0.015] transition-all group border-b border-r border-white/[0.03]">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold text-slate-200 shrink-0" style={{ background: "linear-gradient(135deg, rgba(148,163,184,0.12), rgba(100,116,139,0.06))", border: "1px solid rgba(148,163,184,0.1)" }}>
-                              {s.studentName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-200">{s.studentName}</p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${trendBg} ${trendColor}`}>
-                                  <TrendIcon className="w-3 h-3" />
-                                  {s.trend}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {aiReason && (
-                          <div className="mb-3 px-3 py-2 rounded-lg bg-violet-500/[0.06] border border-violet-500/10">
-                            <p className="text-[11px] text-violet-300/90 leading-relaxed">{aiReason}</p>
-                          </div>
-                        )}
-
-                        {s.weakTopics.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-3">
-                            {s.weakTopics.map((t) => (
-                              <span key={t} className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/8 text-red-400/80 border border-red-500/10 font-medium">{t}</span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                          <div className="text-center">
-                            <p className="text-lg font-bold text-slate-200 tabular-nums">{s.assigned}</p>
-                            <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Assigned</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-lg font-bold text-emerald-400 tabular-nums">{s.completed}</p>
-                            <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Done</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-lg font-bold text-amber-400 tabular-nums">{s.awaiting}</p>
-                            <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Awaiting</p>
-                          </div>
-                        </div>
-
-                        <div className="mb-3">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] text-slate-500 font-medium">Completion</span>
-                            <span className="text-[10px] text-slate-400 font-semibold tabular-nums">{completionPct}%</span>
-                          </div>
-                          <div className="h-1.5 rounded-full bg-slate-800/80 overflow-hidden">
-                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${completionPct}%`, background: completionPct >= 60 ? "linear-gradient(90deg, #10b981, #34d399)" : completionPct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)" }} />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <Link href={`/tutor/students/${s.studentId}`}>
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-[11px] font-semibold text-violet-300 bg-violet-500/10 border border-violet-500/15 hover:bg-violet-500/20 transition-all cursor-pointer" data-testid={`link-risk-student-${s.studentId}`}>
-                              <Eye className="w-3 h-3" /> View Profile
-                            </span>
-                          </Link>
-                          <Link href="/tutor/assessments">
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-[11px] font-semibold text-slate-400 bg-slate-800/40 border border-white/[0.05] hover:bg-slate-800/60 transition-all cursor-pointer">
-                              <Send className="w-3 h-3" /> Assign Work
-                            </span>
-                          </Link>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* ── SECTION C & D: Review Queue + Cohort Signals ──────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-              {/* Review Queue */}
-              <div className="lg:col-span-7">
-                <div className={GLASS_PANEL}>
-                  <div className="px-6 pt-5 pb-0 flex items-center gap-6 border-b border-white/[0.04]">
-                    <button
-                      onClick={() => setActiveTab("submissions")}
-                      className={`pb-3 text-sm font-semibold transition-all border-b-2 ${activeTab === "submissions" ? "text-violet-300 border-violet-500" : "text-slate-500 border-transparent hover:text-slate-400"}`}
-                      data-testid="tab-submissions"
-                    >
-                      Review Queue
-                      {(stats?.recentSubmissions?.length ?? 0) > 0 && (
-                        <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-violet-500/10 text-violet-400">{stats!.recentSubmissions.length}</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("pending")}
-                      className={`pb-3 text-sm font-semibold transition-all border-b-2 ${activeTab === "pending" ? "text-violet-300 border-violet-500" : "text-slate-500 border-transparent hover:text-slate-400"}`}
-                      data-testid="tab-pending"
-                    >
-                      Pending Submissions
-                      {overdueCount > 0 && (
-                        <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-400">{overdueCount} overdue</span>
-                      )}
-                    </button>
-                  </div>
-
-                  {activeTab === "submissions" ? (
-                    (stats?.recentSubmissions?.length ?? 0) === 0 ? (
-                      <div className="px-6 py-14 text-center">
-                        <Activity className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                        <p className="text-sm text-slate-400 font-medium">No submissions to review</p>
-                        <p className="text-xs text-slate-600 mt-1">Student results will appear here</p>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-white/[0.03]">
-                        {stats!.recentSubmissions.map((sub, idx) => {
-                          const sc = getSubjectColor(sub.subject);
-                          const SubIcon = getSubjectIcon(sub.subject);
-                          const duration = formatDuration(sub.startedAt, sub.completedAt);
-                          const scoreColor = sub.score >= 70 ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/15"
-                            : sub.score >= 40 ? "text-amber-400 bg-amber-500/10 border-amber-500/15"
-                            : "text-red-400 bg-red-500/10 border-red-500/15";
-                          return (
-                            <Link key={sub.reportId} href={`/soma/review/${sub.reportId}`}>
-                              <div className="px-6 py-3.5 flex items-center gap-4 hover:bg-white/[0.015] transition-colors cursor-pointer group" data-testid={`submission-${sub.reportId}`}>
-                                <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
-                                  <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[13px] text-slate-200 truncate">
-                                    <span className="font-semibold">{sub.studentName}</span>
-                                    <span className="text-slate-600 mx-1.5">&middot;</span>
-                                    <span className="text-slate-400">{sub.quizTitle}</span>
-                                  </p>
-                                  <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-0.5 font-medium">
-                                    <span>{formatDistanceToNow(new Date(sub.createdAt), { addSuffix: true })}</span>
-                                    {duration && <span className="text-violet-400/60">{duration}</span>}
-                                    {sub.subject && <span className="text-slate-600">{sub.subject}</span>}
-                                  </div>
-                                </div>
-                                <Badge className={`text-xs font-bold px-2.5 py-1 border ${scoreColor}`} data-testid={`score-${idx}`}>
-                                  {sub.score}%
-                                </Badge>
-                                <ArrowRight className="w-4 h-4 text-slate-700 group-hover:text-violet-400 transition-colors shrink-0" />
-                              </div>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    )
-                  ) : (
-                    (stats?.pendingAssignments?.length ?? 0) === 0 ? (
-                      <div className="px-6 py-14 text-center">
-                        <Send className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                        <p className="text-sm text-slate-400 font-medium">No pending assignments</p>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-white/[0.03]">
-                        {stats!.pendingAssignments.map((pa, idx) => {
-                          const sc = getSubjectColor(pa.subject);
-                          const SubIcon = getSubjectIcon(pa.subject);
-                          const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
-                          return (
-                            <div key={pa.assignmentId} className="px-6 py-3.5 flex items-center gap-4" data-testid={`pending-assignment-${idx}`}>
-                              <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
-                                <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[13px] text-slate-200 truncate">
-                                  <span className="font-semibold">{pa.studentName}</span>
-                                  <span className="text-slate-600 mx-1.5">&middot;</span>
-                                  <span className="text-slate-400">{pa.quizTitle}</span>
-                                </p>
-                                <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-0.5 font-medium">
-                                  <span>Assigned {formatDistanceToNow(new Date(pa.createdAt), { addSuffix: true })}</span>
-                                  {pa.dueDate && (
-                                    <span className={`flex items-center gap-1 ${isOverdue ? "text-red-400" : "text-amber-400/70"}`}>
-                                      <Clock className="w-3 h-3" />
-                                      Due {format(new Date(pa.dueDate), "MMM d")}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              {isOverdue ? (
-                                <Badge className="text-[10px] font-bold px-2 py-0.5 bg-red-500/10 text-red-400 border border-red-500/15">Overdue</Badge>
-                              ) : (
-                                <Badge className="text-[10px] font-bold px-2 py-0.5 bg-slate-800/60 text-slate-400 border border-white/[0.06]">Pending</Badge>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Cohort Signals: Subject Performance + Weak Topic Leaderboard */}
-              <div className="lg:col-span-5 space-y-6">
-                <div className={GLASS_PANEL}>
-                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(99,102,241,0.06))", border: "1px solid rgba(59,130,246,0.12)" }}>
-                        <BarChart3 className="w-4 h-4 text-blue-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-[14px] font-semibold text-slate-100">Subject Performance</h3>
-                        <p className="text-[11px] text-slate-500 font-medium">Cohort averages by subject</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {(stats?.cohortAverages?.length ?? 0) === 0 ? (
-                    <div className="px-6 py-12 text-center">
-                      <BarChart3 className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                      <p className="text-sm text-slate-400">No performance data yet</p>
-                    </div>
-                  ) : (
-                    <div className="px-6 py-4 space-y-4">
-                      {stats!.cohortAverages.slice().sort((a, b) => b.average - a.average).map((ca) => {
-                        const barGradient = ca.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : ca.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
-                        const textColor = ca.average >= 70 ? "text-emerald-400" : ca.average >= 50 ? "text-amber-400" : "text-red-400";
-                        return (
-                          <div key={ca.subject}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-[12px] text-slate-300 font-medium truncate">{ca.subject}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-slate-600 font-medium">{ca.count} submissions</span>
-                                <span className={`text-xs font-bold tabular-nums ${textColor}`}>{ca.average}%</span>
-                              </div>
-                            </div>
-                            <div className="h-2.5 rounded-full bg-slate-800/60 overflow-hidden">
-                              <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${ca.average}%`, background: barGradient }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {weakTopicLeaderboard.length > 0 && (
-                  <div className={GLASS_PANEL}>
-                    <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(249,115,22,0.12), rgba(234,88,12,0.06))", border: "1px solid rgba(249,115,22,0.12)" }}>
-                          <AlertTriangle className="w-4 h-4 text-orange-400" />
-                        </div>
-                        <div>
-                          <h3 className="text-[14px] font-semibold text-slate-100">Recurring Weak Topics</h3>
-                          <p className="text-[11px] text-slate-500 font-medium">Topics appearing as weaknesses across students</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="px-6 py-3 divide-y divide-white/[0.03]">
-                      {weakTopicLeaderboard.map((w, idx) => (
-                        <div key={w.topic} className="flex items-center justify-between py-2.5">
-                          <div className="flex items-center gap-3">
-                            <span className="text-[11px] text-slate-600 font-bold tabular-nums w-5">{idx + 1}</span>
-                            <span className="text-[13px] text-slate-300 font-medium">{w.topic}</span>
-                          </div>
-                          <Badge className="text-[10px] font-bold bg-orange-500/8 text-orange-400 border border-orange-500/12">{w.count} student{w.count !== 1 ? "s" : ""}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ── SECTION E: Cohort Workload Matrix ─────────────────── */}
-            {(stats?.studentInsights?.length ?? 0) > 0 && (
-              <div className={GLASS_PANEL}>
-                <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(99,102,241,0.06))", border: "1px solid rgba(139,92,246,0.12)" }}>
-                      <Activity className="w-4 h-4 text-violet-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-[15px] font-semibold text-slate-100 tracking-tight">Cohort Workload Matrix</h3>
-                      <p className="text-[11px] text-slate-500 font-medium">Assignment completion and performance across your cohort</p>
-                    </div>
-                  </div>
-                  <Link href="/tutor/students">
-                    <span className="text-xs text-violet-400 hover:text-violet-300 cursor-pointer flex items-center gap-1 font-medium" data-testid="link-all-students">
-                      View All <ChevronRight className="w-3 h-3" />
-                    </span>
-                  </Link>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[700px]">
-                    <thead>
-                      <tr className="border-b border-white/[0.04]">
-                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Student</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Assigned</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Done</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Awaiting</th>
-                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-44">Progress</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Trend</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/[0.025]">
-                      {stats!.studentInsights.map((s) => {
-                        const rate = s.assigned > 0 ? Math.round((s.completed / s.assigned) * 100) : 0;
-                        const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
-                        const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-slate-600";
-                        const barGradient = rate >= 60 ? "linear-gradient(90deg, #10b981, #34d399)" : rate >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
-                        return (
-                          <tr key={s.studentId} className="hover:bg-white/[0.01] transition-colors group">
-                            <td className="px-6 py-3.5">
-                              <Link href={`/tutor/students/${s.studentId}`}>
-                                <span className="text-[13px] font-medium text-slate-200 hover:text-violet-300 cursor-pointer transition-colors" data-testid={`workload-student-${s.studentId}`}>{s.studentName}</span>
-                              </Link>
-                            </td>
-                            <td className="text-center text-[13px] tabular-nums text-slate-400 font-medium px-3 py-3.5">{s.assigned}</td>
-                            <td className="text-center text-[13px] tabular-nums text-emerald-400 font-medium px-3 py-3.5">{s.completed}</td>
-                            <td className="text-center text-[13px] tabular-nums text-amber-400 font-medium px-3 py-3.5">{s.awaiting}</td>
-                            <td className="px-3 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div className="flex-1 h-2 rounded-full bg-slate-800/60 overflow-hidden">
-                                  <div className="h-full rounded-full transition-all duration-700" style={{ width: `${rate}%`, background: barGradient }} />
-                                </div>
-                                <span className="text-[11px] text-slate-500 font-semibold tabular-nums w-8 text-right">{rate}%</span>
-                              </div>
-                            </td>
-                            <td className="text-center px-3 py-3.5">
-                              <TrendIcon className={`w-4 h-4 mx-auto ${trendColor}`} />
-                            </td>
-                            <td className="text-center px-3 py-3.5">
-                              <Link href={`/tutor/students/${s.studentId}`}>
-                                <span className="text-slate-600 hover:text-violet-400 transition-colors cursor-pointer">
-                                  <ChevronRight className="w-4 h-4 mx-auto" />
-                                </span>
-                              </Link>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="student-plaque-grid">
+                {studentPlaques.map((s) => (
+                  <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} />
+                ))}
               </div>
             )}
 
-            {/* ── SECTION F & G: Quick Actions + Recent Assessments ─── */}
+            {/* ── SUPPORTING PANELS ───────────────────────────────── */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-3">
-                <div className={`${GLASS_PANEL} p-5`}>
-                  <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.15em] mb-4">Quick Actions</h3>
-                  <div className="space-y-2">
-                    <QuickAction icon={Plus} label="Create Assessment" href="/tutor/assessments/new" testId="qa-create" />
-                    <QuickAction icon={UserPlus} label="Add Student" href="/tutor/students" testId="qa-add-student" />
-                    <QuickAction icon={BookOpen} label="My Assessments" href="/tutor/assessments" testId="qa-assessments" />
-                    <QuickAction icon={Users} label="View Students" href="/tutor/students" testId="qa-students" />
+
+              {/* Marking Queue */}
+              <div className="lg:col-span-4">
+                <div className={GLASS_PANEL}>
+                  <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/15">
+                        <Eye className="w-3.5 h-3.5 text-violet-400" />
+                      </div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Marking Queue</h3>
+                    </div>
+                    {(stats?.recentSubmissions?.length ?? 0) > 0 && (
+                      <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/15 text-[10px] font-bold" data-testid="stat-reviews">
+                        {stats!.recentSubmissions.length}
+                      </Badge>
+                    )}
                   </div>
+                  {(stats?.recentSubmissions?.length ?? 0) === 0 ? (
+                    <div className="px-5 py-10 text-center">
+                      <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/25 mb-2" />
+                      <p className="text-xs text-slate-500 font-medium">All caught up</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.03] max-h-[320px] overflow-y-auto">
+                      {stats!.recentSubmissions.slice(0, 8).map((sub) => {
+                        const scoreColor = sub.score >= 70 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-red-400";
+                        return (
+                          <Link key={sub.reportId} href={`/soma/review/${sub.reportId}`}>
+                            <div className="px-5 py-3 flex items-center gap-3 hover:bg-white/[0.015] transition-colors cursor-pointer" data-testid={`submission-${sub.reportId}`}>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] text-slate-200 font-medium truncate">{sub.studentName}</p>
+                                <p className="text-[10px] text-slate-500 truncate">{sub.quizTitle}</p>
+                              </div>
+                              <span className={`text-xs font-bold tabular-nums ${scoreColor}`}>{sub.score}%</span>
+                              <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="lg:col-span-9">
+              {/* Awaiting Submissions */}
+              <div className="lg:col-span-4">
                 <div className={GLASS_PANEL}>
-                  <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.06))", border: "1px solid rgba(16,185,129,0.12)" }}>
-                        <BookOpen className="w-4 h-4 text-emerald-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/10 border border-amber-500/15">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
                       </div>
-                      <h3 className="text-[14px] font-semibold text-slate-100">Recent Assessments</h3>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Awaiting Submissions</h3>
                     </div>
-                    <Link href="/tutor/assessments">
-                      <span className="text-xs text-violet-400 hover:text-violet-300 cursor-pointer flex items-center gap-1 font-medium" data-testid="link-view-all-assessments">
-                        View All <ChevronRight className="w-3 h-3" />
-                      </span>
-                    </Link>
+                    {overdueCount > 0 && (
+                      <Badge className="bg-red-500/10 text-red-400 border-red-500/15 text-[10px] font-bold" data-testid="stat-assigned">
+                        {overdueCount} overdue
+                      </Badge>
+                    )}
                   </div>
-
-                  {quizzesLoading ? (
-                    <div className="px-6 py-10 flex justify-center">
-                      <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
-                    </div>
-                  ) : tutorQuizzes.length === 0 ? (
-                    <div className="px-6 py-14 text-center">
-                      <BookOpen className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                      <p className="text-sm text-slate-400 font-medium">No assessments yet</p>
-                      <p className="text-xs text-slate-600 mt-1">Create your first assessment to get started</p>
+                  {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
+                    <div className="px-5 py-10 text-center">
+                      <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/25 mb-2" />
+                      <p className="text-xs text-slate-500 font-medium">No pending work</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-white/[0.03]">
-                      {tutorQuizzes.slice(0, 6).map((quiz) => {
+                    <div className="divide-y divide-white/[0.03] max-h-[320px] overflow-y-auto">
+                      {stats!.pendingAssignments.slice(0, 8).map((pa) => {
+                        const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
+                        return (
+                          <div key={pa.assignmentId} className="px-5 py-3 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] text-slate-200 font-medium truncate">{pa.studentName}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{pa.quizTitle}</p>
+                            </div>
+                            {isOverdue ? (
+                              <Badge className="text-[9px] font-bold bg-red-500/10 text-red-400 border border-red-500/15">Overdue</Badge>
+                            ) : pa.dueDate ? (
+                              <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
+                            ) : (
+                              <Badge className="text-[9px] font-bold bg-slate-800/60 text-slate-500 border border-white/[0.05]">Pending</Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent Assessments */}
+              <div className="lg:col-span-4">
+                <div className={GLASS_PANEL}>
+                  <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/15">
+                        <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Recent Assessments</h3>
+                    </div>
+                    <Link href="/tutor/assessments">
+                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium" data-testid="link-view-all-assessments">View All</span>
+                    </Link>
+                  </div>
+                  {quizzesLoading ? (
+                    <div className="px-5 py-10 flex justify-center">
+                      <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+                    </div>
+                  ) : tutorQuizzes.length === 0 ? (
+                    <div className="px-5 py-10 text-center">
+                      <BookOpen className="w-8 h-8 mx-auto text-slate-700 mb-2" />
+                      <p className="text-xs text-slate-500 font-medium">No assessments yet</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.03] max-h-[320px] overflow-y-auto">
+                      {tutorQuizzes.slice(0, 8).map((quiz) => {
                         const sc = getSubjectColor(quiz.subject);
                         const SubIcon = getSubjectIcon(quiz.subject);
                         return (
-                          <div key={quiz.id} className="px-6 py-3.5 flex items-center gap-4 hover:bg-white/[0.015] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
-                              <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
+                          <div key={quiz.id} className="px-5 py-3 flex items-center gap-3 hover:bg-white/[0.015] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
+                              <SubIcon className="w-3.5 h-3.5" style={{ color: sc.hex }} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-[13px] font-semibold text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</h4>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-[10px] text-slate-500 font-medium">{quiz.subject || "General"}</span>
-                                {quiz.level && <span className="text-[10px] text-slate-600">&middot; {quiz.level}</span>}
-                              </div>
+                              <p className="text-[12px] font-medium text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
+                              <p className="text-[10px] text-slate-500">{quiz.subject || "General"}</p>
                             </div>
                             <button
                               onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-lg text-[11px] font-semibold bg-emerald-600/10 text-emerald-400 border border-emerald-500/15 hover:bg-emerald-600/20 transition-all opacity-0 group-hover:opacity-100"
+                              className="text-[10px] font-semibold text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity"
                               data-testid={`button-assign-${quiz.id}`}
                             >
-                              <UserPlus className="w-3 h-3" />
                               Assign
                             </button>
-                            <Link href="/tutor/assessments">
-                              <span className="text-slate-600 hover:text-violet-400 transition-colors cursor-pointer" data-testid={`button-details-${quiz.id}`}>
-                                <Eye className="w-3.5 h-3.5" />
-                              </span>
-                            </Link>
                           </div>
                         );
                       })}
@@ -844,7 +557,7 @@ export default function TutorDashboard() {
         )}
       </main>
 
-      {/* ── ASSIGN MODAL ──────────────────────────────────────────── */}
+      {/* ── ASSIGN MODAL ──────────────────────────────────────── */}
       {showAssignModal !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={() => setShowAssignModal(null)}>
           <div className={`${GLASS_PANEL} max-w-lg w-full max-h-[80vh] overflow-y-auto p-6`} onClick={(e) => e.stopPropagation()}>
@@ -915,60 +628,184 @@ export default function TutorDashboard() {
           </div>
         </div>
       )}
+
+      <style>{`
+        .plaque-card { perspective: 800px; }
+        .plaque-inner {
+          position: relative;
+          width: 100%;
+          transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          transform-style: preserve-3d;
+        }
+        .plaque-card.flipped .plaque-inner { transform: rotateY(180deg); }
+        .plaque-front, .plaque-back {
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+        }
+        .plaque-back { transform: rotateY(180deg); position: absolute; inset: 0; }
+        @media (prefers-reduced-motion: reduce) {
+          .plaque-inner { transition: none; }
+          .plaque-card.flipped .plaque-inner { transform: none; }
+          .plaque-card.flipped .plaque-front { display: none; }
+          .plaque-card.flipped .plaque-back { transform: none; position: relative; }
+          .plaque-card:not(.flipped) .plaque-back { display: none; }
+        }
+      `}</style>
     </div>
   );
 }
 
-const ACCENT_MAP: Record<string, { bg: string; border: string; text: string; glow: string }> = {
-  violet: { bg: "rgba(139,92,246,0.08)", border: "rgba(139,92,246,0.12)", text: "#a78bfa", glow: "rgba(139,92,246,0.15)" },
-  amber: { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.12)", text: "#fbbf24", glow: "rgba(245,158,11,0.15)" },
-  blue: { bg: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.12)", text: "#60a5fa", glow: "rgba(59,130,246,0.15)" },
-  emerald: { bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.12)", text: "#34d399", glow: "rgba(16,185,129,0.15)" },
-  cyan: { bg: "rgba(6,182,212,0.08)", border: "rgba(6,182,212,0.12)", text: "#22d3ee", glow: "rgba(6,182,212,0.15)" },
-  red: { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.12)", text: "#f87171", glow: "rgba(239,68,68,0.15)" },
-  orange: { bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.12)", text: "#fb923c", glow: "rgba(249,115,22,0.15)" },
-};
+interface PlaqueStudent {
+  studentId: string;
+  studentName: string;
+  assigned: number;
+  completed: number;
+  awaiting: number;
+  trend: "improving" | "declining" | "stable";
+  weakTopics: string[];
+  chip: { text: string; color: string };
+  completionPct: number;
+  recentScores: number[];
+  lastScore: number | null;
+  coveragePct: number;
+  lowestCoverage: string[];
+  lastActivity: string | null;
+  lastSubmission: { reportId: number; quizTitle: string; score: number } | null;
+}
 
-function CommandTile({ icon: Icon, label, value, suffix = "", accent, testId, alert, noValue, textValue }: {
-  icon: LucideIcon; label: string; value?: number; suffix?: string; accent: string; testId: string; alert?: string; noValue?: boolean; textValue?: string | null;
-}) {
-  const a = ACCENT_MAP[accent] || ACCENT_MAP.violet;
+function StudentPlaque({ student: s, insightChip }: { student: PlaqueStudent; insightChip: string | null }) {
+  const [flipped, setFlipped] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleToggle = useCallback(() => setFlipped((p) => !p), []);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFlipped((p) => !p); }
+  }, []);
+
+  const si = s.studentName.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
+  const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
+  const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-slate-500";
+
   return (
     <div
-      className="rounded-2xl border backdrop-blur-xl p-4 transition-all hover:translate-y-[-2px] hover:shadow-xl group"
-      style={{ background: `linear-gradient(135deg, ${a.bg}, transparent)`, borderColor: a.border, boxShadow: `0 4px 24px ${a.glow}` }}
-      data-testid={testId}
+      ref={cardRef}
+      className={`plaque-card group ${flipped ? "flipped" : ""}`}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
+      onClick={handleToggle}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      role="button"
+      aria-label={`Student plaque for ${s.studentName}`}
+      data-testid={`plaque-${s.studentId}`}
     >
-      <div className="flex items-center justify-between mb-2">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: a.bg, border: `1px solid ${a.border}` }}>
-          <Icon className="w-4 h-4" style={{ color: a.text }} />
-        </div>
-        {alert && (
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/12">{alert}</span>
-        )}
-      </div>
-      {textValue !== undefined ? (
-        <p className="text-[15px] font-bold text-slate-100 leading-tight truncate mt-1">
-          {textValue || <span className="text-slate-600">&mdash;</span>}
-        </p>
-      ) : (
-        <p className="text-2xl font-bold text-slate-100 tabular-nums leading-none">
-          {noValue ? <span className="text-slate-600">&mdash;</span> : <AnimatedNumber value={value!} suffix={suffix} />}
-        </p>
-      )}
-      <p className="text-[10px] text-slate-500 mt-1 font-semibold uppercase tracking-wider leading-tight">{label}</p>
-    </div>
-  );
-}
+      <div className="plaque-inner" style={{ minHeight: "230px" }}>
+        {/* ── FRONT ─────────────────────────────────────────── */}
+        <div className={`plaque-front ${GLASS_PANEL} p-5 h-full flex flex-col`}>
+          <div className="flex items-center gap-3 mb-4">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold text-slate-200 shrink-0"
+              style={{ background: "linear-gradient(135deg, rgba(148,163,184,0.12), rgba(100,116,139,0.06))", border: "1px solid rgba(148,163,184,0.1)" }}
+            >
+              {si}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-200 truncate">{s.studentName}</p>
+              <Badge className={`text-[9px] font-bold border mt-0.5 ${s.chip.color}`}>{s.chip.text}</Badge>
+            </div>
+            <TrendIcon className={`w-4 h-4 shrink-0 ${trendColor}`} />
+          </div>
 
-function QuickAction({ icon: Icon, label, href, testId }: { icon: LucideIcon; label: string; href: string; testId: string }) {
-  return (
-    <Link href={href}>
-      <span className="flex items-center gap-3 px-4 py-3 min-h-[44px] rounded-xl text-sm text-slate-300 bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all cursor-pointer group font-medium" data-testid={testId}>
-        <Icon className="w-4 h-4 text-slate-500 group-hover:text-violet-400 transition-colors" />
-        {label}
-        <ArrowRight className="w-3.5 h-3.5 ml-auto text-slate-700 group-hover:text-slate-500 transition-colors" />
-      </span>
-    </Link>
+          <div className="space-y-3 flex-1">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Workload</span>
+              </div>
+              <WorkloadBar assigned={s.assigned} completed={s.completed} awaiting={s.awaiting} />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Coverage</span>
+                <span className="text-[10px] text-cyan-400 font-bold tabular-nums">{s.coveragePct}%</span>
+              </div>
+              <div className="h-[6px] rounded-full bg-slate-800/80 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${s.coveragePct}%`,
+                    background: s.coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : s.coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)",
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Performance</span>
+                {s.lastScore !== null && (
+                  <span className={`ml-2 text-xs font-bold tabular-nums ${s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-red-400"}`}>{s.lastScore}%</span>
+                )}
+              </div>
+              <MiniSparkline scores={s.recentScores} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── BACK ──────────────────────────────────────────── */}
+        <div className={`plaque-back ${GLASS_PANEL} p-5 h-full flex flex-col`}>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3">{s.studentName}</p>
+
+          {s.weakTopics.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">Weak Areas</p>
+              <div className="space-y-1">
+                {s.weakTopics.slice(0, 3).map((t, i) => (
+                  <div key={t} className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-600 font-bold w-3">{i + 1}</span>
+                    <span className="text-[11px] text-red-400/80 font-medium truncate">{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {insightChip && (
+            <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-violet-500/[0.06] border border-violet-500/10">
+              <p className="text-[10px] text-violet-300/90 leading-relaxed">{insightChip}</p>
+            </div>
+          )}
+
+          <div className="text-[10px] text-slate-500 font-medium space-y-1 mb-3">
+            {s.lastActivity && (
+              <p>Last activity: {formatDistanceToNow(new Date(s.lastActivity), { addSuffix: true })}</p>
+            )}
+            {s.lastSubmission && (
+              <p>Last score: {s.lastSubmission.score}% on {s.lastSubmission.quizTitle}</p>
+            )}
+          </div>
+
+          <div className="mt-auto flex flex-wrap gap-1.5">
+            <Link href={`/tutor/students/${s.studentId}`}>
+              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-violet-300 bg-violet-500/10 border border-violet-500/15 hover:bg-violet-500/20 transition-all cursor-pointer" data-testid={`link-profile-${s.studentId}`}>
+                <Eye className="w-3 h-3" /> Profile
+              </span>
+            </Link>
+            <Link href="/tutor/assessments">
+              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-slate-400 bg-slate-800/40 border border-white/[0.05] hover:bg-slate-800/60 transition-all cursor-pointer">
+                <Send className="w-3 h-3" /> Assign
+              </span>
+            </Link>
+            {s.lastSubmission && (
+              <Link href={`/soma/review/${s.lastSubmission.reportId}`}>
+                <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-slate-400 bg-slate-800/40 border border-white/[0.05] hover:bg-slate-800/60 transition-all cursor-pointer">
+                  <ExternalLink className="w-3 h-3" /> Last Result
+                </span>
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

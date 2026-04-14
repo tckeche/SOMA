@@ -1,0 +1,197 @@
+You are redesigning and rebuilding the SOMA tutor dashboard and the tutor facing student profile page.
+
+Act as a senior product designer, senior UX architect, senior frontend engineer, data visualization specialist, and analytics engineer.
+
+You must not log in as me, you must work from the current codebase and the existing data that the app already loads.
+
+Goal
+
+Build a tutor control centre that is visually striking, robust, elegant, and glassmorphic, and that surfaces real student and assessment state primarily through visuals, charts, and micro charts, not paragraphs of text.
+
+The dashboard must feel like an operational control room.
+Everything must work together and everything must be grounded in real data.
+Remove anything that does not help a tutor assign, mark, understand progress, or spot gaps.
+
+Top level change
+
+Remove the current KPI icon strip, the row that shows things like number of students, awaiting submissions, reviews pending, cohort average, completion rate, below threshold, weakest topic.
+This strip must be removed entirely.
+
+Replace it with equally sized student plaques as the primary above the fold content.
+
+Dashboard layout
+
+Above the fold, the main visual should be a grid of student plaques.
+Use a consistent equal size card design.
+Aim for 3 to 4 columns on desktop with responsive breakpoints.
+No long scroll before the tutor sees the student grid.
+
+Student plaque design rules
+
+Each student plaque must show the following on the front face using visuals first
+
+1. Student name and surname only
+No email, no username, no ID.
+2. Workload visualization
+Assigned, submitted, awaiting shown as a segmented micro bar or ring with numbers.
+3. Coverage visualization
+A compact coverage indicator based on actual syllabus mapping and actual assessments.
+Do not use a fake coverage indicator.
+4. Performance visualization
+A small sparkline or micro trend showing recent graded outcomes, plus the most recent score.
+5. One compact status chip derived from deterministic rules grounded in data, such as Awaiting, Needs marking, Low evidence, Trend down, Trend up.
+Do not use the word intervention or any similar wording.
+
+Interactive behavior and motion
+
+I want animated behavior that feels premium.
+When a tutor hovers over a student plaque on desktop, the card should flip to reveal more detail.
+On touch devices, flipping must work via tap, not hover.
+On keyboard, flipping must work via focus and Enter or Space.
+
+The flip must be fast and elegant, not slow.
+Respect prefers reduced motion.
+If reduced motion is enabled, do not do a 3D flip.
+Instead crossfade or swap content instantly.
+
+Student plaque back face content
+
+The back face must reveal more useful data, still mostly visual
+
+1. Top recurring weak topics as a ranked list with micro bars
+2. Coverage gap summary, show the lowest coverage topic groups
+3. Last activity and last submission timestamp
+4. Clear action buttons, view profile, assign work, open last submission, review queue
+
+No paragraph explanations.
+No generic motivational text.
+Keep it evidence based and concise.
+
+Critical truthfulness requirements
+
+The dashboard must never flag a student incorrectly.
+Do not show a student as needing focus if they have completed all assigned work and are above threshold, unless a deterministic rule based on real performance still warrants it.
+Use evidence thresholds.
+If there is too little data, show Low evidence rather than making a strong claim.
+
+Model assisted personalization layer
+
+We can use a model to help produce brief personalized insight chips per student, but it must be grounded in real platform data only.
+
+Implementation rules for this layer
+
+1. Compute all metrics deterministically in code from the database.
+2. Send only those computed metrics and structured evidence to the model.
+3. The model may produce short insight chips and prioritization text only.
+4. The model must not invent numbers, topics, or trends.
+5. Every insight output must be traceable to real metrics.
+6. If evidence is low, the model must say so rather than guessing.
+
+UI copy rule
+
+Do not mention AI anywhere in the UI.
+No labels like AI insights, AI generated, or similar.
+All outputs must appear as normal product insights.
+
+Dashboard supporting panels
+
+In addition to the student plaque grid, include only the following supporting panels if they help action
+
+1. Marking queue
+A compact list of newest submissions needing review with quick open action.
+2. Awaiting submissions queue
+A compact list of students with outstanding awaiting items, ordered by urgency.
+3. Recent assessments
+A compact list with assigned and submitted counts.
+
+Keep these panels small and graphical.
+No large empty cards.
+
+Do not add any section that does not directly help tutor action.
+
+Glassmorphism and color direction
+
+The visual design must be more striking and more robust than it is now.
+
+Use
+
+1. Deep navy and midnight as base
+2. Strong glass panels with controlled blur and clear borders
+3. Stronger but restrained accent colors for meaning
+Emerald for healthy completion
+Amber for caution
+Crimson for urgent issues
+Violet or indigo for primary actions and highlights
+
+The design must remain readable.
+Do not sacrifice contrast for glow.
+Use consistent spacing and typography hierarchy.
+
+Student profile page redesign
+
+The student profile page must be rebuilt.
+It currently feels gimmicky.
+Make it a serious diagnostic workspace.
+
+Structure
+
+1. Header panel
+Name, completion reliability, recent trend, average score, last activity.
+2. Topic performance panel
+Replace vague bar charts with a ranked topic table that includes
+Topic score
+Attempt count
+Trend
+Evidence strength
+Micro bars
+3. Coverage panel
+Coverage must be properly computed from syllabus mapping and assessment tagging.
+Provide a coverage overview visualization.
+Use polygon style only when topic group count is low enough to be readable.
+If topic groups are more than about 12, switch to grouped views or a matrix.
+Below the overview, show a coverage matrix with
+Coverage percent
+Questions seen
+Assessments touching topic
+Last assessed date
+Performance in topic
+4. Evidence history panel
+Timeline of recent assessments with topics covered and quick open.
+
+No decorative charts.
+Everything must teach the tutor something.
+
+Add student modal rule
+
+In the add student modal or mini window, show only student name and surname.
+No email.
+No username.
+No other identifiers.
+
+Engineering constraints
+
+1. Use real data only.
+2. Work within the existing stack and conventions.
+3. Use responsive layouts.
+4. Ensure sections update correctly after actions.
+5. Implement clear loading skeletons and empty states that still feel premium.
+6. Keep performance strong.
+
+Acceptance criteria
+
+The work is complete only if
+
+1. The KPI icon strip is removed
+2. The student plaque grid is the primary above the fold content
+3. Each plaque is visual first and shows workload, coverage, and trend clearly
+4. Flip interaction works on hover, tap, and keyboard, and respects reduced motion
+5. The dashboard contains no misleading student flags
+6. Model assisted insights are grounded in real computed metrics only and never mention AI in the UI
+7. Student profile looks robust, elegant, sophisticated, and diagnostic
+8. Coverage graphs are properly computed and readable
+9. Add student modal shows only name and surname
+
+When finished
+
+Provide a short implementation summary and screenshots of the new dashboard and student profile.
+Explain each key component and how it maps to tutor decisions.

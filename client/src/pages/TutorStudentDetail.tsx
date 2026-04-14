@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { authFetch } from "@/lib/supabase";
@@ -13,8 +13,8 @@ import {
   ArrowLeft, MessageSquare, Send, Loader2, BookOpen,
   Trash2, Eye, FileText, Award, Target, CheckCircle2,
   TrendingDown, TrendingUp, Minus, Clock, ChevronRight,
-  Sparkles, BarChart3, Layers, AlertTriangle, Activity,
-  ArrowRight, Calendar, Zap,
+  BarChart3, Layers, AlertTriangle, Activity,
+  ArrowRight, Calendar,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -100,7 +100,7 @@ export default function TutorStudentDetail() {
   const { toast } = useToast();
   const [newComment, setNewComment] = useState("");
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
-  const [showAISummary, setShowAISummary] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
 
   const { userId } = useSupabaseSession();
 
@@ -188,8 +188,8 @@ export default function TutorStudentDetail() {
         if (recentAvg - earlierAvg > 5) trend = "improving";
         else if (earlierAvg - recentAvg > 5) trend = "declining";
       }
-      const confidence = v.count >= 5 ? "High" : v.count >= 3 ? "Medium" : "Low";
-      return { topic, average: avg, assessmentCount: v.count, trend, confidence, lastAssessed: v.lastDate };
+      const evidence = v.count >= 5 ? "Strong" : v.count >= 3 ? "Moderate" : "Low";
+      return { topic, average: avg, assessmentCount: v.count, trend, evidence, lastAssessed: v.lastDate };
     }).sort((a, b) => a.average - b.average);
   }, [assignments]);
 
@@ -201,7 +201,7 @@ export default function TutorStudentDetail() {
       assessments: t.assessmentCount,
       lastAssessed: t.lastAssessed,
       performance: t.average,
-      confidence: t.confidence,
+      evidence: t.evidence,
     }));
   }, [topicPerformance]);
 
@@ -221,7 +221,7 @@ export default function TutorStudentDetail() {
     return "stable" as const;
   }, [assignments]);
 
-  const { data: aiSummaryData, isLoading: aiLoading, refetch: fetchAISummary } = useQuery<{ summary: AISummary | null }>({
+  const { data: aiSummaryData, isLoading: aiLoading } = useQuery<{ summary: AISummary | null }>({
     queryKey: ["/api/tutor/ai/student-summary", studentId],
     queryFn: async () => {
       const res = await authFetch("/api/tutor/ai/student-summary", {
@@ -237,7 +237,7 @@ export default function TutorStudentDetail() {
       if (!res.ok) return { summary: null };
       return res.json();
     },
-    enabled: showAISummary && !!userId && !!studentId && !reportLoading,
+    enabled: showSummary && !!userId && !!studentId && !reportLoading,
     staleTime: 120000,
     refetchOnWindowFocus: false,
   });
@@ -284,12 +284,12 @@ export default function TutorStudentDetail() {
         ) : (
           <div className="space-y-7 animate-in fade-in duration-500">
 
-            {/* ── Section A: Student Identity Header ──────────────── */}
+            {/* ── HEADER PANEL ──────────────────────────────────── */}
             <div className={GLASS}>
               <div className="p-6 flex flex-col sm:flex-row sm:items-center gap-5">
                 <div className="flex items-center gap-4 flex-1">
                   <div
-                    className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-bold text-white shrink-0"
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0"
                     style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.15))", boxShadow: "0 0 30px rgba(16,185,129,0.2), inset 0 1px 0 rgba(255,255,255,0.1)", border: "1.5px solid rgba(16,185,129,0.3)" }}
                   >
                     {initials}
@@ -311,74 +311,138 @@ export default function TutorStudentDetail() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-4 sm:gap-6">
-                  <HeaderStat label="Avg Grade" value={formatPercent(stats?.avgScore)} color="text-violet-400" />
-                  <HeaderStat label="Accuracy" value={formatPercent(stats?.accuracy)} color="text-cyan-400" />
-                  <HeaderStat label="Completed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-emerald-400" />
-                  <HeaderStat label="Completion" value={completionRate !== null ? `${completionRate}%` : null} color="text-amber-400" />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5">
+                  <HeaderStat label="Avg Score" value={formatPercent(stats?.avgScore)} color="text-violet-400" />
+                  <HeaderStat label="Completion" value={completionRate !== null ? `${completionRate}%` : null} color="text-emerald-400" />
+                  <HeaderStat label="Completed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-cyan-400" />
+                  <HeaderStat label="Trend" value={overallTrend} color={trendColor} />
                 </div>
               </div>
             </div>
 
-            {/* ── Section B & C: Topic Performance + Coverage ────── */}
+            {/* ── TOPIC PERFORMANCE ─────────────────────────────── */}
+            <div className={GLASS}>
+              <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-500/10 border border-blue-500/12">
+                    <BarChart3 className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-[14px] font-semibold text-slate-100">Topic Performance</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Ranked by score with trend and evidence strength</p>
+                  </div>
+                </div>
+              </div>
+
+              {topicPerformance.length === 0 ? (
+                <div className="px-6 py-14 text-center">
+                  <BarChart3 className="w-10 h-10 mx-auto text-slate-700 mb-3" />
+                  <p className="text-sm text-slate-400 font-medium">No completed assessments yet</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px]">
+                    <thead>
+                      <tr className="border-b border-white/[0.04]">
+                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Topic</th>
+                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-44">Score</th>
+                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Attempts</th>
+                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Trend</th>
+                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.025]">
+                      {topicPerformance.map((t) => {
+                        const barGradient = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
+                        const scoreColor = t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400";
+                        const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
+                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-slate-600";
+                        const evColor = t.evidence === "Strong" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/10" : t.evidence === "Moderate" ? "text-amber-400 bg-amber-500/8 border-amber-500/10" : "text-slate-400 bg-slate-500/8 border-slate-500/10";
+                        return (
+                          <tr key={t.topic} className="hover:bg-white/[0.01] transition-colors">
+                            <td className="px-6 py-3.5">
+                              <span className="text-[13px] font-medium text-slate-200">{t.topic}</span>
+                            </td>
+                            <td className="px-3 py-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-2 rounded-full bg-slate-800/60 overflow-hidden">
+                                  <div className="h-full rounded-full transition-all duration-700" style={{ width: `${t.average}%`, background: barGradient }} />
+                                </div>
+                                <span className={`text-xs font-bold tabular-nums w-9 text-right ${scoreColor}`}>{t.average}%</span>
+                              </div>
+                            </td>
+                            <td className="text-center text-[13px] tabular-nums text-slate-400 font-medium px-3 py-3.5">{t.assessmentCount}</td>
+                            <td className="text-center px-3 py-3.5">
+                              <TIcon className={`w-4 h-4 mx-auto ${tc}`} />
+                            </td>
+                            <td className="text-center px-3 py-3.5">
+                              <Badge className={`text-[9px] font-bold border ${evColor}`}>{t.evidence}</Badge>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── COVERAGE + NOTES ──────────────────────────────── */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-7">
                 <div className={GLASS}>
-                  <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(99,102,241,0.06))", border: "1px solid rgba(59,130,246,0.12)" }}>
-                        <BarChart3 className="w-4 h-4 text-blue-400" />
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-cyan-500/10 border border-cyan-500/12">
+                        <Layers className="w-4 h-4 text-cyan-400" />
                       </div>
                       <div>
-                        <h3 className="text-[14px] font-semibold text-slate-100">Topic Performance</h3>
-                        <p className="text-[11px] text-slate-500 font-medium">Performance analysis by subject area</p>
+                        <h3 className="text-[14px] font-semibold text-slate-100">Coverage Matrix</h3>
+                        <p className="text-[11px] text-slate-500 font-medium">Syllabus coverage depth by topic area</p>
                       </div>
                     </div>
                   </div>
 
-                  {topicPerformance.length === 0 ? (
+                  {coverageData.length === 0 ? (
                     <div className="px-6 py-14 text-center">
-                      <BarChart3 className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                      <p className="text-sm text-slate-400 font-medium">No completed assessments yet</p>
+                      <Layers className="w-10 h-10 mx-auto text-slate-700 mb-3" />
+                      <p className="text-sm text-slate-400 font-medium">No coverage data yet</p>
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[600px]">
+                      <table className="w-full min-w-[550px]">
                         <thead>
                           <tr className="border-b border-white/[0.04]">
                             <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Topic</th>
-                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-40">Score</th>
-                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Tests</th>
-                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Trend</th>
-                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Evidence</th>
+                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-32">Coverage</th>
+                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Assess.</th>
+                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Perf.</th>
+                            <th className="text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3 w-24">Last Seen</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/[0.025]">
-                          {topicPerformance.map((t) => {
-                            const barGradient = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
-                            const scoreColor = t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400";
-                            const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
-                            const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-slate-600";
-                            const confColor = t.confidence === "High" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/10" : t.confidence === "Medium" ? "text-amber-400 bg-amber-500/8 border-amber-500/10" : "text-slate-400 bg-slate-500/8 border-slate-500/10";
+                          {coverageData.map((c) => {
+                            const barColor = c.coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : c.coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
+                            const perfColor = c.performance >= 70 ? "text-emerald-400" : c.performance >= 50 ? "text-amber-400" : "text-red-400";
                             return (
-                              <tr key={t.topic} className="hover:bg-white/[0.01] transition-colors">
-                                <td className="px-6 py-3.5">
-                                  <span className="text-[13px] font-medium text-slate-200">{t.topic}</span>
+                              <tr key={c.topic} className="hover:bg-white/[0.01] transition-colors">
+                                <td className="px-6 py-3">
+                                  <span className="text-[12px] font-medium text-slate-300">{c.topic}</span>
                                 </td>
-                                <td className="px-3 py-3.5">
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex-1 h-2 rounded-full bg-slate-800/60 overflow-hidden">
-                                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${t.average}%`, background: barGradient }} />
+                                <td className="px-3 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                      <div className="h-full rounded-full" style={{ width: `${c.coveragePct}%`, background: barColor }} />
                                     </div>
-                                    <span className={`text-xs font-bold tabular-nums w-9 text-right ${scoreColor}`}>{t.average}%</span>
+                                    <span className="text-[10px] text-cyan-400 font-bold tabular-nums w-7 text-right">{c.coveragePct}%</span>
                                   </div>
                                 </td>
-                                <td className="text-center text-[13px] tabular-nums text-slate-400 font-medium px-3 py-3.5">{t.assessmentCount}</td>
-                                <td className="text-center px-3 py-3.5">
-                                  <TIcon className={`w-4 h-4 mx-auto ${tc}`} />
+                                <td className="text-center text-[12px] tabular-nums text-slate-400 font-medium px-3 py-3">{c.assessments}</td>
+                                <td className="text-center px-3 py-3">
+                                  <span className={`text-[12px] font-bold tabular-nums ${perfColor}`}>{c.performance}%</span>
                                 </td>
-                                <td className="text-center px-3 py-3.5">
-                                  <Badge className={`text-[9px] font-bold border ${confColor}`}>{t.confidence}</Badge>
+                                <td className="text-right text-[10px] text-slate-500 font-medium px-6 py-3">
+                                  {c.lastAssessed ? format(new Date(c.lastAssessed), "MMM d") : "—"}
                                 </td>
                               </tr>
                             );
@@ -391,62 +455,18 @@ export default function TutorStudentDetail() {
               </div>
 
               <div className="lg:col-span-5 space-y-6">
-                {/* Coverage Intelligence */}
-                <div className={GLASS}>
-                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(6,182,212,0.12), rgba(59,130,246,0.06))", border: "1px solid rgba(6,182,212,0.12)" }}>
-                        <Layers className="w-4 h-4 text-cyan-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-[14px] font-semibold text-slate-100">Coverage Intelligence</h3>
-                        <p className="text-[11px] text-slate-500 font-medium">Syllabus topic coverage depth</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {coverageData.length === 0 ? (
-                    <div className="px-6 py-12 text-center">
-                      <Layers className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                      <p className="text-sm text-slate-400 font-medium">No coverage data yet</p>
-                    </div>
-                  ) : (
-                    <div className="px-6 py-4 space-y-3">
-                      {coverageData.map((c) => {
-                        const barColor = c.coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : c.coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
-                        return (
-                          <div key={c.topic} className="group">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[12px] text-slate-300 font-medium truncate">{c.topic}</span>
-                              <span className="text-[11px] text-cyan-400 font-bold tabular-nums">{c.coveragePct}%</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-slate-800/60 overflow-hidden mb-1">
-                              <div className="h-full rounded-full transition-all duration-700" style={{ width: `${c.coveragePct}%`, background: barColor }} />
-                            </div>
-                            <div className="flex items-center gap-3 text-[10px] text-slate-600 font-medium">
-                              <span>{c.assessments} assessment{c.assessments !== 1 ? "s" : ""}</span>
-                              <span>Perf: {c.performance}%</span>
-                              {c.lastAssessed && <span>Last: {format(new Date(c.lastAssessed), "MMM d")}</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
                 {/* Private Notes */}
                 <div className={GLASS}>
                   <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(99,102,241,0.06))", border: "1px solid rgba(139,92,246,0.12)" }}>
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
                         <MessageSquare className="w-4 h-4 text-violet-400" />
                       </div>
                       <h3 className="text-[14px] font-semibold text-slate-100">Private Notes</h3>
                     </div>
                   </div>
                   <div className="px-6 py-4">
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto mb-4">
+                    <div className="space-y-2 max-h-[250px] overflow-y-auto mb-4">
                       {commentsLoading ? (
                         <Loader2 className="w-5 h-5 text-violet-400 animate-spin mx-auto" />
                       ) : comments.length === 0 ? (
@@ -480,19 +500,79 @@ export default function TutorStudentDetail() {
                     </div>
                   </div>
                 </div>
+
+                {/* Academic Summary */}
+                <div className={GLASS}>
+                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
+                        <FileText className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <h3 className="text-[14px] font-semibold text-slate-100">Academic Summary</h3>
+                    </div>
+                  </div>
+                  <div className="px-6 py-4">
+                    {!showSummary ? (
+                      <button
+                        onClick={() => setShowSummary(true)}
+                        className="w-full py-3 min-h-[44px] rounded-xl text-sm font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/15 hover:bg-emerald-500/20 transition-all"
+                        data-testid="button-generate-summary"
+                      >
+                        Generate Summary
+                      </button>
+                    ) : aiLoading ? (
+                      <div className="py-8 text-center">
+                        <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-slate-500 font-medium">Analysing student data...</p>
+                      </div>
+                    ) : aiSummaryData?.summary ? (
+                      <div className="space-y-4 text-[13px] text-slate-300 leading-relaxed" data-testid="ai-summary-content">
+                        <p>{aiSummaryData.summary.narrative}</p>
+                        {aiSummaryData.summary.weaknesses && (
+                          <div>
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Key Weaknesses</p>
+                            <p className="text-slate-400">{aiSummaryData.summary.weaknesses}</p>
+                          </div>
+                        )}
+                        {aiSummaryData.summary.improvements && (
+                          <div>
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Recent Improvements</p>
+                            <p className="text-slate-400">{aiSummaryData.summary.improvements}</p>
+                          </div>
+                        )}
+                        {aiSummaryData.summary.focusAreas?.length > 0 && (
+                          <div>
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Focus Areas</p>
+                            <ul className="list-disc list-inside text-slate-400 space-y-0.5">
+                              {aiSummaryData.summary.focusAreas.map((f, i) => <li key={i}>{f}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {aiSummaryData.summary.nextSteps && (
+                          <div>
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Recommended Next Steps</p>
+                            <p className="text-slate-400">{aiSummaryData.summary.nextSteps}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-500 text-center py-4">Unable to generate summary. Try again later.</p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* ── Section D: Assessment History ──────────────────── */}
+            {/* ── EVIDENCE HISTORY ──────────────────────────────── */}
             <div className={GLASS}>
               <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.06))", border: "1px solid rgba(16,185,129,0.12)" }}>
-                    <FileText className="w-4 h-4 text-emerald-400" />
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
+                    <Activity className="w-4 h-4 text-emerald-400" />
                   </div>
                   <div>
-                    <h3 className="text-[14px] font-semibold text-slate-100">Assessment History</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Evidence-based timeline of all assessments</p>
+                    <h3 className="text-[14px] font-semibold text-slate-100">Evidence History</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Timeline of assessments with topics covered</p>
                   </div>
                 </div>
               </div>
@@ -513,115 +593,39 @@ export default function TutorStudentDetail() {
                     const scoreColor = pct !== null ? (pct >= 70 ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/15" : pct >= 40 ? "text-amber-400 bg-amber-500/10 border-amber-500/15" : "text-red-400 bg-red-500/10 border-red-500/15") : "";
                     return (
                       <div key={a.assignmentId} className="px-6 py-4 flex items-center gap-4 hover:bg-white/[0.01] transition-colors group" data-testid={`assignment-${a.assignmentId}`}>
-                        <div className="w-10 h-10 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
                           <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-semibold text-slate-200 truncate">{a.quizTitle}</p>
-                          <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-0.5 font-medium flex-wrap">
+                          <p className="text-[13px] font-medium text-slate-200 truncate">{a.quizTitle}</p>
+                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500 font-medium flex-wrap">
                             {a.quizSubject && <span>{a.quizSubject}</span>}
-                            {a.quizLevel && <span>&middot; {a.quizLevel}</span>}
-                            <span>&middot; {format(new Date(a.assignedAt), "MMM d, yyyy")}</span>
-                            {duration && <span className="text-violet-400/60">&middot; {duration}</span>}
+                            <span>{format(new Date(a.assignedAt), "MMM d, yyyy")}</span>
+                            {duration && <span className="text-violet-400/60">{duration}</span>}
                           </div>
                         </div>
                         <Badge className={`text-[10px] font-bold border ${status.color}`}>{status.text}</Badge>
                         {pct !== null && (
                           <Badge className={`text-xs font-bold px-2.5 py-1 border ${scoreColor}`}>{pct}%</Badge>
                         )}
-                        <div className="flex items-center gap-1 shrink-0">
-                          {a.reportId && a.reportStatus === "completed" && (
-                            <Link href={`/soma/review/${a.reportId}`}>
-                              <button className="p-2 min-h-[36px] min-w-[36px] text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors" title="View submission" data-testid={`button-view-report-${a.assignmentId}`}>
-                                <Eye className="w-4 h-4" />
-                              </button>
-                            </Link>
-                          )}
-                          {a.assignmentStatus === "pending" && (
-                            <button
-                              onClick={() => setRevokeQuizId(a.quizId)}
-                              className="p-2 min-h-[36px] min-w-[36px] text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                              title="Revoke assignment"
-                              data-testid={`button-revoke-${a.assignmentId}`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                        {a.reportId ? (
+                          <Link href={`/soma/review/${a.reportId}`}>
+                            <span className="text-slate-600 hover:text-violet-400 transition-colors cursor-pointer">
+                              <Eye className="w-4 h-4" />
+                            </span>
+                          </Link>
+                        ) : (
+                          <button
+                            onClick={() => setRevokeQuizId(a.quizId)}
+                            className="text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                            aria-label="Revoke assignment"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
-                </div>
-              )}
-            </div>
-
-            {/* ── Section E: AI Academic Summary ─────────────────── */}
-            <div className={GLASS}>
-              <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(168,85,247,0.06))", border: "1px solid rgba(139,92,246,0.12)" }}>
-                    <Sparkles className="w-4 h-4 text-violet-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-[14px] font-semibold text-slate-100">AI Academic Summary</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">AI-assisted interpretation of real platform data</p>
-                  </div>
-                </div>
-                {!showAISummary && (
-                  <button
-                    onClick={() => setShowAISummary(true)}
-                    className="flex items-center gap-2 px-4 py-2 min-h-[36px] rounded-xl text-[12px] font-semibold text-violet-300 bg-violet-500/10 border border-violet-500/15 hover:bg-violet-500/20 transition-all"
-                    data-testid="button-generate-summary"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Generate Summary
-                  </button>
-                )}
-              </div>
-
-              {!showAISummary ? (
-                <div className="px-6 py-12 text-center">
-                  <Sparkles className="w-10 h-10 mx-auto text-violet-500/20 mb-3" />
-                  <p className="text-sm text-slate-400 font-medium">Click "Generate Summary" for an AI-powered analysis</p>
-                  <p className="text-xs text-slate-600 mt-1">Based on real assessment data only</p>
-                </div>
-              ) : aiLoading ? (
-                <div className="px-6 py-12 flex flex-col items-center gap-3">
-                  <div className="relative">
-                    <div className="w-10 h-10 rounded-full border-2 border-violet-500/20 border-t-violet-500 animate-spin" />
-                  </div>
-                  <p className="text-sm text-slate-500 font-medium">Analysing student data...</p>
-                </div>
-              ) : aiSummaryData?.summary ? (
-                <div className="px-6 py-5 space-y-5">
-                  <div className="bg-violet-500/[0.04] border border-violet-500/10 rounded-xl p-4">
-                    <p className="text-[13px] text-slate-300 leading-relaxed">{aiSummaryData.summary.narrative}</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <SummaryCard icon={AlertTriangle} title="Recurring Weaknesses" text={aiSummaryData.summary.weaknesses} accent="red" />
-                    <SummaryCard icon={TrendingUp} title="Improvements" text={aiSummaryData.summary.improvements} accent="emerald" />
-                  </div>
-                  {aiSummaryData.summary.focusAreas.length > 0 && (
-                    <div>
-                      <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-2">Suggested Focus Areas</p>
-                      <div className="flex flex-wrap gap-2">
-                        {aiSummaryData.summary.focusAreas.map((area) => (
-                          <span key={area} className="text-[11px] px-3 py-1.5 rounded-lg bg-indigo-500/8 text-indigo-300 border border-indigo-500/12 font-medium">{area}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="bg-cyan-500/[0.04] border border-cyan-500/10 rounded-xl p-4">
-                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider mb-1">Recommended Next Steps</p>
-                    <p className="text-[13px] text-slate-300 leading-relaxed">{aiSummaryData.summary.nextSteps}</p>
-                  </div>
-                  <p className="text-[10px] text-slate-600 font-medium text-center">AI interpretation of real platform data. The tutor remains the final decision-maker.</p>
-                </div>
-              ) : (
-                <div className="px-6 py-12 text-center">
-                  <AlertTriangle className="w-10 h-10 mx-auto text-amber-500/30 mb-3" />
-                  <p className="text-sm text-slate-400 font-medium">Unable to generate summary</p>
-                  <button onClick={() => fetchAISummary()} className="text-xs text-violet-400 hover:text-violet-300 mt-2 font-medium" data-testid="button-retry-summary">Retry</button>
                 </div>
               )}
             </div>
@@ -630,20 +634,19 @@ export default function TutorStudentDetail() {
         )}
       </main>
 
-      <AlertDialog open={revokeQuizId !== null} onOpenChange={(open) => { if (!open) setRevokeQuizId(null); }}>
-        <AlertDialogContent className="bg-[#0c1222] border-white/[0.06]">
+      <AlertDialog open={revokeQuizId !== null} onOpenChange={() => setRevokeQuizId(null)}>
+        <AlertDialogContent className="bg-slate-900 border-white/10">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-300">Revoke Assignment</AlertDialogTitle>
+            <AlertDialogTitle className="text-slate-100">Revoke Assignment?</AlertDialogTitle>
             <AlertDialogDescription className="text-slate-400">
-              This will remove this student's access to the quiz. They will no longer see it on their dashboard.
+              This will remove the assignment from the student. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setRevokeQuizId(null)} className="bg-slate-800 text-slate-300 border-white/[0.06] hover:bg-slate-700">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700">Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => { if (revokeQuizId) revokeMutation.mutate(revokeQuizId); }}
-              disabled={revokeMutation.isPending}
-              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={() => revokeQuizId && revokeMutation.mutate(revokeQuizId)}
+              className="bg-red-600 text-white hover:bg-red-500"
             >
               {revokeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Revoke"}
             </AlertDialogAction>
@@ -656,33 +659,9 @@ export default function TutorStudentDetail() {
 
 function HeaderStat({ label, value, color }: { label: string; value: string | null; color: string }) {
   return (
-    <div className="text-center">
-      <p className={`text-xl font-bold tabular-nums ${color}`}>{value || <span className="text-slate-600">&mdash;</span>}</p>
-      <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold mt-0.5">{label}</p>
-    </div>
-  );
-}
-
-function SummaryCard({ icon: Icon, title, text, accent }: { icon: LucideIcon; title: string; text: string; accent: string }) {
-  const colors: Record<string, string> = {
-    red: "rgba(239,68,68,0.06)",
-    emerald: "rgba(16,185,129,0.06)",
-  };
-  const borders: Record<string, string> = {
-    red: "rgba(239,68,68,0.1)",
-    emerald: "rgba(16,185,129,0.1)",
-  };
-  const textColors: Record<string, string> = {
-    red: "text-red-400",
-    emerald: "text-emerald-400",
-  };
-  return (
-    <div className="rounded-xl p-4 border" style={{ background: colors[accent], borderColor: borders[accent] }}>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className={`w-3.5 h-3.5 ${textColors[accent]}`} />
-        <p className={`text-[11px] font-bold uppercase tracking-wider ${textColors[accent]}`}>{title}</p>
-      </div>
-      <p className="text-[13px] text-slate-300 leading-relaxed">{text}</p>
+    <div className="text-center sm:text-left">
+      <p className={`text-lg font-bold tabular-nums ${color}`}>{value || "—"}</p>
+      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">{label}</p>
     </div>
   );
 }
