@@ -22,7 +22,7 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const GLASS = "rounded-2xl border border-white/[0.06] bg-gradient-to-b from-slate-900/95 to-[#0c1222]/95 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]";
+const GP = "glass-panel-elite";
 
 function toProperCase(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -255,19 +255,26 @@ export default function TutorStudentDetail() {
   const trendBg = overallTrend === "declining" ? "bg-red-500/8" : overallTrend === "improving" ? "bg-emerald-500/8" : "bg-slate-500/8";
 
   return (
-    <div className="min-h-screen bg-[#080d1a]">
-      <header className="border-b border-white/[0.04] bg-[#0a0f1e]/90 backdrop-blur-2xl sticky top-0 z-20">
-        <div className="max-w-[1400px] mx-auto px-6 lg:px-8 py-4 flex items-center justify-between">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] backdrop-blur-2xl" style={{ background: "linear-gradient(180deg, rgba(8,13,26,0.92) 0%, rgba(8,13,26,0.85) 100%)" }}>
+        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/tutor/students">
-            <span className="flex items-center gap-2 text-sm text-slate-400 hover:text-violet-400 transition-colors cursor-pointer font-medium" data-testid="link-back-students">
-              <ArrowLeft className="w-4 h-4" />
-              Back to Students
+            <span className="flex items-center gap-2 text-[13px] text-slate-500 hover:text-violet-400 transition-colors cursor-pointer font-medium" data-testid="link-back-students">
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Students
             </span>
           </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/tutor">
+              <span className="text-[12px] text-slate-600 hover:text-slate-400 transition-colors cursor-pointer font-medium">Dashboard</span>
+            </Link>
+            <span className="text-slate-700">/</span>
+            <span className="text-[12px] text-slate-400 font-medium truncate max-w-[200px]">{displayName}</span>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto px-6 lg:px-8 py-8 space-y-7">
+      <main className="max-w-[1440px] mx-auto px-6 lg:px-10 py-7 space-y-6">
         {reportError ? (
           <div className="flex flex-col items-center justify-center py-32 gap-4" data-testid="profile-error">
             <AlertTriangle className="w-10 h-10 text-amber-400/70" />
@@ -275,27 +282,33 @@ export default function TutorStudentDetail() {
             <p className="text-xs text-slate-600">Check your connection and try refreshing</p>
           </div>
         ) : reportLoading ? (
-          <div className="space-y-6">
-            <Skeleton className="h-32 w-full bg-white/5 rounded-2xl" />
-            <div className="grid grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 w-full bg-white/5 rounded-2xl" />)}
+          <div className="space-y-5 animate-in fade-in duration-300">
+            <div className={`${GP} p-6`}>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-white/[0.04] shimmer-pulse" />
+                <div className="flex-1"><div className="h-5 w-40 rounded bg-white/[0.04] shimmer-pulse" /><div className="h-3 w-24 rounded bg-white/[0.03] mt-2 shimmer-pulse" /></div>
+              </div>
+              <div className="grid grid-cols-4 gap-3 mt-5">
+                {[1,2,3,4].map((i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] shimmer-pulse" />)}
+              </div>
             </div>
+            <div className={`${GP} p-6`}><div className="h-40 rounded-xl bg-white/[0.02] shimmer-pulse" /></div>
           </div>
         ) : (
           <div className="space-y-7 animate-in fade-in duration-500">
 
             {/* ── HEADER PANEL ──────────────────────────────────── */}
-            <div className={GLASS}>
+            <div className={GP}>
               <div className="p-6 flex flex-col sm:flex-row sm:items-center gap-5">
                 <div className="flex items-center gap-4 flex-1">
                   <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0"
-                    style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.15))", boxShadow: "0 0 30px rgba(16,185,129,0.2), inset 0 1px 0 rgba(255,255,255,0.1)", border: "1.5px solid rgba(16,185,129,0.3)" }}
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white/90 shrink-0"
+                    style={{ background: "linear-gradient(145deg, rgba(99,102,241,0.25), rgba(139,92,246,0.15))", boxShadow: "0 4px 24px rgba(99,102,241,0.2), inset 0 1px 0 rgba(255,255,255,0.08)", border: "1.5px solid rgba(99,102,241,0.25)" }}
                   >
                     {initials}
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-slate-100 tracking-tight" data-testid="text-student-name">{displayName}</h2>
+                    <h2 className="text-xl font-bold text-slate-100 tracking-tight" data-testid="text-student-name">{displayName}</h2>
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                       <div className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${trendBg} ${trendColor}`}>
                         <TrendIcon className="w-3 h-3" />
@@ -311,25 +324,25 @@ export default function TutorStudentDetail() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5">
-                  <HeaderStat label="Avg Score" value={formatPercent(stats?.avgScore)} color="text-violet-400" />
-                  <HeaderStat label="Completion" value={completionRate !== null ? `${completionRate}%` : null} color="text-emerald-400" />
-                  <HeaderStat label="Completed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-cyan-400" />
-                  <HeaderStat label="Trend" value={overallTrend} color={trendColor} />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                  <HeaderStat label="Avg Score" value={formatPercent(stats?.avgScore)} color="text-violet-400" icon={<Award className="w-3.5 h-3.5 text-violet-500/50" />} />
+                  <HeaderStat label="Reliability" value={completionRate !== null ? `${completionRate}%` : null} color="text-emerald-400" icon={<Target className="w-3.5 h-3.5 text-emerald-500/50" />} />
+                  <HeaderStat label="Assessed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-cyan-400" icon={<BookOpen className="w-3.5 h-3.5 text-cyan-500/50" />} />
+                  <HeaderStat label="Trend" value={overallTrend} color={trendColor} icon={<TrendIcon className="w-3.5 h-3.5 opacity-50" />} />
                 </div>
               </div>
             </div>
 
             {/* ── TOPIC PERFORMANCE ─────────────────────────────── */}
-            <div className={GLASS}>
-              <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
+            <div className={GP}>
+              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-500/10 border border-blue-500/12">
-                    <BarChart3 className="w-4 h-4 text-blue-400" />
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-500/10 border border-blue-500/12">
+                    <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-[14px] font-semibold text-slate-100">Topic Performance</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Ranked by score with trend and evidence strength</p>
+                    <h3 className="text-[13px] font-semibold text-slate-100">Topic Performance</h3>
+                    <p className="text-[10px] text-slate-600 font-medium">Ranked by score &middot; trend &middot; evidence</p>
                   </div>
                 </div>
               </div>
@@ -388,17 +401,17 @@ export default function TutorStudentDetail() {
             </div>
 
             {/* ── COVERAGE + NOTES ──────────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               <div className="lg:col-span-7">
-                <div className={GLASS}>
-                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
+                <div className={GP}>
+                  <div className="px-6 pt-5 pb-3 border-b border-white/[0.04]">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-cyan-500/10 border border-cyan-500/12">
-                        <Layers className="w-4 h-4 text-cyan-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-cyan-500/10 border border-cyan-500/12">
+                        <Layers className="w-3.5 h-3.5 text-cyan-400" />
                       </div>
                       <div>
-                        <h3 className="text-[14px] font-semibold text-slate-100">Coverage Matrix</h3>
-                        <p className="text-[11px] text-slate-500 font-medium">Syllabus coverage depth by topic area</p>
+                        <h3 className="text-[13px] font-semibold text-slate-100">Coverage Matrix</h3>
+                        <p className="text-[10px] text-slate-600 font-medium">Topic depth &middot; assessments &middot; performance</p>
                       </div>
                     </div>
                   </div>
@@ -454,15 +467,15 @@ export default function TutorStudentDetail() {
                 </div>
               </div>
 
-              <div className="lg:col-span-5 space-y-6">
+              <div className="lg:col-span-5 space-y-5">
                 {/* Private Notes */}
-                <div className={GLASS}>
-                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
+                <div className={GP}>
+                  <div className="px-6 pt-5 pb-3 border-b border-white/[0.04]">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
-                        <MessageSquare className="w-4 h-4 text-violet-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
+                        <MessageSquare className="w-3.5 h-3.5 text-violet-400" />
                       </div>
-                      <h3 className="text-[14px] font-semibold text-slate-100">Private Notes</h3>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Private Notes</h3>
                     </div>
                   </div>
                   <div className="px-6 py-4">
@@ -502,13 +515,13 @@ export default function TutorStudentDetail() {
                 </div>
 
                 {/* Academic Summary */}
-                <div className={GLASS}>
-                  <div className="px-6 pt-5 pb-4 border-b border-white/[0.04]">
+                <div className={GP}>
+                  <div className="px-6 pt-5 pb-3 border-b border-white/[0.04]">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
-                        <FileText className="w-4 h-4 text-emerald-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
+                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
                       </div>
-                      <h3 className="text-[14px] font-semibold text-slate-100">Academic Summary</h3>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Academic Summary</h3>
                     </div>
                   </div>
                   <div className="px-6 py-4">
@@ -564,15 +577,15 @@ export default function TutorStudentDetail() {
             </div>
 
             {/* ── EVIDENCE HISTORY ──────────────────────────────── */}
-            <div className={GLASS}>
-              <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-white/[0.04]">
+            <div className={GP}>
+              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
-                    <Activity className="w-4 h-4 text-emerald-400" />
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/10 border border-indigo-500/12">
+                    <Activity className="w-3.5 h-3.5 text-indigo-400" />
                   </div>
                   <div>
-                    <h3 className="text-[14px] font-semibold text-slate-100">Evidence History</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Timeline of assessments with topics covered</p>
+                    <h3 className="text-[13px] font-semibold text-slate-100">Evidence History</h3>
+                    <p className="text-[10px] text-slate-600 font-medium">Timeline of assessments &middot; topics &middot; scores</p>
                   </div>
                 </div>
               </div>
@@ -657,11 +670,14 @@ export default function TutorStudentDetail() {
   );
 }
 
-function HeaderStat({ label, value, color }: { label: string; value: string | null; color: string }) {
+function HeaderStat({ label, value, color, icon }: { label: string; value: string | null; color: string; icon?: React.ReactNode }) {
   return (
-    <div className="text-center sm:text-left">
-      <p className={`text-lg font-bold tabular-nums ${color}`}>{value || "—"}</p>
-      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">{label}</p>
+    <div className="text-center sm:text-left p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+      <div className="flex items-center gap-1.5 mb-1">
+        {icon}
+        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">{label}</p>
+      </div>
+      <p className={`text-base font-bold tabular-nums ${color}`}>{value || "—"}</p>
     </div>
   );
 }
