@@ -18,16 +18,10 @@ interface SomaUser {
 function formatStudentName(student: SomaUser): string {
   const fromDisplay = (student.displayName || "").trim();
   if (fromDisplay) return fromDisplay;
-  const local = student.email.split("@")[0] || "Student";
-  return local
-    .replace(/[._-]+/g, " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-    .join(" ");
+  return "Student";
 }
 
-const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
+const GP = "glass-panel-elite";
 
 export default function TutorStudents() {
   const queryClient = useQueryClient();
@@ -119,59 +113,53 @@ export default function TutorStudents() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] backdrop-blur-2xl" style={{ background: "linear-gradient(180deg, rgba(8,13,26,0.92) 0%, rgba(8,13,26,0.85) 100%)" }}>
+        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/">
-            <div className="flex items-center gap-3 cursor-pointer">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain" />
+            <div className="flex items-center gap-3.5 cursor-pointer group">
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
               <div>
-                <h1 className="text-lg font-bold gradient-text">SOMA</h1>
-                <p className="text-[10px] text-slate-400 tracking-widest uppercase">Tutor Portal</p>
+                <h1 className="text-base font-bold tracking-tight gradient-text leading-none">SOMA</h1>
+                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Control Centre</p>
               </div>
             </div>
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
+            <nav className="hidden md:flex items-center gap-0.5 mr-2">
+              <Link href="/tutor">
+                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-dashboard">
+                  <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
+                </span>
+              </Link>
+              <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-violet-300 border-b-2 border-violet-500 cursor-default" data-testid="nav-students">
+                <Users className="w-3.5 h-3.5" /> Students
+              </span>
+              <Link href="/tutor/assessments">
+                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-assessments">
+                  <BookOpen className="w-3.5 h-3.5" /> Assessments
+                </span>
+              </Link>
+            </nav>
             <div className="flex items-center gap-3">
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                style={{ backgroundColor: "rgba(139,92,246,0.3)", boxShadow: "0 0 16px rgba(139,92,246,0.3)", border: "2px solid #8B5CF6" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shrink-0"
+                style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(99,102,241,0.2))", boxShadow: "0 0 24px rgba(139,92,246,0.2), inset 0 1px 0 rgba(255,255,255,0.08)", border: "1.5px solid rgba(139,92,246,0.4)" }}
               >
                 {initials}
               </div>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-slate-200">{displayName}</p>
-                <p className="text-[10px] text-violet-400 font-semibold uppercase tracking-wider">Tutor</p>
+                <p className="text-[13px] font-medium text-slate-200 leading-none">{displayName}</p>
+                <p className="text-[9px] text-violet-400/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-slate-400 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px]" aria-label="Log out">
+            <button onClick={handleLogout} className="text-slate-600 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-white/[0.03]" aria-label="Log out">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
-      <nav className="border-b border-slate-800/40 bg-slate-950/40 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-6 flex gap-1">
-          <Link href="/tutor">
-            <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-dashboard">
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
-            </span>
-          </Link>
-          <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-violet-300 border-b-2 border-violet-500 cursor-default" data-testid="nav-students">
-            <Users className="w-4 h-4" />
-            Students
-          </span>
-          <Link href="/tutor/assessments">
-            <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-assessments">
-              <BookOpen className="w-4 h-4" />
-              Assessments
-            </span>
-          </Link>
-        </div>
-      </nav>
-
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-[1440px] mx-auto px-6 lg:px-10 py-7 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-slate-100">My Students</h2>
@@ -216,10 +204,10 @@ export default function TutorStudents() {
             <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
           </div>
         ) : filteredStudents.length === 0 ? (
-          <div className={`${CARD_CLASS} text-center py-12`}>
-            <Users className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-            <p className="text-sm text-slate-400">{searchQuery ? "No matching students found" : "No students adopted yet"}</p>
-            {!searchQuery && <p className="text-xs text-slate-500 mt-1">Click "Add Students" to add students to your cohort</p>}
+          <div className={`${GP} text-center py-14 px-6`}>
+            <Users className="w-10 h-10 mx-auto text-slate-700 mb-3" />
+            <p className="text-[13px] text-slate-400 font-medium">{searchQuery ? "No matching students found" : "No students yet"}</p>
+            {!searchQuery && <p className="text-[11px] text-slate-600 mt-1">Click "Add Students" to add students to your cohort</p>}
           </div>
         ) : (
           <div className="grid gap-3">
@@ -262,12 +250,12 @@ export default function TutorStudents() {
       </main>
 
       {showAdoptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowAdoptModal(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-lg p-4" onClick={() => setShowAdoptModal(false)}>
+          <div className="glass-panel-elite max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
-              <h3 className="text-lg font-bold text-slate-200">Add Students</h3>
-              <button onClick={() => setShowAdoptModal(false)} className="text-slate-400 hover:text-slate-300 p-1">
-                <X className="w-5 h-5" />
+              <h3 className="text-base font-bold text-slate-100">Add Students</h3>
+              <button onClick={() => setShowAdoptModal(false)} className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors">
+                <X className="w-4 h-4" />
               </button>
             </div>
             {availableStudents.length === 0 ? (
