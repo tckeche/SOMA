@@ -57,16 +57,6 @@ app.get("/_health", (_req, res) => {
 });
 
 const port = parseInt(process.env.PORT || "5000", 10);
-httpServer.listen(
-  {
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  },
-  () => {
-    log(`serving on port ${port}`);
-  },
-);
 
 (async () => {
   try {
@@ -116,7 +106,15 @@ httpServer.listen(
       const { setupVite } = await import("./vite");
       await setupVite(httpServer, app);
     }
+
+    // Start listening only after everything is fully initialised —
+    // this prevents "Cannot GET /" during the startup window.
+    httpServer.listen(
+      { port, host: "0.0.0.0", reusePort: true },
+      () => { log(`serving on port ${port}`); },
+    );
   } catch (err) {
     console.error("Fatal error during server initialization:", err);
+    process.exit(1);
   }
 })();
