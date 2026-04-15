@@ -8,8 +8,13 @@ import {
   type TutorComment, type InsertTutorComment,
   type SyllabusDocument, type InsertSyllabusDocument,
   type SyllabusChunk, type InsertSyllabusChunk,
+  type StudentSubject, type InsertStudentSubject,
+  type TutorNotification, type InsertTutorNotification,
+  type StudentTopicMastery,
+  type SuggestedAssessment, type InsertSuggestedAssessment,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
+  studentSubjects, tutorNotifications, studentTopicMastery, suggestedAssessments,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
@@ -117,6 +122,25 @@ export interface IStorage {
   listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]>;
   getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined>;
   getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined>;
+  listStudentSubjects(studentId: string): Promise<StudentSubject[]>;
+  addStudentSubject(subject: InsertStudentSubject): Promise<StudentSubject>;
+  updateStudentSubject(id: number, studentId: string, data: Partial<InsertStudentSubject>): Promise<StudentSubject | undefined>;
+  upsertStudentTopicMastery(input: {
+    studentId: string;
+    subject: string;
+    topic: string;
+    subtopic?: string | null;
+    understandingPercent: number;
+    covered?: boolean;
+    tested?: boolean;
+  }): Promise<StudentTopicMastery>;
+  listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]>;
+  createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification>;
+  listTutorNotifications(tutorId: string): Promise<TutorNotification[]>;
+  markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined>;
+  createSuggestedAssessment(suggestion: InsertSuggestedAssessment): Promise<SuggestedAssessment>;
+  listSuggestedAssessments(tutorId: string, studentId: string): Promise<SuggestedAssessment[]>;
+  updateSuggestedAssessmentStatus(id: number, tutorId: string, status: string, generatedQuizId?: number): Promise<SuggestedAssessment | undefined>;
 
 }
 
@@ -215,6 +239,107 @@ class DatabaseStorage implements IStorage {
   async getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined> {
     const [doc] = await this.database.select().from(syllabusDocuments).where(eq(syllabusDocuments.contentHash, contentHash));
     return doc;
+  }
+
+  async listStudentSubjects(studentId: string): Promise<StudentSubject[]> {
+    return this.database.select().from(studentSubjects).where(eq(studentSubjects.studentId, studentId)).orderBy(studentSubjects.createdAt);
+  }
+
+  async addStudentSubject(subject: InsertStudentSubject): Promise<StudentSubject> {
+    const [row] = await this.database.insert(studentSubjects).values(subject).returning();
+    return row;
+  }
+
+  async updateStudentSubject(id: number, studentId: string, data: Partial<InsertStudentSubject>): Promise<StudentSubject | undefined> {
+    const [row] = await this.database
+      .update(studentSubjects)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(studentSubjects.id, id), eq(studentSubjects.studentId, studentId)))
+      .returning();
+    return row;
+  }
+
+  async upsertStudentTopicMastery(input: {
+    studentId: string;
+    subject: string;
+    topic: string;
+    subtopic?: string | null;
+    understandingPercent: number;
+    covered?: boolean;
+    tested?: boolean;
+  }): Promise<StudentTopicMastery> {
+    const payload = {
+      studentId: input.studentId,
+      subject: input.subject,
+      topic: input.topic,
+      subtopic: input.subtopic ?? null,
+      understandingPercent: Math.max(0, Math.min(100, Math.round(input.understandingPercent))),
+      masteryAchieved: input.understandingPercent >= 75,
+      covered: Boolean(input.covered),
+      tested: Boolean(input.tested),
+      attempts: 1,
+      updatedAt: new Date(),
+    };
+    const [row] = await this.database
+      .insert(studentTopicMastery)
+      .values(payload)
+      .onConflictDoUpdate({
+        target: [studentTopicMastery.studentId, studentTopicMastery.subject, studentTopicMastery.topic, studentTopicMastery.subtopic],
+        set: {
+          understandingPercent: payload.understandingPercent,
+          masteryAchieved: payload.masteryAchieved,
+          covered: payload.covered,
+          tested: payload.tested,
+          attempts: sql`${studentTopicMastery.attempts} + 1`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]> {
+    return this.database.select().from(studentTopicMastery).where(eq(studentTopicMastery.studentId, studentId)).orderBy(studentTopicMastery.updatedAt);
+  }
+
+  async createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification> {
+    const [row] = await this.database.insert(tutorNotifications).values(notification).returning();
+    return row;
+  }
+
+  async listTutorNotifications(tutorId: string): Promise<TutorNotification[]> {
+    return this.database.select().from(tutorNotifications).where(eq(tutorNotifications.tutorId, tutorId)).orderBy(desc(tutorNotifications.createdAt));
+  }
+
+  async markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined> {
+    const [row] = await this.database
+      .update(tutorNotifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(tutorNotifications.id, notificationId), eq(tutorNotifications.tutorId, tutorId)))
+      .returning();
+    return row;
+  }
+
+  async createSuggestedAssessment(suggestion: InsertSuggestedAssessment): Promise<SuggestedAssessment> {
+    const [row] = await this.database.insert(suggestedAssessments).values(suggestion).returning();
+    return row;
+  }
+
+  async listSuggestedAssessments(tutorId: string, studentId: string): Promise<SuggestedAssessment[]> {
+    return this.database
+      .select()
+      .from(suggestedAssessments)
+      .where(and(eq(suggestedAssessments.tutorId, tutorId), eq(suggestedAssessments.studentId, studentId)))
+      .orderBy(desc(suggestedAssessments.createdAt));
+  }
+
+  async updateSuggestedAssessmentStatus(id: number, tutorId: string, status: string, generatedQuizId?: number): Promise<SuggestedAssessment | undefined> {
+    const [row] = await this.database
+      .update(suggestedAssessments)
+      .set({ status, generatedQuizId: generatedQuizId ?? null })
+      .where(and(eq(suggestedAssessments.id, id), eq(suggestedAssessments.tutorId, tutorId)))
+      .returning();
+    return row;
   }
 
   async getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>> {
@@ -773,6 +898,10 @@ class MemoryStorage implements IStorage {
   private tutorCommentsList: TutorComment[] = [];
   private syllabusDocumentsList: SyllabusDocument[] = [];
   private syllabusChunksList: SyllabusChunk[] = [];
+  private studentSubjectsList: StudentSubject[] = [];
+  private studentTopicMasteryList: StudentTopicMastery[] = [];
+  private tutorNotificationsList: TutorNotification[] = [];
+  private suggestedAssessmentsList: SuggestedAssessment[] = [];
   private somaQuizId = 1;
   private somaQuestionId = 1;
   private somaReportId = 1;
@@ -780,6 +909,10 @@ class MemoryStorage implements IStorage {
   private quizAssignmentId = 1;
   private syllabusDocumentId = 1;
   private syllabusChunkId = 1;
+  private studentSubjectId = 1;
+  private studentMasteryId = 1;
+  private tutorNotificationId = 1;
+  private suggestedAssessmentId = 1;
 
   async createSomaQuiz(quiz: InsertSomaQuiz): Promise<SomaQuiz> {
     const created: SomaQuiz = {
@@ -1085,6 +1218,111 @@ class MemoryStorage implements IStorage {
 
   async getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined> {
     return this.syllabusDocumentsList.find((doc) => doc.contentHash === contentHash);
+  }
+
+  async listStudentSubjects(studentId: string): Promise<StudentSubject[]> {
+    return this.studentSubjectsList.filter((s) => s.studentId === studentId);
+  }
+
+  async addStudentSubject(subject: InsertStudentSubject): Promise<StudentSubject> {
+    const row: StudentSubject = { id: this.studentSubjectId++, createdAt: new Date(), updatedAt: new Date(), ...subject };
+    this.studentSubjectsList.push(row);
+    return row;
+  }
+
+  async updateStudentSubject(id: number, studentId: string, data: Partial<InsertStudentSubject>): Promise<StudentSubject | undefined> {
+    const row = this.studentSubjectsList.find((s) => s.id === id && s.studentId === studentId);
+    if (!row) return undefined;
+    Object.assign(row, data, { updatedAt: new Date() });
+    return row;
+  }
+
+  async upsertStudentTopicMastery(input: {
+    studentId: string;
+    subject: string;
+    topic: string;
+    subtopic?: string | null;
+    understandingPercent: number;
+    covered?: boolean;
+    tested?: boolean;
+  }): Promise<StudentTopicMastery> {
+    const existing = this.studentTopicMasteryList.find((m) =>
+      m.studentId === input.studentId
+      && m.subject === input.subject
+      && m.topic === input.topic
+      && (m.subtopic || null) === (input.subtopic || null)
+    );
+    if (existing) {
+      existing.understandingPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
+      existing.masteryAchieved = existing.understandingPercent >= 75;
+      existing.covered = Boolean(input.covered);
+      existing.tested = Boolean(input.tested);
+      existing.attempts += 1;
+      existing.updatedAt = new Date();
+      return existing;
+    }
+    const row: StudentTopicMastery = {
+      id: this.studentMasteryId++,
+      studentId: input.studentId,
+      subject: input.subject,
+      topic: input.topic,
+      subtopic: input.subtopic || null,
+      understandingPercent: Math.max(0, Math.min(100, Math.round(input.understandingPercent))),
+      masteryAchieved: input.understandingPercent >= 75,
+      covered: Boolean(input.covered),
+      tested: Boolean(input.tested),
+      attempts: 1,
+      updatedAt: new Date(),
+    };
+    this.studentTopicMasteryList.push(row);
+    return row;
+  }
+
+  async listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]> {
+    return this.studentTopicMasteryList.filter((m) => m.studentId === studentId);
+  }
+
+  async createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification> {
+    const row: TutorNotification = { id: this.tutorNotificationId++, createdAt: new Date(), readAt: null, payload: null, studentId: null, ...notification };
+    this.tutorNotificationsList.push(row);
+    return row;
+  }
+
+  async listTutorNotifications(tutorId: string): Promise<TutorNotification[]> {
+    return this.tutorNotificationsList.filter((n) => n.tutorId === tutorId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined> {
+    const row = this.tutorNotificationsList.find((n) => n.id === notificationId && n.tutorId === tutorId);
+    if (!row) return undefined;
+    row.readAt = new Date();
+    return row;
+  }
+
+  async createSuggestedAssessment(suggestion: InsertSuggestedAssessment): Promise<SuggestedAssessment> {
+    const row: SuggestedAssessment = {
+      id: this.suggestedAssessmentId++,
+      createdAt: new Date(),
+      generatedQuizId: null,
+      subtopic: null,
+      status: suggestion.status ?? "suggested",
+      targetDifficulty: suggestion.targetDifficulty ?? "medium",
+      ...suggestion,
+    };
+    this.suggestedAssessmentsList.push(row);
+    return row;
+  }
+
+  async listSuggestedAssessments(tutorId: string, studentId: string): Promise<SuggestedAssessment[]> {
+    return this.suggestedAssessmentsList.filter((s) => s.tutorId === tutorId && s.studentId === studentId);
+  }
+
+  async updateSuggestedAssessmentStatus(id: number, tutorId: string, status: string, generatedQuizId?: number): Promise<SuggestedAssessment | undefined> {
+    const row = this.suggestedAssessmentsList.find((s) => s.id === id && s.tutorId === tutorId);
+    if (!row) return undefined;
+    row.status = status;
+    row.generatedQuizId = generatedQuizId ?? null;
+    return row;
   }
 
   async getAllSomaUsers(): Promise<SomaUser[]> {

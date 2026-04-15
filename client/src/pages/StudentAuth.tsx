@@ -12,6 +12,7 @@ export default function StudentAuth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [subject, setSubject] = useState("");
   const [syllabus, setSyllabus] = useState("");
   const [syllabusCode, setSyllabusCode] = useState("");
   const [level, setLevel] = useState("");
@@ -32,6 +33,7 @@ export default function StudentAuth() {
     setEmail("");
     setPassword("");
     setDisplayName("");
+    setSubject("");
     setSyllabus("");
     setSyllabusCode("");
     setLevel("");
@@ -140,10 +142,10 @@ export default function StudentAuth() {
     const nextErrors: { email?: string; password?: string } = {};
     if (!email.trim()) nextErrors.email = "Please enter your email address.";
     if (!password.trim()) nextErrors.password = "Please create a password.";
-    if (!syllabus || !syllabusCode.trim() || !level) {
+    if (!subject || !syllabus || !syllabusCode.trim() || !level) {
       toast({
         title: "Missing required fields",
-        description: "Please select your syllabus, enter your syllabus code, and choose your level.",
+        description: "Please add subject, exam body/syllabus, syllabus code, and level.",
         variant: "destructive",
       });
       return;
@@ -179,9 +181,11 @@ export default function StudentAuth() {
         options: {
           data: {
             display_name: displayName || email.split("@")[0],
+            subject,
             syllabus,
             syllabus_code: syllabusCode.trim(),
             level,
+            subjects: [{ subject, examBody: syllabus, syllabusCode: syllabusCode.trim(), level }],
           },
         },
       }), { timeoutMs: 18000, stage: "supabase_signup" });
@@ -417,7 +421,24 @@ export default function StudentAuth() {
                 </div>
                 <div>
                   <label className="text-xs text-slate-400 mb-1.5 block font-medium">
-                    Syllabus <span className="text-red-400">*</span>
+                    Subject <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      placeholder="e.g. Mathematics"
+                      required
+                      className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                      data-testid="input-subject"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                    Exam Body / Syllabus <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
                     <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

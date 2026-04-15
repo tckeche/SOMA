@@ -253,7 +253,19 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
     : input;
 
-  const questionCount = Math.max(1, context.questionCount ?? 8);
+  const questionCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+  if (questionCount > 20) {
+    const batchSize = 15;
+    const merged: QuizResult["questions"] = [];
+    let remaining = questionCount;
+    while (remaining > 0) {
+      const currentBatch = Math.min(batchSize, remaining);
+      const batch = await generateAuditedQuiz({ ...context, questionCount: currentBatch });
+      merged.push(...batch.questions);
+      remaining -= currentBatch;
+    }
+    return { questions: validateAndCorrectMcqAnswers(merged.slice(0, questionCount)) };
+  }
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
   const makerPrompt = `You are Claude (Maker), an expert mathematics assessment designer.
 Generate exactly ${questionCount} MCQ questions for ${context.subject}.

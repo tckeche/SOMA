@@ -939,6 +939,58 @@ Provide:
   }
 }
 
+function normalizeLabel(input: string | null | undefined, fallback: string): string {
+  const value = String(input || "").trim();
+  return value || fallback;
+}
+
+function computeStudentPerformance(assignments: Array<{
+  quizSubject: string | null;
+  quizTitle: string;
+  score: number | null;
+  maxScore: number;
+}>): {
+  weak: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }>;
+  strong: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }>;
+  uncovered: Array<{ subject: string; topic: string; subtopic: string | null }>;
+} {
+  const subjectStats: Record<string, { score: number; max: number; count: number; topics: Record<string, { score: number; max: number; count: number }> }> = {};
+  for (const row of assignments) {
+    const subject = normalizeLabel(row.quizSubject, "General");
+    if (!subjectStats[subject]) subjectStats[subject] = { score: 0, max: 0, count: 0, topics: {} };
+    if (typeof row.score === "number" && row.maxScore > 0) {
+      subjectStats[subject].score += row.score;
+      subjectStats[subject].max += row.maxScore;
+      subjectStats[subject].count += 1;
+    }
+    const topic = normalizeLabel(row.quizTitle.split("Quiz")[0]?.trim(), row.quizTitle);
+    if (!subjectStats[subject].topics[topic]) subjectStats[subject].topics[topic] = { score: 0, max: 0, count: 0 };
+    if (typeof row.score === "number" && row.maxScore > 0) {
+      subjectStats[subject].topics[topic].score += row.score;
+      subjectStats[subject].topics[topic].max += row.maxScore;
+      subjectStats[subject].topics[topic].count += 1;
+    }
+  }
+
+  const weak: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }> = [];
+  const strong: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }> = [];
+  const uncovered: Array<{ subject: string; topic: string; subtopic: string | null }> = [];
+
+  for (const [subject, stats] of Object.entries(subjectStats)) {
+    if (stats.count === 0) {
+      uncovered.push({ subject, topic: "Core syllabus areas", subtopic: null });
+      continue;
+    }
+    for (const [topic, tStats] of Object.entries(stats.topics)) {
+      const pct = tStats.max > 0 ? Math.round((tStats.score / tStats.max) * 100) : 0;
+      if (pct < 75) weak.push({ subject, topic, subtopic: null, understanding: pct });
+      if (pct >= 80) strong.push({ subject, topic, subtopic: null, understanding: pct });
+    }
+  }
+
+  return { weak: weak.slice(0, 3), strong: strong.slice(0, 3), uncovered: uncovered.slice(0, 3) };
+}
+
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   app.use((req, res, next) => {
     const originalJson = res.json.bind(res);
@@ -969,7 +1021,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/auth/sync", async (req, res) => {
     try {
-      const user_metadata = req.body?.user_metadata as { display_name?: string; full_name?: string } | undefined;
+      const user_metadata = req.body?.user_metadata as {
+        display_name?: string;
+        full_name?: string;
+        subject?: string;
+        syllabus?: string;
+        syllabus_code?: string;
+        level?: string;
+        subjects?: Array<{ subject: string; examBody: string; syllabusCode: string; level: string }>;
+      } | undefined;
       let id = "";
       let email = "";
 
@@ -1001,6 +1061,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         role,
       });
       const user = await storage.upsertSomaUser(parsed);
+      const signupSubjects = Array.isArray(user_metadata?.subjects) && user_metadata?.subjects.length > 0
+        ? user_metadata!.subjects
+        : (user_metadata?.subject && user_metadata?.syllabus && user_metadata?.syllabus_code && user_metadata?.level)
+          ? [{
+            subject: user_metadata.subject,
+            examBody: user_metadata.syllabus,
+            syllabusCode: user_metadata.syllabus_code,
+            level: user_metadata.level,
+          }]
+          : [];
+      for (const item of signupSubjects) {
+        if (!item.subject || !item.examBody || !item.syllabusCode || !item.level) continue;
+        const existing = await storage.listStudentSubjects(user.id);
+        const already = existing.some((s) =>
+          s.subject.toLowerCase() === item.subject.toLowerCase()
+          && s.syllabusCode.toLowerCase() === item.syllabusCode.toLowerCase()
+        );
+        if (!already) {
+          await storage.addStudentSubject({
+            studentId: user.id,
+            subject: item.subject,
+            examBody: item.examBody,
+            syllabusCode: item.syllabusCode,
+            level: item.level,
+          });
+        }
+      }
       res.json(user);
     } catch (err: any) {
       console.error("Auth sync error:", err);
@@ -1555,6 +1642,60 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      const rows = await storage.listStudentSubjects(studentId);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch student subjects" });
+    }
+  });
+
+  app.post("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      const payload = z.object({
+        subject: z.string().min(1),
+        examBody: z.string().min(1),
+        syllabusCode: z.string().min(1),
+        level: z.string().min(1),
+      }).parse(req.body || {});
+      const row = await storage.addStudentSubject({ studentId, ...payload });
+      res.status(201).json(row);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to add subject" });
+    }
+  });
+
+  app.put("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const subjectId = Number(req.params.subjectId);
+      if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      const payload = z.object({
+        subject: z.string().min(1),
+        examBody: z.string().min(1),
+        syllabusCode: z.string().min(1),
+        level: z.string().min(1),
+      }).parse(req.body || {});
+      const row = await storage.updateStudentSubject(subjectId, studentId, payload);
+      if (!row) return res.status(404).json({ message: "Student subject not found" });
+      res.json(row);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to update subject" });
+    }
+  });
+
   app.get("/api/tutor/students/:studentId/performance", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
@@ -1653,6 +1794,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/tutor/notifications", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const rows = await storage.listTutorNotifications(tutorId);
+      const unreadCount = rows.filter((item) => !item.readAt).length;
+      res.json({ notifications: rows, unreadCount });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/tutor/notifications/:id/read", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const id = Number(req.params.id);
+      const row = await storage.markTutorNotificationRead(id, tutorId);
+      if (!row) return res.status(404).json({ message: "Notification not found" });
+      res.json(row);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to update notification" });
+    }
+  });
+
   app.post("/api/tutor/ai/intervention-insights", requireTutor, async (req, res) => {
     try {
       const { students } = req.body;
@@ -1722,6 +1886,149 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     } catch (err: any) {
       console.error("[AI Student Summary] Error:", err.message);
       res.json({ summary: null, error: err.message });
+    }
+  });
+
+  app.post("/api/tutor/students/:studentId/ai/suggested-assessments", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+
+      const student = await storage.getSomaUserById(studentId);
+      const subjects = await storage.listStudentSubjects(studentId);
+      if (subjects.length === 0 || subjects.some((s) => !s.subject || !s.examBody || !s.level || !s.syllabusCode)) {
+        return res.status(400).json({
+          code: "CURRICULUM_METADATA_REQUIRED",
+          message: "Missing curriculum metadata. Open Edit Student Profile and provide subject, examination body, syllabus code, and level.",
+        });
+      }
+
+      const report = await storage.getSomaReportsByStudentId(studentId);
+      const assignmentRows = await Promise.all((await storage.getQuizAssignmentsForStudent(studentId)).map(async (a) => {
+        const matched = report.find((r) => r.quizId === a.quizId);
+        const questions = await storage.getSomaQuestionsByQuizId(a.quizId);
+        const maxScore = questions.reduce((sum, q) => sum + q.marks, 0);
+        return { quizSubject: a.quiz.subject, quizTitle: a.quiz.title, score: matched?.score ?? null, maxScore };
+      }));
+      const analysis = computeStudentPerformance(assignmentRows);
+      for (const item of analysis.weak) {
+        await storage.upsertStudentTopicMastery({
+          studentId,
+          subject: item.subject,
+          topic: item.topic,
+          subtopic: item.subtopic,
+          understandingPercent: item.understanding,
+          covered: true,
+          tested: true,
+        });
+      }
+
+      const primarySubject = subjects[0];
+      const suggestions = [
+        {
+          subject: primarySubject.subject,
+          purpose: "struggling_areas",
+          rationale: analysis.weak.length > 0
+            ? `${student?.displayName || "Student"} is below 75% in ${analysis.weak[0].topic}. Continue targeting this topic/subtopic until mastery reaches at least 75%.`
+            : `${student?.displayName || "Student"} has no acute weak topic yet, so validate prior weak spots.`,
+          topic: analysis.weak[0]?.topic || "Core concepts",
+          subtopic: analysis.weak[0]?.subtopic ?? null,
+          targetDifficulty: "medium",
+        },
+        {
+          subject: primarySubject.subject,
+          purpose: "uncovered_content",
+          rationale: "Assess currently uncovered syllabus content to improve full syllabus coverage.",
+          topic: analysis.uncovered[0]?.topic || "Uncovered syllabus content",
+          subtopic: analysis.uncovered[0]?.subtopic ?? null,
+          targetDifficulty: "easy",
+        },
+        {
+          subject: primarySubject.subject,
+          purpose: "stretch_strengths",
+          rationale: "Challenge stronger areas with progressively harder questions.",
+          topic: analysis.strong[0]?.topic || "Advanced mixed practice",
+          subtopic: analysis.strong[0]?.subtopic ?? null,
+          targetDifficulty: "hard",
+        },
+      ];
+
+      const created = await Promise.all(suggestions.map((s) => storage.createSuggestedAssessment({
+        tutorId,
+        studentId,
+        ...s,
+        status: "suggested",
+      })));
+
+      res.json({
+        basis: {
+          student: { id: studentId, name: student?.displayName || student?.email },
+          curriculum: primarySubject,
+          weaknesses: analysis.weak,
+          strengths: analysis.strong,
+          uncovered: analysis.uncovered,
+        },
+        suggestions: created,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to generate suggestions" });
+    }
+  });
+
+  app.post("/api/tutor/students/:studentId/ai/publish-suggested", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(50).default(30) }).parse(req.body || {});
+      const subjects = await storage.listStudentSubjects(studentId);
+      const primarySubject = subjects[0];
+      if (!primarySubject) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
+      const all = await storage.listSuggestedAssessments(tutorId, studentId);
+      const selected = all.filter((s) => parsed.suggestionIds.includes(s.id));
+      if (selected.length === 0) return res.status(404).json({ message: "No matching suggestions found" });
+      const quizzes: any[] = [];
+      for (const item of selected) {
+        const generated = await generateAuditedQuiz({
+          topic: item.topic,
+          subject: item.subject,
+          syllabus: primarySubject.examBody,
+          level: primarySubject.level,
+          subtopic: item.subtopic || undefined,
+          questionCount: parsed.questionCount,
+          copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${primarySubject.syllabusCode}. Include examiner report style difficulty traps and misconceptions.`,
+        });
+        const quiz = await storage.createSomaQuizBundle({
+          quiz: {
+            title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
+            topic: item.topic,
+            subject: item.subject,
+            syllabus: `${primarySubject.examBody} ${primarySubject.syllabusCode}`,
+            level: primarySubject.level,
+            authorId: tutorId,
+            status: "published",
+            timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
+          },
+          questions: generated.questions.map((q) => ({
+            stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
+          })),
+          assignedStudentIds: [studentId],
+        });
+        await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
+        quizzes.push(quiz.quiz);
+      }
+      await storage.createTutorNotification({
+        tutorId,
+        studentId,
+        type: "ai_assessment_published",
+        title: "AI suggested assessments are ready",
+        message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published for this student.`,
+        payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
+      });
+      res.json({ published: quizzes.length, quizzes });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to publish suggested assessments" });
     }
   });
 
@@ -3040,6 +3347,19 @@ ${JSON.stringify({
 
       // Mark quiz assignment as completed
       storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch(() => {});
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (quiz?.authorId) {
+        const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
+        const durationText = durationMs && durationMs > 0 ? `${Math.floor(durationMs / 60000)}m` : "unknown duration";
+        await storage.createTutorNotification({
+          tutorId: quiz.authorId,
+          studentId,
+          type: "student_submission",
+          title: `${resolvedName} submitted ${quiz.title}`,
+          message: `${resolvedName} submitted ${quiz.title} (${quiz.subject || "General subject"}) in ${durationText} and scored ${Math.round((totalScore / Math.max(1, allQuestions.reduce((s, q) => s + q.marks, 0))) * 100)}%.`,
+          payload: { reportId: report.id, quizId, studentId, studentName: resolvedName, score: totalScore, completedAt: now.toISOString() },
+        });
+      }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
       runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore).catch(() => {});

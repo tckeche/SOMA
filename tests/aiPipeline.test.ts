@@ -190,6 +190,16 @@ describe("generateAuditedQuiz: Full pipeline success", () => {
       expect(mockGenerateWithFallback.mock.calls[i][2]).toBeDefined();
     }
   });
+
+  it("batches generation for larger 30-50 question requests", async () => {
+    const oneQuestion = { questions: [validQuizResult.questions[0]] };
+    mockGenerateWithFallback.mockResolvedValue(makeAIResult(JSON.stringify(oneQuestion)));
+    const result = await generateAuditedQuiz({ topic: "Algebra", subject: "Mathematics", syllabus: "Cambridge", level: "IGCSE", questionCount: 30 });
+    expect(result.questions.length).toBeGreaterThan(0);
+    expect(result.questions.length).toBeLessThanOrEqual(30);
+    // 30 questions => two 15-question batches; each batch runs 3 AI stages
+    expect(mockGenerateWithFallback).toHaveBeenCalledTimes(6);
+  });
 });
 
 // ─── generateAuditedQuiz: Error handling ─────────────────────────────────────
