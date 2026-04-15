@@ -14,7 +14,7 @@ import {
   Trash2, Eye, FileText, Award, Target, CheckCircle2,
   TrendingDown, TrendingUp, Minus, Clock, ChevronRight,
   BarChart3, Layers, AlertTriangle, Activity,
-  ArrowRight, Calendar, Radar as RadarIcon,
+  ArrowRight, Calendar, Radar as RadarIcon, PlusCircle, Wand2,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -75,6 +75,23 @@ interface AISummary {
   nextSteps: string;
 }
 
+interface StudentSubject {
+  id: number;
+  subject: string;
+  examBody: string;
+  syllabusCode: string;
+  level: string;
+}
+
+interface SuggestedAssessment {
+  id: number;
+  purpose: string;
+  rationale: string;
+  topic: string;
+  subtopic: string | null;
+  subject: string;
+}
+
 function getStatusLabel(a: AssignmentRow): { text: string; color: string } {
   if (a.reportStatus === "completed") return { text: "Submitted", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };
   if (a.reportStatus === "pending") return { text: "Grading", color: "bg-amber-500/10 text-amber-400 border-amber-500/15" };
@@ -106,6 +123,8 @@ export default function TutorStudentDetail() {
   const [newComment, setNewComment] = useState("");
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [newSubject, setNewSubject] = useState({ subject: "", examBody: "", syllabusCode: "", level: "" });
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<number[]>([]);
 
   const { userId } = useSupabaseSession();
 
@@ -127,6 +146,62 @@ export default function TutorStudentDetail() {
       return res.json();
     },
     enabled: !!userId && !!studentId,
+  });
+
+  const { data: subjects = [] } = useQuery<StudentSubject[]>({
+    queryKey: ["/api/tutor/students", studentId, "subjects"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/subjects`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!userId && !!studentId,
+  });
+
+  const addSubjectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/subjects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSubject),
+      });
+      if (!res.ok) throw new Error((await res.json()).message || "Failed to add subject");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/students", studentId, "subjects"] });
+      setNewSubject({ subject: "", examBody: "", syllabusCode: "", level: "" });
+      toast({ title: "Subject added" });
+    },
+    onError: (err: Error) => toast({ title: "Could not add subject", description: err.message, variant: "destructive" }),
+  });
+
+  const { data: suggestionsData, refetch: refetchSuggestions, isFetching: suggestionsLoading } = useQuery<{ suggestions: SuggestedAssessment[]; basis: any }>({
+    queryKey: ["/api/tutor/students", studentId, "suggested-assessments"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/ai/suggested-assessments`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json()).message || "Suggestion preflight failed");
+      return res.json();
+    },
+    enabled: false,
+  });
+
+  const publishSuggestionsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/ai/publish-suggested`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestionIds: selectedSuggestionIds, questionCount: 30 }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message || "Failed to publish");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Assessments published", description: `${data.published} generated assessments were published.` });
+      setSelectedSuggestionIds([]);
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/students", studentId, "report"] });
+    },
+    onError: (err: Error) => toast({ title: "Publish failed", description: err.message, variant: "destructive" }),
   });
 
   const addCommentMutation = useMutation({
@@ -335,6 +410,57 @@ export default function TutorStudentDetail() {
                   <HeaderStat label="Assessed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-cyan-400" icon={<BookOpen className="w-3.5 h-3.5 text-cyan-500/50" />} />
                   <HeaderStat label="Trend" value={overallTrend} color={trendColor} icon={<TrendIcon className="w-3.5 h-3.5 opacity-50" />} />
                 </div>
+              </div>
+            </div>
+
+            <div className={`${GP} p-5`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[14px] font-semibold text-slate-100">Student Curriculum Profile</h3>
+                <span className="text-[10px] text-slate-500">Required for AI assessment suggestions</span>
+              </div>
+              <div className="space-y-2 mb-4">
+                {subjects.map((s) => (
+                  <div key={s.id} className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px] text-slate-300">
+                    <strong>{s.subject}</strong> · {s.examBody} · {s.syllabusCode} · {s.level}
+                  </div>
+                ))}
+                {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using AI suggestions.</p>}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Subject" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))} />
+                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Exam body (e.g. Cambridge)" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))} />
+                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
+                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Level" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))} />
+              </div>
+              <button onClick={() => addSubjectMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                <PlusCircle className="w-4 h-4" /> Add Subject
+              </button>
+
+              <div className="mt-6 pt-4 border-t border-white/[0.06]">
+                <h3 className="text-[14px] font-semibold text-slate-100 mb-2">Create Assessment for {displayName}</h3>
+                <p className="text-[11px] text-slate-500 mb-3">AI uses this student's performance history, curriculum metadata, syllabus resources, and examiner-report difficulty patterns.</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <button onClick={() => refetchSuggestions()} className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">
+                    <Wand2 className="w-4 h-4" /> {suggestionsLoading ? "Analyzing..." : "Generate Suggested Assessments"}
+                  </button>
+                  {suggestionsData?.basis?.curriculum && (
+                    <span className="text-[11px] text-slate-400">Using {suggestionsData.basis.curriculum.subject} · {suggestionsData.basis.curriculum.examBody} · {suggestionsData.basis.curriculum.syllabusCode} · {suggestionsData.basis.curriculum.level}</span>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {(suggestionsData?.suggestions || []).map((s) => (
+                    <label key={s.id} className="flex items-start gap-2 rounded-md border border-white/[0.07] bg-white/[0.02] p-3">
+                      <input type="checkbox" checked={selectedSuggestionIds.includes(s.id)} onChange={(e) => setSelectedSuggestionIds((prev) => e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id))} />
+                      <div>
+                        <p className="text-[12px] text-slate-200 font-semibold">{s.purpose.replace(/_/g, " ")} — {s.topic}</p>
+                        <p className="text-[11px] text-slate-500">{s.rationale}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <button disabled={selectedSuggestionIds.length === 0 || publishSuggestionsMutation.isPending} onClick={() => publishSuggestionsMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 disabled:opacity-40">
+                  Publish Selected ({selectedSuggestionIds.length})
+                </button>
               </div>
             </div>
 

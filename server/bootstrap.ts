@@ -31,6 +31,11 @@ const BOOTSTRAP_QUERIES = [
   `CREATE UNIQUE INDEX IF NOT EXISTS soma_reports_quiz_student_idx ON soma_reports(quiz_id, student_id) WHERE student_id IS NOT NULL`,
   // Track when a user last logged in (added after initial schema)
   `ALTER TABLE soma_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS student_subjects (id SERIAL PRIMARY KEY, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, subject TEXT NOT NULL, exam_body TEXT NOT NULL, syllabus_code TEXT NOT NULL, level TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS student_topic_mastery (id SERIAL PRIMARY KEY, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, subject TEXT NOT NULL, topic TEXT NOT NULL, subtopic TEXT, understanding_percent INTEGER NOT NULL DEFAULT 0, mastery_achieved BOOLEAN NOT NULL DEFAULT false, covered BOOLEAN NOT NULL DEFAULT false, tested BOOLEAN NOT NULL DEFAULT false, attempts INTEGER NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS student_topic_mastery_unique_idx ON student_topic_mastery(student_id, subject, topic, subtopic)`,
+  `CREATE TABLE IF NOT EXISTS tutor_notifications (id SERIAL PRIMARY KEY, tutor_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, student_id UUID REFERENCES soma_users(id) ON DELETE SET NULL, type TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, payload JSONB, read_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS suggested_assessments (id SERIAL PRIMARY KEY, tutor_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, subject TEXT NOT NULL, purpose TEXT NOT NULL, rationale TEXT NOT NULL, topic TEXT NOT NULL, subtopic TEXT, target_difficulty TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'suggested', generated_quiz_id INTEGER REFERENCES soma_quizzes(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
 ] as const;
 
 function logBootstrap(message: string) {

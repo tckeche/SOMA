@@ -174,6 +174,60 @@ export const tutorComments = pgTable("tutor_comments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const studentSubjects = pgTable("student_subjects", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  examBody: text("exam_body").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  level: text("level").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const studentTopicMastery = pgTable("student_topic_mastery", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  topic: text("topic").notNull(),
+  subtopic: text("subtopic"),
+  understandingPercent: integer("understanding_percent").notNull().default(0),
+  masteryAchieved: boolean("mastery_achieved").notNull().default(false),
+  covered: boolean("covered").notNull().default(false),
+  tested: boolean("tested").notNull().default(false),
+  attempts: integer("attempts").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("student_topic_mastery_unique_idx").on(table.studentId, table.subject, table.topic, table.subtopic),
+]);
+
+export const tutorNotifications = pgTable("tutor_notifications", {
+  id: serial("id").primaryKey(),
+  tutorId: uuid("tutor_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").references(() => somaUsers.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  payload: jsonb("payload"),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const suggestedAssessments = pgTable("suggested_assessments", {
+  id: serial("id").primaryKey(),
+  tutorId: uuid("tutor_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  purpose: text("purpose").notNull(),
+  rationale: text("rationale").notNull(),
+  topic: text("topic").notNull(),
+  subtopic: text("subtopic"),
+  targetDifficulty: text("target_difficulty").notNull().default("medium"),
+  status: text("status").notNull().default("suggested"),
+  generatedQuizId: integer("generated_quiz_id").references(() => somaQuizzes.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const somaQuizzesRelations = relations(somaQuizzes, ({ one, many }) => ({
   questions: many(somaQuestions),
   reports: many(somaReports),
@@ -278,6 +332,22 @@ export type InsertQuizAssignment = z.infer<typeof insertQuizAssignmentSchema>;
 export const insertTutorCommentSchema = createInsertSchema(tutorComments).omit({ id: true, createdAt: true });
 export type TutorComment = typeof tutorComments.$inferSelect;
 export type InsertTutorComment = z.infer<typeof insertTutorCommentSchema>;
+
+export const insertStudentSubjectSchema = createInsertSchema(studentSubjects).omit({ id: true, createdAt: true, updatedAt: true });
+export type StudentSubject = typeof studentSubjects.$inferSelect;
+export type InsertStudentSubject = z.infer<typeof insertStudentSubjectSchema>;
+
+export const insertTutorNotificationSchema = createInsertSchema(tutorNotifications).omit({ id: true, createdAt: true, readAt: true });
+export type TutorNotification = typeof tutorNotifications.$inferSelect;
+export type InsertTutorNotification = z.infer<typeof insertTutorNotificationSchema>;
+
+export const insertStudentTopicMasterySchema = createInsertSchema(studentTopicMastery).omit({ id: true, updatedAt: true });
+export type StudentTopicMastery = typeof studentTopicMastery.$inferSelect;
+export type InsertStudentTopicMastery = z.infer<typeof insertStudentTopicMasterySchema>;
+
+export const insertSuggestedAssessmentSchema = createInsertSchema(suggestedAssessments).omit({ id: true, createdAt: true });
+export type SuggestedAssessment = typeof suggestedAssessments.$inferSelect;
+export type InsertSuggestedAssessment = z.infer<typeof insertSuggestedAssessmentSchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables, but these schemas are

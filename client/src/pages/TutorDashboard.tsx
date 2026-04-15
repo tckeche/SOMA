@@ -71,6 +71,15 @@ interface AIInsight {
   name: string;
   reason: string;
 }
+interface TutorNotification {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  payload: Record<string, any> | null;
+  readAt: string | null;
+  createdAt: string;
+}
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
   if (!startedAt || !completedAt) return "";
@@ -281,6 +290,28 @@ export default function TutorDashboard() {
     enabled: (stats?.studentInsights?.length ?? 0) > 0,
     staleTime: 120000,
     refetchOnWindowFocus: false,
+  });
+
+  const { data: notificationsData } = useQuery<{ notifications: TutorNotification[]; unreadCount: number }>({
+    queryKey: ["/api/tutor/notifications", userId],
+    queryFn: async () => {
+      const res = await authFetch("/api/tutor/notifications");
+      if (!res.ok) return { notifications: [], unreadCount: 0 };
+      return res.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 10000,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await authFetch(`/api/tutor/notifications/${id}/read`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to mark as read");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/notifications"] });
+    },
   });
 
   const assignMutation = useMutation({
@@ -554,9 +585,9 @@ export default function TutorDashboard() {
                 }`}
               >
                 <Bell className="w-3.5 h-3.5" /> Notifications
-                {(stats?.recentSubmissions?.length ?? 0) > 0 && (
-                  <span className="text-[10px] font-bold tabular-nums bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded-md border border-violet-500/25 leading-none">
-                    {stats!.recentSubmissions.length}
+                {(notificationsData?.unreadCount ?? 0) > 0 && (
+                  <span className="text-[10px] font-bold tabular-nums bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded-full border border-red-500/25 leading-none">
+                    {notificationsData!.unreadCount}
                   </span>
                 )}
               </button>
@@ -565,53 +596,55 @@ export default function TutorDashboard() {
             {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
             {activeTab === "notifications" && (
               <FadeInSection>
-                <SectionHeader icon={Bell} title="Submissions" subtitle="Recent student submissions awaiting review" />
-                {(stats?.recentSubmissions?.length ?? 0) === 0 ? (
+                <SectionHeader icon={Bell} title="Notifications" subtitle="Unread/read updates for submissions and AI publishing" />
+                {(notificationsData?.notifications?.length ?? 0) === 0 ? (
                   <div className={`${GP} px-6 py-16 text-center`}>
                     <Bell className="w-12 h-12 mx-auto text-slate-700 mb-4" />
-                    <p className="text-sm text-slate-400 font-medium">No submissions yet</p>
-                    <p className="text-xs text-slate-600 mt-1">Submissions will appear here as students complete assessments</p>
+                    <p className="text-sm text-slate-400 font-medium">No notifications yet</p>
+                    <p className="text-xs text-slate-600 mt-1">New submissions and AI generation updates will appear here</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {stats!.recentSubmissions.map((sub) => {
-                      const scoreColor = sub.score >= 75 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-rose-400";
-                      const scoreBg = sub.score >= 75 ? "bg-emerald-500/10 border-emerald-500/15" : sub.score >= 50 ? "bg-amber-500/10 border-amber-500/15" : "bg-rose-500/10 border-rose-500/15";
-                      const duration = formatDuration(sub.startedAt, sub.completedAt);
-                      const sc = getSubjectColor(sub.subject);
-                      const SubIcon = getSubjectIcon(sub.subject);
+                    {notificationsData!.notifications.map((item) => {
+                      const isUnread = !item.readAt;
+                      const reportId = Number(item.payload?.reportId || 0) || null;
+                      const quizId = Number(item.payload?.quizId || 0) || null;
                       return (
-                        <div key={sub.reportId} className={`${GP} p-5 hover:bg-white/[0.02] transition-colors`} data-testid={`notification-${sub.reportId}`}>
+                        <button
+                          key={item.id}
+                          onClick={() => { if (isUnread) markReadMutation.mutate(item.id); }}
+                          className={`${GP} w-full text-left p-5 hover:bg-white/[0.02] transition-colors`}
+                          data-testid={`notification-${item.id}`}
+                        >
                           <div className="flex items-start gap-4">
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}10`, borderColor: `${sc.hex}20` }}>
-                              <SubIcon className="w-5 h-5" style={{ color: sc.hex }} />
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 bg-violet-500/15 border-violet-500/25 relative">
+                              <Bell className="w-5 h-5 text-violet-300" />
+                              {isUnread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 absolute -top-1 -right-1" />}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <p className="text-[14px] font-semibold text-slate-100">{sub.studentName}</p>
-                                <Badge className={`text-[10px] font-bold border px-2 py-0.5 ${scoreBg} ${scoreColor}`}>{sub.score}%</Badge>
+                                <p className="text-[14px] font-semibold text-slate-100">{item.title}</p>
+                                {isUnread && <Badge className="text-[10px] font-bold border px-2 py-0.5 bg-red-500/10 text-red-300 border-red-500/25">Unread</Badge>}
                               </div>
-                              <p className="text-[12px] text-slate-400 font-medium mb-2">{sub.quizTitle}</p>
+                              <p className="text-[12px] text-slate-400 font-medium mb-2">{item.message}</p>
                               <div className="flex items-center gap-4 text-[11px] text-slate-500 font-medium flex-wrap">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {format(new Date(sub.createdAt), "MMM d, h:mm a")}</span>
-                                {duration && <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> {duration}</span>}
-                                {sub.subject && <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" /> {sub.subject}</span>}
+                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {format(new Date(item.createdAt), "MMM d, h:mm a")}</span>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Link href={`/soma/review/${sub.reportId}`}>
+                              {reportId && <Link href={`/soma/review/${reportId}`}>
                                 <span className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-[11px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/15 hover:bg-indigo-500/20 transition-all cursor-pointer">
                                   <Eye className="w-3.5 h-3.5" /> Review
                                 </span>
-                              </Link>
-                              <Link href={`/soma/quiz/${sub.reportId}`}>
+                              </Link>}
+                              {quizId && <Link href={`/soma/quiz/${quizId}`}>
                                 <span className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-[11px] font-semibold text-slate-400 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all cursor-pointer">
                                   <FileText className="w-3.5 h-3.5" /> Quiz
                                 </span>
-                              </Link>
+                              </Link>}
                             </div>
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -772,14 +805,14 @@ export default function TutorDashboard() {
             {/* ══════════════════════════════════════════════════════
                 ROW 3 — Student Performance Comparison Bar Chart
                ══════════════════════════════════════════════════════ */}
-            <FadeInSection delay={0.05}>
+            {false && <FadeInSection delay={0.05}>
               <SectionHeader icon={BarChart2} title="Student Comparison" subtitle="Average score, completion rate, and reliability across all students" />
               <ChartCard>
                 <div style={{ height: 320 }}>
                   <StudentComparisonBarChart stats={stats!} />
                 </div>
               </ChartCard>
-            </FadeInSection>
+            </FadeInSection>}
 
             {/* ══════════════════════════════════════════════════════
                 ROW 4 — Student Card Grid
