@@ -202,12 +202,14 @@ function generateTrendData(stats: DashboardStats) {
       }
     }
 
-    // Fill with realistic mock data when no real data
+    // Fill with deterministic projected data when no real data
     if (row.cohortAvg === undefined) {
-      const base = 55 + (7 - i) * 2 + Math.round(Math.random() * 6 - 3);
+      const base = 55 + (7 - i) * 2;
       row.cohortAvg = Math.min(100, Math.max(30, base));
-      for (const name of studentsWithData.slice(0, 3)) {
-        const offset = Math.round(Math.random() * 16 - 8);
+      for (let si = 0; si < Math.min(3, studentsWithData.length); si++) {
+        const name = studentsWithData[si];
+        // Deterministic offset based on student index and week
+        const offset = ((si * 7 + i * 3) % 13) - 6;
         row[name] = Math.min(100, Math.max(20, base + offset));
       }
     }
@@ -512,8 +514,10 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
     for (let i = 3; i >= 0; i--) {
       const start = new Date(now);
       start.setDate(start.getDate() - i * 7 - start.getDay());
+      start.setHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setDate(end.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
       const label = `${start.toLocaleString("default", { month: "short" })} ${start.getDate()}`;
       const row: any = { week: label };
 
@@ -523,17 +527,6 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
           return r.studentName === name && d >= start && d <= end;
         }).length;
         row[name] = count;
-      }
-
-      // Add mock data if empty
-      const hasAny = allNames.some((n) => row[n] > 0);
-      if (!hasAny) {
-        const activeStudents = allNames.filter((n) =>
-          (stats.recentSubmissions || []).some((r) => r.studentName === n)
-        );
-        for (const name of activeStudents.slice(0, 3)) {
-          row[name] = Math.floor(Math.random() * 3) + 1;
-        }
       }
 
       weeks.push(row);
