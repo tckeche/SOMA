@@ -14,8 +14,13 @@ import {
   Trash2, Eye, FileText, Award, Target, CheckCircle2,
   TrendingDown, TrendingUp, Minus, Clock, ChevronRight,
   BarChart3, Layers, AlertTriangle, Activity,
-  ArrowRight, Calendar,
+  ArrowRight, Calendar, Radar as RadarIcon,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  RadarChart, Radar as RechartsRadar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  Tooltip,
+} from "recharts";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -333,7 +338,104 @@ export default function TutorStudentDetail() {
               </div>
             </div>
 
-            {/* ── TOPIC PERFORMANCE ─────────────────────────────── */}
+            {/* ── SYLLABUS COVERAGE RADAR ─────────────────────────── */}
+            {topicPerformance.length >= 2 && (
+              <div className={GP}>
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
+                      <RadarIcon className="w-3.5 h-3.5 text-violet-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Syllabus Coverage</h3>
+                      <p className="text-[10px] text-slate-600 font-medium">Subject coverage &middot; drill down into topics and subtopics</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-5">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Radar Chart */}
+                    <div style={{ height: 320 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart data={topicPerformance.map((t) => ({
+                          subject: t.topic.length > 12 ? t.topic.slice(0, 12) + "…" : t.topic,
+                          fullSubject: t.topic,
+                          score: t.average,
+                          coverage: Math.min(100, t.assessmentCount * 20),
+                          fullMark: 100,
+                        }))} cx="50%" cy="50%" outerRadius="70%">
+                          <PolarGrid stroke="rgba(148,163,184,0.12)" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} />
+                          <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} />
+                          <RechartsRadar name="Score" dataKey="score" stroke="#8B5CF6" fill="rgba(139,92,246,0.25)" strokeWidth={2} dot={{ r: 3, fill: "#8B5CF6" }} />
+                          <RechartsRadar name="Coverage" dataKey="coverage" stroke="#22D3EE" fill="rgba(34,211,238,0.12)" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2.5, fill: "#22D3EE" }} />
+                          <Tooltip content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const d = payload[0]?.payload;
+                            return (
+                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-white/[0.08] backdrop-blur-xl" style={{ background: "rgba(15,23,42,0.95)" }}>
+                                <p className="text-slate-300 font-semibold mb-1">{d?.fullSubject || d?.subject}</p>
+                                {payload.map((entry: any, i: number) => (
+                                  <div key={i} className="flex items-center gap-2 py-0.5">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
+                                    <span className="text-slate-400">{entry.name}:</span>
+                                    <span className="text-white font-bold tabular-nums">{Math.round(entry.value)}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }} />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Drill-down breakdown */}
+                    <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                      {topicPerformance.map((t) => {
+                        const coveragePct = Math.min(100, t.assessmentCount * 20);
+                        const barColor = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
+                        const covColor = coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
+                        const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
+                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-slate-600";
+                        return (
+                          <div key={t.topic} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-3.5">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[12px] font-semibold text-slate-200">{t.topic}</span>
+                                <TIcon className={`w-3 h-3 ${tc}`} />
+                              </div>
+                              <span className={`text-[11px] font-bold tabular-nums ${t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400"}`}>{t.average}%</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              <div>
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Performance</span>
+                                </div>
+                                <div className="h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.average}%`, background: barColor }} />
+                                </div>
+                              </div>
+                              <div>
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Coverage</span>
+                                  <span className="text-[9px] text-cyan-400 font-bold tabular-nums">{coveragePct}%</span>
+                                </div>
+                                <div className="h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${coveragePct}%`, background: covColor }} />
+                                </div>
+                              </div>
+                              <p className="text-[10px] text-slate-500 font-medium">{t.assessmentCount} assessment{t.assessmentCount !== 1 ? "s" : ""} &middot; {t.evidence} evidence</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── SUBJECT PERFORMANCE ────────────────────────────── */}
             <div className={GP}>
               <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
                 <div className="flex items-center gap-2.5">
@@ -341,8 +443,8 @@ export default function TutorStudentDetail() {
                     <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-[13px] font-semibold text-slate-100">Topic Performance</h3>
-                    <p className="text-[10px] text-slate-600 font-medium">Ranked by score &middot; trend &middot; evidence</p>
+                    <h3 className="text-[13px] font-semibold text-slate-100">Subject Performance</h3>
+                    <p className="text-[10px] text-slate-600 font-medium">Performance by subject &middot; trend &middot; evidence</p>
                   </div>
                 </div>
               </div>
@@ -357,7 +459,7 @@ export default function TutorStudentDetail() {
                   <table className="w-full min-w-[640px]">
                     <thead>
                       <tr className="border-b border-white/[0.04]">
-                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Topic</th>
+                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Subject</th>
                         <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-44">Score</th>
                         <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Attempts</th>
                         <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Trend</th>
@@ -411,7 +513,7 @@ export default function TutorStudentDetail() {
                       </div>
                       <div>
                         <h3 className="text-[13px] font-semibold text-slate-100">Coverage Matrix</h3>
-                        <p className="text-[10px] text-slate-600 font-medium">Topic depth &middot; assessments &middot; performance</p>
+                        <p className="text-[10px] text-slate-600 font-medium">Subject depth &middot; assessments &middot; performance</p>
                       </div>
                     </div>
                   </div>
@@ -426,7 +528,7 @@ export default function TutorStudentDetail() {
                       <table className="w-full min-w-[550px]">
                         <thead>
                           <tr className="border-b border-white/[0.04]">
-                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Topic</th>
+                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Subject</th>
                             <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-32">Coverage</th>
                             <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Assess.</th>
                             <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Perf.</th>

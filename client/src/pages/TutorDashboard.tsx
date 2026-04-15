@@ -7,13 +7,13 @@ import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
 import type { LucideIcon } from "lucide-react";
 import {
-  LogOut, Users, BookOpen, Plus, UserPlus, X,
-  Loader2, Check, ChevronRight, AlertTriangle,
-  LayoutDashboard, Clock, Send, Award, Eye,
+  LogOut, Users, BookOpen, Plus, X,
+  Loader2, Check, AlertTriangle,
+  LayoutDashboard, Clock, Send, Eye, Bell,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
-  FileText, ArrowRight, BarChart3, Target, CheckCircle2,
+  FileText, Target, CheckCircle2,
   CalendarDays, ExternalLink, RefreshCcw, Sparkles,
-  Radar, PieChart as PieChartIcon, TrendingUp, Grid3X3, BarChart2,
+  Radar, TrendingUp, Grid3X3, BarChart2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -219,6 +219,7 @@ export default function TutorDashboard() {
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
+  const [activeTab, setActiveTab] = useState<"overview" | "notifications">("overview");
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -334,20 +335,6 @@ export default function TutorDashboard() {
     return stats.pendingAssignments.filter((p) => p.dueDate && new Date(p.dueDate) < now).length;
   }, [stats]);
 
-  const weakTopicLeaderboard = useMemo(() => {
-    if (!stats?.studentInsights?.length) return [];
-    const topicMap: Record<string, number> = {};
-    for (const s of stats.studentInsights) {
-      for (const t of s.weakTopics) {
-        topicMap[t] = (topicMap[t] || 0) + 1;
-      }
-    }
-    return Object.entries(topicMap)
-      .map(([topic, count]) => ({ topic, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [stats]);
-
   useEffect(() => {
     return subscribeToSomaMutations(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
@@ -362,27 +349,6 @@ export default function TutorDashboard() {
     return match?.reason || null;
   };
 
-  const cohortAvg = useMemo(() => {
-    if (!stats?.cohortAverages?.length) return 0;
-    return Math.round(stats.cohortAverages.reduce((a, c) => a + c.average, 0) / stats.cohortAverages.length);
-  }, [stats]);
-
-  const completionRate = useMemo(() => {
-    if (!stats?.studentInsights?.length) return 0;
-    const totalAssigned = stats.studentInsights.reduce((a, s) => a + s.assigned, 0);
-    const totalCompleted = stats.studentInsights.reduce((a, s) => a + s.completed, 0);
-    return totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
-  }, [stats]);
-
-  const statCards = useMemo(() => [
-    { label: "Students", value: stats?.totalStudents ?? 0, icon: Users, accent: "#8B5CF6", suffix: "" },
-    { label: "Assessments", value: stats?.totalQuizzes ?? 0, icon: BookOpen, accent: "#60A5FA", suffix: "" },
-    { label: "Cohort Avg", value: cohortAvg, icon: BarChart3, accent: "#34D399", suffix: "%", isWarning: cohortAvg < 50 },
-    { label: "Completion", value: completionRate, icon: CheckCircle2, accent: "#22D3EE", suffix: "%" },
-    { label: "Below Threshold", value: stats?.belowThresholdCount ?? 0, icon: AlertTriangle, accent: "#EF4444", isWarning: true },
-    { label: "Pending Reviews", value: stats?.recentSubmissions?.length ?? 0, icon: Clock, accent: "#FBBF24", suffix: "" },
-    { label: "Weakest Topic", value: stats?.weakestTopic || "—", icon: Target, accent: "#F43F5E", isText: true, isWarning: true },
-  ], [stats, cohortAvg, completionRate]);
 
   const studentPlaques = useMemo(() => {
     return (stats?.studentInsights || []).map((s) => {
@@ -416,8 +382,8 @@ export default function TutorDashboard() {
             <div className="flex items-center gap-3.5 cursor-pointer group">
               <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
               <div>
-                <h1 className="text-base font-bold tracking-tight gradient-text leading-none">SOMA</h1>
-                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Control Centre</p>
+                <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
+                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>
@@ -496,17 +462,18 @@ export default function TutorDashboard() {
                 <div className="h-11 w-44 rounded-xl skeleton-bar" />
               </div>
             </div>
-            {/* Skeleton stat cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-              {[1,2,3,4,5,6,7].map(i => (
-                <div key={i} className="stat-card p-4">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <div className="w-8 h-8 rounded-lg skeleton-bar" />
-                    <div className="h-3 w-14 rounded skeleton-bar" />
-                  </div>
-                  <div className="h-6 w-12 rounded skeleton-bar" />
-                </div>
-              ))}
+            {/* Skeleton tab switcher */}
+            <div className="h-10 w-64 rounded-xl skeleton-bar" />
+            {/* Skeleton panels */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+              <div className={`${GP} lg:col-span-3 p-5`} style={{ minHeight: 200 }}>
+                <div className="h-4 w-40 rounded skeleton-bar mb-4" />
+                <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-12 rounded-lg skeleton-bar" />)}</div>
+              </div>
+              <div className={`${GP} lg:col-span-2 p-5`} style={{ minHeight: 200 }}>
+                <div className="h-4 w-36 rounded skeleton-bar mb-4" />
+                <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-12 rounded-lg skeleton-bar" />)}</div>
+              </div>
             </div>
             {/* Skeleton plaques */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -535,7 +502,7 @@ export default function TutorDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
               <div>
                 <p className="text-sm text-violet-400/80 font-medium mb-0.5">{getGreeting()}, {displayName.split(" ")[0]}</p>
-                <h2 className="text-2xl font-bold text-slate-100 tracking-tight" style={{ letterSpacing: "0.5px" }}>Command Centre</h2>
+                <h2 className="text-4xl font-extrabold text-slate-100 tracking-tight" style={{ letterSpacing: "0.5px" }}>SOMA</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-[12px] text-slate-500 font-medium tracking-wide">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
                   {dataUpdatedAt > 0 && (
@@ -566,33 +533,214 @@ export default function TutorDashboard() {
               </div>
             </div>
 
-            {/* ── STAT CARDS ──────────────────────────────────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 overflow-x-auto">
-              {statCards.map((card) => (
-                <div key={card.label} className="stat-card p-4 relative overflow-hidden">
-                  {/* Left accent border */}
-                  <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ background: card.accent }} />
-                  {/* Subtle glow background */}
-                  <div className="absolute top-0 left-0 w-20 h-full opacity-[0.06] pointer-events-none" style={{ background: `radial-gradient(circle at left center, ${card.accent}, transparent 70%)` }} />
-                  <div className="relative flex items-center gap-2.5 mb-2">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: `${card.accent}15`, border: `1px solid ${card.accent}25` }}>
-                      <card.icon className="w-4 h-4" style={{ color: card.accent }} />
-                    </div>
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider leading-tight">{card.label}</span>
-                  </div>
-                  <div className="relative pl-0.5">
-                    {card.isText ? (
-                      <p className="text-[13px] font-bold text-slate-200 truncate">{card.value}</p>
-                    ) : (
-                      <p className={`text-xl font-bold tabular-nums ${card.isWarning && (card.value as number) > 0 ? "glow-red" : "text-slate-100"}`}>
-                        {card.value}{card.suffix}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
+            {/* ── TAB SWITCHER ─────────────────────────────────── */}
+            <div className="flex items-center gap-1 bg-white/[0.03] rounded-xl p-1 border border-white/[0.06] w-fit">
+              <button
+                onClick={() => setActiveTab("overview")}
+                className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
+                  activeTab === "overview"
+                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    : "text-slate-500 hover:text-slate-300 border border-transparent"
+                }`}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" /> Overview
+              </button>
+              <button
+                onClick={() => setActiveTab("notifications")}
+                className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
+                  activeTab === "notifications"
+                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    : "text-slate-500 hover:text-slate-300 border border-transparent"
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5" /> Notifications
+                {(stats?.recentSubmissions?.length ?? 0) > 0 && (
+                  <span className="text-[10px] font-bold tabular-nums bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded-md border border-violet-500/25 leading-none">
+                    {stats!.recentSubmissions.length}
+                  </span>
+                )}
+              </button>
             </div>
+
+            {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
+            {activeTab === "notifications" && (
+              <FadeInSection>
+                <SectionHeader icon={Bell} title="Submissions" subtitle="Recent student submissions awaiting review" />
+                {(stats?.recentSubmissions?.length ?? 0) === 0 ? (
+                  <div className={`${GP} px-6 py-16 text-center`}>
+                    <Bell className="w-12 h-12 mx-auto text-slate-700 mb-4" />
+                    <p className="text-sm text-slate-400 font-medium">No submissions yet</p>
+                    <p className="text-xs text-slate-600 mt-1">Submissions will appear here as students complete assessments</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {stats!.recentSubmissions.map((sub) => {
+                      const scoreColor = sub.score >= 75 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-rose-400";
+                      const scoreBg = sub.score >= 75 ? "bg-emerald-500/10 border-emerald-500/15" : sub.score >= 50 ? "bg-amber-500/10 border-amber-500/15" : "bg-rose-500/10 border-rose-500/15";
+                      const duration = formatDuration(sub.startedAt, sub.completedAt);
+                      const sc = getSubjectColor(sub.subject);
+                      const SubIcon = getSubjectIcon(sub.subject);
+                      return (
+                        <div key={sub.reportId} className={`${GP} p-5 hover:bg-white/[0.02] transition-colors`} data-testid={`notification-${sub.reportId}`}>
+                          <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}10`, borderColor: `${sc.hex}20` }}>
+                              <SubIcon className="w-5 h-5" style={{ color: sc.hex }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-[14px] font-semibold text-slate-100">{sub.studentName}</p>
+                                <Badge className={`text-[10px] font-bold border px-2 py-0.5 ${scoreBg} ${scoreColor}`}>{sub.score}%</Badge>
+                              </div>
+                              <p className="text-[12px] text-slate-400 font-medium mb-2">{sub.quizTitle}</p>
+                              <div className="flex items-center gap-4 text-[11px] text-slate-500 font-medium flex-wrap">
+                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {format(new Date(sub.createdAt), "MMM d, h:mm a")}</span>
+                                {duration && <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> {duration}</span>}
+                                {sub.subject && <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" /> {sub.subject}</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Link href={`/soma/review/${sub.reportId}`}>
+                                <span className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-[11px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/15 hover:bg-indigo-500/20 transition-all cursor-pointer">
+                                  <Eye className="w-3.5 h-3.5" /> Review
+                                </span>
+                              </Link>
+                              <Link href={`/soma/quiz/${sub.reportId}`}>
+                                <span className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-[11px] font-semibold text-slate-400 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all cursor-pointer">
+                                  <FileText className="w-3.5 h-3.5" /> Quiz
+                                </span>
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </FadeInSection>
+            )}
+
+            {/* ── OVERVIEW TAB ───────────────────────────────────── */}
+            {activeTab === "overview" && (<>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 1 — Intervention Queue + Pending Submissions
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+
+                {/* Intervention Queue */}
+                <div className={`${GP} lg:col-span-3`}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-rose-500/15 border border-rose-500/20">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
+                      {aiInsights?.insights && aiInsights.insights.length > 0 && (
+                        <span className="text-[9px] font-bold text-violet-400 bg-violet-500/15 px-2 py-0.5 rounded-md border border-violet-500/20" style={{ animation: "status-pulse 2.5s ease-in-out infinite" }}>
+                          <Sparkles className="w-3 h-3 inline mr-0.5 -mt-0.5" /> AI Insights
+                        </span>
+                      )}
+                    </div>
+                    <Link href="/tutor/students">
+                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
+                    </Link>
+                  </div>
+                  {(() => {
+                    const atRisk = studentPlaques.filter(
+                      (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.assigned > 0 && s.completed === 0)
+                    );
+                    if (atRisk.length === 0) return (
+                      <div className="px-5 py-10 text-center">
+                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                        <p className="text-[11px] text-slate-600 font-medium">No students flagged — great work!</p>
+                      </div>
+                    );
+                    return (
+                      <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
+                        {atRisk.slice(0, 6).map((s) => {
+                          const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
+                          const insight = getInsightChip(s.studentName);
+                          return (
+                            <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-[12px] text-slate-100 font-semibold truncate">{s.studentName}</p>
+                                  <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
+                                </div>
+                                {insight && (
+                                  <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
+                                )}
+                                <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                                  {s.weakTopics.length > 0 && <span>Weak subjects: {s.weakTopics.slice(0, 2).join(", ")}</span>}
+                                  {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
+                                </div>
+                              </div>
+                              <Link href={`/tutor/students/${s.studentId}`}>
+                                <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer shrink-0 mt-1">View &rarr;</span>
+                              </Link>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Pending Submissions — prominent right panel */}
+                <div className={`${GP} lg:col-span-2`}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
+                    </div>
+                    <div className="relative flex items-center gap-2">
+                      {(stats?.pendingAssignments?.length ?? 0) > 0 && (
+                        <span className="text-[10px] font-bold text-amber-400 tabular-nums bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                          {stats!.pendingAssignments.length}
+                        </span>
+                      )}
+                      {overdueCount > 0 && (
+                        <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/15 px-2.5 py-0.5 rounded-lg border border-rose-500/20 status-pulse" data-testid="stat-assigned">
+                          {overdueCount} overdue
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
+                    <div className="px-5 py-8 text-center">
+                      <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
+                      <p className="text-[11px] text-slate-600 font-medium">No pending work</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
+                      {stats!.pendingAssignments.slice(0, 10).map((pa) => {
+                        const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
+                        return (
+                          <div key={pa.assignmentId} className="px-5 py-2.5 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] text-slate-200 font-medium truncate">{pa.studentName}</p>
+                              <p className="text-[10px] text-slate-600 truncate">{pa.quizTitle}</p>
+                            </div>
+                            {isOverdue ? (
+                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
+                            ) : pa.dueDate ? (
+                              <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-800/40 px-1.5 py-0.5 rounded border border-white/[0.05]">Pending</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
                 ROW 2 — Cohort Overview: Radar + Donut + Mini Trend
@@ -654,118 +802,7 @@ export default function TutorDashboard() {
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
-                ROW 5 — Intervention Queue + Marking Queue
-               ══════════════════════════════════════════════════════ */}
-            <FadeInSection delay={0.05}>
-              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-
-                {/* Intervention Queue */}
-                <div className={`${GP} lg:col-span-3`}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500/[0.06] to-transparent pointer-events-none" />
-                    <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-rose-500/15 border border-rose-500/20">
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                      </div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
-                      {aiInsights?.insights && aiInsights.insights.length > 0 && (
-                        <span className="text-[9px] font-bold text-violet-400 bg-violet-500/15 px-2 py-0.5 rounded-md border border-violet-500/20" style={{ animation: "status-pulse 2.5s ease-in-out infinite" }}>
-                          <Sparkles className="w-3 h-3 inline mr-0.5 -mt-0.5" /> AI Insights
-                        </span>
-                      )}
-                    </div>
-                    <Link href="/tutor/students">
-                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
-                    </Link>
-                  </div>
-                  {(() => {
-                    const atRisk = studentPlaques.filter(
-                      (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.assigned > 0 && s.completed === 0)
-                    );
-                    if (atRisk.length === 0) return (
-                      <div className="px-5 py-10 text-center">
-                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
-                        <p className="text-[11px] text-slate-600 font-medium">No students flagged — great work!</p>
-                      </div>
-                    );
-                    return (
-                      <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
-                        {atRisk.slice(0, 6).map((s) => {
-                          const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
-                          const insight = getInsightChip(s.studentName);
-                          return (
-                            <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-[12px] text-slate-100 font-semibold truncate">{s.studentName}</p>
-                                  <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
-                                </div>
-                                {insight && (
-                                  <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
-                                )}
-                                <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                                  {s.weakTopics.length > 0 && <span>Weak: {s.weakTopics.slice(0, 2).join(", ")}</span>}
-                                  {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
-                                </div>
-                              </div>
-                              <Link href={`/tutor/students/${s.studentId}`}>
-                                <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer shrink-0 mt-1">View &rarr;</span>
-                              </Link>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Marking Queue */}
-                <div className={`${GP} lg:col-span-2`}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-violet-500/[0.06] to-transparent pointer-events-none" />
-                    <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/15 border border-violet-500/20">
-                        <Eye className="w-3.5 h-3.5 text-violet-400" />
-                      </div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Marking Queue</h3>
-                    </div>
-                    {(stats?.recentSubmissions?.length ?? 0) > 0 && (
-                      <span className="relative text-[10px] font-bold text-violet-400 tabular-nums bg-violet-500/15 px-2.5 py-0.5 rounded-lg border border-violet-500/20" data-testid="stat-reviews">
-                        {stats!.recentSubmissions.length}
-                      </span>
-                    )}
-                  </div>
-                  {(stats?.recentSubmissions?.length ?? 0) === 0 ? (
-                    <div className="px-5 py-8 text-center">
-                      <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
-                      <p className="text-[11px] text-slate-600 font-medium">All caught up</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
-                      {stats!.recentSubmissions.slice(0, 8).map((sub) => {
-                        const scoreColor = sub.score >= 75 ? "glow-green" : sub.score >= 50 ? "glow-amber" : "glow-red";
-                        return (
-                          <Link key={sub.reportId} href={`/soma/review/${sub.reportId}`}>
-                            <div className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer" data-testid={`submission-${sub.reportId}`}>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[11px] text-slate-200 font-medium truncate">{sub.studentName}</p>
-                                <p className="text-[10px] text-slate-600 truncate">{sub.quizTitle}</p>
-                              </div>
-                              <TimeElapsedBadge date={sub.createdAt} />
-                              <span className={`text-[11px] font-bold tabular-nums ${scoreColor}`}>{sub.score}%</span>
-                              <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
-                            </div>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </FadeInSection>
-
-            {/* ══════════════════════════════════════════════════════
-                ROW 6 — Performance Trends (full-width area chart)
+                ROW 5 — Performance Trends (full-width area chart)
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
               <SectionHeader icon={TrendingUp} title="Performance Trends" subtitle="Cohort and individual student performance over time" />
@@ -807,126 +844,71 @@ export default function TutorDashboard() {
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
-                ROW 9 — Pending Submissions + Recent Assessments
+                ROW 8 — Recent Assessments
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-                {/* Pending Submissions */}
-                <div className={GP}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
-                    <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
-                        <Clock className="w-3.5 h-3.5 text-amber-400" />
-                      </div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
+              <div className={GP}>
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
+                  <div className="flex items-center gap-2.5 relative">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
+                      <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
-                    <div className="relative flex items-center gap-2">
-                      {(stats?.pendingAssignments?.length ?? 0) > 0 && (
-                        <span className="text-[10px] font-bold text-amber-400 tabular-nums bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
-                          {stats!.pendingAssignments.length}
-                        </span>
-                      )}
-                      {overdueCount > 0 && (
-                        <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/15 px-2.5 py-0.5 rounded-lg border border-rose-500/20 status-pulse" data-testid="stat-assigned">
-                          {overdueCount} overdue
-                        </span>
-                      )}
-                    </div>
+                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
                   </div>
-                  {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
-                    <div className="px-5 py-8 text-center">
-                      <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
-                      <p className="text-[11px] text-slate-600 font-medium">No pending work</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
-                      {stats!.pendingAssignments.slice(0, 8).map((pa) => {
-                        const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
-                        return (
-                          <div key={pa.assignmentId} className="px-5 py-2.5 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] text-slate-200 font-medium truncate">{pa.studentName}</p>
-                              <p className="text-[10px] text-slate-600 truncate">{pa.quizTitle}</p>
-                            </div>
-                            {isOverdue ? (
-                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
-                            ) : pa.dueDate ? (
-                              <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-800/40 px-1.5 py-0.5 rounded border border-white/[0.05]">Pending</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <Link href="/tutor/assessments">
+                    <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
+                  </Link>
                 </div>
-
-                {/* Recent Assessments */}
-                <div className={GP}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
-                    <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
-                        <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-                      </div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
-                    </div>
-                    <Link href="/tutor/assessments">
-                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
+                {quizzesLoading ? (
+                  <div className="px-5 py-8 flex justify-center">
+                    <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
+                  </div>
+                ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 ? (
+                  <div className="px-5 py-8 text-center">
+                    <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
+                    <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
+                    <Link href="/tutor/assessments/new">
+                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
                   </div>
-                  {quizzesLoading ? (
-                    <div className="px-5 py-8 flex justify-center">
-                      <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
-                    </div>
-                  ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 ? (
-                    <div className="px-5 py-8 text-center">
-                      <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
-                      <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
-                      <Link href="/tutor/assessments/new">
-                        <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
-                      </Link>
-                    </div>
-                  ) : tutorQuizzes.length === 0 ? (
-                    <div className="px-5 py-5 text-center">
-                      <p className="text-[11px] text-slate-400 font-medium">{stats?.totalQuizzes ?? 0} assessments in system</p>
-                      <Link href="/tutor/assessments">
-                        <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">View all assessments &rarr;</span>
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
-                      {tutorQuizzes.slice(0, 8).map((quiz) => {
-                        const sc = getSubjectColor(quiz.subject);
-                        const SubIcon = getSubjectIcon(quiz.subject);
-                        return (
-                          <div key={quiz.id} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
-                            <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
-                              <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-medium text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
-                              <p className="text-[10px] text-slate-600">{quiz.subject || "General"}</p>
-                            </div>
-                            <button
-                              onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
-                              className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                              data-testid={`button-assign-${quiz.id}`}
-                            >
-                              Assign
-                            </button>
+                ) : tutorQuizzes.length === 0 ? (
+                  <div className="px-5 py-5 text-center">
+                    <p className="text-[11px] text-slate-400 font-medium">{stats?.totalQuizzes ?? 0} assessments in system</p>
+                    <Link href="/tutor/assessments">
+                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">View all assessments &rarr;</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
+                    {tutorQuizzes.slice(0, 8).map((quiz) => {
+                      const sc = getSubjectColor(quiz.subject);
+                      const SubIcon = getSubjectIcon(quiz.subject);
+                      return (
+                        <div key={quiz.id} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
+                            <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-medium text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
+                            <p className="text-[10px] text-slate-600">{quiz.subject || "General"}</p>
+                          </div>
+                          <button
+                            onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
+                            className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                            data-testid={`button-assign-${quiz.id}`}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </FadeInSection>
 
+            </>)}
           </div>
         )}
       </main>
@@ -1136,10 +1118,10 @@ function StudentPlaque({ student: s, insightChip, index = 0 }: { student: Plaque
         <div className={`plaque-back ${GP} p-5 h-full flex flex-col overflow-y-auto`}>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em] mb-3">{s.studentName}</p>
 
-          {/* Weak topics with micro bars */}
+          {/* Weak subjects with micro bars */}
           {s.weakTopics.length > 0 && (
             <div className="mb-3">
-              <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-2">Weak Topics</p>
+              <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-2">Weak Subjects</p>
               <div className="space-y-1.5">
                 {s.weakTopics.slice(0, 3).map((t, i) => (
                   <div key={t} className="flex items-center gap-2">

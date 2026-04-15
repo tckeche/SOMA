@@ -119,8 +119,8 @@ export default function TutorStudents() {
             <div className="flex items-center gap-3.5 cursor-pointer group">
               <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
               <div>
-                <h1 className="text-base font-bold tracking-tight gradient-text leading-none">SOMA</h1>
-                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Control Centre</p>
+                <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
+                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>

@@ -465,8 +465,8 @@ export default function TutorAssessments() {
             <div className="flex items-center gap-3 cursor-pointer">
               <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain" />
               <div>
-                <h1 className="text-lg font-bold gradient-text">SOMA</h1>
-                <p className="text-[10px] text-slate-400 tracking-widest uppercase">Tutor Portal</p>
+                <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
+                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>
