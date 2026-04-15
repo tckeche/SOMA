@@ -116,6 +116,7 @@ function ChartTooltipContent({ active, payload, label }: any) {
    ──────────────────────────────────────────────────────── */
 
 export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const data = useMemo(() => {
     if (!stats.cohortAverages?.length) return [];
     return stats.cohortAverages.map((ca) => ({
@@ -151,6 +152,7 @@ export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const data = useMemo(() => {
     return (stats.studentInsights || []).map((s) => {
       const subs = (stats.recentSubmissions || []).filter((r) => r.studentName === s.studentName);
@@ -249,6 +251,7 @@ function generateTrendData(stats: DashboardStats) {
 }
 
 export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const { weeks, studentsWithData } = useMemo(() => generateTrendData(stats), [stats]);
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
@@ -282,6 +285,7 @@ export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) 
    ──────────────────────────────────────────────────────── */
 
 export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
   const data = useMemo(() => {
@@ -362,6 +366,7 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const data = useMemo(() => {
     let completed = 0, awaiting = 0, notStarted = 0;
     for (const s of stats.studentInsights || []) {
@@ -425,6 +430,7 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const { matrix, subjects, students } = useMemo(() => {
     const subjects = [...new Set((stats.cohortAverages || []).map((c) => c.subject))];
     const subFromSubs = [...new Set((stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean) as string[])];
@@ -542,6 +548,7 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
   const data = useMemo(() => {
