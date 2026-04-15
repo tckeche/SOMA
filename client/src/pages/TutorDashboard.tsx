@@ -7,13 +7,13 @@ import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
 import type { LucideIcon } from "lucide-react";
 import {
-  LogOut, Users, BookOpen, Plus, UserPlus, X,
-  Loader2, Check, ChevronRight, AlertTriangle,
-  LayoutDashboard, Clock, Send, Award, Eye, Bell,
+  LogOut, Users, BookOpen, Plus, X,
+  Loader2, Check, AlertTriangle,
+  LayoutDashboard, Clock, Send, Eye, Bell,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
-  FileText, ArrowRight, BarChart3, Target, CheckCircle2,
+  FileText, Target, CheckCircle2,
   CalendarDays, ExternalLink, RefreshCcw, Sparkles,
-  Radar, PieChart as PieChartIcon, TrendingUp, Grid3X3, BarChart2,
+  Radar, TrendingUp, Grid3X3, BarChart2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
