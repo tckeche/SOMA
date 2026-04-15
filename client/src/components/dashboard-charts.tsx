@@ -1,12 +1,38 @@
-import { useMemo } from "react";
+import { useMemo, Component } from "react";
 import {
   ResponsiveContainer,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
   AreaChart, Area,
-  ScatterChart, Scatter, ZAxis,
   PieChart, Pie, Cell,
 } from "recharts";
+
+/* ────────────────────────────────────────────────────────
+   Error Boundary — wraps any chart to prevent cascade crashes
+   ──────────────────────────────────────────────────────── */
+
+class ChartErrorBoundary extends Component<
+  { children: React.ReactNode; label?: string },
+  { hasError: boolean }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+          {this.props.label || "Chart unavailable"}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /* ────────────────────────────────────────────────────────
    Types
@@ -114,7 +140,7 @@ export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
         <PolarAngleAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} />
         <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} />
         <Radar name="Cohort Avg" dataKey="cohortAvg" stroke="#8B5CF6" fill="rgba(139,92,246,0.25)" strokeWidth={2} dot={{ r: 3, fill: "#8B5CF6" }} />
-        <Tooltip content={<ChartTooltipContent />} />
+        <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} />
       </RadarChart>
     </ResponsiveContainer>
   );
@@ -145,7 +171,7 @@ export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) 
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
         <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
         <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
-        <Tooltip content={<ChartTooltipContent />} cursor={{ fill: "rgba(139,92,246,0.06)" }} />
+        <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} cursor={{ fill: "rgba(139,92,246,0.06)" }} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
         <ReferenceLine y={70} stroke="#EF4444" strokeDasharray="6 4" strokeWidth={1.5} label={{ value: "Threshold", fill: "#EF4444", fontSize: 9, position: "right" }} />
         <Bar name="Avg Score" dataKey="avgScore" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
@@ -238,7 +264,7 @@ export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) 
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
         <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
         <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
-        <Tooltip content={<ChartTooltipContent />} />
+        <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
         <Area name="Cohort Avg" dataKey="cohortAvg" type="monotone" stroke="#8B5CF6" fill="url(#cohortGrad)" strokeWidth={2.5} dot={{ r: 3, fill: "#8B5CF6", strokeWidth: 0 }} />
         {studentsWithData.map((name) => (
@@ -259,18 +285,31 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
   const data = useMemo(() => {
-    const subjects = [...new Set((stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean))] as string[];
-    return (stats.recentSubmissions || []).map((r) => ({
-      subject: r.subject || "General",
-      subjectIdx: subjects.indexOf(r.subject || "General"),
-      score: r.score,
-      student: r.studentName,
-      color: studentColor(r.studentName, allNames),
-      z: 80,
-    }));
+    const subjects = [...new Set(
+      (stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean)
+    )] as string[];
+
+    return subjects.map((subj) => {
+      const rows = (stats.recentSubmissions || []).filter((r) => r.subject === subj);
+      const avg = rows.length
+        ? Math.round(rows.reduce((a, b) => a + b.score, 0) / rows.length)
+        : 0;
+      const row: Record<string, any> = { subject: subj, avg };
+      for (const name of allNames) {
+        const studentRows = rows.filter((r) => r.studentName === name);
+        if (studentRows.length > 0) {
+          row[name] = Math.round(
+            studentRows.reduce((a, b) => a + b.score, 0) / studentRows.length
+          );
+        }
+      }
+      return row;
+    });
   }, [stats, allNames]);
 
-  const subjects = [...new Set(data.map((d) => d.subject))];
+  const activeStudents = allNames.filter((name) =>
+    data.some((d) => d[name] !== undefined)
+  );
 
   if (data.length === 0) {
     return (
@@ -280,45 +319,41 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
     );
   }
 
-  // Add averages line data
-  const avgData = subjects.map((subj, i) => {
-    const scores = data.filter((d) => d.subject === subj).map((d) => d.score);
-    return { subject: subj, subjectIdx: i, score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length), z: 0 };
-  });
-
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-        <XAxis type="category" dataKey="subject" allowDuplicatedCategory={false}
-          tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false}
-          name="Subject" />
-        <YAxis type="number" dataKey="score" domain={[0, 100]} name="Score"
-          tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
-        <ZAxis dataKey="z" range={[40, 120]} />
-        <Tooltip content={({ active, payload }: any) => {
-          if (!active || !payload?.length) return null;
-          const d = payload[0]?.payload;
-          return (
-            <div className="rounded-xl px-3 py-2 text-xs border border-white/[0.08] backdrop-blur-xl"
-              style={{ background: "rgba(15,23,42,0.95)" }}>
-              <p className="text-white font-bold">{d?.student || d?.subject}</p>
-              <p className="text-slate-400">{d?.subject} — <span className="text-white font-bold">{d?.score}%</span></p>
-            </div>
-          );
-        }} />
-        {/* Individual scores */}
-        <Scatter data={data} shape={(props: any) => {
-          const { cx, cy, payload } = props;
-          return <circle cx={cx} cy={cy} r={5} fill={payload.color || "#8B5CF6"} fillOpacity={0.7} stroke={payload.color || "#8B5CF6"} strokeWidth={1} />;
-        }} />
-        {/* Average line points */}
-        <Scatter data={avgData} shape={(props: any) => {
-          const { cx, cy } = props;
-          return <circle cx={cx} cy={cy} r={7} fill="none" stroke="#fff" strokeWidth={2} />;
-        }} />
-      </ScatterChart>
-    </ResponsiveContainer>
+    <ChartErrorBoundary label="Score distribution unavailable">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} barCategoryGap="30%" barGap={2}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
+          <XAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }}
+            axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
+          <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }}
+            axisLine={false} tickLine={false} width={28} />
+          <Tooltip content={({ active, payload, label }: any) => {
+            if (!active || !payload?.length) return null;
+            return (
+              <div className="rounded-xl px-3 py-2 text-xs border border-white/[0.08] backdrop-blur-xl"
+                style={{ background: "rgba(15,23,42,0.95)" }}>
+                <p className="text-slate-400 font-semibold mb-1 text-[10px] uppercase tracking-wider">{label}</p>
+                {payload.map((p: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 py-0.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.fill }} />
+                    <span className="text-slate-400">{p.name}:</span>
+                    <span className="text-white font-bold">{p.value}%</span>
+                  </div>
+                ))}
+              </div>
+            );
+          }} />
+          {activeStudents.length > 0
+            ? activeStudents.map((name, i) => (
+                <Bar key={name} name={name.split(" ")[0]} dataKey={name}
+                  fill={studentColor(name, allNames)} radius={[3, 3, 0, 0]} maxBarSize={18} />
+              ))
+            : <Bar name="Avg" dataKey="avg" fill="#8B5CF6" radius={[3, 3, 0, 0]} maxBarSize={24} />
+          }
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartErrorBoundary>
   );
 }
 
@@ -539,19 +574,29 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
 
   const activeStudents = allNames.filter((name) => data.some((w) => (w[name] || 0) > 0));
 
+  if (activeStudents.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+        No activity in the last 4 weeks
+      </div>
+    );
+  }
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} barCategoryGap="25%">
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
-        <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
-        <YAxis tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
-        <Tooltip content={<ChartTooltipContent />} cursor={{ fill: "rgba(139,92,246,0.06)" }} />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-        {activeStudents.map((name, i) => (
-          <Bar key={name} name={name.split(" ")[0]} dataKey={name} stackId="a"
-            fill={studentColor(name, allNames)} radius={i === activeStudents.length - 1 ? [4, 4, 0, 0] : undefined} />
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
+    <ChartErrorBoundary label="Activity timeline unavailable">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} barCategoryGap="25%">
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
+          <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
+          <YAxis tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
+          <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} cursor={{ fill: "rgba(139,92,246,0.06)" }} />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+          {activeStudents.map((name, i) => (
+            <Bar key={name} name={name.split(" ")[0]} dataKey={name} stackId="a"
+              fill={studentColor(name, allNames)} radius={i === activeStudents.length - 1 ? [4, 4, 0, 0] : undefined} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartErrorBoundary>
   );
 }
