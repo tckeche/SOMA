@@ -944,16 +944,72 @@ function normalizeLabel(input: string | null | undefined, fallback: string): str
   return value || fallback;
 }
 
-function computeStudentPerformance(assignments: Array<{
-  quizSubject: string | null;
-  quizTitle: string;
-  score: number | null;
-  maxScore: number;
-}>): {
+interface QuestionPerformanceRow {
+  subject: string;
+  topicTag: string | null;
+  subtopicTag: string | null;
+  correct: boolean;
+  marks: number;
+}
+
+function computeStudentPerformance(
+  assignments: Array<{
+    quizSubject: string | null;
+    quizTitle: string;
+    score: number | null;
+    maxScore: number;
+  }>,
+  questionPerformance?: QuestionPerformanceRow[],
+): {
   weak: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }>;
   strong: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }>;
   uncovered: Array<{ subject: string; topic: string; subtopic: string | null }>;
 } {
+  // If question-level data is available, use it for precise subtopic analysis
+  if (questionPerformance && questionPerformance.length > 0) {
+    const subtopicStats: Record<string, { correct: number; total: number; marks: number; maxMarks: number }> = {};
+    for (const qp of questionPerformance) {
+      const subject = normalizeLabel(qp.subject, "General");
+      const topic = normalizeLabel(qp.topicTag, "General");
+      const subtopic = qp.subtopicTag?.trim() || null;
+      const key = `${subject}|||${topic}|||${subtopic || ""}`;
+      if (!subtopicStats[key]) subtopicStats[key] = { correct: 0, total: 0, marks: 0, maxMarks: 0 };
+      subtopicStats[key].total += 1;
+      subtopicStats[key].maxMarks += qp.marks;
+      if (qp.correct) {
+        subtopicStats[key].correct += 1;
+        subtopicStats[key].marks += qp.marks;
+      }
+    }
+
+    const weak: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }> = [];
+    const strong: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }> = [];
+
+    for (const [key, stats] of Object.entries(subtopicStats)) {
+      const [subject, topic, subtopic] = key.split("|||");
+      const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
+      if (pct < 75) weak.push({ subject, topic, subtopic: subtopic || null, understanding: pct });
+      if (pct >= 80) strong.push({ subject, topic, subtopic: subtopic || null, understanding: pct });
+    }
+
+    // Sort weak by understanding ascending (worst first), strong by understanding descending
+    weak.sort((a, b) => a.understanding - b.understanding);
+    strong.sort((a, b) => b.understanding - a.understanding);
+
+    // Uncovered from assignment-level data (subjects with no scores)
+    const uncovered: Array<{ subject: string; topic: string; subtopic: string | null }> = [];
+    const coveredSubjects = new Set(questionPerformance.map((q) => normalizeLabel(q.subject, "General")));
+    for (const row of assignments) {
+      const subject = normalizeLabel(row.quizSubject, "General");
+      if (!coveredSubjects.has(subject) && row.score === null) {
+        uncovered.push({ subject, topic: "Core syllabus areas", subtopic: null });
+      }
+    }
+
+    return { weak: weak.slice(0, 5), strong: strong.slice(0, 5), uncovered: uncovered.slice(0, 3) };
+  }
+
+  // Fallback: assignment-level analysis when no question data is available
   const subjectStats: Record<string, { score: number; max: number; count: number; topics: Record<string, { score: number; max: number; count: number }> }> = {};
   for (const row of assignments) {
     const subject = normalizeLabel(row.quizSubject, "General");
@@ -988,7 +1044,7 @@ function computeStudentPerformance(assignments: Array<{
     }
   }
 
-  return { weak: weak.slice(0, 3), strong: strong.slice(0, 3), uncovered: uncovered.slice(0, 3) };
+  return { weak: weak.slice(0, 5), strong: strong.slice(0, 5), uncovered: uncovered.slice(0, 3) };
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -1906,13 +1962,34 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       }
 
       const report = await storage.getSomaReportsByStudentId(studentId);
+      const questionPerformance: QuestionPerformanceRow[] = [];
       const assignmentRows = await Promise.all((await storage.getQuizAssignmentsForStudent(studentId)).map(async (a) => {
         const matched = report.find((r) => r.quizId === a.quizId);
         const questions = await storage.getSomaQuestionsByQuizId(a.quizId);
         const maxScore = questions.reduce((sum, q) => sum + q.marks, 0);
+
+        // Build question-level performance data from answersJson
+        if (matched?.answersJson) {
+          const answers = (matched.answersJson || {}) as Record<string, string>;
+          for (const q of questions) {
+            const studentAnswer = answers[String(q.id)];
+            if (studentAnswer !== undefined) {
+              questionPerformance.push({
+                subject: normalizeLabel(a.quiz.subject, "General"),
+                topicTag: q.topicTag,
+                subtopicTag: q.subtopicTag,
+                correct: studentAnswer === q.correctAnswer,
+                marks: q.marks,
+              });
+            }
+          }
+        }
+
         return { quizSubject: a.quiz.subject, quizTitle: a.quiz.title, score: matched?.score ?? null, maxScore };
       }));
-      const analysis = computeStudentPerformance(assignmentRows);
+      const analysis = computeStudentPerformance(assignmentRows, questionPerformance);
+
+      // Update mastery tracking for ALL analyzed items (weak + strong)
       for (const item of analysis.weak) {
         await storage.upsertStudentTopicMastery({
           studentId,
@@ -1920,21 +1997,48 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           topic: item.topic,
           subtopic: item.subtopic,
           understandingPercent: item.understanding,
+          masteryAchieved: false,
+          covered: true,
+          tested: true,
+        });
+      }
+      for (const item of analysis.strong) {
+        await storage.upsertStudentTopicMastery({
+          studentId,
+          subject: item.subject,
+          topic: item.topic,
+          subtopic: item.subtopic,
+          understandingPercent: item.understanding,
+          masteryAchieved: item.understanding >= 75,
           covered: true,
           tested: true,
         });
       }
 
+      // Remediation loop: check existing mastery records for topics still below 75%
+      // These get priority over generic weak areas — the student was already flagged
+      // and still hasn't reached satisfactory understanding
+      const existingMastery = await storage.listStudentTopicMastery(studentId);
+      const remediationTargets = existingMastery
+        .filter((m) => m.tested && !m.masteryAchieved && m.understandingPercent < 75)
+        .sort((a, b) => a.understandingPercent - b.understandingPercent);
+
       const primarySubject = subjects[0];
+      const displayName = student?.displayName || "Student";
+
+      // Determine struggling area: prioritize remediation targets (previously flagged, still weak)
+      const struggleTopic = remediationTargets[0] || analysis.weak[0];
+      const struggleAttempts = remediationTargets[0]?.attempts ?? 0;
+
       const suggestions = [
         {
-          subject: primarySubject.subject,
+          subject: struggleTopic?.subject || primarySubject.subject,
           purpose: "struggling_areas",
-          rationale: analysis.weak.length > 0
-            ? `${student?.displayName || "Student"} is below 75% in ${analysis.weak[0].topic}. Continue targeting this topic/subtopic until mastery reaches at least 75%.`
-            : `${student?.displayName || "Student"} has no acute weak topic yet, so validate prior weak spots.`,
-          topic: analysis.weak[0]?.topic || "Core concepts",
-          subtopic: analysis.weak[0]?.subtopic ?? null,
+          rationale: struggleTopic
+            ? `${displayName} is at ${struggleTopic.understandingPercent ?? struggleTopic.understanding}% in ${struggleTopic.topic}${struggleTopic.subtopic ? ` > ${struggleTopic.subtopic}` : ""}. ${struggleAttempts > 0 ? `Previously tested ${struggleAttempts} time(s) — still below 75% mastery threshold.` : "Continue targeting until mastery reaches at least 75%."}`
+            : `${displayName} has no acute weak topic yet, so validate prior weak spots.`,
+          topic: struggleTopic?.topic || "Core concepts",
+          subtopic: struggleTopic?.subtopic ?? null,
           targetDifficulty: "medium",
         },
         {
@@ -1948,7 +2052,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         {
           subject: primarySubject.subject,
           purpose: "stretch_strengths",
-          rationale: "Challenge stronger areas with progressively harder questions.",
+          rationale: analysis.strong.length > 0
+            ? `${displayName} scores ${analysis.strong[0].understanding}% in ${analysis.strong[0].topic}${analysis.strong[0].subtopic ? ` > ${analysis.strong[0].subtopic}` : ""}. Challenge with progressively harder questions.`
+            : "Challenge stronger areas with progressively harder questions.",
           topic: analysis.strong[0]?.topic || "Advanced mixed practice",
           subtopic: analysis.strong[0]?.subtopic ?? null,
           targetDifficulty: "hard",
@@ -1988,8 +2094,67 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
       const selected = all.filter((s) => parsed.suggestionIds.includes(s.id));
       if (selected.length === 0) return res.status(404).json({ message: "No matching suggestions found" });
+
+      // Fetch actual syllabus and examiner report documents for this student's curriculum
+      let syllabusContext = "";
+      let examinerReportContext = "";
+      const syllabusDoc = await storage.getSyllabusDocumentBySelection({
+        board: primarySubject.examBody,
+        level: primarySubject.level,
+        syllabusCode: primarySubject.syllabusCode,
+        tutorId,
+      });
+      if (syllabusDoc?.chunks?.length) {
+        syllabusContext = syllabusDoc.chunks.map((c) => c.content).join("\n").slice(0, 4000);
+      }
+      // Fetch examiner reports separately — they may be stored under the same board/level/code
+      const allDocs = await storage.listSyllabusDocuments(tutorId);
+      const examinerDocs = allDocs.filter(
+        (d) => d.documentType === "examiner_report" &&
+               d.board === primarySubject.examBody &&
+               d.syllabusCode === primarySubject.syllabusCode
+      );
+      if (examinerDocs.length > 0) {
+        examinerReportContext = examinerDocs
+          .map((d) => d.extractedText)
+          .join("\n---\n")
+          .slice(0, 4000);
+      }
+
       const quizzes: any[] = [];
       for (const item of selected) {
+        // Build topic-relevant syllabus context via chunk scoring
+        const topicSyllabusContext = syllabusDoc?.chunks?.length
+          ? scoreSyllabusChunks(syllabusDoc.chunks, `${item.topic} ${item.subtopic || ""}`).join("\n")
+          : syllabusContext;
+
+        // Build topic-relevant examiner report excerpts
+        const topicExaminerContext = examinerReportContext
+          ? `\n\nEXAMINER REPORT INSIGHTS (real data from past examination sessions):\n${examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors that target real student misconceptions identified in past exams.`
+          : "";
+
+        // Progressive difficulty distribution based on purpose and student mastery
+        let difficultyDistribution: { easy: number; medium: number; hard: number } | undefined;
+        if (item.purpose === "stretch_strengths") {
+          // Look up the student's actual mastery for this topic to scale difficulty
+          const mastery = (await storage.listStudentTopicMastery(studentId))
+            .find((m) => m.topic === item.topic && (!item.subtopic || m.subtopic === item.subtopic));
+          const pct = mastery?.understandingPercent ?? 80;
+          if (pct >= 95) {
+            difficultyDistribution = { easy: 0, medium: 15, hard: 85 };
+          } else if (pct >= 90) {
+            difficultyDistribution = { easy: 5, medium: 25, hard: 70 };
+          } else if (pct >= 85) {
+            difficultyDistribution = { easy: 10, medium: 30, hard: 60 };
+          } else {
+            difficultyDistribution = { easy: 15, medium: 40, hard: 45 };
+          }
+        } else if (item.purpose === "struggling_areas") {
+          // Start with easier questions to build confidence, then medium to probe understanding
+          difficultyDistribution = { easy: 35, medium: 45, hard: 20 };
+        }
+        // uncovered_content uses the default distribution (25/50/25)
+
         const generated = await generateAuditedQuiz({
           topic: item.topic,
           subject: item.subject,
@@ -1997,7 +2162,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           level: primarySubject.level,
           subtopic: item.subtopic || undefined,
           questionCount: parsed.questionCount,
-          copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${primarySubject.syllabusCode}. Include examiner report style difficulty traps and misconceptions.`,
+          difficultyDistribution,
+          copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${primarySubject.syllabusCode}.`,
+          supportingDocText: topicSyllabusContext + topicExaminerContext,
         });
         const quiz = await storage.createSomaQuizBundle({
           quiz: {

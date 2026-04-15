@@ -427,10 +427,25 @@ export default function TutorStudentDetail() {
                 {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using AI suggestions.</p>}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Subject" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))} />
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Exam body (e.g. Cambridge)" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))} />
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Level" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))} />
+                <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))}>
+                  <option value="" className="text-slate-500">Select Subject</option>
+                  {["Mathematics", "Physics", "Chemistry", "Biology", "Economics", "Business Studies", "English", "Computer Science", "Accounting", "Geography", "History"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))}>
+                  <option value="" className="text-slate-500">Exam Body</option>
+                  {["Cambridge (CAIE)", "Edexcel", "IEB", "AQA", "OCR", "ZIMSEC", "WJEC"].map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code (e.g. 0580)" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
+                <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))}>
+                  <option value="" className="text-slate-500">Level</option>
+                  {["IGCSE", "O Level", "AS Level", "A Level", "Grade 10", "Grade 11", "Grade 12", "IB SL", "IB HL"].map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
               </div>
               <button onClick={() => addSubjectMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
                 <PlusCircle className="w-4 h-4" /> Add Subject

@@ -131,6 +131,7 @@ export interface IStorage {
     topic: string;
     subtopic?: string | null;
     understandingPercent: number;
+    masteryAchieved?: boolean;
     covered?: boolean;
     tested?: boolean;
   }): Promise<StudentTopicMastery>;
@@ -265,16 +266,18 @@ class DatabaseStorage implements IStorage {
     topic: string;
     subtopic?: string | null;
     understandingPercent: number;
+    masteryAchieved?: boolean;
     covered?: boolean;
     tested?: boolean;
   }): Promise<StudentTopicMastery> {
+    const clampedPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
     const payload = {
       studentId: input.studentId,
       subject: input.subject,
       topic: input.topic,
       subtopic: input.subtopic ?? null,
-      understandingPercent: Math.max(0, Math.min(100, Math.round(input.understandingPercent))),
-      masteryAchieved: input.understandingPercent >= 75,
+      understandingPercent: clampedPercent,
+      masteryAchieved: input.masteryAchieved ?? clampedPercent >= 75,
       covered: Boolean(input.covered),
       tested: Boolean(input.tested),
       attempts: 1,
@@ -1243,9 +1246,11 @@ class MemoryStorage implements IStorage {
     topic: string;
     subtopic?: string | null;
     understandingPercent: number;
+    masteryAchieved?: boolean;
     covered?: boolean;
     tested?: boolean;
   }): Promise<StudentTopicMastery> {
+    const clampedPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
     const existing = this.studentTopicMasteryList.find((m) =>
       m.studentId === input.studentId
       && m.subject === input.subject
@@ -1253,8 +1258,8 @@ class MemoryStorage implements IStorage {
       && (m.subtopic || null) === (input.subtopic || null)
     );
     if (existing) {
-      existing.understandingPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
-      existing.masteryAchieved = existing.understandingPercent >= 75;
+      existing.understandingPercent = clampedPercent;
+      existing.masteryAchieved = input.masteryAchieved ?? clampedPercent >= 75;
       existing.covered = Boolean(input.covered);
       existing.tested = Boolean(input.tested);
       existing.attempts += 1;
@@ -1267,8 +1272,8 @@ class MemoryStorage implements IStorage {
       subject: input.subject,
       topic: input.topic,
       subtopic: input.subtopic || null,
-      understandingPercent: Math.max(0, Math.min(100, Math.round(input.understandingPercent))),
-      masteryAchieved: input.understandingPercent >= 75,
+      understandingPercent: clampedPercent,
+      masteryAchieved: input.masteryAchieved ?? clampedPercent >= 75,
       covered: Boolean(input.covered),
       tested: Boolean(input.tested),
       attempts: 1,
