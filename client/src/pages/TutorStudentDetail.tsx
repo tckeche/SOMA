@@ -192,6 +192,19 @@ export default function TutorStudentDetail() {
     onError: () => toast({ title: "Failed to remove subject", variant: "destructive" }),
   });
 
+  const { data: reviewSchedule } = useQuery<{
+    dueForReview: Array<{ topic: string; subtopic: string | null; subject: string; understandingPercent: number; daysOverdue: number; attempts: number }>;
+    upcoming: Array<{ topic: string; subtopic: string | null; subject: string; understandingPercent: number; daysUntilDue: number }>;
+  }>({
+    queryKey: ["/api/tutor/students", studentId, "review-schedule"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/review-schedule`);
+      if (!res.ok) return { dueForReview: [], upcoming: [] };
+      return res.json();
+    },
+    enabled: !!userId && !!studentId,
+  });
+
   const { data: masteryData } = useQuery<Array<{ topic: string; subtopic: string | null; understandingPercent: number; attempts: number; confidenceLevel: string; totalQuestions: number; lastTestedAt: string | null }>>({
     queryKey: ["/api/tutor/students", studentId, "mastery"],
     queryFn: async () => {
@@ -579,6 +592,66 @@ export default function TutorStudentDetail() {
               </div>
             )}
 
+            {/* ── SPACED REPETITION REVIEW SCHEDULE ────────────────── */}
+            {reviewSchedule && (reviewSchedule.dueForReview.length > 0 || reviewSchedule.upcoming.length > 0) && (
+              <div className={GP}>
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
+                      <Calendar className="w-3.5 h-3.5 text-violet-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Spaced Repetition Schedule</h3>
+                      <p className="text-[10px] text-slate-600 font-medium">Review mastered topics at 7 / 30 / 90 day intervals to prevent forgetting</p>
+                    </div>
+                  </div>
+                  {reviewSchedule.dueForReview.length > 0 && (
+                    <Badge className="text-[9px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/20">
+                      {reviewSchedule.dueForReview.length} due now
+                    </Badge>
+                  )}
+                </div>
+                <div className="px-6 py-4">
+                  {reviewSchedule.dueForReview.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-2">Overdue Reviews</p>
+                      <div className="space-y-1.5">
+                        {reviewSchedule.dueForReview.map((r, i) => (
+                          <div key={i} className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="text-[12px] text-slate-200 font-medium">{r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}</span>
+                              <span className="text-[10px] text-slate-500">{r.subject}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`text-[11px] font-bold tabular-nums ${r.understandingPercent >= 75 ? "text-emerald-400" : "text-amber-400"}`}>
+                                {r.understandingPercent}%
+                              </span>
+                              <span className="text-[10px] text-amber-400 font-medium">
+                                {r.daysOverdue > 0 ? `${r.daysOverdue}d overdue` : "Due today"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {reviewSchedule.upcoming.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">Upcoming Reviews</p>
+                      <div className="flex flex-wrap gap-2">
+                        {reviewSchedule.upcoming.map((r, i) => (
+                          <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-slate-500/8 text-slate-400 border border-slate-500/15">
+                            {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""} — in {r.daysUntilDue}d
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className={GP}>
               {/* Tab header */}
               <div className="flex items-center border-b border-white/[0.06]">
@@ -668,7 +741,11 @@ export default function TutorStudentDetail() {
                             {suggestionsLoading ? "Analyzing student data..." : "Generate Suggested Assessments"}
                           </button>
                           {suggestionsData?.basis?.curriculum && (
-                            <span className="text-[10px] text-slate-500">{suggestionsData.basis.curriculum.examBody} · {suggestionsData.basis.curriculum.syllabusCode} · {suggestionsData.basis.curriculum.level}</span>
+                            <span className="text-[10px] text-slate-500">
+                              {Array.isArray(suggestionsData.basis.curriculum)
+                                ? suggestionsData.basis.curriculum.map((c: any) => `${c.subject} (${c.examBody} ${c.syllabusCode})`).join(" · ")
+                                : `${suggestionsData.basis.curriculum.examBody} · ${suggestionsData.basis.curriculum.syllabusCode} · ${suggestionsData.basis.curriculum.level}`}
+                            </span>
                           )}
                         </div>
 
@@ -693,6 +770,7 @@ export default function TutorStudentDetail() {
                                 struggling_areas: { label: "Remediation", color: "text-red-400 bg-red-500/10 border-red-500/20", icon: TrendingDown },
                                 uncovered_content: { label: "New Content", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", icon: BookOpen },
                                 stretch_strengths: { label: "Challenge", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: TrendingUp },
+                                spaced_review: { label: "Spaced Review", color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Clock },
                               };
                               const purpose = purposeLabels[s.purpose] || { label: s.purpose, color: "text-slate-400 bg-slate-500/10 border-slate-500/20", icon: Target };
                               const PurposeIcon = purpose.icon;

@@ -23,6 +23,15 @@ import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
 
 
+// Spaced repetition intervals: 7 days → 30 days → 90 days
+const REVIEW_INTERVALS = [7, 30, 90];
+
+function computeNextReviewDate(currentReviewAt: Date | null, attempts: number): Date {
+  const intervalIndex = Math.min(attempts, REVIEW_INTERVALS.length - 1);
+  const days = REVIEW_INTERVALS[intervalIndex];
+  return new Date(Date.now() + days * 86400000);
+}
+
 type SomaQuizBundleQuestionInput = {
   stem: string;
   options: string[];
@@ -290,13 +299,19 @@ class DatabaseStorage implements IStorage {
     const clampedPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
     const totalQ = input.totalQuestions ?? 0;
     const confidenceLevel = totalQ >= 10 ? "high" : totalQ >= 5 ? "medium" : "low";
+    const mastered = input.masteryAchieved ?? (clampedPercent >= 75 && totalQ >= 5);
+
+    // Spaced repetition: schedule review at 7 days after mastery
+    // On subsequent reviews: 7 → 30 → 90 days
+    const nextReviewAt = mastered ? computeNextReviewDate(null, 0) : null;
+
     const payload = {
       studentId: input.studentId,
       subject: input.subject,
       topic: input.topic,
       subtopic: input.subtopic ?? null,
       understandingPercent: clampedPercent,
-      masteryAchieved: input.masteryAchieved ?? (clampedPercent >= 75 && totalQ >= 5),
+      masteryAchieved: mastered,
       covered: Boolean(input.covered),
       tested: Boolean(input.tested),
       attempts: 1,
@@ -304,6 +319,7 @@ class DatabaseStorage implements IStorage {
       correctQuestions: input.correctQuestions ?? 0,
       confidenceLevel,
       lastTestedAt: new Date(),
+      nextReviewAt,
       updatedAt: new Date(),
     };
     const [row] = await this.database
@@ -321,6 +337,13 @@ class DatabaseStorage implements IStorage {
           correctQuestions: sql`${studentTopicMastery.correctQuestions} + ${input.correctQuestions ?? 0}`,
           confidenceLevel,
           lastTestedAt: new Date(),
+          nextReviewAt: mastered
+            ? sql`CASE
+                WHEN ${studentTopicMastery.nextReviewAt} IS NULL THEN ${new Date(Date.now() + 7 * 86400000)}::timestamp
+                WHEN ${studentTopicMastery.attempts} <= 2 THEN ${new Date(Date.now() + 30 * 86400000)}::timestamp
+                ELSE ${new Date(Date.now() + 90 * 86400000)}::timestamp
+              END`
+            : null,
           updatedAt: new Date(),
         },
       })
@@ -1328,17 +1351,25 @@ class MemoryStorage implements IStorage {
     );
     if (existing) {
       existing.understandingPercent = clampedPercent;
-      existing.masteryAchieved = input.masteryAchieved ?? (clampedPercent >= 75 && (existing.totalQuestions + totalQ) >= 5);
+      const newTotalQ = existing.totalQuestions + totalQ;
+      existing.masteryAchieved = input.masteryAchieved ?? (clampedPercent >= 75 && newTotalQ >= 5);
       existing.covered = Boolean(input.covered);
       existing.tested = Boolean(input.tested);
       existing.attempts += 1;
-      existing.totalQuestions += totalQ;
+      existing.totalQuestions = newTotalQ;
       existing.correctQuestions += input.correctQuestions ?? 0;
-      existing.confidenceLevel = (existing.totalQuestions >= 10 ? "high" : existing.totalQuestions >= 5 ? "medium" : "low");
+      existing.confidenceLevel = (newTotalQ >= 10 ? "high" : newTotalQ >= 5 ? "medium" : "low");
       existing.lastTestedAt = new Date();
+      // Spaced repetition scheduling
+      if (existing.masteryAchieved) {
+        existing.nextReviewAt = computeNextReviewDate(existing.nextReviewAt, existing.attempts);
+      } else {
+        existing.nextReviewAt = null;
+      }
       existing.updatedAt = new Date();
       return existing;
     }
+    const mastered = input.masteryAchieved ?? (clampedPercent >= 75 && totalQ >= 5);
     const row: StudentTopicMastery = {
       id: this.studentMasteryId++,
       studentId: input.studentId,
@@ -1346,7 +1377,7 @@ class MemoryStorage implements IStorage {
       topic: input.topic,
       subtopic: input.subtopic || null,
       understandingPercent: clampedPercent,
-      masteryAchieved: input.masteryAchieved ?? (clampedPercent >= 75 && totalQ >= 5),
+      masteryAchieved: mastered,
       covered: Boolean(input.covered),
       tested: Boolean(input.tested),
       attempts: 1,
@@ -1354,7 +1385,7 @@ class MemoryStorage implements IStorage {
       correctQuestions: input.correctQuestions ?? 0,
       confidenceLevel,
       lastTestedAt: new Date(),
-      nextReviewAt: null,
+      nextReviewAt: mastered ? computeNextReviewDate(null, 0) : null,
       updatedAt: new Date(),
     };
     this.studentTopicMasteryList.push(row);
