@@ -239,6 +239,7 @@ export const STANDARDIZED_SUBJECTS = [
   "Chemistry",
   "Biology",
   "Economics",
+  "Business Studies",
   "English",
   "Computer Science",
   "Accounting",
