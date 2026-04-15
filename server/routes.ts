@@ -2327,124 +2327,135 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const selected = all.filter((s) => parsed.suggestionIds.includes(s.id));
       if (selected.length === 0) return res.status(404).json({ message: "No matching suggestions found" });
 
-      // Fetch actual syllabus and examiner report documents for this student's curriculum
-      let syllabusContext = "";
-      let examinerReportContext = "";
-      const syllabusDoc = await storage.getSyllabusDocumentBySelection({
-        board: primarySubject.examBody,
-        level: primarySubject.level,
-        syllabusCode: primarySubject.syllabusCode,
-        tutorId,
-      });
-      if (syllabusDoc?.chunks?.length) {
-        syllabusContext = syllabusDoc.chunks.map((c) => c.content).join("\n").slice(0, 4000);
-      }
-      // Fetch structured misconceptions (from AI extraction) and raw examiner reports as fallback
-      const structuredMisconceptions = await storage.listExaminerMisconceptions({
-        board: primarySubject.examBody,
-        syllabusCode: primarySubject.syllabusCode,
-      });
+      // Return immediately — generate in background
+      res.json({ status: "processing", count: selected.length, message: `${selected.length} assessment${selected.length !== 1 ? "s are" : " is"} being generated. You'll be notified when ready.` });
 
-      // Fallback: fetch raw examiner report text if no structured data exists
-      if (structuredMisconceptions.length === 0) {
-        const allDocs = await storage.listSyllabusDocuments(tutorId);
-        const examinerDocs = allDocs.filter(
-          (d) => d.documentType === "examiner_report" &&
-                 d.board === primarySubject.examBody &&
-                 d.syllabusCode === primarySubject.syllabusCode
-        );
-        if (examinerDocs.length > 0) {
-          examinerReportContext = examinerDocs
-            .map((d) => d.extractedText)
-            .join("\n---\n")
-            .slice(0, 4000);
-        }
-      }
-
-      const quizzes: any[] = [];
-      for (const item of selected) {
-        // Build topic-relevant syllabus context via chunk scoring
-        const topicSyllabusContext = syllabusDoc?.chunks?.length
-          ? scoreSyllabusChunks(syllabusDoc.chunks, `${item.topic} ${item.subtopic || ""}`).join("\n")
-          : syllabusContext;
-
-        // Build examiner context: prefer structured misconceptions, fall back to raw text
-        const topicMisconceptions = structuredMisconceptions.filter(
-          (m) => m.topic.toLowerCase() === item.topic.toLowerCase() ||
-                 (item.subtopic && m.subtopic?.toLowerCase() === item.subtopic.toLowerCase())
-        );
-        let topicExaminerContext = "";
-        if (topicMisconceptions.length > 0) {
-          topicExaminerContext = `\n\nSTRUCTURED EXAMINER MISCONCEPTIONS for ${item.topic}:\n` +
-            topicMisconceptions.map((m) =>
-              `- Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}\n  Frequency: ${m.frequency}`
-            ).join("\n") +
-            "\nUse these real examiner-identified misconceptions to design distractors and traps.";
-        } else if (examinerReportContext) {
-          topicExaminerContext = `\n\nEXAMINER REPORT INSIGHTS (real data from past examination sessions):\n${examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors that target real student misconceptions identified in past exams.`;
-        }
-
-        // Progressive difficulty distribution based on purpose and student mastery
-        let difficultyDistribution: { easy: number; medium: number; hard: number } | undefined;
-        if (item.purpose === "stretch_strengths") {
-          // Look up the student's actual mastery for this topic to scale difficulty
-          const mastery = (await storage.listStudentTopicMastery(studentId))
-            .find((m) => m.topic === item.topic && (!item.subtopic || m.subtopic === item.subtopic));
-          const pct = mastery?.understandingPercent ?? 80;
-          if (pct >= 95) {
-            difficultyDistribution = { easy: 0, medium: 15, hard: 85 };
-          } else if (pct >= 90) {
-            difficultyDistribution = { easy: 5, medium: 25, hard: 70 };
-          } else if (pct >= 85) {
-            difficultyDistribution = { easy: 10, medium: 30, hard: 60 };
-          } else {
-            difficultyDistribution = { easy: 15, medium: 40, hard: 45 };
-          }
-        } else if (item.purpose === "struggling_areas") {
-          // Start with easier questions to build confidence, then medium to probe understanding
-          difficultyDistribution = { easy: 35, medium: 45, hard: 20 };
-        }
-        // uncovered_content uses the default distribution (25/50/25)
-
-        const generated = await generateAuditedQuiz({
-          topic: item.topic,
-          subject: item.subject,
-          syllabus: primarySubject.examBody,
-          level: primarySubject.level,
-          subtopic: item.subtopic || undefined,
-          questionCount: parsed.questionCount,
-          difficultyDistribution,
-          copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${primarySubject.syllabusCode}.`,
-          supportingDocText: topicSyllabusContext + topicExaminerContext,
-        });
-        const quiz = await storage.createSomaQuizBundle({
-          quiz: {
-            title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
-            topic: item.topic,
-            subject: item.subject,
-            syllabus: `${primarySubject.examBody} ${primarySubject.syllabusCode}`,
-            level: primarySubject.level,
-            authorId: tutorId,
-            status: "published",
-            timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
-          },
-          questions: generated.questions.map((q) => ({
-            stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
-          })),
-          assignedStudentIds: [studentId],
-        });
-        await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
-        quizzes.push(quiz.quiz);
-      }
+      // Notify the tutor that generation has started
       await storage.createTutorNotification({
         tutorId,
         studentId,
-        type: "ai_assessment_published",
-        title: "AI suggested assessments are ready",
-        message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published for this student.`,
-        payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
+        type: "ai_assessment_generating",
+        title: "AI assessment generation started",
+        message: `Generating ${selected.length} assessment${selected.length !== 1 ? "s" : ""} in the background. This may take a few minutes.`,
+        payload: { studentId, suggestionIds: parsed.suggestionIds },
       });
-      res.json({ published: quizzes.length, quizzes });
+
+      // Background generation
+      (async () => {
+        try {
+          let syllabusContext = "";
+          let examinerReportContext = "";
+          const syllabusDoc = await storage.getSyllabusDocumentBySelection({
+            board: primarySubject.examBody,
+            level: primarySubject.level,
+            syllabusCode: primarySubject.syllabusCode,
+            tutorId,
+          });
+          if (syllabusDoc?.chunks?.length) {
+            syllabusContext = syllabusDoc.chunks.map((c) => c.content).join("\n").slice(0, 4000);
+          }
+          const structuredMisconceptions = await storage.listExaminerMisconceptions({
+            board: primarySubject.examBody,
+            syllabusCode: primarySubject.syllabusCode,
+          });
+          if (structuredMisconceptions.length === 0) {
+            const allDocs = await storage.listSyllabusDocuments(tutorId);
+            const examinerDocs = allDocs.filter(
+              (d) => d.documentType === "examiner_report" &&
+                     d.board === primarySubject.examBody &&
+                     d.syllabusCode === primarySubject.syllabusCode
+            );
+            if (examinerDocs.length > 0) {
+              examinerReportContext = examinerDocs.map((d) => d.extractedText).join("\n---\n").slice(0, 4000);
+            }
+          }
+
+          const quizzes: any[] = [];
+          for (const item of selected) {
+            const topicSyllabusContext = syllabusDoc?.chunks?.length
+              ? scoreSyllabusChunks(syllabusDoc.chunks, `${item.topic} ${item.subtopic || ""}`).join("\n")
+              : syllabusContext;
+
+            const topicMisconceptions = structuredMisconceptions.filter(
+              (m) => m.topic.toLowerCase() === item.topic.toLowerCase() ||
+                     (item.subtopic && m.subtopic?.toLowerCase() === item.subtopic.toLowerCase())
+            );
+            let topicExaminerContext = "";
+            if (topicMisconceptions.length > 0) {
+              topicExaminerContext = `\n\nSTRUCTURED EXAMINER MISCONCEPTIONS for ${item.topic}:\n` +
+                topicMisconceptions.map((m) =>
+                  `- Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}\n  Frequency: ${m.frequency}`
+                ).join("\n") +
+                "\nUse these real examiner-identified misconceptions to design distractors and traps.";
+            } else if (examinerReportContext) {
+              topicExaminerContext = `\n\nEXAMINER REPORT INSIGHTS:\n${examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors targeting real student misconceptions.`;
+            }
+
+            let difficultyDistribution: { easy: number; medium: number; hard: number } | undefined;
+            if (item.purpose === "stretch_strengths") {
+              const mastery = (await storage.listStudentTopicMastery(studentId))
+                .find((m) => m.topic === item.topic && (!item.subtopic || m.subtopic === item.subtopic));
+              const pct = mastery?.understandingPercent ?? 80;
+              if (pct >= 95) difficultyDistribution = { easy: 0, medium: 15, hard: 85 };
+              else if (pct >= 90) difficultyDistribution = { easy: 5, medium: 25, hard: 70 };
+              else if (pct >= 85) difficultyDistribution = { easy: 10, medium: 30, hard: 60 };
+              else difficultyDistribution = { easy: 15, medium: 40, hard: 45 };
+            } else if (item.purpose === "struggling_areas") {
+              difficultyDistribution = { easy: 35, medium: 45, hard: 20 };
+            }
+
+            const generated = await generateAuditedQuiz({
+              topic: item.topic,
+              subject: item.subject,
+              syllabus: primarySubject.examBody,
+              level: primarySubject.level,
+              subtopic: item.subtopic || undefined,
+              questionCount: parsed.questionCount,
+              difficultyDistribution,
+              copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${primarySubject.syllabusCode}.`,
+              supportingDocText: topicSyllabusContext + topicExaminerContext,
+            });
+            const quiz = await storage.createSomaQuizBundle({
+              quiz: {
+                title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
+                topic: item.topic,
+                subject: item.subject,
+                syllabus: `${primarySubject.examBody} ${primarySubject.syllabusCode}`,
+                level: primarySubject.level,
+                authorId: tutorId,
+                status: "published",
+                timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
+              },
+              questions: generated.questions.map((q) => ({
+                stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
+              })),
+              assignedStudentIds: [studentId],
+            });
+            await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
+            quizzes.push(quiz.quiz);
+          }
+
+          await storage.createTutorNotification({
+            tutorId,
+            studentId,
+            type: "ai_assessment_published",
+            title: "AI suggested assessments are ready",
+            message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published.`,
+            payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
+          });
+          console.log(`[AI Publish] Successfully generated ${quizzes.length} assessments for student ${studentId}`);
+        } catch (bgErr: any) {
+          console.error(`[AI Publish] Background generation failed for student ${studentId}:`, bgErr.message);
+          await storage.createTutorNotification({
+            tutorId,
+            studentId,
+            type: "ai_assessment_failed",
+            title: "Assessment generation failed",
+            message: `Failed to generate assessments: ${bgErr.message}. Please try again.`,
+            payload: { studentId, error: bgErr.message },
+          });
+        }
+      })();
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Failed to publish suggested assessments" });
     }

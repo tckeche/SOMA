@@ -435,6 +435,19 @@ export default function TutorDashboard() {
               </Link>
             </nav>
             <div className="flex items-center gap-3">
+              {/* Notification bell */}
+              <button
+                onClick={() => setActiveTab("notifications")}
+                className="relative text-slate-500 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-white/[0.03]"
+                aria-label="Notifications"
+              >
+                <Bell className="w-4.5 h-4.5" />
+                {(notificationsData?.unreadCount ?? 0) > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center leading-none">
+                    {notificationsData!.unreadCount > 9 ? "9+" : notificationsData!.unreadCount}
+                  </span>
+                )}
+              </button>
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shrink-0"
                 style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(99,102,241,0.2))", boxShadow: "0 0 24px rgba(139,92,246,0.2), inset 0 1px 0 rgba(255,255,255,0.08)", border: "1.5px solid rgba(139,92,246,0.4)" }}
