@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Clock, Send, Award, Eye,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, ArrowRight, BarChart3, Target, CheckCircle2,
-  CalendarDays, ExternalLink,
+  CalendarDays, ExternalLink, RefreshCcw, Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -72,6 +72,31 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
 }
 
 const GP = "glass-panel-elite";
+
+const AVATAR_GRADIENTS = [
+  "linear-gradient(135deg, #667eea, #764ba2)",
+  "linear-gradient(135deg, #f093fb, #f5576c)",
+  "linear-gradient(135deg, #4facfe, #00f2fe)",
+  "linear-gradient(135deg, #43e97b, #38f9d7)",
+  "linear-gradient(135deg, #fa709a, #fee140)",
+  "linear-gradient(135deg, #a18cd1, #fbc2eb)",
+  "linear-gradient(135deg, #fccb90, #d57eeb)",
+  "linear-gradient(135deg, #f6d365, #fda085)",
+];
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function TimeElapsedBadge({ date }: { date: string }) {
+  const hours = (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60);
+  if (hours < 1) return <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/15">Just now</span>;
+  if (hours < 24) return <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/15">{Math.floor(hours)}h ago</span>;
+  return <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">{Math.floor(hours / 24)}d ago</span>;
+}
 
 function getStatusChip(s: DashboardStats["studentInsights"][0]): { text: string; color: string; dot: string } {
   const hasSubmissions = s.completed > 0;
@@ -149,7 +174,7 @@ export default function TutorDashboard() {
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  const { data: stats, isLoading, isError: statsError } = useQuery<DashboardStats>({
+  const { data: stats, isLoading, isError: statsError, dataUpdatedAt } = useQuery<DashboardStats>({
     queryKey: ["/api/tutor/dashboard-stats", userId],
     queryFn: async () => {
       const res = await authFetch("/api/tutor/dashboard-stats");
@@ -287,6 +312,28 @@ export default function TutorDashboard() {
     return match?.reason || null;
   };
 
+  const cohortAvg = useMemo(() => {
+    if (!stats?.cohortAverages?.length) return 0;
+    return Math.round(stats.cohortAverages.reduce((a, c) => a + c.average, 0) / stats.cohortAverages.length);
+  }, [stats]);
+
+  const completionRate = useMemo(() => {
+    if (!stats?.studentInsights?.length) return 0;
+    const totalAssigned = stats.studentInsights.reduce((a, s) => a + s.assigned, 0);
+    const totalCompleted = stats.studentInsights.reduce((a, s) => a + s.completed, 0);
+    return totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
+  }, [stats]);
+
+  const statCards = useMemo(() => [
+    { label: "Students", value: stats?.totalStudents ?? 0, icon: Users, accent: "#8B5CF6", suffix: "" },
+    { label: "Assessments", value: stats?.totalQuizzes ?? 0, icon: BookOpen, accent: "#60A5FA", suffix: "" },
+    { label: "Cohort Avg", value: cohortAvg, icon: BarChart3, accent: "#34D399", suffix: "%", isWarning: cohortAvg < 50 },
+    { label: "Completion", value: completionRate, icon: CheckCircle2, accent: "#22D3EE", suffix: "%" },
+    { label: "Below Threshold", value: stats?.belowThresholdCount ?? 0, icon: AlertTriangle, accent: "#EF4444", isWarning: true },
+    { label: "Pending Reviews", value: stats?.recentSubmissions?.length ?? 0, icon: Clock, accent: "#FBBF24", suffix: "" },
+    { label: "Weakest Topic", value: stats?.weakestTopic || "—", icon: Target, accent: "#F43F5E", isText: true, isWarning: true },
+  ], [stats, cohortAvg, completionRate]);
+
   const studentPlaques = useMemo(() => {
     return (stats?.studentInsights || []).map((s) => {
       const chip = getStatusChip(s);
@@ -386,18 +433,47 @@ export default function TutorDashboard() {
             <p className="text-xs text-slate-600">Check your connection and try refreshing</p>
           </div>
         ) : isLoading ? (
-          <div className="space-y-5 animate-in fade-in duration-300">
+          <div className="space-y-6 animate-in fade-in duration-300">
             {/* Skeleton header */}
             <div className="flex items-end justify-between">
-              <div><div className="h-7 w-40 rounded-lg bg-white/[0.04] shimmer-pulse" /><div className="h-4 w-56 rounded-md bg-white/[0.03] mt-2 shimmer-pulse" /></div>
-              <div className="flex gap-3"><div className="h-11 w-28 rounded-xl bg-white/[0.04] shimmer-pulse" /><div className="h-11 w-44 rounded-xl bg-white/[0.04] shimmer-pulse" /></div>
+              <div>
+                <div className="h-4 w-32 rounded-lg skeleton-bar mb-2" />
+                <div className="h-7 w-48 rounded-lg skeleton-bar" />
+                <div className="h-3 w-56 rounded-md skeleton-bar mt-2" />
+              </div>
+              <div className="flex gap-3">
+                <div className="h-11 w-28 rounded-xl skeleton-bar" />
+                <div className="h-11 w-44 rounded-xl skeleton-bar" />
+              </div>
+            </div>
+            {/* Skeleton stat cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+              {[1,2,3,4,5,6,7].map(i => (
+                <div key={i} className="stat-card p-4">
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <div className="w-8 h-8 rounded-lg skeleton-bar" />
+                    <div className="h-3 w-14 rounded skeleton-bar" />
+                  </div>
+                  <div className="h-6 w-12 rounded skeleton-bar" />
+                </div>
+              ))}
             </div>
             {/* Skeleton plaques */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {[1,2,3,4,5,6].map(i => (
                 <div key={i} className={`${GP} p-5`} style={{ minHeight: 240 }}>
-                  <div className="flex items-center gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-white/[0.04] shimmer-pulse" /><div className="flex-1"><div className="h-4 w-24 rounded bg-white/[0.04] shimmer-pulse" /><div className="h-3 w-16 rounded bg-white/[0.03] mt-1.5 shimmer-pulse" /></div></div>
-                  <div className="space-y-4 mt-2"><div className="h-2 w-full rounded-full bg-white/[0.03] shimmer-pulse" /><div className="h-2 w-3/4 rounded-full bg-white/[0.03] shimmer-pulse" /><div className="h-2 w-1/2 rounded-full bg-white/[0.03] shimmer-pulse" /></div>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-11 h-11 rounded-xl skeleton-bar" />
+                    <div className="flex-1">
+                      <div className="h-4 w-24 rounded skeleton-bar" />
+                      <div className="h-3 w-16 rounded skeleton-bar mt-1.5" />
+                    </div>
+                  </div>
+                  <div className="space-y-4 mt-2">
+                    <div className="h-2 w-full rounded-full skeleton-bar" />
+                    <div className="h-2 w-3/4 rounded-full skeleton-bar" />
+                    <div className="h-2 w-1/2 rounded-full skeleton-bar" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -408,8 +484,23 @@ export default function TutorDashboard() {
             {/* ── TITLE BAR ──────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
               <div>
-                <h2 className="text-[22px] font-bold text-slate-100 tracking-tight">Dashboard</h2>
-                <p className="text-[12px] text-slate-500 mt-0.5 font-medium tracking-wide">{format(new Date(), "EEEE, d MMMM yyyy")} &middot; {stats?.totalStudents ?? 0} students &middot; {stats?.totalQuizzes ?? 0} assessments</p>
+                <p className="text-sm text-violet-400/80 font-medium mb-0.5">{getGreeting()}, {displayName.split(" ")[0]}</p>
+                <h2 className="text-2xl font-bold text-slate-100 tracking-tight" style={{ letterSpacing: "0.5px" }}>Command Centre</h2>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-[12px] text-slate-500 font-medium tracking-wide">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
+                  {dataUpdatedAt > 0 && (
+                    <span className="text-[10px] text-slate-600 font-medium">
+                      &middot; Updated {formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] })}
+                    className="text-slate-600 hover:text-violet-400 transition-colors p-1 rounded-md hover:bg-white/[0.04]"
+                    aria-label="Refresh data"
+                  >
+                    <RefreshCcw className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
                 <Link href="/tutor/students">
@@ -425,7 +516,46 @@ export default function TutorDashboard() {
               </div>
             </div>
 
+            {/* ── STAT CARDS ──────────────────────────────────────── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 overflow-x-auto">
+              {statCards.map((card) => (
+                <div key={card.label} className="stat-card p-4 relative overflow-hidden">
+                  {/* Left accent border */}
+                  <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ background: card.accent }} />
+                  {/* Subtle glow background */}
+                  <div className="absolute top-0 left-0 w-20 h-full opacity-[0.06] pointer-events-none" style={{ background: `radial-gradient(circle at left center, ${card.accent}, transparent 70%)` }} />
+                  <div className="relative flex items-center gap-2.5 mb-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: `${card.accent}15`, border: `1px solid ${card.accent}25` }}>
+                      <card.icon className="w-4 h-4" style={{ color: card.accent }} />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider leading-tight">{card.label}</span>
+                  </div>
+                  <div className="relative pl-0.5">
+                    {card.isText ? (
+                      <p className="text-[13px] font-bold text-slate-200 truncate">{card.value}</p>
+                    ) : (
+                      <p className={`text-xl font-bold tabular-nums ${card.isWarning && (card.value as number) > 0 ? "glow-red" : "text-slate-100"}`}>
+                        {card.value}{card.suffix}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {/* ── STUDENT PLAQUE GRID ──────────────────────────────── */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/15 border border-indigo-500/20">
+                  <Users className="w-3.5 h-3.5 text-indigo-400" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-100" style={{ letterSpacing: "0.3px" }}>Students</h3>
+                {studentPlaques.length > 0 && (
+                  <span className="text-[10px] font-bold text-slate-500 tabular-nums">{studentPlaques.length}</span>
+                )}
+              </div>
+            </div>
             {studentPlaques.length === 0 ? (
               <div className={`${GP} px-6 py-16 text-center`}>
                 <Users className="w-12 h-12 mx-auto text-slate-700 mb-4" />
@@ -434,8 +564,8 @@ export default function TutorDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="student-plaque-grid">
-                {studentPlaques.map((s) => (
-                  <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} />
+                {studentPlaques.map((s, i) => (
+                  <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} index={i} />
                 ))}
               </div>
             )}
@@ -445,15 +575,16 @@ export default function TutorDashboard() {
 
               {/* Marking Queue */}
               <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.04]">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md flex items-center justify-center bg-violet-500/10 border border-violet-500/15">
-                      <Eye className="w-3 h-3 text-violet-400" />
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-violet-500/[0.06] to-transparent pointer-events-none" />
+                  <div className="flex items-center gap-2.5 relative">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/15 border border-violet-500/20">
+                      <Eye className="w-3.5 h-3.5 text-violet-400" />
                     </div>
-                    <h3 className="text-[12px] font-semibold text-slate-200">Marking Queue</h3>
+                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Marking Queue</h3>
                   </div>
                   {(stats?.recentSubmissions?.length ?? 0) > 0 && (
-                    <span className="text-[10px] font-bold text-violet-400 tabular-nums bg-violet-500/10 px-2 py-0.5 rounded-md border border-violet-500/15" data-testid="stat-reviews">
+                    <span className="relative text-[10px] font-bold text-violet-400 tabular-nums bg-violet-500/15 px-2.5 py-0.5 rounded-lg border border-violet-500/20" data-testid="stat-reviews">
                       {stats!.recentSubmissions.length}
                     </span>
                   )}
@@ -466,14 +597,15 @@ export default function TutorDashboard() {
                 ) : (
                   <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
                     {stats!.recentSubmissions.slice(0, 8).map((sub) => {
-                      const scoreColor = sub.score >= 70 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-rose-400";
+                      const scoreColor = sub.score >= 75 ? "glow-green" : sub.score >= 50 ? "glow-amber" : "glow-red";
                       return (
                         <Link key={sub.reportId} href={`/soma/review/${sub.reportId}`}>
-                          <div className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors cursor-pointer" data-testid={`submission-${sub.reportId}`}>
+                          <div className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer" data-testid={`submission-${sub.reportId}`}>
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] text-slate-200 font-medium truncate">{sub.studentName}</p>
                               <p className="text-[10px] text-slate-600 truncate">{sub.quizTitle}</p>
                             </div>
+                            <TimeElapsedBadge date={sub.createdAt} />
                             <span className={`text-[11px] font-bold tabular-nums ${scoreColor}`}>{sub.score}%</span>
                             <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
                           </div>
@@ -486,18 +618,26 @@ export default function TutorDashboard() {
 
               {/* Awaiting Submissions */}
               <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.04]">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md flex items-center justify-center bg-amber-500/10 border border-amber-500/15">
-                      <Clock className="w-3 h-3 text-amber-400" />
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
+                  <div className="flex items-center gap-2.5 relative">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
                     </div>
-                    <h3 className="text-[12px] font-semibold text-slate-200">Awaiting</h3>
+                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
                   </div>
-                  {overdueCount > 0 && (
-                    <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/15" data-testid="stat-assigned">
-                      {overdueCount} overdue
-                    </span>
-                  )}
+                  <div className="relative flex items-center gap-2">
+                    {(stats?.pendingAssignments?.length ?? 0) > 0 && (
+                      <span className="text-[10px] font-bold text-amber-400 tabular-nums bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                        {stats!.pendingAssignments.length}
+                      </span>
+                    )}
+                    {overdueCount > 0 && (
+                      <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/15 px-2.5 py-0.5 rounded-lg border border-rose-500/20 status-pulse" data-testid="stat-assigned">
+                        {overdueCount} overdue
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
                   <div className="px-5 py-8 text-center">
@@ -530,25 +670,36 @@ export default function TutorDashboard() {
 
               {/* Recent Assessments */}
               <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.04]">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md flex items-center justify-center bg-emerald-500/10 border border-emerald-500/15">
-                      <BookOpen className="w-3 h-3 text-emerald-400" />
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
+                  <div className="flex items-center gap-2.5 relative">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
+                      <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
-                    <h3 className="text-[12px] font-semibold text-slate-200">Recent Assessments</h3>
+                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
                   </div>
                   <Link href="/tutor/assessments">
-                    <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium" data-testid="link-view-all-assessments">View All</span>
+                    <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
                   </Link>
                 </div>
                 {quizzesLoading ? (
                   <div className="px-5 py-8 flex justify-center">
                     <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
                   </div>
-                ) : tutorQuizzes.length === 0 ? (
+                ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 ? (
                   <div className="px-5 py-8 text-center">
                     <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
                     <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
+                    <Link href="/tutor/assessments/new">
+                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
+                    </Link>
+                  </div>
+                ) : tutorQuizzes.length === 0 ? (
+                  <div className="px-5 py-5 text-center">
+                    <p className="text-[11px] text-slate-400 font-medium">{stats?.totalQuizzes ?? 0} assessments in system</p>
+                    <Link href="/tutor/assessments">
+                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">View all assessments &rarr;</span>
+                    </Link>
                   </div>
                 ) : (
                   <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
@@ -680,7 +831,7 @@ interface PlaqueStudent {
   lastSubmission: { reportId: number; quizTitle: string; score: number } | null;
 }
 
-function StudentPlaque({ student: s, insightChip }: { student: PlaqueStudent; insightChip: string | null }) {
+function StudentPlaque({ student: s, insightChip, index = 0 }: { student: PlaqueStudent; insightChip: string | null; index?: number }) {
   const [flipped, setFlipped] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -692,6 +843,7 @@ function StudentPlaque({ student: s, insightChip }: { student: PlaqueStudent; in
   const si = s.studentName.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
   const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
   const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-slate-500";
+  const avatarGradient = AVATAR_GRADIENTS[index % AVATAR_GRADIENTS.length];
 
   return (
     <div
@@ -712,8 +864,8 @@ function StudentPlaque({ student: s, insightChip }: { student: PlaqueStudent; in
           {/* Identity row */}
           <div className="flex items-start gap-3 mb-4">
             <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center text-[11px] font-bold text-white/90 shrink-0 relative"
-              style={{ background: "linear-gradient(145deg, rgba(99,102,241,0.25), rgba(139,92,246,0.15))", border: "1px solid rgba(139,92,246,0.2)", boxShadow: "0 4px 12px rgba(99,102,241,0.15)" }}
+              className="w-11 h-11 rounded-xl flex items-center justify-center text-[11px] font-bold text-white shrink-0 relative"
+              style={{ background: avatarGradient, boxShadow: "0 4px 14px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.15)" }}
             >
               {si}
               <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${s.chip.dot}`} />
@@ -728,40 +880,59 @@ function StudentPlaque({ student: s, insightChip }: { student: PlaqueStudent; in
           </div>
 
           {/* Metrics */}
-          <div className="space-y-3.5 flex-1">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Workload</span>
+          {s.assigned === 0 && s.completed === 0 ? (
+            /* Empty state for students with no work */
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-800/40 border border-white/[0.05] mb-2.5">
+                <BookOpen className="w-4 h-4 text-slate-600" />
               </div>
-              <WorkloadBar assigned={s.assigned} completed={s.completed} awaiting={s.awaiting} />
+              <p className="text-[11px] text-slate-500 font-medium mb-1">No assignments yet</p>
+              <Link href="/tutor/assessments">
+                <span className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors">
+                  Assign work &rarr;
+                </span>
+              </Link>
             </div>
+          ) : (
+            <div className="space-y-3.5 flex-1">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Workload</span>
+                </div>
+                <WorkloadBar assigned={s.assigned} completed={s.completed} awaiting={s.awaiting} />
+              </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Completion</span>
-                <span className="text-[10px] text-cyan-400 font-bold tabular-nums">{s.coveragePct}%</span>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Completion</span>
+                  <span className={`text-[10px] font-bold tabular-nums ${s.coveragePct >= 75 ? "glow-green" : s.coveragePct >= 50 ? "glow-amber" : "text-cyan-400"}`}>{s.coveragePct}%</span>
+                </div>
+                <div className="h-[6px] rounded-full bg-slate-800/50 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700 progress-shimmer"
+                    style={{
+                      width: `${s.coveragePct}%`,
+                      background: s.coveragePct >= 60
+                        ? "linear-gradient(90deg, #4f46e5, #8b5cf6, #4f46e5)"
+                        : s.coveragePct >= 30
+                          ? "linear-gradient(90deg, #d97706, #fbbf24, #d97706)"
+                          : "linear-gradient(90deg, #64748b, #94a3b8, #64748b)",
+                    }}
+                  />
+                </div>
               </div>
-              <div className="h-[6px] rounded-full bg-slate-800/50 overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{
-                    width: `${s.coveragePct}%`,
-                    background: s.coveragePct >= 60 ? "linear-gradient(90deg, #0891b2, #22d3ee)" : s.coveragePct >= 30 ? "linear-gradient(90deg, #d97706, #fbbf24)" : "linear-gradient(90deg, #64748b, #94a3b8)",
-                  }}
-                />
-              </div>
-            </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Performance</span>
-                {s.lastScore !== null && (
-                  <span className={`text-[11px] font-bold tabular-nums ${s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}`}>{s.lastScore}%</span>
-                )}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Performance</span>
+                  {s.lastScore !== null && (
+                    <span className={`text-[11px] font-bold tabular-nums ${s.lastScore >= 75 ? "glow-green" : s.lastScore >= 50 ? "glow-amber" : "glow-red"}`}>{s.lastScore}%</span>
+                  )}
+                </div>
+                <MiniSparkline scores={s.recentScores} />
               </div>
-              <MiniSparkline scores={s.recentScores} />
             </div>
-          </div>
+          )}
         </div>
 
         {/* ── BACK ──────────────────────────────────────────── */}
