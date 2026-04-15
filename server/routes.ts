@@ -878,7 +878,7 @@ async function runBackgroundGrading(
   totalScore: number,
   maxPossibleScore: number,
 ) {
-  const GRADING_TIMEOUT_MS = 90_000;
+  const GRADING_TIMEOUT_MS = 180_000;
   try {
     console.log(`[SOMA Grading] Starting background AI grading for report ${reportId}`);
 
@@ -915,7 +915,7 @@ Provide:
     const gradePromise = generateWithFallback(systemPrompt, userPrompt);
 
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("AI grading timed out after 90 seconds")), GRADING_TIMEOUT_MS)
+      setTimeout(() => reject(new Error("AI grading timed out after 180 seconds")), GRADING_TIMEOUT_MS)
     );
 
     const { data } = await Promise.race([gradePromise, timeoutPromise]);
@@ -2813,7 +2813,7 @@ ${JSON.stringify({
     level: z.string().min(1).default("Grade 6-12"),
     curriculumContext: z.string().optional(),
     subtopic: z.string().optional(),
-    questionCount: z.number().int().min(1).max(40).default(8),
+    questionCount: z.number().int().min(1).max(50).default(8),
     difficultyDistribution: z.object({
       easy: z.number().min(0).max(100),
       medium: z.number().min(0).max(100),
