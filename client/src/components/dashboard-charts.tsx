@@ -131,7 +131,7 @@ export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) 
       const avgScore = subs.length > 0 ? Math.round(subs.reduce((a, b) => a + b.score, 0) / subs.length) : 0;
       const completionRate = s.assigned > 0 ? Math.round((s.completed / s.assigned) * 100) : 0;
       const scores = subs.map((r) => r.score);
-      const reliability = scores.length >= 2
+      const reliability = scores.length >= 2 && avgScore > 0
         ? Math.round(100 - Math.min(100, (Math.sqrt(scores.reduce((a, b) => a + (b - avgScore) ** 2, 0) / scores.length) / avgScore) * 100))
         : 0;
       const name = s.studentName.length > 10 ? s.studentName.split(" ")[0] : s.studentName;
@@ -171,7 +171,8 @@ function generateTrendData(stats: DashboardStats) {
     const d = new Date(sub.createdAt);
     const weekStart = new Date(d);
     weekStart.setDate(d.getDate() - d.getDay());
-    const key = weekStart.toISOString().slice(0, 10);
+    weekStart.setHours(0, 0, 0, 0);
+    const key = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`;
     if (!realByWeek[key]) realByWeek[key] = {};
     if (!realByWeek[key][sub.studentName]) realByWeek[key][sub.studentName] = [];
     realByWeek[key][sub.studentName].push(sub.score);
@@ -183,7 +184,8 @@ function generateTrendData(stats: DashboardStats) {
     const d = new Date(now);
     d.setDate(d.getDate() - i * 7);
     d.setDate(d.getDate() - d.getDay());
-    const key = d.toISOString().slice(0, 10);
+    d.setHours(0, 0, 0, 0);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const label = `${d.toLocaleString("default", { month: "short" })} ${d.getDate()}`;
     const row: any = { week: label };
 
