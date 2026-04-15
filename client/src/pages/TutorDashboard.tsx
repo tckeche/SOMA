@@ -12,8 +12,8 @@ import {
   LayoutDashboard, Clock, Send, Eye, Bell,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, Target, CheckCircle2,
-  CalendarDays, ExternalLink, RefreshCcw, Sparkles,
-  Radar, TrendingUp, Grid3X3, BarChart2,
+  CalendarDays, ExternalLink, RefreshCcw,
+  Radar, TrendingUp, Grid3X3,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -22,12 +22,11 @@ import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation, subscribeToSomaMutations } from "@/lib/realtimeEvents";
 import {
   CohortRadarChart,
-  StudentComparisonBarChart,
   PerformanceTrendAreaChart,
   SubjectDistributionChart,
   CompletionDonutChart,
   WorkloadHeatmap,
-  ActivityTimelineChart,
+  ActivityCalendar,
 } from "@/components/dashboard-charts";
 
 interface DashboardStats {
@@ -65,11 +64,6 @@ interface DashboardStats {
   }[];
   belowThresholdCount: number;
   weakestTopic: string | null;
-}
-
-interface AIInsight {
-  name: string;
-  reason: string;
 }
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
@@ -263,26 +257,6 @@ export default function TutorDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: aiInsights } = useQuery<{ insights: AIInsight[] }>({
-    queryKey: ["/api/tutor/ai/intervention-insights", stats?.studentInsights?.map((s) => s.studentId).join(",")],
-    queryFn: async () => {
-      const atRisk = (stats?.studentInsights || []).filter(
-        (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.awaiting > 0 && s.completed === 0)
-      ).slice(0, 6);
-      if (atRisk.length === 0) return { insights: [] };
-      const res = await authFetch("/api/tutor/ai/intervention-insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ students: atRisk }),
-      });
-      if (!res.ok) return { insights: [] };
-      return res.json();
-    },
-    enabled: (stats?.studentInsights?.length ?? 0) > 0,
-    staleTime: 120000,
-    refetchOnWindowFocus: false,
-  });
-
   const assignMutation = useMutation({
     mutationFn: async ({ quizId, studentIds, dueDate: dd }: { quizId: number; studentIds: string[]; dueDate?: string }) => {
       const payload: { studentIds: string[]; dueDate?: string } = { studentIds };
@@ -342,14 +316,6 @@ export default function TutorDashboard() {
     });
   }, [queryClient]);
 
-  const getInsightChip = (studentName: string): string | null => {
-    if (!aiInsights?.insights?.length) return null;
-    const match = aiInsights.insights.find((i) => i.name === studentName)
-      || aiInsights.insights.find((i) => i.name?.toLowerCase() === studentName?.toLowerCase());
-    return match?.reason || null;
-  };
-
-
   const studentPlaques = useMemo(() => {
     return (stats?.studentInsights || []).map((s) => {
       const chip = getStatusChip(s);
@@ -371,7 +337,7 @@ export default function TutorDashboard() {
 
       return { ...s, chip, completionPct, recentScores, lastScore, coveragePct, lowestCoverage, lastActivity, lastSubmission };
     });
-  }, [stats, aiInsights]);
+  }, [stats]);
 
   return (
     <div className="min-h-screen">
@@ -637,11 +603,6 @@ export default function TutorDashboard() {
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
                       </div>
                       <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
-                      {aiInsights?.insights && aiInsights.insights.length > 0 && (
-                        <span className="text-[9px] font-bold text-violet-400 bg-violet-500/15 px-2 py-0.5 rounded-md border border-violet-500/20" style={{ animation: "status-pulse 2.5s ease-in-out infinite" }}>
-                          <Sparkles className="w-3 h-3 inline mr-0.5 -mt-0.5" /> AI Insights
-                        </span>
-                      )}
                     </div>
                     <Link href="/tutor/students">
                       <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
@@ -661,7 +622,6 @@ export default function TutorDashboard() {
                       <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
                         {atRisk.slice(0, 6).map((s) => {
                           const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
-                          const insight = getInsightChip(s.studentName);
                           return (
                             <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
                               <div className="flex-1 min-w-0">
@@ -669,9 +629,6 @@ export default function TutorDashboard() {
                                   <p className="text-[12px] text-slate-100 font-semibold truncate">{s.studentName}</p>
                                   <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
                                 </div>
-                                {insight && (
-                                  <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
-                                )}
                                 <div className="flex items-center gap-3 text-[10px] text-slate-500">
                                   {s.weakTopics.length > 0 && <span>Weak subjects: {s.weakTopics.slice(0, 2).join(", ")}</span>}
                                   {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
@@ -746,7 +703,7 @@ export default function TutorDashboard() {
                 ROW 2 — Cohort Overview: Radar + Donut + Mini Trend
                ══════════════════════════════════════════════════════ */}
             <FadeInSection>
-              <SectionHeader icon={Radar} title="Cohort Performance Overview" subtitle="Averages across all subjects and assignment completion" />
+              <SectionHeader icon={Radar} title="Performance Overview" subtitle="Subject averages and assignment completion" />
               <div className="grid grid-cols-1 lg:grid-cols-10 gap-5">
                 <ChartCard className="lg:col-span-4">
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Subject Radar</p>
@@ -770,19 +727,7 @@ export default function TutorDashboard() {
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
-                ROW 3 — Student Performance Comparison Bar Chart
-               ══════════════════════════════════════════════════════ */}
-            <FadeInSection delay={0.05}>
-              <SectionHeader icon={BarChart2} title="Student Comparison" subtitle="Average score, completion rate, and reliability across all students" />
-              <ChartCard>
-                <div style={{ height: 320 }}>
-                  <StudentComparisonBarChart stats={stats!} />
-                </div>
-              </ChartCard>
-            </FadeInSection>
-
-            {/* ══════════════════════════════════════════════════════
-                ROW 4 — Student Card Grid
+                ROW 3 — Student Card Grid
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
               <SectionHeader icon={Users} title="Students" subtitle={`${studentPlaques.length} students in your cohort`} />
@@ -795,7 +740,7 @@ export default function TutorDashboard() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="student-plaque-grid">
                   {studentPlaques.map((s, i) => (
-                    <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} index={i} />
+                    <StudentPlaque key={s.studentId} student={s} index={i} />
                   ))}
                 </div>
               )}
@@ -805,7 +750,7 @@ export default function TutorDashboard() {
                 ROW 5 — Performance Trends (full-width area chart)
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
-              <SectionHeader icon={TrendingUp} title="Performance Trends" subtitle="Cohort and individual student performance over time" />
+              <SectionHeader icon={TrendingUp} title="Performance Trends" subtitle="Individual student performance over time" />
               <ChartCard>
                 <div style={{ height: 320 }}>
                   <PerformanceTrendAreaChart stats={stats!} />
@@ -832,14 +777,12 @@ export default function TutorDashboard() {
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
-                ROW 8 — Activity Timeline (stacked bar)
+                ROW 7 — Activity Calendar
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
-              <SectionHeader icon={Activity} title="Activity &amp; Engagement" subtitle="Submission activity over the past 4 weeks" />
+              <SectionHeader icon={CalendarDays} title="Activity &amp; Engagement" subtitle="Submission activity by day" />
               <ChartCard>
-                <div style={{ height: 280 }}>
-                  <ActivityTimelineChart stats={stats!} />
-                </div>
+                <ActivityCalendar stats={stats!} />
               </ChartCard>
             </FadeInSection>
 
@@ -1010,7 +953,7 @@ interface PlaqueStudent {
   lastSubmission: { reportId: number; quizTitle: string; score: number } | null;
 }
 
-function StudentPlaque({ student: s, insightChip, index = 0 }: { student: PlaqueStudent; insightChip: string | null; index?: number }) {
+function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; index?: number }) {
   const [flipped, setFlipped] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -1141,13 +1084,6 @@ function StudentPlaque({ student: s, insightChip, index = 0 }: { student: Plaque
             <div className="mb-3">
               <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-1.5">Gaps</p>
               <p className="text-[10px] text-slate-400 leading-relaxed">{s.lowestCoverage.join(", ")}</p>
-            </div>
-          )}
-
-          {/* Insight chip */}
-          {insightChip && (
-            <div className="mb-3 px-2.5 py-2 rounded-lg bg-indigo-500/[0.06] border border-indigo-500/10">
-              <p className="text-[10px] text-indigo-300/90 leading-relaxed">{insightChip}</p>
             </div>
           )}
 

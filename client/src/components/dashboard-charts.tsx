@@ -1,4 +1,4 @@
-import { useMemo, Component } from "react";
+import { useMemo, useState, Component } from "react";
 import {
   ResponsiveContainer,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -217,28 +217,23 @@ function generateTrendData(stats: DashboardStats) {
     const label = `${d.toLocaleString("default", { month: "short" })} ${d.getDate()}`;
     const row: any = { week: label };
 
+    let hasRealData = false;
     const realWeek = realByWeek[key];
     if (realWeek) {
-      let allScores: number[] = [];
       for (const name of studentsWithData) {
         if (realWeek[name]) {
           const avg = Math.round(realWeek[name].reduce((a, b) => a + b, 0) / realWeek[name].length);
           row[name] = avg;
-          allScores.push(avg);
+          hasRealData = true;
         }
-      }
-      if (allScores.length > 0) {
-        row.cohortAvg = Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length);
       }
     }
 
     // Fill with deterministic projected data when no real data
-    if (row.cohortAvg === undefined) {
+    if (!hasRealData) {
       const base = 55 + (7 - i) * 2;
-      row.cohortAvg = Math.min(100, Math.max(30, base));
       for (let si = 0; si < Math.min(3, studentsWithData.length); si++) {
         const name = studentsWithData[si];
-        // Deterministic offset based on student index and week
         const offset = ((si * 7 + i * 3) % 13) - 6;
         row[name] = Math.min(100, Math.max(20, base + offset));
       }
@@ -259,21 +254,25 @@ export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) 
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={weeks}>
         <defs>
-          <linearGradient id="cohortGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0} />
-          </linearGradient>
+          {studentsWithData.map((name) => {
+            const color = studentColor(name, allNames);
+            return (
+              <linearGradient key={name} id={`grad-${name.replace(/\s+/g, "")}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            );
+          })}
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
         <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
         <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
         <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} />
         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-        <Area name="Cohort Avg" dataKey="cohortAvg" type="monotone" stroke="#8B5CF6" fill="url(#cohortGrad)" strokeWidth={2.5} dot={{ r: 3, fill: "#8B5CF6", strokeWidth: 0 }} />
         {studentsWithData.map((name) => (
           <Area key={name} name={name.split(" ")[0]} dataKey={name} type="monotone"
-            stroke={studentColor(name, allNames)} fill="transparent" strokeWidth={1.5} strokeDasharray="4 3"
-            dot={{ r: 2.5, fill: studentColor(name, allNames), strokeWidth: 0 }} />
+            stroke={studentColor(name, allNames)} fill={`url(#grad-${name.replace(/\s+/g, "")})`} strokeWidth={2}
+            dot={{ r: 3, fill: studentColor(name, allNames), strokeWidth: 0 }} />
         ))}
       </AreaChart>
     </ResponsiveContainer>
@@ -605,5 +604,167 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
         </BarChart>
       </ResponsiveContainer>
     </ChartErrorBoundary>
+  );
+}
+
+/* ────────────────────────────────────────────────────────
+   Chart 8 — Activity Calendar (month-view)
+   ──────────────────────────────────────────────────────── */
+
+type DayCell = {
+  day: number;
+  submissions: { count: number; avgScore: number; students: number } | null;
+  isToday: boolean;
+} | null;
+
+export function ActivityCalendar({ stats }: { stats: DashboardStats }) {
+  if (!stats) return null;
+  const [monthOffset, setMonthOffset] = useState(0);
+
+  const { weeks, monthLabel } = useMemo(() => {
+    const now = new Date();
+    const viewDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const monthLabel = viewDate.toLocaleString("default", { month: "long", year: "numeric" });
+
+    const submissionsByDate: Record<string, { count: number; totalScore: number; students: Set<string> }> = {};
+    for (const sub of stats.recentSubmissions || []) {
+      const d = new Date(sub.createdAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (!submissionsByDate[key]) submissionsByDate[key] = { count: 0, totalScore: 0, students: new Set() };
+      submissionsByDate[key].count++;
+      submissionsByDate[key].totalScore += sub.score;
+      submissionsByDate[key].students.add(sub.studentName);
+    }
+
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = now;
+
+    const weeks: DayCell[][] = [];
+    let currentWeek: DayCell[] = [];
+
+    for (let i = 0; i < firstDay; i++) currentWeek.push(null);
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const key = `${year}-${month}-${day}`;
+      const data = submissionsByDate[key];
+      const isToday = year === today.getFullYear() && month === today.getMonth() && day === today.getDate();
+
+      currentWeek.push({
+        day,
+        submissions: data
+          ? { count: data.count, avgScore: Math.round(data.totalScore / data.count), students: data.students.size }
+          : null,
+        isToday,
+      });
+
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    }
+
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) currentWeek.push(null);
+      weeks.push(currentWeek);
+    }
+
+    return { weeks, monthLabel };
+  }, [stats, monthOffset]);
+
+  const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  return (
+    <div>
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={() => setMonthOffset((o) => o - 1)}
+          className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+          aria-label="Previous month"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h4 className="text-sm font-bold text-slate-200 tracking-wide">{monthLabel}</h4>
+        <button
+          onClick={() => setMonthOffset((o) => o + 1)}
+          disabled={monthOffset >= 0}
+          className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Next month"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Day-of-week headers */}
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+        {DAY_NAMES.map((d) => (
+          <div key={d} className="text-center text-[9px] font-bold text-slate-600 uppercase tracking-wider py-1">{d}</div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div className="space-y-1.5">
+        {weeks.map((week, wi) => (
+          <div key={wi} className="grid grid-cols-7 gap-1.5">
+            {week.map((cell, di) => (
+              <div
+                key={di}
+                className={`relative rounded-lg text-center min-h-[54px] flex flex-col items-center justify-start pt-1.5 gap-1 transition-colors ${
+                  cell === null
+                    ? ""
+                    : cell.isToday
+                      ? "bg-violet-500/10 border border-violet-500/25 shadow-[0_0_12px_rgba(139,92,246,0.1)]"
+                      : cell.submissions
+                        ? "bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.05]"
+                        : "bg-white/[0.01] border border-white/[0.03]"
+                }`}
+              >
+                {cell && (
+                  <>
+                    <span className={`text-[11px] font-semibold tabular-nums leading-none ${cell.isToday ? "text-violet-300" : cell.submissions ? "text-slate-300" : "text-slate-600"}`}>
+                      {cell.day}
+                    </span>
+                    {cell.submissions && (
+                      <span
+                        className={`text-[9px] font-bold tabular-nums px-1.5 py-0.5 rounded leading-none ${
+                          cell.submissions.avgScore >= 75
+                            ? "text-emerald-400 bg-emerald-500/15"
+                            : cell.submissions.avgScore >= 50
+                              ? "text-amber-400 bg-amber-500/15"
+                              : "text-rose-400 bg-rose-500/15"
+                        }`}
+                      >
+                        {cell.submissions.count}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-3 flex-wrap">
+        <span className="flex items-center gap-1.5 text-[9px] text-slate-500 font-medium">
+          <span className="w-2.5 h-2.5 rounded bg-emerald-500/15 border border-emerald-500/20 shrink-0" /> Avg &ge; 75%
+        </span>
+        <span className="flex items-center gap-1.5 text-[9px] text-slate-500 font-medium">
+          <span className="w-2.5 h-2.5 rounded bg-amber-500/15 border border-amber-500/20 shrink-0" /> Avg &ge; 50%
+        </span>
+        <span className="flex items-center gap-1.5 text-[9px] text-slate-500 font-medium">
+          <span className="w-2.5 h-2.5 rounded bg-rose-500/15 border border-rose-500/20 shrink-0" /> Avg &lt; 50%
+        </span>
+        <span className="text-[9px] text-slate-600 font-medium ml-auto">Number = submissions</span>
+      </div>
+    </div>
   );
 }
