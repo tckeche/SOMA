@@ -1943,6 +1943,67 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Cohort-level weakness report: aggregate mastery across all students
+  app.get("/api/tutor/cohort-weaknesses", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (adopted.length === 0) return res.json({ topics: [], studentCount: 0 });
+
+      const topicAgg: Record<string, {
+        subject: string; topic: string; subtopic: string | null;
+        testedStudents: number; sumPercent: number; belowThreshold: number;
+        totalQuestions: number; totalCorrect: number;
+        studentNames: string[];
+      }> = {};
+
+      for (const student of adopted) {
+        const mastery = await storage.listStudentTopicMastery(student.id);
+        const studentName = student.displayName || student.email?.split("@")[0] || "Student";
+        for (const m of mastery) {
+          if (!m.tested) continue;
+          const key = `${m.subject}|||${m.topic}|||${m.subtopic || ""}`;
+          if (!topicAgg[key]) {
+            topicAgg[key] = {
+              subject: m.subject, topic: m.topic, subtopic: m.subtopic || null,
+              testedStudents: 0, sumPercent: 0, belowThreshold: 0,
+              totalQuestions: 0, totalCorrect: 0, studentNames: [],
+            };
+          }
+          const agg = topicAgg[key];
+          agg.testedStudents++;
+          agg.sumPercent += m.understandingPercent;
+          agg.totalQuestions += m.totalQuestions;
+          agg.totalCorrect += m.correctQuestions;
+          if (m.understandingPercent < 75) {
+            agg.belowThreshold++;
+            agg.studentNames.push(studentName);
+          }
+        }
+      }
+
+      const topics = Object.values(topicAgg)
+        .map((agg) => ({
+          subject: agg.subject,
+          topic: agg.topic,
+          subtopic: agg.subtopic,
+          avgPercent: agg.testedStudents > 0 ? Math.round(agg.sumPercent / agg.testedStudents) : 0,
+          testedStudents: agg.testedStudents,
+          totalStudents: adopted.length,
+          belowThreshold: agg.belowThreshold,
+          struggleRate: agg.testedStudents > 0 ? Math.round((agg.belowThreshold / agg.testedStudents) * 100) : 0,
+          totalQuestions: agg.totalQuestions,
+          accuracy: agg.totalQuestions > 0 ? Math.round((agg.totalCorrect / agg.totalQuestions) * 100) : 0,
+          strugglingStudents: agg.studentNames.slice(0, 5),
+        }))
+        .sort((a, b) => b.struggleRate - a.struggleRate || a.avgPercent - b.avgPercent);
+
+      res.json({ topics, studentCount: adopted.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch cohort data" });
+    }
+  });
+
   app.get("/api/tutor/students/:studentId/performance", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;

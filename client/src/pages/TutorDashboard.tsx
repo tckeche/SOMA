@@ -303,6 +303,27 @@ export default function TutorDashboard() {
     refetchInterval: 10000,
   });
 
+  const { data: cohortWeaknesses } = useQuery<{
+    topics: Array<{
+      subject: string; topic: string; subtopic: string | null;
+      avgPercent: number; testedStudents: number; totalStudents: number;
+      belowThreshold: number; struggleRate: number;
+      totalQuestions: number; accuracy: number;
+      strugglingStudents: string[];
+    }>;
+    studentCount: number;
+  }>({
+    queryKey: ["/api/tutor/cohort-weaknesses", userId],
+    queryFn: async () => {
+      const res = await authFetch("/api/tutor/cohort-weaknesses");
+      if (!res.ok) return { topics: [], studentCount: 0 };
+      return res.json();
+    },
+    enabled: !!userId,
+    staleTime: 60000,
+    refetchOnWindowFocus: false,
+  });
+
   const markReadMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await authFetch(`/api/tutor/notifications/${id}/read`, { method: "POST" });
@@ -967,6 +988,81 @@ export default function TutorDashboard() {
                 )}
               </div>
             </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                COHORT WEAKNESS REPORT
+               ══════════════════════════════════════════════════════ */}
+            {cohortWeaknesses && cohortWeaknesses.topics.length > 0 && (
+              <FadeInSection>
+                <div className={GP}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.04] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
+                        <Target className="w-3.5 h-3.5 text-amber-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Cohort Weakness Report</h3>
+                        <p className="text-[10px] text-slate-600 font-medium">Topics where multiple students are below 75% mastery &middot; {cohortWeaknesses.studentCount} students</p>
+                      </div>
+                    </div>
+                  </div>
+                  {(() => {
+                    const struggling = cohortWeaknesses.topics.filter((t) => t.belowThreshold > 0);
+                    if (struggling.length === 0) return (
+                      <div className="px-5 py-10 text-center">
+                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                        <p className="text-[11px] text-slate-600 font-medium">No cohort-wide weaknesses detected</p>
+                      </div>
+                    );
+                    return (
+                      <div className="divide-y divide-white/[0.03] max-h-[400px] overflow-y-auto">
+                        {struggling.slice(0, 10).map((t, i) => {
+                          const severity = t.struggleRate >= 75 ? "critical" : t.struggleRate >= 50 ? "high" : t.struggleRate >= 25 ? "moderate" : "low";
+                          const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                          const barColor = t.avgPercent >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.avgPercent >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
+                          return (
+                            <div key={i} className="px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <span className="text-[12px] font-semibold text-slate-200 truncate">{t.topic}</span>
+                                  {t.subtopic && <span className="text-[10px] text-slate-500 truncate">{t.subtopic}</span>}
+                                  <Badge className={`text-[8px] font-bold border shrink-0 ${severityColor}`}>{severity}</Badge>
+                                </div>
+                                <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{t.subject}</span>
+                              </div>
+                              <div className="flex items-center gap-4 mb-2">
+                                <div className="flex-1">
+                                  <div className="h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.avgPercent}%`, background: barColor }} />
+                                  </div>
+                                </div>
+                                <span className={`text-[11px] font-bold tabular-nums w-10 text-right ${t.avgPercent >= 70 ? "text-emerald-400" : t.avgPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                  {t.avgPercent}%
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-4 text-[10px] text-slate-500">
+                                <span>{t.belowThreshold}/{t.testedStudents} students struggling</span>
+                                <span className="text-slate-700">&middot;</span>
+                                <span>{t.totalQuestions} questions attempted</span>
+                                <span className="text-slate-700">&middot;</span>
+                                <span className={t.accuracy >= 70 ? "text-emerald-400" : t.accuracy >= 50 ? "text-amber-400" : "text-red-400"}>{t.accuracy}% accuracy</span>
+                                {t.strugglingStudents.length > 0 && (
+                                  <>
+                                    <span className="text-slate-700">&middot;</span>
+                                    <span className="text-slate-400 truncate">{t.strugglingStudents.join(", ")}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </FadeInSection>
+            )}
 
             </>)}
           </div>

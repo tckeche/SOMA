@@ -20,6 +20,8 @@ import {
   ResponsiveContainer,
   RadarChart, Radar as RechartsRadar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Legend,
+  LineChart, Line,
 } from "recharts";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -354,6 +356,56 @@ export default function TutorStudentDetail() {
     return dates[0] || null;
   }, [assignments]);
 
+  // ── LEARNING CURVE DATA ──────────────────────────────
+  const learningCurveData = useMemo(() => {
+    const graded = assignments
+      .filter((a) => a.score !== null && a.maxScore > 0 && a.completedAt)
+      .sort((a, b) => new Date(a.completedAt!).getTime() - new Date(b.completedAt!).getTime());
+    if (graded.length === 0) return { chartData: [], subjects: [] };
+
+    const subjectSet = new Set<string>();
+    const dateMap: Record<string, Record<string, number[]>> = {};
+
+    for (const a of graded) {
+      const subj = (a.quizSubject || "General").trim();
+      subjectSet.add(subj);
+      const dateKey = format(new Date(a.completedAt!), "yyyy-MM-dd");
+      if (!dateMap[dateKey]) dateMap[dateKey] = {};
+      if (!dateMap[dateKey][subj]) dateMap[dateKey][subj] = [];
+      dateMap[dateKey][subj].push(Math.round((a.score! / a.maxScore) * 100));
+    }
+
+    const subjects = Array.from(subjectSet);
+    const chartData = Object.entries(dateMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateKey, subjScores]) => {
+        const point: Record<string, any> = { date: format(new Date(dateKey), "MMM d") };
+        for (const subj of subjects) {
+          if (subjScores[subj]) {
+            const scores = subjScores[subj];
+            point[subj] = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+          }
+        }
+        // Overall average for the day
+        const allScores = Object.values(subjScores).flat();
+        point.overall = Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length);
+        return point;
+      });
+
+    // Add cumulative moving average
+    let runningSum = 0;
+    let runningCount = 0;
+    for (const point of chartData) {
+      runningSum += point.overall;
+      runningCount++;
+      point.movingAvg = Math.round(runningSum / runningCount);
+    }
+
+    return { chartData, subjects };
+  }, [assignments]);
+
+  const subjectChartColors = ["#8B5CF6", "#22D3EE", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#6366F1", "#14B8A6"];
+
   const TrendIcon = overallTrend === "declining" ? TrendingDown : overallTrend === "improving" ? TrendingUp : Minus;
   const trendColor = overallTrend === "declining" ? "text-red-400" : overallTrend === "improving" ? "text-emerald-400" : "text-slate-500";
   const trendBg = overallTrend === "declining" ? "bg-red-500/8" : overallTrend === "improving" ? "bg-emerald-500/8" : "bg-slate-500/8";
@@ -436,6 +488,96 @@ export default function TutorStudentDetail() {
                 </div>
               </div>
             </div>
+
+            {/* ── LEARNING CURVE ──────────────────────────────────── */}
+            {learningCurveData.chartData.length >= 2 && (
+              <div className={GP}>
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
+                      <Activity className="w-3.5 h-3.5 text-violet-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Learning Curve</h3>
+                      <p className="text-[10px] text-slate-600 font-medium">Score progression over time &middot; {learningCurveData.chartData.length} data points</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {learningCurveData.subjects.map((subj, i) => (
+                      <div key={subj} className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: subjectChartColors[i % subjectChartColors.length] }} />
+                        <span className="text-[10px] text-slate-400 font-medium">{subj}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-0.5 rounded-full bg-slate-400" />
+                      <span className="text-[10px] text-slate-500 font-medium">Moving Avg</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-5">
+                  <div style={{ height: 280 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={learningCurveData.chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                        <defs>
+                          {learningCurveData.subjects.map((subj, i) => {
+                            const color = subjectChartColors[i % subjectChartColors.length];
+                            return (
+                              <linearGradient key={subj} id={`lc-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                                <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                              </linearGradient>
+                            );
+                          })}
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+                        <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                        <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                        <Tooltip
+                          content={({ active, payload, label }: any) => {
+                            if (!active || !payload?.length) return null;
+                            return (
+                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-white/[0.08] backdrop-blur-xl" style={{ background: "rgba(15,23,42,0.95)" }}>
+                                <p className="text-slate-300 font-semibold mb-1">{label}</p>
+                                {payload.map((entry: any, i: number) => (
+                                  <div key={i} className="flex items-center gap-2 py-0.5">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color || entry.stroke }} />
+                                    <span className="text-slate-400">{entry.name}:</span>
+                                    <span className="text-white font-bold tabular-nums">{entry.value}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }}
+                        />
+                        {learningCurveData.subjects.map((subj, i) => (
+                          <Area
+                            key={subj}
+                            type="monotone"
+                            dataKey={subj}
+                            stroke={subjectChartColors[i % subjectChartColors.length]}
+                            fill={`url(#lc-grad-${i})`}
+                            strokeWidth={2}
+                            dot={{ r: 3, fill: subjectChartColors[i % subjectChartColors.length] }}
+                            connectNulls
+                          />
+                        ))}
+                        <Line
+                          type="monotone"
+                          dataKey="movingAvg"
+                          name="Moving Avg"
+                          stroke="#94a3b8"
+                          strokeWidth={1.5}
+                          strokeDasharray="6 3"
+                          dot={false}
+                          connectNulls
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className={GP}>
               {/* Tab header */}
