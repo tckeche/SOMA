@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
+import { motion } from "framer-motion";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
@@ -12,12 +13,22 @@ import {
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, ArrowRight, BarChart3, Target, CheckCircle2,
   CalendarDays, ExternalLink, RefreshCcw, Sparkles,
+  Radar, PieChart as PieChartIcon, TrendingUp, Grid3X3, BarChart2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation, subscribeToSomaMutations } from "@/lib/realtimeEvents";
+import {
+  CohortRadarChart,
+  StudentComparisonBarChart,
+  PerformanceTrendAreaChart,
+  SubjectDistributionChart,
+  CompletionDonutChart,
+  WorkloadHeatmap,
+  ActivityTimelineChart,
+} from "@/components/dashboard-charts";
 
 interface DashboardStats {
   totalStudents: number;
@@ -96,6 +107,45 @@ function TimeElapsedBadge({ date }: { date: string }) {
   if (hours < 1) return <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/15">Just now</span>;
   if (hours < 24) return <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/15">{Math.floor(hours)}h ago</span>;
   return <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">{Math.floor(hours / 24)}d ago</span>;
+}
+
+function FadeInSection({ children, className, delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px" }}
+      transition={{ duration: 0.45, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, subtitle, action }: { icon: LucideIcon; title: string; subtitle?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/15 border border-indigo-500/20">
+          <Icon className="w-3.5 h-3.5 text-indigo-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-100" style={{ letterSpacing: "0.3px" }}>{title}</h3>
+          {subtitle && <p className="text-[10px] text-slate-500 font-medium mt-0.5">{subtitle}</p>}
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function ChartCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`${GP} p-5 ${className || ""}`}>
+      {children}
+    </div>
+  );
 }
 
 function getStatusChip(s: DashboardStats["studentInsights"][0]): { text: string; color: string; dot: string } {
@@ -544,191 +594,338 @@ export default function TutorDashboard() {
               ))}
             </div>
 
-            {/* ── STUDENT PLAQUE GRID ──────────────────────────────── */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/15 border border-indigo-500/20">
-                  <Users className="w-3.5 h-3.5 text-indigo-400" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-100" style={{ letterSpacing: "0.3px" }}>Students</h3>
-                {studentPlaques.length > 0 && (
-                  <span className="text-[10px] font-bold text-slate-500 tabular-nums">{studentPlaques.length}</span>
-                )}
-              </div>
-            </div>
-            {studentPlaques.length === 0 ? (
-              <div className={`${GP} px-6 py-16 text-center`}>
-                <Users className="w-12 h-12 mx-auto text-slate-700 mb-4" />
-                <p className="text-sm text-slate-400 font-medium">No students yet</p>
-                <p className="text-xs text-slate-600 mt-1">Go to the Students tab to adopt students</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="student-plaque-grid">
-                {studentPlaques.map((s, i) => (
-                  <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} index={i} />
-                ))}
-              </div>
-            )}
-
-            {/* ── SUPPORTING PANELS ───────────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-              {/* Marking Queue */}
-              <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-violet-500/[0.06] to-transparent pointer-events-none" />
-                  <div className="flex items-center gap-2.5 relative">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/15 border border-violet-500/20">
-                      <Eye className="w-3.5 h-3.5 text-violet-400" />
-                    </div>
-                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Marking Queue</h3>
+            {/* ══════════════════════════════════════════════════════
+                ROW 2 — Cohort Overview: Radar + Donut + Mini Trend
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection>
+              <SectionHeader icon={Radar} title="Cohort Performance Overview" subtitle="Averages across all subjects and assignment completion" />
+              <div className="grid grid-cols-1 lg:grid-cols-10 gap-5">
+                <ChartCard className="lg:col-span-4">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Subject Radar</p>
+                  <div style={{ height: 280 }}>
+                    <CohortRadarChart stats={stats!} />
                   </div>
-                  {(stats?.recentSubmissions?.length ?? 0) > 0 && (
-                    <span className="relative text-[10px] font-bold text-violet-400 tabular-nums bg-violet-500/15 px-2.5 py-0.5 rounded-lg border border-violet-500/20" data-testid="stat-reviews">
-                      {stats!.recentSubmissions.length}
-                    </span>
+                </ChartCard>
+                <ChartCard className="lg:col-span-2 flex flex-col items-center justify-center">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 self-start">Completion</p>
+                  <div style={{ height: 220, width: "100%" }}>
+                    <CompletionDonutChart stats={stats!} />
+                  </div>
+                </ChartCard>
+                <ChartCard className="lg:col-span-4">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Performance Trend</p>
+                  <div style={{ height: 280 }}>
+                    <PerformanceTrendAreaChart stats={stats!} />
+                  </div>
+                </ChartCard>
+              </div>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 3 — Student Performance Comparison Bar Chart
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <SectionHeader icon={BarChart2} title="Student Comparison" subtitle="Average score, completion rate, and reliability across all students" />
+              <ChartCard>
+                <div style={{ height: 320 }}>
+                  <StudentComparisonBarChart stats={stats!} />
+                </div>
+              </ChartCard>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 4 — Student Card Grid
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <SectionHeader icon={Users} title="Students" subtitle={`${studentPlaques.length} students in your cohort`} />
+              {studentPlaques.length === 0 ? (
+                <div className={`${GP} px-6 py-16 text-center`}>
+                  <Users className="w-12 h-12 mx-auto text-slate-700 mb-4" />
+                  <p className="text-sm text-slate-400 font-medium">No students yet</p>
+                  <p className="text-xs text-slate-600 mt-1">Go to the Students tab to adopt students</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="student-plaque-grid">
+                  {studentPlaques.map((s, i) => (
+                    <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} index={i} />
+                  ))}
+                </div>
+              )}
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 5 — Intervention Queue + Marking Queue
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+
+                {/* Intervention Queue */}
+                <div className={`${GP} lg:col-span-3`}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-rose-500/15 border border-rose-500/20">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
+                      {aiInsights?.insights && aiInsights.insights.length > 0 && (
+                        <span className="text-[9px] font-bold text-violet-400 bg-violet-500/15 px-2 py-0.5 rounded-md border border-violet-500/20" style={{ animation: "status-pulse 2.5s ease-in-out infinite" }}>
+                          <Sparkles className="w-3 h-3 inline mr-0.5 -mt-0.5" /> AI Insights
+                        </span>
+                      )}
+                    </div>
+                    <Link href="/tutor/students">
+                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
+                    </Link>
+                  </div>
+                  {(() => {
+                    const atRisk = studentPlaques.filter(
+                      (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.assigned > 0 && s.completed === 0)
+                    );
+                    if (atRisk.length === 0) return (
+                      <div className="px-5 py-10 text-center">
+                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                        <p className="text-[11px] text-slate-600 font-medium">No students flagged — great work!</p>
+                      </div>
+                    );
+                    return (
+                      <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
+                        {atRisk.slice(0, 6).map((s) => {
+                          const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
+                          const insight = getInsightChip(s.studentName);
+                          return (
+                            <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-[12px] text-slate-100 font-semibold truncate">{s.studentName}</p>
+                                  <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
+                                </div>
+                                {insight && (
+                                  <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
+                                )}
+                                <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                                  {s.weakTopics.length > 0 && <span>Weak: {s.weakTopics.slice(0, 2).join(", ")}</span>}
+                                  {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
+                                </div>
+                              </div>
+                              <Link href={`/tutor/students/${s.studentId}`}>
+                                <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer shrink-0 mt-1">View &rarr;</span>
+                              </Link>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Marking Queue */}
+                <div className={`${GP} lg:col-span-2`}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-violet-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/15 border border-violet-500/20">
+                        <Eye className="w-3.5 h-3.5 text-violet-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Marking Queue</h3>
+                    </div>
+                    {(stats?.recentSubmissions?.length ?? 0) > 0 && (
+                      <span className="relative text-[10px] font-bold text-violet-400 tabular-nums bg-violet-500/15 px-2.5 py-0.5 rounded-lg border border-violet-500/20" data-testid="stat-reviews">
+                        {stats!.recentSubmissions.length}
+                      </span>
+                    )}
+                  </div>
+                  {(stats?.recentSubmissions?.length ?? 0) === 0 ? (
+                    <div className="px-5 py-8 text-center">
+                      <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
+                      <p className="text-[11px] text-slate-600 font-medium">All caught up</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
+                      {stats!.recentSubmissions.slice(0, 8).map((sub) => {
+                        const scoreColor = sub.score >= 75 ? "glow-green" : sub.score >= 50 ? "glow-amber" : "glow-red";
+                        return (
+                          <Link key={sub.reportId} href={`/soma/review/${sub.reportId}`}>
+                            <div className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer" data-testid={`submission-${sub.reportId}`}>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] text-slate-200 font-medium truncate">{sub.studentName}</p>
+                                <p className="text-[10px] text-slate-600 truncate">{sub.quizTitle}</p>
+                              </div>
+                              <TimeElapsedBadge date={sub.createdAt} />
+                              <span className={`text-[11px] font-bold tabular-nums ${scoreColor}`}>{sub.score}%</span>
+                              <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-                {(stats?.recentSubmissions?.length ?? 0) === 0 ? (
-                  <div className="px-5 py-8 text-center">
-                    <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
-                    <p className="text-[11px] text-slate-600 font-medium">All caught up</p>
+              </div>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 6 — Performance Trends (full-width area chart)
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <SectionHeader icon={TrendingUp} title="Performance Trends" subtitle="Cohort and individual student performance over time" />
+              <ChartCard>
+                <div style={{ height: 320 }}>
+                  <PerformanceTrendAreaChart stats={stats!} />
+                </div>
+              </ChartCard>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 7 — Heatmap + Subject Distribution
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <ChartCard className="lg:col-span-3">
+                  <SectionHeader icon={Grid3X3} title="Workload Heatmap" subtitle="Student × Subject performance matrix" />
+                  <WorkloadHeatmap stats={stats!} />
+                </ChartCard>
+                <ChartCard className="lg:col-span-2">
+                  <SectionHeader icon={Target} title="Score Distribution" subtitle="Individual scores per subject" />
+                  <div style={{ height: 300 }}>
+                    <SubjectDistributionChart stats={stats!} />
                   </div>
-                ) : (
-                  <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
-                    {stats!.recentSubmissions.slice(0, 8).map((sub) => {
-                      const scoreColor = sub.score >= 75 ? "glow-green" : sub.score >= 50 ? "glow-amber" : "glow-red";
-                      return (
-                        <Link key={sub.reportId} href={`/soma/review/${sub.reportId}`}>
-                          <div className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer" data-testid={`submission-${sub.reportId}`}>
+                </ChartCard>
+              </div>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 8 — Activity Timeline (stacked bar)
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <SectionHeader icon={Activity} title="Activity &amp; Engagement" subtitle="Submission activity over the past 4 weeks" />
+              <ChartCard>
+                <div style={{ height: 280 }}>
+                  <ActivityTimelineChart stats={stats!} />
+                </div>
+              </ChartCard>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                ROW 9 — Pending Submissions + Recent Assessments
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                {/* Pending Submissions */}
+                <div className={GP}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
+                    </div>
+                    <div className="relative flex items-center gap-2">
+                      {(stats?.pendingAssignments?.length ?? 0) > 0 && (
+                        <span className="text-[10px] font-bold text-amber-400 tabular-nums bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                          {stats!.pendingAssignments.length}
+                        </span>
+                      )}
+                      {overdueCount > 0 && (
+                        <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/15 px-2.5 py-0.5 rounded-lg border border-rose-500/20 status-pulse" data-testid="stat-assigned">
+                          {overdueCount} overdue
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
+                    <div className="px-5 py-8 text-center">
+                      <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
+                      <p className="text-[11px] text-slate-600 font-medium">No pending work</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
+                      {stats!.pendingAssignments.slice(0, 8).map((pa) => {
+                        const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
+                        return (
+                          <div key={pa.assignmentId} className="px-5 py-2.5 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[11px] text-slate-200 font-medium truncate">{sub.studentName}</p>
-                              <p className="text-[10px] text-slate-600 truncate">{sub.quizTitle}</p>
+                              <p className="text-[11px] text-slate-200 font-medium truncate">{pa.studentName}</p>
+                              <p className="text-[10px] text-slate-600 truncate">{pa.quizTitle}</p>
                             </div>
-                            <TimeElapsedBadge date={sub.createdAt} />
-                            <span className={`text-[11px] font-bold tabular-nums ${scoreColor}`}>{sub.score}%</span>
-                            <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
+                            {isOverdue ? (
+                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
+                            ) : pa.dueDate ? (
+                              <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-800/40 px-1.5 py-0.5 rounded border border-white/[0.05]">Pending</span>
+                            )}
                           </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Awaiting Submissions */}
-              <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
-                  <div className="flex items-center gap-2.5 relative">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
-                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        );
+                      })}
                     </div>
-                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
-                  </div>
-                  <div className="relative flex items-center gap-2">
-                    {(stats?.pendingAssignments?.length ?? 0) > 0 && (
-                      <span className="text-[10px] font-bold text-amber-400 tabular-nums bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
-                        {stats!.pendingAssignments.length}
-                      </span>
-                    )}
-                    {overdueCount > 0 && (
-                      <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/15 px-2.5 py-0.5 rounded-lg border border-rose-500/20 status-pulse" data-testid="stat-assigned">
-                        {overdueCount} overdue
-                      </span>
-                    )}
-                  </div>
+                  )}
                 </div>
-                {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
-                  <div className="px-5 py-8 text-center">
-                    <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
-                    <p className="text-[11px] text-slate-600 font-medium">No pending work</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
-                    {stats!.pendingAssignments.slice(0, 8).map((pa) => {
-                      const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
-                      return (
-                        <div key={pa.assignmentId} className="px-5 py-2.5 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] text-slate-200 font-medium truncate">{pa.studentName}</p>
-                            <p className="text-[10px] text-slate-600 truncate">{pa.quizTitle}</p>
-                          </div>
-                          {isOverdue ? (
-                            <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
-                          ) : pa.dueDate ? (
-                            <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
-                          ) : (
-                            <span className="text-[9px] font-bold text-slate-500 bg-slate-800/40 px-1.5 py-0.5 rounded border border-white/[0.05]">Pending</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
 
-              {/* Recent Assessments */}
-              <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
-                  <div className="flex items-center gap-2.5 relative">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
-                      <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                {/* Recent Assessments */}
+                <div className={GP}>
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-2.5 relative">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
+                        <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
                     </div>
-                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
-                  </div>
-                  <Link href="/tutor/assessments">
-                    <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
-                  </Link>
-                </div>
-                {quizzesLoading ? (
-                  <div className="px-5 py-8 flex justify-center">
-                    <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
-                  </div>
-                ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 ? (
-                  <div className="px-5 py-8 text-center">
-                    <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
-                    <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
-                    <Link href="/tutor/assessments/new">
-                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
-                    </Link>
-                  </div>
-                ) : tutorQuizzes.length === 0 ? (
-                  <div className="px-5 py-5 text-center">
-                    <p className="text-[11px] text-slate-400 font-medium">{stats?.totalQuizzes ?? 0} assessments in system</p>
                     <Link href="/tutor/assessments">
-                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">View all assessments &rarr;</span>
+                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
                     </Link>
                   </div>
-                ) : (
-                  <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
-                    {tutorQuizzes.slice(0, 8).map((quiz) => {
-                      const sc = getSubjectColor(quiz.subject);
-                      const SubIcon = getSubjectIcon(quiz.subject);
-                      return (
-                        <div key={quiz.id} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
-                          <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
-                            <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
+                  {quizzesLoading ? (
+                    <div className="px-5 py-8 flex justify-center">
+                      <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
+                    </div>
+                  ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 ? (
+                    <div className="px-5 py-8 text-center">
+                      <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
+                      <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
+                      <Link href="/tutor/assessments/new">
+                        <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
+                      </Link>
+                    </div>
+                  ) : tutorQuizzes.length === 0 ? (
+                    <div className="px-5 py-5 text-center">
+                      <p className="text-[11px] text-slate-400 font-medium">{stats?.totalQuizzes ?? 0} assessments in system</p>
+                      <Link href="/tutor/assessments">
+                        <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">View all assessments &rarr;</span>
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
+                      {tutorQuizzes.slice(0, 8).map((quiz) => {
+                        const sc = getSubjectColor(quiz.subject);
+                        const SubIcon = getSubjectIcon(quiz.subject);
+                        return (
+                          <div key={quiz.id} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
+                            <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
+                              <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-medium text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
+                              <p className="text-[10px] text-slate-600">{quiz.subject || "General"}</p>
+                            </div>
+                            <button
+                              onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
+                              className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                              data-testid={`button-assign-${quiz.id}`}
+                            >
+                              Assign
+                            </button>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-medium text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
-                            <p className="text-[10px] text-slate-600">{quiz.subject || "General"}</p>
-                          </div>
-                          <button
-                            onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
-                            className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                            data-testid={`button-assign-${quiz.id}`}
-                          >
-                            Assign
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </FadeInSection>
 
           </div>
         )}
