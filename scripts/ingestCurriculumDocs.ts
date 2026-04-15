@@ -87,37 +87,54 @@ function inferBoard(filePath: string): string {
 }
 
 /**
- * Infer level from path segment (igcse, as, a2) or filename.
+ * Infer level from path segment (igcse, as, a2, a_level, a-level) or filename.
  */
 function inferLevel(filePath: string): string {
   const rel = filePath.replace(CURRICULUM_DOCS_ROOT, "").toLowerCase();
   if (rel.includes("/igcse/") || rel.includes("_igcse_")) return "IGCSE";
+  if (rel.includes("/a_level/") || rel.includes("/a-level/") || rel.includes("/alevel/")) return "A Level";
   if (rel.includes("/a2/")    || rel.includes("_a2_"))    return "A2";
   if (rel.includes("/as/")    || rel.includes("_as_"))    return "AS";
   return "Unknown";
 }
 
 /**
- * Infer syllabus code from filename (e.g. "0580" in "0580_igcse_maths_syllabus.pdf").
+ * Infer syllabus code from filename.
+ * Handles both "0580_maths.pdf" (code at start) and "Biology_9700_2028.pdf" (code in middle).
  * Falls back to a slug of the filename.
  */
 function inferSyllabusCode(filename: string): string {
-  const match = filename.match(/^(\d{4})/);
-  if (match) return match[1];
+  // Try 4-digit code at start of filename
+  const startMatch = filename.match(/^(\d{4})/);
+  if (startMatch) return startMatch[1];
+  // Try 4-digit code anywhere (e.g. Biology_9700_2028-2030.pdf)
+  const anyMatch = filename.match(/_(\d{4})[_\-.]/);
+  if (anyMatch) return anyMatch[1];
   return path.basename(filename, ".pdf").replace(/[_\s]+/g, "-").toLowerCase();
 }
 
 /**
- * Infer subject from filename tokens (e.g. "mathematics", "physics").
+ * Infer subject from filename tokens.
+ * Supports underscore-separated filenames like "Biology_9700_2028-2030.pdf".
  */
 function inferSubject(filename: string): string | undefined {
   const SUBJECTS = [
-    "mathematics", "physics", "chemistry", "biology",
-    "economics", "geography", "history", "english",
-    "literature", "computer science", "further mathematics",
+    "pure mathematics", "further mathematics", "mathematics",
+    "additional mathematics", "statistics", "mechanics",
+    "physics", "chemistry", "biology",
+    "economics", "geography", "history",
+    "english language", "english literature", "english",
+    "literature", "french", "computer science",
+    "business studies", "business", "accounting",
+    "design and technology", "design",
   ];
   const lower = filename.toLowerCase();
-  return SUBJECTS.find((s) => lower.includes(s.replace(" ", "_")) || lower.includes(s.replace(" ", "-")) || lower.includes(s));
+  // Try each subject — check underscored, hyphenated, and space variants
+  return SUBJECTS.find((s) =>
+    lower.includes(s.replace(/ /g, "_")) ||
+    lower.includes(s.replace(/ /g, "-")) ||
+    lower.includes(s)
+  );
 }
 
 async function ingestFile(
