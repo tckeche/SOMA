@@ -196,6 +196,11 @@ export const studentTopicMastery = pgTable("student_topic_mastery", {
   covered: boolean("covered").notNull().default(false),
   tested: boolean("tested").notNull().default(false),
   attempts: integer("attempts").notNull().default(0),
+  totalQuestions: integer("total_questions").notNull().default(0),
+  correctQuestions: integer("correct_questions").notNull().default(0),
+  confidenceLevel: text("confidence_level").notNull().default("low"),
+  lastTestedAt: timestamp("last_tested_at"),
+  nextReviewAt: timestamp("next_review_at"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("student_topic_mastery_unique_idx").on(table.studentId, table.subject, table.topic, table.subtopic),
@@ -226,6 +231,35 @@ export const suggestedAssessments = pgTable("suggested_assessments", {
   status: text("status").notNull().default("suggested"),
   generatedQuizId: integer("generated_quiz_id").references(() => somaQuizzes.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Structured misconceptions extracted from examiner reports via AI
+export const examinerMisconceptions = pgTable("examiner_misconceptions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => syllabusDocuments.id, { onDelete: "cascade" }),
+  board: text("board").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  subject: text("subject"),
+  topic: text("topic").notNull(),
+  subtopic: text("subtopic"),
+  misconception: text("misconception").notNull(),
+  studentError: text("student_error").notNull(),
+  correctApproach: text("correct_approach").notNull(),
+  frequency: text("frequency").notNull().default("common"),
+  extractedAt: timestamp("extracted_at").defaultNow().notNull(),
+});
+
+// Structured topic inventory extracted from syllabus documents via AI
+export const syllabusTopicInventory = pgTable("syllabus_topic_inventory", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => syllabusDocuments.id, { onDelete: "cascade" }),
+  board: text("board").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  subject: text("subject"),
+  topic: text("topic").notNull(),
+  subtopic: text("subtopic"),
+  description: text("description"),
+  extractedAt: timestamp("extracted_at").defaultNow().notNull(),
 });
 
 export const somaQuizzesRelations = relations(somaQuizzes, ({ one, many }) => ({
@@ -348,6 +382,14 @@ export type InsertStudentTopicMastery = z.infer<typeof insertStudentTopicMastery
 export const insertSuggestedAssessmentSchema = createInsertSchema(suggestedAssessments).omit({ id: true, createdAt: true });
 export type SuggestedAssessment = typeof suggestedAssessments.$inferSelect;
 export type InsertSuggestedAssessment = z.infer<typeof insertSuggestedAssessmentSchema>;
+
+export const insertExaminerMisconceptionSchema = createInsertSchema(examinerMisconceptions).omit({ id: true, extractedAt: true });
+export type ExaminerMisconception = typeof examinerMisconceptions.$inferSelect;
+export type InsertExaminerMisconception = z.infer<typeof insertExaminerMisconceptionSchema>;
+
+export const insertSyllabusTopicInventorySchema = createInsertSchema(syllabusTopicInventory).omit({ id: true, extractedAt: true });
+export type SyllabusTopicInventoryItem = typeof syllabusTopicInventory.$inferSelect;
+export type InsertSyllabusTopicInventoryItem = z.infer<typeof insertSyllabusTopicInventorySchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables, but these schemas are

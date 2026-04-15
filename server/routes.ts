@@ -871,6 +871,138 @@ function sanitizeSubmittedAnswers(
   return sanitized;
 }
 
+/**
+ * Background: Extract structured topics from syllabus docs and misconceptions from examiner reports.
+ * Runs after a syllabus/examiner report PDF is uploaded.
+ */
+async function extractDocumentIntelligence(doc: {
+  id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null;
+}): Promise<void> {
+  const textSlice = doc.extractedText.slice(0, 6000);
+
+  if (doc.documentType === "examiner_report") {
+    // Extract misconceptions from examiner reports
+    const prompt = `You are an educational data analyst. Extract structured misconceptions from the following examiner report.
+
+For each misconception, identify:
+- topic: the mathematical/subject topic
+- subtopic: specific subtopic (or null)
+- misconception: what students commonly get wrong
+- studentError: the typical incorrect approach
+- correctApproach: what students should do instead
+- frequency: "very_common", "common", or "occasional"
+
+Return a JSON array of objects. Extract up to 15 misconceptions. Only real observations from the text.
+
+EXAMINER REPORT TEXT:
+${textSlice}`;
+
+    try {
+      const { data } = await generateWithFallback(prompt, "Extract misconceptions as JSON array.", undefined);
+      const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const items = JSON.parse(cleaned);
+      if (Array.isArray(items) && items.length > 0) {
+        await storage.createExaminerMisconceptions(
+          items.slice(0, 15).map((item: any) => ({
+            documentId: doc.id,
+            board: doc.board,
+            syllabusCode: doc.syllabusCode,
+            subject: doc.subject || item.subject || null,
+            topic: String(item.topic || "General"),
+            subtopic: item.subtopic || null,
+            misconception: String(item.misconception || ""),
+            studentError: String(item.studentError || item.student_error || ""),
+            correctApproach: String(item.correctApproach || item.correct_approach || ""),
+            frequency: item.frequency || "common",
+          }))
+        );
+        console.log(`[Doc Intelligence] Extracted ${items.length} misconceptions from examiner report ${doc.id}`);
+      }
+    } catch (e: any) {
+      console.error(`[Doc Intelligence] Misconception extraction failed for doc ${doc.id}:`, e.message);
+    }
+  } else {
+    // Extract topic inventory from syllabus documents
+    const prompt = `You are a curriculum analyst. Extract the complete topic and subtopic structure from this syllabus document.
+
+For each entry, provide:
+- topic: main topic name
+- subtopic: subtopic name (or null for top-level topics)
+- description: brief description of what this covers
+
+Return a JSON array. Extract ALL topics and subtopics mentioned. Be thorough.
+
+SYLLABUS TEXT:
+${textSlice}`;
+
+    try {
+      const { data } = await generateWithFallback(prompt, "Extract topic inventory as JSON array.", undefined);
+      const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const items = JSON.parse(cleaned);
+      if (Array.isArray(items) && items.length > 0) {
+        await storage.createSyllabusTopicInventory(
+          items.map((item: any) => ({
+            documentId: doc.id,
+            board: doc.board,
+            syllabusCode: doc.syllabusCode,
+            subject: doc.subject || item.subject || null,
+            topic: String(item.topic || "General"),
+            subtopic: item.subtopic || null,
+            description: item.description || null,
+          }))
+        );
+        console.log(`[Doc Intelligence] Extracted ${items.length} topics from syllabus doc ${doc.id}`);
+      }
+    } catch (e: any) {
+      console.error(`[Doc Intelligence] Topic extraction failed for doc ${doc.id}:`, e.message);
+    }
+  }
+}
+
+/**
+ * Background: Update student topic mastery after quiz submission.
+ * Analyzes per-question correctness and updates mastery records.
+ */
+async function updateMasteryFromSubmission(
+  studentId: string,
+  quizSubject: string | null,
+  questions: { id: number; correctAnswer: string; marks: number; topicTag: string | null; subtopicTag: string | null }[],
+  studentAnswers: Record<string, string>,
+): Promise<void> {
+  // Group by topic+subtopic
+  const groups: Record<string, { correct: number; total: number; marks: number; maxMarks: number }> = {};
+  for (const q of questions) {
+    const topic = q.topicTag || "General";
+    const subtopic = q.subtopicTag || "";
+    const key = `${topic}|||${subtopic}`;
+    if (!groups[key]) groups[key] = { correct: 0, total: 0, marks: 0, maxMarks: 0 };
+    groups[key].total += 1;
+    groups[key].maxMarks += q.marks;
+    const answered = studentAnswers[String(q.id)];
+    if (answered === q.correctAnswer) {
+      groups[key].correct += 1;
+      groups[key].marks += q.marks;
+    }
+  }
+
+  const subject = quizSubject || "General";
+  for (const [key, stats] of Object.entries(groups)) {
+    const [topic, subtopic] = key.split("|||");
+    const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
+    await storage.upsertStudentTopicMastery({
+      studentId,
+      subject,
+      topic,
+      subtopic: subtopic || null,
+      understandingPercent: pct,
+      covered: true,
+      tested: true,
+      totalQuestions: stats.total,
+      correctQuestions: stats.correct,
+    });
+  }
+}
+
 async function runBackgroundGrading(
   reportId: number,
   questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number }[],
@@ -1752,6 +1884,65 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.delete("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const subjectId = Number(req.params.subjectId);
+      if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      await storage.deleteStudentSubject(subjectId, studentId);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to delete subject" });
+    }
+  });
+
+  // Get topic inventory for a syllabus
+  app.get("/api/tutor/syllabus-topics", requireTutor, async (req, res) => {
+    try {
+      const { board, syllabusCode, subject } = req.query;
+      const topics = await storage.listSyllabusTopicInventory({
+        board: board ? String(board) : undefined,
+        syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
+        subject: subject ? String(subject) : undefined,
+      });
+      res.json(topics);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+    }
+  });
+
+  // Get examiner misconceptions for a syllabus
+  app.get("/api/tutor/examiner-misconceptions", requireTutor, async (req, res) => {
+    try {
+      const { board, syllabusCode, topic } = req.query;
+      const misconceptions = await storage.listExaminerMisconceptions({
+        board: board ? String(board) : undefined,
+        syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
+        topic: topic ? String(topic) : undefined,
+      });
+      res.json(misconceptions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch misconceptions" });
+    }
+  });
+
+  // Get student mastery data
+  app.get("/api/tutor/students/:studentId/mastery", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      const mastery = await storage.listStudentTopicMastery(studentId);
+      res.json(mastery);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
+    }
+  });
+
   app.get("/api/tutor/students/:studentId/performance", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
@@ -2026,6 +2217,34 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const primarySubject = subjects[0];
       const displayName = student?.displayName || "Student";
 
+      // Use syllabus topic inventory for better "uncovered" detection
+      const topicInventory = await storage.listSyllabusTopicInventory({
+        board: primarySubject.examBody,
+        syllabusCode: primarySubject.syllabusCode,
+      });
+      if (topicInventory.length > 0) {
+        const coveredTopics = new Set([
+          ...analysis.weak.map((w) => w.topic.toLowerCase()),
+          ...analysis.strong.map((s) => s.topic.toLowerCase()),
+          ...existingMastery.map((m) => m.topic.toLowerCase()),
+        ]);
+        const uncoveredFromInventory = topicInventory
+          .filter((t) => !coveredTopics.has(t.topic.toLowerCase()))
+          .slice(0, 5);
+        // Prepend truly uncovered syllabus topics
+        for (const t of uncoveredFromInventory) {
+          if (!analysis.uncovered.some((u) => u.topic.toLowerCase() === t.topic.toLowerCase())) {
+            analysis.uncovered.unshift({ subject: t.subject || primarySubject.subject, topic: t.topic, subtopic: t.subtopic });
+          }
+        }
+      }
+
+      // Fetch structured misconceptions for this syllabus
+      const misconceptions = await storage.listExaminerMisconceptions({
+        board: primarySubject.examBody,
+        syllabusCode: primarySubject.syllabusCode,
+      });
+
       // Determine struggling area: prioritize remediation targets (previously flagged, still weak)
       const struggleTopic = remediationTargets[0] || analysis.weak[0];
       const struggleAttempts = remediationTargets[0]?.attempts ?? 0;
@@ -2075,6 +2294,19 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           weaknesses: analysis.weak,
           strengths: analysis.strong,
           uncovered: analysis.uncovered,
+          misconceptions: misconceptions.slice(0, 5).map((m) => ({
+            topic: m.topic,
+            subtopic: m.subtopic,
+            misconception: m.misconception,
+            frequency: m.frequency,
+          })),
+          remediationTargets: remediationTargets.slice(0, 3).map((r) => ({
+            topic: r.topic,
+            subtopic: r.subtopic,
+            understanding: r.understandingPercent,
+            attempts: r.attempts,
+            confidence: r.confidenceLevel,
+          })),
         },
         suggestions: created,
       });
@@ -2107,18 +2339,26 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       if (syllabusDoc?.chunks?.length) {
         syllabusContext = syllabusDoc.chunks.map((c) => c.content).join("\n").slice(0, 4000);
       }
-      // Fetch examiner reports separately — they may be stored under the same board/level/code
-      const allDocs = await storage.listSyllabusDocuments(tutorId);
-      const examinerDocs = allDocs.filter(
-        (d) => d.documentType === "examiner_report" &&
-               d.board === primarySubject.examBody &&
-               d.syllabusCode === primarySubject.syllabusCode
-      );
-      if (examinerDocs.length > 0) {
-        examinerReportContext = examinerDocs
-          .map((d) => d.extractedText)
-          .join("\n---\n")
-          .slice(0, 4000);
+      // Fetch structured misconceptions (from AI extraction) and raw examiner reports as fallback
+      const structuredMisconceptions = await storage.listExaminerMisconceptions({
+        board: primarySubject.examBody,
+        syllabusCode: primarySubject.syllabusCode,
+      });
+
+      // Fallback: fetch raw examiner report text if no structured data exists
+      if (structuredMisconceptions.length === 0) {
+        const allDocs = await storage.listSyllabusDocuments(tutorId);
+        const examinerDocs = allDocs.filter(
+          (d) => d.documentType === "examiner_report" &&
+                 d.board === primarySubject.examBody &&
+                 d.syllabusCode === primarySubject.syllabusCode
+        );
+        if (examinerDocs.length > 0) {
+          examinerReportContext = examinerDocs
+            .map((d) => d.extractedText)
+            .join("\n---\n")
+            .slice(0, 4000);
+        }
       }
 
       const quizzes: any[] = [];
@@ -2128,10 +2368,21 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           ? scoreSyllabusChunks(syllabusDoc.chunks, `${item.topic} ${item.subtopic || ""}`).join("\n")
           : syllabusContext;
 
-        // Build topic-relevant examiner report excerpts
-        const topicExaminerContext = examinerReportContext
-          ? `\n\nEXAMINER REPORT INSIGHTS (real data from past examination sessions):\n${examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors that target real student misconceptions identified in past exams.`
-          : "";
+        // Build examiner context: prefer structured misconceptions, fall back to raw text
+        const topicMisconceptions = structuredMisconceptions.filter(
+          (m) => m.topic.toLowerCase() === item.topic.toLowerCase() ||
+                 (item.subtopic && m.subtopic?.toLowerCase() === item.subtopic.toLowerCase())
+        );
+        let topicExaminerContext = "";
+        if (topicMisconceptions.length > 0) {
+          topicExaminerContext = `\n\nSTRUCTURED EXAMINER MISCONCEPTIONS for ${item.topic}:\n` +
+            topicMisconceptions.map((m) =>
+              `- Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}\n  Frequency: ${m.frequency}`
+            ).join("\n") +
+            "\nUse these real examiner-identified misconceptions to design distractors and traps.";
+        } else if (examinerReportContext) {
+          topicExaminerContext = `\n\nEXAMINER REPORT INSIGHTS (real data from past examination sessions):\n${examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors that target real student misconceptions identified in past exams.`;
+        }
 
         // Progressive difficulty distribution based on purpose and student mastery
         let difficultyDistribution: { easy: number; medium: number; hard: number } | undefined;
@@ -2505,6 +2756,11 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         uploadedAt: created.document.uploadedAt,
         chunkCount: created.chunks.length,
       });
+
+      // Background: extract structured topics and misconceptions via AI
+      extractDocumentIntelligence(created.document).catch((e) =>
+        console.error("[Doc Intelligence] Extraction failed:", e.message)
+      );
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Failed to upload syllabus PDF" });
     }
@@ -3530,6 +3786,14 @@ ${JSON.stringify({
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
       runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore).catch(() => {});
+
+      // Auto-update topic mastery from this submission
+      updateMasteryFromSubmission(
+        studentId,
+        quiz?.subject || null,
+        allQuestions.map((q) => ({ id: q.id, correctAnswer: q.correctAnswer, marks: q.marks, topicTag: q.topicTag, subtopicTag: q.subtopicTag })),
+        sanitizedAnswers,
+      ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

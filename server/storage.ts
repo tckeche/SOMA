@@ -12,9 +12,12 @@ import {
   type TutorNotification, type InsertTutorNotification,
   type StudentTopicMastery,
   type SuggestedAssessment, type InsertSuggestedAssessment,
+  type ExaminerMisconception, type InsertExaminerMisconception,
+  type SyllabusTopicInventoryItem, type InsertSyllabusTopicInventoryItem,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
   studentSubjects, tutorNotifications, studentTopicMastery, suggestedAssessments,
+  examinerMisconceptions, syllabusTopicInventory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
@@ -134,6 +137,8 @@ export interface IStorage {
     masteryAchieved?: boolean;
     covered?: boolean;
     tested?: boolean;
+    totalQuestions?: number;
+    correctQuestions?: number;
   }): Promise<StudentTopicMastery>;
   listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]>;
   createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification>;
@@ -142,6 +147,16 @@ export interface IStorage {
   createSuggestedAssessment(suggestion: InsertSuggestedAssessment): Promise<SuggestedAssessment>;
   listSuggestedAssessments(tutorId: string, studentId: string): Promise<SuggestedAssessment[]>;
   updateSuggestedAssessmentStatus(id: number, tutorId: string, status: string, generatedQuizId?: number): Promise<SuggestedAssessment | undefined>;
+
+  deleteStudentSubject(id: number, studentId: string): Promise<void>;
+
+  // Examiner misconception storage
+  createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]>;
+  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]>;
+
+  // Syllabus topic inventory
+  createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]>;
+  listSyllabusTopicInventory(filter: { board?: string; syllabusCode?: string; subject?: string }): Promise<SyllabusTopicInventoryItem[]>;
 
 }
 
@@ -269,18 +284,26 @@ class DatabaseStorage implements IStorage {
     masteryAchieved?: boolean;
     covered?: boolean;
     tested?: boolean;
+    totalQuestions?: number;
+    correctQuestions?: number;
   }): Promise<StudentTopicMastery> {
     const clampedPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
+    const totalQ = input.totalQuestions ?? 0;
+    const confidenceLevel = totalQ >= 10 ? "high" : totalQ >= 5 ? "medium" : "low";
     const payload = {
       studentId: input.studentId,
       subject: input.subject,
       topic: input.topic,
       subtopic: input.subtopic ?? null,
       understandingPercent: clampedPercent,
-      masteryAchieved: input.masteryAchieved ?? clampedPercent >= 75,
+      masteryAchieved: input.masteryAchieved ?? (clampedPercent >= 75 && totalQ >= 5),
       covered: Boolean(input.covered),
       tested: Boolean(input.tested),
       attempts: 1,
+      totalQuestions: totalQ,
+      correctQuestions: input.correctQuestions ?? 0,
+      confidenceLevel,
+      lastTestedAt: new Date(),
       updatedAt: new Date(),
     };
     const [row] = await this.database
@@ -294,6 +317,10 @@ class DatabaseStorage implements IStorage {
           covered: payload.covered,
           tested: payload.tested,
           attempts: sql`${studentTopicMastery.attempts} + 1`,
+          totalQuestions: sql`${studentTopicMastery.totalQuestions} + ${totalQ}`,
+          correctQuestions: sql`${studentTopicMastery.correctQuestions} + ${input.correctQuestions ?? 0}`,
+          confidenceLevel,
+          lastTestedAt: new Date(),
           updatedAt: new Date(),
         },
       })
@@ -343,6 +370,40 @@ class DatabaseStorage implements IStorage {
       .where(and(eq(suggestedAssessments.id, id), eq(suggestedAssessments.tutorId, tutorId)))
       .returning();
     return row;
+  }
+
+  async deleteStudentSubject(id: number, studentId: string): Promise<void> {
+    await this.database
+      .delete(studentSubjects)
+      .where(and(eq(studentSubjects.id, id), eq(studentSubjects.studentId, studentId)));
+  }
+
+  async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {
+    if (items.length === 0) return [];
+    return this.database.insert(examinerMisconceptions).values(items).returning();
+  }
+
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+    const conditions = [];
+    if (filter.board) conditions.push(eq(examinerMisconceptions.board, filter.board));
+    if (filter.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, filter.syllabusCode));
+    if (filter.topic) conditions.push(eq(examinerMisconceptions.topic, filter.topic));
+    if (conditions.length === 0) return this.database.select().from(examinerMisconceptions);
+    return this.database.select().from(examinerMisconceptions).where(and(...conditions));
+  }
+
+  async createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]> {
+    if (items.length === 0) return [];
+    return this.database.insert(syllabusTopicInventory).values(items).returning();
+  }
+
+  async listSyllabusTopicInventory(filter: { board?: string; syllabusCode?: string; subject?: string }): Promise<SyllabusTopicInventoryItem[]> {
+    const conditions = [];
+    if (filter.board) conditions.push(eq(syllabusTopicInventory.board, filter.board));
+    if (filter.syllabusCode) conditions.push(eq(syllabusTopicInventory.syllabusCode, filter.syllabusCode));
+    if (filter.subject) conditions.push(eq(syllabusTopicInventory.subject, filter.subject));
+    if (conditions.length === 0) return this.database.select().from(syllabusTopicInventory);
+    return this.database.select().from(syllabusTopicInventory).where(and(...conditions));
   }
 
   async getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>> {
@@ -905,6 +966,8 @@ class MemoryStorage implements IStorage {
   private studentTopicMasteryList: StudentTopicMastery[] = [];
   private tutorNotificationsList: TutorNotification[] = [];
   private suggestedAssessmentsList: SuggestedAssessment[] = [];
+  private examinerMisconceptionsList: ExaminerMisconception[] = [];
+  private syllabusTopicInventoryList: SyllabusTopicInventoryItem[] = [];
   private somaQuizId = 1;
   private somaQuestionId = 1;
   private somaReportId = 1;
@@ -916,6 +979,8 @@ class MemoryStorage implements IStorage {
   private studentMasteryId = 1;
   private tutorNotificationId = 1;
   private suggestedAssessmentId = 1;
+  private examinerMisconceptionId = 1;
+  private syllabusTopicInventoryId = 1;
 
   async createSomaQuiz(quiz: InsertSomaQuiz): Promise<SomaQuiz> {
     const created: SomaQuiz = {
@@ -1249,8 +1314,12 @@ class MemoryStorage implements IStorage {
     masteryAchieved?: boolean;
     covered?: boolean;
     tested?: boolean;
+    totalQuestions?: number;
+    correctQuestions?: number;
   }): Promise<StudentTopicMastery> {
     const clampedPercent = Math.max(0, Math.min(100, Math.round(input.understandingPercent)));
+    const totalQ = input.totalQuestions ?? 0;
+    const confidenceLevel = totalQ >= 10 ? "high" : totalQ >= 5 ? "medium" : "low";
     const existing = this.studentTopicMasteryList.find((m) =>
       m.studentId === input.studentId
       && m.subject === input.subject
@@ -1259,10 +1328,14 @@ class MemoryStorage implements IStorage {
     );
     if (existing) {
       existing.understandingPercent = clampedPercent;
-      existing.masteryAchieved = input.masteryAchieved ?? clampedPercent >= 75;
+      existing.masteryAchieved = input.masteryAchieved ?? (clampedPercent >= 75 && (existing.totalQuestions + totalQ) >= 5);
       existing.covered = Boolean(input.covered);
       existing.tested = Boolean(input.tested);
       existing.attempts += 1;
+      existing.totalQuestions += totalQ;
+      existing.correctQuestions += input.correctQuestions ?? 0;
+      existing.confidenceLevel = (existing.totalQuestions >= 10 ? "high" : existing.totalQuestions >= 5 ? "medium" : "low");
+      existing.lastTestedAt = new Date();
       existing.updatedAt = new Date();
       return existing;
     }
@@ -1273,10 +1346,15 @@ class MemoryStorage implements IStorage {
       topic: input.topic,
       subtopic: input.subtopic || null,
       understandingPercent: clampedPercent,
-      masteryAchieved: input.masteryAchieved ?? clampedPercent >= 75,
+      masteryAchieved: input.masteryAchieved ?? (clampedPercent >= 75 && totalQ >= 5),
       covered: Boolean(input.covered),
       tested: Boolean(input.tested),
       attempts: 1,
+      totalQuestions: totalQ,
+      correctQuestions: input.correctQuestions ?? 0,
+      confidenceLevel,
+      lastTestedAt: new Date(),
+      nextReviewAt: null,
       updatedAt: new Date(),
     };
     this.studentTopicMasteryList.push(row);
@@ -1328,6 +1406,44 @@ class MemoryStorage implements IStorage {
     row.status = status;
     row.generatedQuizId = generatedQuizId ?? null;
     return row;
+  }
+
+  async deleteStudentSubject(id: number, studentId: string): Promise<void> {
+    this.studentSubjectsList = this.studentSubjectsList.filter(
+      (s) => !(s.id === id && s.studentId === studentId)
+    );
+  }
+
+  async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {
+    return items.map((item) => {
+      const row: ExaminerMisconception = { id: this.examinerMisconceptionId++, extractedAt: new Date(), ...item, subject: item.subject ?? null, subtopic: item.subtopic ?? null, frequency: item.frequency ?? "common" };
+      this.examinerMisconceptionsList.push(row);
+      return row;
+    });
+  }
+
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+    return this.examinerMisconceptionsList.filter((m) =>
+      (!filter.board || m.board === filter.board) &&
+      (!filter.syllabusCode || m.syllabusCode === filter.syllabusCode) &&
+      (!filter.topic || m.topic === filter.topic)
+    );
+  }
+
+  async createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]> {
+    return items.map((item) => {
+      const row: SyllabusTopicInventoryItem = { id: this.syllabusTopicInventoryId++, extractedAt: new Date(), ...item, subject: item.subject ?? null, subtopic: item.subtopic ?? null, description: item.description ?? null };
+      this.syllabusTopicInventoryList.push(row);
+      return row;
+    });
+  }
+
+  async listSyllabusTopicInventory(filter: { board?: string; syllabusCode?: string; subject?: string }): Promise<SyllabusTopicInventoryItem[]> {
+    return this.syllabusTopicInventoryList.filter((t) =>
+      (!filter.board || t.board === filter.board) &&
+      (!filter.syllabusCode || t.syllabusCode === filter.syllabusCode) &&
+      (!filter.subject || t.subject === filter.subject)
+    );
   }
 
   async getAllSomaUsers(): Promise<SomaUser[]> {
