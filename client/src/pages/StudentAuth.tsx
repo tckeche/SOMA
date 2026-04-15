@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { AuthRequestError, supabase, authFetch, withTimeout } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft } from "lucide-react";
+import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft, BookOpen, Hash, GraduationCap } from "lucide-react";
 import { Link } from "wouter";
 
 type AuthMode = "login" | "signup" | "reset";
@@ -12,6 +12,9 @@ export default function StudentAuth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [syllabus, setSyllabus] = useState("");
+  const [syllabusCode, setSyllabusCode] = useState("");
+  const [level, setLevel] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState<{ email?: string; password?: string }>({});
@@ -29,6 +32,9 @@ export default function StudentAuth() {
     setEmail("");
     setPassword("");
     setDisplayName("");
+    setSyllabus("");
+    setSyllabusCode("");
+    setLevel("");
     setShowPassword(false);
     setFormErrors({});
     setAuthError(null);
@@ -134,6 +140,14 @@ export default function StudentAuth() {
     const nextErrors: { email?: string; password?: string } = {};
     if (!email.trim()) nextErrors.email = "Please enter your email address.";
     if (!password.trim()) nextErrors.password = "Please create a password.";
+    if (!syllabus || !syllabusCode.trim() || !level) {
+      toast({
+        title: "Missing required fields",
+        description: "Please select your syllabus, enter your syllabus code, and choose your level.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (Object.keys(nextErrors).length > 0) {
       setFormErrors(nextErrors);
       toast({
@@ -165,6 +179,9 @@ export default function StudentAuth() {
         options: {
           data: {
             display_name: displayName || email.split("@")[0],
+            syllabus,
+            syllabus_code: syllabusCode.trim(),
+            level,
           },
         },
       }), { timeoutMs: 18000, stage: "supabase_signup" });
@@ -383,20 +400,92 @@ export default function StudentAuth() {
               </div>
             )}
             {mode === "signup" && (
-              <div>
-                <label className="text-xs text-slate-400 mb-1.5 block font-medium">Display Name</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Your name"
-                    className="glass-input w-full pl-10 pr-4 py-3 text-sm"
-                    data-testid="input-display-name"
-                  />
+              <>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">Display Name</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Your name"
+                      className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                      data-testid="input-display-name"
+                    />
+                  </div>
                 </div>
-              </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                    Syllabus <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <select
+                      value={syllabus}
+                      onChange={(e) => setSyllabus(e.target.value)}
+                      required
+                      className="glass-input w-full pl-10 pr-4 py-3 text-sm appearance-none cursor-pointer"
+                      data-testid="input-syllabus"
+                    >
+                      <option value="" disabled>Select your syllabus</option>
+                      <option value="Cambridge">Cambridge (IGCSE / AS / A-Level)</option>
+                      <option value="IB">IB (International Baccalaureate)</option>
+                      <option value="IEB">IEB</option>
+                      <option value="CAPS">CAPS (South Africa)</option>
+                      <option value="Edexcel">Edexcel</option>
+                      <option value="AQA">AQA</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                    Syllabus Code <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      value={syllabusCode}
+                      onChange={(e) => setSyllabusCode(e.target.value)}
+                      placeholder="e.g. 0580, MAA HL"
+                      required
+                      className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                      data-testid="input-syllabus-code"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                    Level <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <select
+                      value={level}
+                      onChange={(e) => setLevel(e.target.value)}
+                      required
+                      className="glass-input w-full pl-10 pr-4 py-3 text-sm appearance-none cursor-pointer"
+                      data-testid="input-level"
+                    >
+                      <option value="" disabled>Select your level</option>
+                      <option value="IGCSE">IGCSE</option>
+                      <option value="AS Level">AS Level</option>
+                      <option value="A2 Level">A2 Level</option>
+                      <option value="IB SL">IB SL</option>
+                      <option value="IB HL">IB HL</option>
+                      <option value="Grade 8">Grade 8</option>
+                      <option value="Grade 9">Grade 9</option>
+                      <option value="Grade 10">Grade 10</option>
+                      <option value="Grade 11">Grade 11</option>
+                      <option value="Grade 12">Grade 12</option>
+                      <option value="University">University</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+              </>
             )}
 
             <div>
