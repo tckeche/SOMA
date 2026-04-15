@@ -6,6 +6,7 @@ import {
   AreaChart, Area,
   PieChart, Pie, Cell,
 } from "recharts";
+import { BarChart2 as BarChart2Icon } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────
    Error Boundary — wraps any chart to prevent cascade crashes
@@ -288,12 +289,18 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
   if (!stats) return null;
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
-  const data = useMemo(() => {
+  const { data, hasEnoughData } = useMemo(() => {
     const subjects = [...new Set(
       (stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean)
     )] as string[];
 
-    return subjects.map((subj) => {
+    // Check if any subject has at least 5 submissions
+    const sufficientData = subjects.some((subj) => {
+      const count = (stats.recentSubmissions || []).filter((r) => r.subject === subj).length;
+      return count >= 5;
+    });
+
+    const data = subjects.map((subj) => {
       const rows = (stats.recentSubmissions || []).filter((r) => r.subject === subj);
       const avg = rows.length
         ? Math.round(rows.reduce((a, b) => a + b.score, 0) / rows.length)
@@ -309,16 +316,19 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
       }
       return row;
     });
+    return { data, hasEnoughData: sufficientData };
   }, [stats, allNames]);
 
   const activeStudents = allNames.filter((name) =>
     data.some((d) => d[name] !== undefined)
   );
 
-  if (data.length === 0) {
+  if (data.length === 0 || !hasEnoughData) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
-        No submission data yet
+      <div className="flex flex-col items-center justify-center h-full gap-2">
+        <BarChart2Icon className="w-8 h-8 text-slate-700" />
+        <p className="text-slate-500 text-xs font-medium text-center px-4">More data needed to show score distribution</p>
+        <p className="text-slate-600 text-[10px]">Requires 5+ submissions per subject</p>
       </div>
     );
   }
@@ -367,21 +377,21 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
 
 export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
   if (!stats) return null;
-  const data = useMemo(() => {
+  const { data, completedCount, total } = useMemo(() => {
     let completed = 0, awaiting = 0, notStarted = 0;
     for (const s of stats.studentInsights || []) {
       completed += s.completed;
       awaiting += s.awaiting;
       notStarted += Math.max(0, s.assigned - s.completed - s.awaiting);
     }
-    return [
+    const total = completed + awaiting + notStarted;
+    const data = [
       { name: "Completed", value: completed, color: "#22C55E" },
-      { name: "Awaiting", value: awaiting, color: "#FBBF24" },
+      { name: "Pending", value: awaiting, color: "#FBBF24" },
       { name: "Not Started", value: notStarted, color: "#475569" },
     ].filter((d) => d.value > 0);
+    return { data, completedCount: completed, total };
   }, [stats]);
-
-  const total = data.reduce((a, b) => a + b.value, 0);
 
   if (total === 0) {
     return (
@@ -391,35 +401,55 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
     );
   }
 
+  const ALL_SEGMENTS = [
+    { name: "Completed", color: "#22C55E" },
+    { name: "Pending", color: "#FBBF24" },
+    { name: "Not Started", color: "#475569" },
+  ];
+
   return (
-    <div className="relative w-full h-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie data={data} cx="50%" cy="50%" innerRadius="55%" outerRadius="80%" dataKey="value"
-            stroke="none" paddingAngle={2} animationBegin={0} animationDuration={800}>
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip content={({ active, payload }: any) => {
-            if (!active || !payload?.length) return null;
-            const d = payload[0]?.payload;
-            return (
-              <div className="rounded-xl px-3 py-2 text-xs border border-white/[0.08] backdrop-blur-xl"
-                style={{ background: "rgba(15,23,42,0.95)" }}>
-                <p className="text-white font-bold">{d?.name}</p>
-                <p className="text-slate-400">{d?.value} assignments ({total > 0 ? Math.round((d?.value / total) * 100) : 0}%)</p>
-              </div>
-            );
-          }} />
-        </PieChart>
-      </ResponsiveContainer>
-      {/* Center label */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="text-center">
-          <p className="text-2xl font-bold text-white tabular-nums">{total}</p>
-          <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">Total</p>
+    <div className="relative w-full h-full flex flex-col">
+      <div className="relative flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius="55%" outerRadius="80%" dataKey="value"
+              stroke="none" paddingAngle={2} animationBegin={0} animationDuration={800}>
+              {data.map((entry, i) => (
+                <Cell key={i} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip content={({ active, payload }: any) => {
+              if (!active || !payload?.length) return null;
+              const d = payload[0]?.payload;
+              return (
+                <div className="rounded-xl px-3 py-2 text-xs border border-white/[0.08] backdrop-blur-xl"
+                  style={{ background: "rgba(15,23,42,0.95)" }}>
+                  <p className="text-white font-bold">{d?.name}</p>
+                  <p className="text-slate-400">{d?.value} tasks ({total > 0 ? Math.round((d?.value / total) * 100) : 0}%)</p>
+                </div>
+              );
+            }} />
+          </PieChart>
+        </ResponsiveContainer>
+        {/* Center label */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <p className="text-xl font-bold text-white tabular-nums">{completedCount}<span className="text-sm text-slate-500 font-semibold"> / {total}</span></p>
+            <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">tasks done</p>
+          </div>
         </div>
+      </div>
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-4 pt-1 pb-1">
+        {ALL_SEGMENTS.map((seg) => {
+          const match = data.find((d) => d.name === seg.name);
+          return (
+            <div key={seg.name} className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: seg.color }} />
+              <span className="text-[9px] text-slate-400 font-medium">{seg.name}{match ? ` (${match.value})` : ""}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -487,7 +517,7 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
           {subjects.map((subj) => (
             <div key={subj} className="flex-1 min-w-[60px] text-center">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
-                {subj.length > 8 ? subj.slice(0, 8) + "…" : subj}
+                {subj}
               </span>
             </div>
           ))}
@@ -505,8 +535,8 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
               return (
                 <div key={subj} className="flex-1 min-w-[60px] h-9 rounded-lg flex items-center justify-center transition-all hover:scale-105 cursor-default group relative"
                   style={{ background: cellColor(cell?.avg) }}>
-                  <span className="text-[11px] font-bold tabular-nums" style={{ color: textColor(cell?.avg) }}>
-                    {cell ? `${cell.avg}%` : "—"}
+                  <span className={`font-bold tabular-nums ${cell ? "text-[11px]" : "text-[8px]"}`} style={{ color: textColor(cell?.avg) }}>
+                    {cell ? `${cell.avg}%` : "No assignments"}
                   </span>
                   {/* Tooltip on hover */}
                   {cell && (

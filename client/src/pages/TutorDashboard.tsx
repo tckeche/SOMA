@@ -12,7 +12,7 @@ import {
   LayoutDashboard, Clock, Send, Eye, Bell,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, Target, CheckCircle2,
-  CalendarDays, ExternalLink, RefreshCcw, Sparkles,
+  CalendarDays, ExternalLink, RefreshCcw,
   Radar, TrendingUp, Grid3X3, BarChart2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -530,34 +530,31 @@ export default function TutorDashboard() {
           <div className="space-y-6 animate-in fade-in duration-500">
 
             {/* ── TITLE BAR ──────────────────────────────────────── */}
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-              <div>
-                <p className="text-sm text-violet-400/80 font-medium mb-0.5">{getGreeting()}, {displayName.split(" ")[0]}</p>
-                <h2 className="text-4xl font-extrabold text-slate-100 tracking-tight" style={{ letterSpacing: "0.5px" }}>SOMA</h2>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-[12px] text-slate-500 font-medium tracking-wide">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
-                  {dataUpdatedAt > 0 && (
-                    <span className="text-[10px] text-slate-600 font-medium">
-                      &middot; Updated {formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
-                    </span>
-                  )}
-                  <button
-                    onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] })}
-                    className="text-slate-600 hover:text-violet-400 transition-colors p-1 rounded-md hover:bg-white/[0.04]"
-                    aria-label="Refresh data"
-                  >
-                    <RefreshCcw className="w-3 h-3" />
-                  </button>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-lg font-bold text-slate-100">{getGreeting()}, {displayName.split(" ")[0]}</h2>
+                <span className="text-[12px] text-slate-500 font-medium">{format(new Date(), "EEEE, d MMMM yyyy")}</span>
+                {dataUpdatedAt > 0 && (
+                  <span className="text-[10px] text-slate-600 font-medium">
+                    &middot; Updated {formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
+                  </span>
+                )}
+                <button
+                  onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] })}
+                  className="text-slate-600 hover:text-violet-400 transition-colors p-1 rounded-md hover:bg-white/[0.04]"
+                  aria-label="Refresh data"
+                >
+                  <RefreshCcw className="w-3 h-3" />
+                </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2.5">
                 <Link href="/tutor/students">
-                  <span className="flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl text-[13px] font-medium text-slate-300 bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] hover:border-white/[0.1] transition-all cursor-pointer" data-testid="button-view-students">
+                  <span className="flex items-center gap-2 px-3.5 py-2 min-h-[36px] rounded-xl text-[12px] font-medium text-slate-300 bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] hover:border-white/[0.1] transition-all cursor-pointer" data-testid="button-view-students">
                     <Users className="w-3.5 h-3.5" /> Students
                   </span>
                 </Link>
                 <Link href="/tutor/assessments/new">
-                  <span className="glow-button flex items-center gap-2 px-5 py-2.5 min-h-[42px] rounded-xl text-[13px] font-semibold cursor-pointer" data-testid="button-create-assessment">
+                  <span className="glow-button flex items-center gap-2 px-4 py-2 min-h-[36px] rounded-xl text-[12px] font-semibold cursor-pointer" data-testid="button-create-assessment">
                     <Plus className="w-3.5 h-3.5" /> New Assessment
                   </span>
                 </Link>
@@ -670,11 +667,6 @@ export default function TutorDashboard() {
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
                       </div>
                       <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
-                      {aiInsights?.insights && aiInsights.insights.length > 0 && (
-                        <span className="text-[9px] font-bold text-violet-400 bg-violet-500/15 px-2 py-0.5 rounded-md border border-violet-500/20" style={{ animation: "status-pulse 2.5s ease-in-out infinite" }}>
-                          <Sparkles className="w-3 h-3 inline mr-0.5 -mt-0.5" /> AI Insights
-                        </span>
-                      )}
                     </div>
                     <Link href="/tutor/students">
                       <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
@@ -828,7 +820,7 @@ export default function TutorDashboard() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="student-plaque-grid">
                   {studentPlaques.map((s, i) => (
-                    <StudentPlaque key={s.studentId} student={s} insightChip={getInsightChip(s.studentName)} index={i} />
+                    <StudentPlaque key={s.studentId} student={s} index={i} />
                   ))}
                 </div>
               )}
@@ -897,7 +889,7 @@ export default function TutorDashboard() {
                   <div className="px-5 py-8 flex justify-center">
                     <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
                   </div>
-                ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 ? (
+                ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 && (stats?.recentSubmissions?.length ?? 0) === 0 ? (
                   <div className="px-5 py-8 text-center">
                     <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
                     <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
@@ -905,11 +897,33 @@ export default function TutorDashboard() {
                       <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
                   </div>
+                ) : tutorQuizzes.length === 0 && (stats?.recentSubmissions?.length ?? 0) > 0 ? (
+                  <div className="divide-y divide-white/[0.03] max-h-[280px] overflow-y-auto">
+                    {stats!.recentSubmissions.slice(0, 5).map((sub) => {
+                      const sc = getSubjectColor(sub.subject);
+                      const SubIcon = getSubjectIcon(sub.subject);
+                      return (
+                        <div key={sub.reportId} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors">
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
+                            <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-medium text-slate-200 truncate">{sub.quizTitle}</p>
+                            <p className="text-[10px] text-slate-600">{sub.studentName} &middot; {format(new Date(sub.createdAt), "MMM d, yyyy")}</p>
+                          </div>
+                          <span className={`text-[11px] font-bold tabular-nums ${sub.score >= 70 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-rose-400"}`}>
+                            {sub.score}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : tutorQuizzes.length === 0 ? (
-                  <div className="px-5 py-5 text-center">
-                    <p className="text-[11px] text-slate-400 font-medium">{stats?.totalQuizzes ?? 0} assessments in system</p>
-                    <Link href="/tutor/assessments">
-                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">View all assessments &rarr;</span>
+                  <div className="px-5 py-8 text-center">
+                    <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
+                    <p className="text-[11px] text-slate-600 font-medium">No assessments to show</p>
+                    <Link href="/tutor/assessments/new">
+                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
                   </div>
                 ) : (
@@ -1043,7 +1057,7 @@ interface PlaqueStudent {
   lastSubmission: { reportId: number; quizTitle: string; score: number } | null;
 }
 
-function StudentPlaque({ student: s, insightChip, index = 0 }: { student: PlaqueStudent; insightChip: string | null; index?: number }) {
+function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; index?: number }) {
   const [flipped, setFlipped] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -1151,46 +1165,16 @@ function StudentPlaque({ student: s, insightChip, index = 0 }: { student: Plaque
         <div className={`plaque-back ${GP} p-5 h-full flex flex-col overflow-y-auto`}>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em] mb-3">{s.studentName}</p>
 
-          {/* Weak subjects with micro bars */}
-          {s.weakTopics.length > 0 && (
-            <div className="mb-3">
-              <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-2">Weak Subjects</p>
-              <div className="space-y-1.5">
-                {s.weakTopics.slice(0, 3).map((t, i) => (
-                  <div key={t} className="flex items-center gap-2">
-                    <span className="text-[9px] text-slate-600 font-bold w-3 shrink-0">{i + 1}</span>
-                    <span className="text-[10px] text-slate-300 font-medium truncate flex-1">{t}</span>
-                    <div className="w-14 h-[4px] rounded-full bg-slate-800/60 overflow-hidden shrink-0">
-                      <div className="h-full rounded-full" style={{ width: `${Math.max(20, 80 - i * 20)}%`, background: "linear-gradient(90deg, #f43f5e, #fb7185)" }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Coverage gaps */}
-          {s.lowestCoverage.length > 0 && s.weakTopics.length === 0 && (
-            <div className="mb-3">
-              <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-1.5">Gaps</p>
-              <p className="text-[10px] text-slate-400 leading-relaxed">{s.lowestCoverage.join(", ")}</p>
-            </div>
-          )}
-
-          {/* Insight chip */}
-          {insightChip && (
-            <div className="mb-3 px-2.5 py-2 rounded-lg bg-indigo-500/[0.06] border border-indigo-500/10">
-              <p className="text-[10px] text-indigo-300/90 leading-relaxed">{insightChip}</p>
-            </div>
-          )}
-
-          {/* Timestamps */}
-          <div className="text-[10px] text-slate-500 space-y-1 mb-3">
+          {/* Last assessment info */}
+          <div className="text-[10px] text-slate-500 space-y-1.5 mb-3">
             {s.lastActivity && (
-              <p className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-slate-600 shrink-0" /> {formatDistanceToNow(new Date(s.lastActivity), { addSuffix: true })}</p>
+              <p className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-slate-600 shrink-0" /> Last active {formatDistanceToNow(new Date(s.lastActivity), { addSuffix: true })}</p>
             )}
             {s.lastSubmission && (
               <p className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-slate-600 shrink-0" /> {s.lastSubmission.score}% &middot; {s.lastSubmission.quizTitle}</p>
+            )}
+            {!s.lastActivity && !s.lastSubmission && (
+              <p className="text-[10px] text-slate-600 font-medium">No submissions yet</p>
             )}
           </div>
 
