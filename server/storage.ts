@@ -8,8 +8,12 @@ import {
   type TutorComment, type InsertTutorComment,
   type SyllabusDocument, type InsertSyllabusDocument,
   type SyllabusChunk, type InsertSyllabusChunk,
+  type StudentProfile, type InsertStudentProfile,
+  type StudentGroup, type InsertStudentGroup,
+  type StudentGroupMember, type InsertStudentGroupMember,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
+  studentProfiles, studentGroups, studentGroupMembers,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
@@ -118,6 +122,28 @@ export interface IStorage {
   getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined>;
   getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined>;
 
+  // Student Profiles
+  getStudentProfile(userId: string): Promise<StudentProfile | undefined>;
+  upsertStudentProfile(userId: string, data: Partial<Omit<InsertStudentProfile, "userId">>): Promise<StudentProfile>;
+
+  // Student Groups
+  getStudentGroups(tutorId: string): Promise<StudentGroup[]>;
+  createStudentGroup(group: InsertStudentGroup): Promise<StudentGroup>;
+  updateStudentGroup(groupId: number, tutorId: string, data: Partial<Pick<StudentGroup, "name" | "description">>): Promise<StudentGroup | undefined>;
+  deleteStudentGroup(groupId: number, tutorId: string): Promise<void>;
+  getStudentGroupMembers(groupId: number): Promise<SomaUser[]>;
+  addStudentGroupMembers(groupId: number, studentIds: string[]): Promise<StudentGroupMember[]>;
+  removeStudentGroupMember(groupId: number, studentId: string): Promise<void>;
+  getStudentGroupsForStudent(tutorId: string, studentId: string): Promise<StudentGroup[]>;
+  getGroupDashboardStats(groupId: number, tutorId: string): Promise<{
+    group: StudentGroup;
+    students: SomaUser[];
+    totalAssigned: number;
+    totalCompleted: number;
+    avgScore: number | null;
+    subjectBreakdown: { subject: string; average: number; count: number }[];
+    studentInsights: { studentId: string; studentName: string; assigned: number; completed: number; avgScore: number | null; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[];
+  } | undefined>;
 }
 
 class DatabaseStorage implements IStorage {
@@ -761,6 +787,224 @@ class DatabaseStorage implements IStorage {
       sql`INSERT INTO password_reset_requests (email) VALUES (${email})`
     );
   }
+
+  // ─── Student Profiles ───────────────────────────────────────────────
+
+  async getStudentProfile(userId: string): Promise<StudentProfile | undefined> {
+    const [profile] = await this.database.select().from(studentProfiles).where(eq(studentProfiles.userId, userId));
+    return profile;
+  }
+
+  async upsertStudentProfile(userId: string, data: Partial<Omit<InsertStudentProfile, "userId">>): Promise<StudentProfile> {
+    const existing = await this.getStudentProfile(userId);
+    if (existing) {
+      const [updated] = await this.database
+        .update(studentProfiles)
+        .set({ ...data, updatedAt: new Date() } as any)
+        .where(eq(studentProfiles.userId, userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.database
+      .insert(studentProfiles)
+      .values({ userId, ...data } as any)
+      .returning();
+    return created;
+  }
+
+  // ─── Student Groups ─────────────────────────────────────────────────
+
+  async getStudentGroups(tutorId: string): Promise<StudentGroup[]> {
+    return this.database.select().from(studentGroups).where(eq(studentGroups.tutorId, tutorId));
+  }
+
+  async createStudentGroup(group: InsertStudentGroup): Promise<StudentGroup> {
+    const [created] = await this.database.insert(studentGroups).values(group).returning();
+    return created;
+  }
+
+  async updateStudentGroup(groupId: number, tutorId: string, data: Partial<Pick<StudentGroup, "name" | "description">>): Promise<StudentGroup | undefined> {
+    const [updated] = await this.database
+      .update(studentGroups)
+      .set(data)
+      .where(and(eq(studentGroups.id, groupId), eq(studentGroups.tutorId, tutorId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteStudentGroup(groupId: number, tutorId: string): Promise<void> {
+    await this.database
+      .delete(studentGroups)
+      .where(and(eq(studentGroups.id, groupId), eq(studentGroups.tutorId, tutorId)));
+  }
+
+  async getStudentGroupMembers(groupId: number): Promise<SomaUser[]> {
+    const rows = await this.database
+      .select({ user: somaUsers })
+      .from(studentGroupMembers)
+      .innerJoin(somaUsers, eq(studentGroupMembers.studentId, somaUsers.id))
+      .where(eq(studentGroupMembers.groupId, groupId));
+    return rows.map((r) => r.user);
+  }
+
+  async addStudentGroupMembers(groupId: number, studentIds: string[]): Promise<StudentGroupMember[]> {
+    if (studentIds.length === 0) return [];
+    return this.database
+      .insert(studentGroupMembers)
+      .values(studentIds.map((studentId) => ({ groupId, studentId })))
+      .onConflictDoNothing()
+      .returning();
+  }
+
+  async removeStudentGroupMember(groupId: number, studentId: string): Promise<void> {
+    await this.database
+      .delete(studentGroupMembers)
+      .where(and(eq(studentGroupMembers.groupId, groupId), eq(studentGroupMembers.studentId, studentId)));
+  }
+
+  async getStudentGroupsForStudent(tutorId: string, studentId: string): Promise<StudentGroup[]> {
+    const rows = await this.database
+      .select({ group: studentGroups })
+      .from(studentGroupMembers)
+      .innerJoin(studentGroups, eq(studentGroupMembers.groupId, studentGroups.id))
+      .where(and(eq(studentGroups.tutorId, tutorId), eq(studentGroupMembers.studentId, studentId)));
+    return rows.map((r) => r.group);
+  }
+
+  async getGroupDashboardStats(groupId: number, tutorId: string) {
+    // Verify the group belongs to this tutor
+    const [group] = await this.database.select().from(studentGroups)
+      .where(and(eq(studentGroups.id, groupId), eq(studentGroups.tutorId, tutorId)));
+    if (!group) return undefined;
+
+    // Get members
+    const students = await this.getStudentGroupMembers(groupId);
+    const studentIds = students.map((s) => s.id);
+    if (studentIds.length === 0) {
+      return {
+        group,
+        students: [],
+        totalAssigned: 0,
+        totalCompleted: 0,
+        avgScore: null,
+        subjectBreakdown: [],
+        studentInsights: [],
+      };
+    }
+
+    // Assignments for these students
+    const assignments = await this.database.select()
+      .from(quizAssignments)
+      .where(inArray(quizAssignments.studentId, studentIds));
+    const totalAssigned = assignments.length;
+    const totalCompleted = assignments.filter((a) => a.status === "completed").length;
+
+    // Reports for these students + quiz totals
+    const reports = await this.database
+      .select({
+        report: somaReports,
+        quiz: somaQuizzes,
+      })
+      .from(somaReports)
+      .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+      .where(inArray(somaReports.studentId, studentIds));
+
+    const quizIds = Array.from(new Set(reports.map((r) => r.quiz.id)));
+    const maxScores = quizIds.length > 0
+      ? await this.database
+          .select({ quizId: somaQuestions.quizId, total: sql<number>`coalesce(sum(${somaQuestions.marks}), 0)::int` })
+          .from(somaQuestions)
+          .where(inArray(somaQuestions.quizId, quizIds))
+          .groupBy(somaQuestions.quizId)
+      : [];
+    const maxScoreMap = new Map(maxScores.map((r) => [r.quizId, r.total]));
+
+    // Overall avg score
+    let totalPct = 0;
+    let pctCount = 0;
+    for (const { report, quiz } of reports) {
+      const max = maxScoreMap.get(quiz.id) || 1;
+      totalPct += (report.score / max) * 100;
+      pctCount++;
+    }
+    const avgScore = pctCount > 0 ? Math.round(totalPct / pctCount) : null;
+
+    // Subject breakdown
+    const subjectMap = new Map<string, { total: number; count: number }>();
+    for (const { report, quiz } of reports) {
+      const subj = quiz.subject || "General";
+      const max = maxScoreMap.get(quiz.id) || 1;
+      const pct = (report.score / max) * 100;
+      const entry = subjectMap.get(subj) || { total: 0, count: 0 };
+      entry.total += pct;
+      entry.count++;
+      subjectMap.set(subj, entry);
+    }
+    const subjectBreakdown = Array.from(subjectMap.entries()).map(([subject, { total, count }]) => ({
+      subject,
+      average: Math.round(total / count),
+      count,
+    }));
+
+    // Per-student insights
+    const studentInsights = students.map((student) => {
+      const sa = assignments.filter((a) => a.studentId === student.id);
+      const sr = reports.filter((r) => r.report.studentId === student.id);
+      const assigned = sa.length;
+      const completed = sa.filter((a) => a.status === "completed").length;
+
+      let studentAvg: number | null = null;
+      if (sr.length > 0) {
+        let t = 0;
+        for (const { report, quiz } of sr) {
+          const max = maxScoreMap.get(quiz.id) || 1;
+          t += (report.score / max) * 100;
+        }
+        studentAvg = Math.round(t / sr.length);
+      }
+
+      // Trend: compare recent 3 vs previous 3
+      const sorted = [...sr].sort((a, b) => new Date(b.report.createdAt).getTime() - new Date(a.report.createdAt).getTime());
+      const recent3 = sorted.slice(0, 3);
+      const prev3 = sorted.slice(3, 6);
+      let trend: "improving" | "declining" | "stable" = "stable";
+      if (recent3.length >= 2 && prev3.length >= 1) {
+        const recentAvg = recent3.reduce((s, { report, quiz }) => s + (report.score / (maxScoreMap.get(quiz.id) || 1)) * 100, 0) / recent3.length;
+        const prevAvg = prev3.reduce((s, { report, quiz }) => s + (report.score / (maxScoreMap.get(quiz.id) || 1)) * 100, 0) / prev3.length;
+        if (recentAvg > prevAvg + 5) trend = "improving";
+        else if (prevAvg > recentAvg + 5) trend = "declining";
+      }
+
+      // Weak topics: subjects with avg < 55%
+      const topicMap = new Map<string, { total: number; count: number }>();
+      for (const { report, quiz } of sr) {
+        const subj = quiz.subject || "General";
+        const max = maxScoreMap.get(quiz.id) || 1;
+        const pct = (report.score / max) * 100;
+        const entry = topicMap.get(subj) || { total: 0, count: 0 };
+        entry.total += pct;
+        entry.count++;
+        topicMap.set(subj, entry);
+      }
+      const weakTopics = Array.from(topicMap.entries())
+        .filter(([, { total, count }]) => total / count < 55)
+        .sort(([, a], [, b]) => a.total / a.count - b.total / b.count)
+        .slice(0, 3)
+        .map(([subj]) => subj);
+
+      return {
+        studentId: student.id,
+        studentName: student.displayName || student.email.split("@")[0],
+        assigned,
+        completed,
+        avgScore: studentAvg,
+        trend,
+        weakTopics,
+      };
+    });
+
+    return { group, students, totalAssigned, totalCompleted, avgScore, subjectBreakdown, studentInsights };
+  }
 }
 
 class MemoryStorage implements IStorage {
@@ -1155,6 +1399,22 @@ class MemoryStorage implements IStorage {
   async logPasswordResetRequest(_email: string): Promise<void> {
     // no-op in memory storage
   }
+
+  async getStudentProfile(_userId: string): Promise<StudentProfile | undefined> { return undefined; }
+  async upsertStudentProfile(userId: string, _data: Partial<Omit<InsertStudentProfile, "userId">>): Promise<StudentProfile> {
+    return { id: 1, userId, age: null, school: null, syllabus: null, level: null, tutoredSubjects: [], updatedAt: new Date(), createdAt: new Date() };
+  }
+  async getStudentGroups(_tutorId: string): Promise<StudentGroup[]> { return []; }
+  async createStudentGroup(group: InsertStudentGroup): Promise<StudentGroup> {
+    return { id: 1, ...group, description: group.description ?? null, createdAt: new Date() };
+  }
+  async updateStudentGroup(_groupId: number, _tutorId: string, _data: Partial<Pick<StudentGroup, "name" | "description">>): Promise<StudentGroup | undefined> { return undefined; }
+  async deleteStudentGroup(_groupId: number, _tutorId: string): Promise<void> {}
+  async getStudentGroupMembers(_groupId: number): Promise<SomaUser[]> { return []; }
+  async addStudentGroupMembers(_groupId: number, _studentIds: string[]): Promise<StudentGroupMember[]> { return []; }
+  async removeStudentGroupMember(_groupId: number, _studentId: string): Promise<void> {}
+  async getStudentGroupsForStudent(_tutorId: string, _studentId: string): Promise<StudentGroup[]> { return []; }
+  async getGroupDashboardStats(_groupId: number, _tutorId: string) { return undefined; }
 }
 
 let _storage: IStorage | null = null;

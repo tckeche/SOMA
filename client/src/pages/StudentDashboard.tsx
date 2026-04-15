@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { subscribeToSomaMutations } from "@/lib/realtimeEvents";
+import ProfileCompletionModal from "@/components/ProfileCompletionModal";
 
 interface ReportWithQuiz {
   id: number;
@@ -662,6 +663,9 @@ export default function StudentDashboard() {
           </div>
         </div>
       )}
+
+      {/* Profile completion prompt for students with incomplete profiles */}
+      <ProfileCompletionModal />
     </div>
   );
 }

@@ -160,6 +160,44 @@ export const quizAssignments = pgTable("quiz_assignments", {
   uniqueIndex("quiz_assignment_unique_idx").on(table.quizId, table.studentId),
 ]);
 
+// ─── Student Profiles ───────────────────────────────────────────────
+export const STUDENT_LEVELS = [
+  "Form 1", "Form 2", "Form 3", "Form 4",
+  "Lower Sixth", "Upper Sixth", "Other",
+] as const;
+
+export const studentProfiles = pgTable("student_profiles", {
+  id: serial("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  age: integer("age"),
+  school: text("school"),
+  syllabus: text("syllabus"),
+  level: text("level"),
+  tutoredSubjects: jsonb("tutored_subjects").$type<string[]>().default([]),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("student_profile_user_idx").on(table.userId),
+]);
+
+// ─── Student Groups (Tutor Folders) ─────────────────────────────────
+export const studentGroups = pgTable("student_groups", {
+  id: serial("id").primaryKey(),
+  tutorId: uuid("tutor_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const studentGroupMembers = pgTable("student_group_members", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").notNull().references(() => studentGroups.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("group_member_unique_idx").on(table.groupId, table.studentId),
+]);
+
 export const passwordResetRequests = pgTable("password_reset_requests", {
   id: serial("id").primaryKey(),
   email: text("email").notNull(),
@@ -191,11 +229,39 @@ export const somaQuestionsRelations = relations(somaQuestions, ({ one }) => ({
   }),
 }));
 
-export const somaUsersRelations = relations(somaUsers, ({ many }) => ({
+export const studentProfilesRelations = relations(studentProfiles, ({ one }) => ({
+  user: one(somaUsers, {
+    fields: [studentProfiles.userId],
+    references: [somaUsers.id],
+  }),
+}));
+
+export const studentGroupsRelations = relations(studentGroups, ({ one, many }) => ({
+  tutor: one(somaUsers, {
+    fields: [studentGroups.tutorId],
+    references: [somaUsers.id],
+  }),
+  members: many(studentGroupMembers),
+}));
+
+export const studentGroupMembersRelations = relations(studentGroupMembers, ({ one }) => ({
+  group: one(studentGroups, {
+    fields: [studentGroupMembers.groupId],
+    references: [studentGroups.id],
+  }),
+  student: one(somaUsers, {
+    fields: [studentGroupMembers.studentId],
+    references: [somaUsers.id],
+  }),
+}));
+
+export const somaUsersRelations = relations(somaUsers, ({ one, many }) => ({
   reports: many(somaReports),
   tutoredStudents: many(tutorStudents, { relationName: "tutorToStudents" }),
   tutors: many(tutorStudents, { relationName: "studentToTutors" }),
   quizAssignments: many(quizAssignments),
+  profile: one(studentProfiles),
+  ownedGroups: many(studentGroups),
 }));
 
 export const somaReportsRelations = relations(somaReports, ({ one }) => ({
@@ -277,6 +343,18 @@ export type InsertQuizAssignment = z.infer<typeof insertQuizAssignmentSchema>;
 export const insertTutorCommentSchema = createInsertSchema(tutorComments).omit({ id: true, createdAt: true });
 export type TutorComment = typeof tutorComments.$inferSelect;
 export type InsertTutorComment = z.infer<typeof insertTutorCommentSchema>;
+
+export const insertStudentProfileSchema = createInsertSchema(studentProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type StudentProfile = typeof studentProfiles.$inferSelect;
+export type InsertStudentProfile = z.infer<typeof insertStudentProfileSchema>;
+
+export const insertStudentGroupSchema = createInsertSchema(studentGroups).omit({ id: true, createdAt: true });
+export type StudentGroup = typeof studentGroups.$inferSelect;
+export type InsertStudentGroup = z.infer<typeof insertStudentGroupSchema>;
+
+export const insertStudentGroupMemberSchema = createInsertSchema(studentGroupMembers).omit({ id: true, createdAt: true });
+export type StudentGroupMember = typeof studentGroupMembers.$inferSelect;
+export type InsertStudentGroupMember = z.infer<typeof insertStudentGroupMemberSchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables, but these schemas are

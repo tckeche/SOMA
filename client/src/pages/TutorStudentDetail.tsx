@@ -114,6 +114,24 @@ export default function TutorStudentDetail() {
     enabled: !!userId && !!studentId,
   });
 
+  interface StudentProfileData {
+    age: number | null;
+    school: string | null;
+    syllabus: string | null;
+    level: string | null;
+    tutoredSubjects: string[] | null;
+  }
+
+  const { data: studentProfile } = useQuery<StudentProfileData | null>({
+    queryKey: ["/api/tutor/students", studentId, "profile"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/profile`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!userId && !!studentId,
+  });
+
   const { data: comments = [], isLoading: commentsLoading } = useQuery<TutorComment[]>({
     queryKey: ["/api/tutor/students", studentId, "comments"],
     queryFn: async () => {
@@ -321,6 +339,34 @@ export default function TutorStudentDetail() {
                         </span>
                       )}
                     </div>
+                    {studentProfile && (studentProfile.school || studentProfile.level || studentProfile.age) && (
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {studentProfile.age && (
+                          <span className="text-[11px] text-slate-500 font-medium">Age {studentProfile.age}</span>
+                        )}
+                        {studentProfile.school && (
+                          <span className="text-[11px] text-slate-400 font-medium bg-slate-800/50 px-2 py-0.5 rounded-md">{studentProfile.school}</span>
+                        )}
+                        {studentProfile.level && (
+                          <span className="text-[11px] text-indigo-400/80 font-medium bg-indigo-500/10 px-2 py-0.5 rounded-md">{studentProfile.level}</span>
+                        )}
+                        {studentProfile.syllabus && (
+                          <span className="text-[11px] text-cyan-400/80 font-medium bg-cyan-500/10 px-2 py-0.5 rounded-md">{studentProfile.syllabus}</span>
+                        )}
+                      </div>
+                    )}
+                    {studentProfile?.tutoredSubjects && studentProfile.tutoredSubjects.length > 0 && (
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {studentProfile.tutoredSubjects.map((subj) => {
+                          const sc = getSubjectColor(subj);
+                          return (
+                            <span key={subj} className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${sc.bg} ${sc.label}`}>
+                              {subj}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 

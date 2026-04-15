@@ -1236,6 +1236,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Bulk fetch profiles for all adopted students
+  app.get("/api/tutor/students/profiles", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const students = await storage.getAdoptedStudents(tutorId);
+      const profiles: Record<string, any> = {};
+      for (const s of students) {
+        const profile = await storage.getStudentProfile(s.id);
+        if (profile) profiles[s.id] = profile;
+      }
+      res.json(profiles);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch profiles" });
+    }
+  });
+
   // Get students available for adoption
   app.get("/api/tutor/students/available", requireTutor, async (req, res) => {
     try {
@@ -1650,6 +1666,122 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(stats);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch stats" });
+    }
+  });
+
+  // ─── Student Groups (Tutor Folders) ─────────────────────────────
+
+  app.get("/api/tutor/groups", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const groups = await storage.getStudentGroups(tutorId);
+      // Include member counts
+      const enriched = await Promise.all(groups.map(async (g) => {
+        const members = await storage.getStudentGroupMembers(g.id);
+        return { ...g, memberCount: members.length };
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch groups" });
+    }
+  });
+
+  app.post("/api/tutor/groups", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const { name, description } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "Group name is required" });
+      }
+      const group = await storage.createStudentGroup({ tutorId, name: name.trim(), description: description?.trim() || null });
+      res.json(group);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create group" });
+    }
+  });
+
+  app.put("/api/tutor/groups/:groupId", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const groupId = Number(req.params.groupId);
+      const { name, description } = req.body;
+      const updated = await storage.updateStudentGroup(groupId, tutorId, {
+        ...(name ? { name: name.trim() } : {}),
+        ...(description !== undefined ? { description: description?.trim() || null } : {}),
+      });
+      if (!updated) return res.status(404).json({ message: "Group not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to update group" });
+    }
+  });
+
+  app.delete("/api/tutor/groups/:groupId", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const groupId = Number(req.params.groupId);
+      await storage.deleteStudentGroup(groupId, tutorId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to delete group" });
+    }
+  });
+
+  app.get("/api/tutor/groups/:groupId/members", requireTutor, async (req, res) => {
+    try {
+      const groupId = Number(req.params.groupId);
+      const members = await storage.getStudentGroupMembers(groupId);
+      res.json(members);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch members" });
+    }
+  });
+
+  app.post("/api/tutor/groups/:groupId/members", requireTutor, async (req, res) => {
+    try {
+      const groupId = Number(req.params.groupId);
+      const { studentIds } = req.body;
+      if (!Array.isArray(studentIds) || studentIds.length === 0) {
+        return res.status(400).json({ message: "studentIds array is required" });
+      }
+      const added = await storage.addStudentGroupMembers(groupId, studentIds);
+      res.json(added);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to add members" });
+    }
+  });
+
+  app.delete("/api/tutor/groups/:groupId/members/:studentId", requireTutor, async (req, res) => {
+    try {
+      const groupId = Number(req.params.groupId);
+      const studentId = String(req.params.studentId);
+      await storage.removeStudentGroupMember(groupId, studentId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to remove member" });
+    }
+  });
+
+  app.get("/api/tutor/groups/:groupId/dashboard", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const groupId = Number(req.params.groupId);
+      const stats = await storage.getGroupDashboardStats(groupId, tutorId);
+      if (!stats) return res.status(404).json({ message: "Group not found" });
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch group dashboard" });
+    }
+  });
+
+  // Tutor can view any adopted student's profile
+  app.get("/api/tutor/students/:studentId/profile", requireTutor, async (req, res) => {
+    try {
+      const studentId = String(req.params.studentId);
+      const profile = await storage.getStudentProfile(studentId);
+      res.json(profile || null);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch student profile" });
     }
   });
 
@@ -2574,6 +2706,35 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json(detail);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch tutor detail" });
+    }
+  });
+
+  // ─── Student Profile Routes ────────────────────────────────────
+
+  app.get("/api/student/profile", requireSupabaseAuth, async (req, res) => {
+    try {
+      const userId = (req as any).authUser.id;
+      const profile = await storage.getStudentProfile(userId);
+      res.json(profile || null);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch profile" });
+    }
+  });
+
+  app.put("/api/student/profile", requireSupabaseAuth, async (req, res) => {
+    try {
+      const userId = (req as any).authUser.id;
+      const { age, school, syllabus, level, tutoredSubjects } = req.body;
+      const profile = await storage.upsertStudentProfile(userId, {
+        age: age != null ? Number(age) : undefined,
+        school: school || undefined,
+        syllabus: syllabus || undefined,
+        level: level || undefined,
+        tutoredSubjects: Array.isArray(tutoredSubjects) ? tutoredSubjects : undefined,
+      });
+      res.json(profile);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to update profile" });
     }
   });
 
