@@ -15,6 +15,7 @@ import TutorStudents from "@/pages/TutorStudents";
 import TutorStudentDetail from "@/pages/TutorStudentDetail";
 import TutorAssessments from "@/pages/TutorAssessments";
 import TutorAssessmentDetails from "@/pages/TutorAssessmentDetails";
+import TutorGroupDashboard from "@/pages/TutorGroupDashboard";
 import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import SuperAdminTutorDetail from "@/pages/SuperAdminTutorDetail";
 import SomaChatPage from "@/pages/soma-chat";
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>
       <Route path="/tutor/assessment/:quizId">{(params) => <ProtectedRoute component={TutorAssessmentDetails} params={params} />}</Route>
       <Route path="/tutor/students/:id">{(params) => <ProtectedRoute component={TutorStudentDetail} params={params} />}</Route>
+      <Route path="/tutor/groups/:id">{(params) => <ProtectedRoute component={TutorGroupDashboard} params={params} />}</Route>
       <Route path="/tutor/students">{() => <ProtectedRoute component={TutorStudents} />}</Route>
       <Route path="/tutor/assessments/edit/:id">{(params) => <ProtectedRoute component={BuilderPage} params={params} />}</Route>
       <Route path="/tutor/assessments/new">{() => <ProtectedRoute component={BuilderPage} />}</Route>
