@@ -273,13 +273,22 @@ STRICT SCOPE: syllabus=${context.syllabus}, level=${context.level}, topic=${cont
 Never drift to adjacent topics not explicitly in scope.
 Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
 Hard questions must involve reasoning/application (not recall).
-For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.`;
+For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.
+
+CRITICAL LATEX FORMATTING RULE — THIS IS MANDATORY AND NON-NEGOTIABLE:
+Every mathematical expression in EVERY stem, option, and explanation MUST be wrapped in LaTeX delimiters.
+- Inline math: $...$  (e.g. $\\frac{1}{2}xe^{x^2}+C$, $\\sqrt{x^2+1}$, $x^2 + 3x - 4$)
+- Display math: $$...$$ (for standalone equations)
+NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$. Every answer option that contains any mathematical notation must start and end with $ delimiters.`;
   const checkerPrompt = `You are Gemini (Checker). Audit the Maker JSON with strict accuracy.
 You must evaluate ONLY the provided topic/context and input JSON.
 Do not hallucinate facts, syllabus requirements, or missing context.
 Reject or correct anything unsupported by the provided data.
 Enforce mathematical correctness, strict JSON structure, and syllabus-level alignment (${context.syllabus}/${context.level}).
-Return only validated JSON that is fully supported by the given input.`;
+Return only validated JSON that is fully supported by the given input.
+
+LATEX VALIDATION — CHECK EVERY FIELD:
+Scan every stem, every option, and every explanation. Any mathematical expression NOT wrapped in $...$ or $$...$$ must be fixed by wrapping it. Raw LaTeX commands (\\frac, \\sqrt, \\int, ^{, _{) MUST be inside $ delimiters. Fix them if the Maker missed any.`;
   const finalizerPrompt = `Perform final curriculum compliance and syllabus audit.
 Reject questions outside topic/subtopic scope.
 Return strictly valid JSON only with exactly ${questionCount} questions.`;

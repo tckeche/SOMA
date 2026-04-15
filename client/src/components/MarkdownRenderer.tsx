@@ -11,12 +11,16 @@ interface MarkdownRendererProps {
 
 function normalizeLatexDelimiters(text: string): string {
   let result = text;
+
+  // Step 1: \[...\] → $$...$$
   result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`);
+
+  // Step 2: \(...\) → $...$
   result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
-  // AI often returns LaTeX environments (array/tabular/aligned/cases) without delimiters.
-  // remark-math only parses them when wrapped in $...$ or $$...$$.
+
+  // Step 3: bare \begin{env}...\end{env} environments → $$...$$
   result = result.replace(
-    /(\\begin\{(?:array|tabular|aligned|cases)\}[\s\S]*?\\end\{(?:array|tabular|aligned|cases)\})/g,
+    /(\\begin\{(?:array|tabular|aligned|cases|matrix|pmatrix|bmatrix|vmatrix)\}[\s\S]*?\\end\{(?:array|tabular|aligned|cases|matrix|pmatrix|bmatrix|vmatrix)\})/g,
     (match, _group, offset, string) => {
       const before = string.slice(0, offset);
       const after = string.slice(offset + match.length);
@@ -26,6 +30,20 @@ function normalizeLatexDelimiters(text: string): string {
       return alreadyDelimited ? match : `$$${match}$$`;
     },
   );
+
+  // Step 4: bare LaTeX — AI-generated math options often have NO delimiters at all.
+  // e.g. \frac{1}{2}xe^{x^2}+C   or   xe^{x^2}+C   or   \sqrt{x^2+1}
+  // Detect any LaTeX command (\word) or brace-exponent notation (x^{, x_{})
+  // that is NOT already inside a $ or \[ delimiter, then wrap the whole string.
+  const hasAnyDelimiter = /\$|\\\[|\\\(/.test(result);
+  if (!hasAnyDelimiter) {
+    const hasBareLatexCmd = /\\[a-zA-Z]/.test(result);
+    const hasBraceExponent = /[a-zA-Z0-9]\^{|[a-zA-Z0-9]_{/.test(result);
+    if (hasBareLatexCmd || hasBraceExponent) {
+      result = `$${result}$`;
+    }
+  }
+
   return result;
 }
 
