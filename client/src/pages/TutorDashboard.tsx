@@ -381,7 +381,7 @@ export default function TutorDashboard() {
     { label: "Completion", value: completionRate, icon: CheckCircle2, accent: "#22D3EE", suffix: "%" },
     { label: "Below Threshold", value: stats?.belowThresholdCount ?? 0, icon: AlertTriangle, accent: "#EF4444", isWarning: true },
     { label: "Pending Reviews", value: stats?.recentSubmissions?.length ?? 0, icon: Clock, accent: "#FBBF24", suffix: "" },
-    { label: "Weakest Topic", value: stats?.weakestTopic || "—", icon: Target, accent: "#F43F5E", isText: true, isWarning: true },
+    { label: "Weakest Subject", value: stats?.weakestTopic || "—", icon: Target, accent: "#F43F5E", isText: true, isWarning: true },
   ], [stats, cohortAvg, completionRate]);
 
   const studentPlaques = useMemo(() => {
@@ -416,8 +416,8 @@ export default function TutorDashboard() {
             <div className="flex items-center gap-3.5 cursor-pointer group">
               <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
               <div>
-                <h1 className="text-base font-bold tracking-tight gradient-text leading-none">SOMA</h1>
-                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Control Centre</p>
+                <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
+                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>
@@ -535,7 +535,7 @@ export default function TutorDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
               <div>
                 <p className="text-sm text-violet-400/80 font-medium mb-0.5">{getGreeting()}, {displayName.split(" ")[0]}</p>
-                <h2 className="text-2xl font-bold text-slate-100 tracking-tight" style={{ letterSpacing: "0.5px" }}>Command Centre</h2>
+                <h2 className="text-4xl font-extrabold text-slate-100 tracking-tight" style={{ letterSpacing: "0.5px" }}>SOMA</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-[12px] text-slate-500 font-medium tracking-wide">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
                   {dataUpdatedAt > 0 && (
@@ -704,7 +704,7 @@ export default function TutorDashboard() {
                                   <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
                                 )}
                                 <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                                  {s.weakTopics.length > 0 && <span>Weak: {s.weakTopics.slice(0, 2).join(", ")}</span>}
+                                  {s.weakTopics.length > 0 && <span>Weak subjects: {s.weakTopics.slice(0, 2).join(", ")}</span>}
                                   {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
                                 </div>
                               </div>
@@ -1136,10 +1136,10 @@ function StudentPlaque({ student: s, insightChip, index = 0 }: { student: Plaque
         <div className={`plaque-back ${GP} p-5 h-full flex flex-col overflow-y-auto`}>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em] mb-3">{s.studentName}</p>
 
-          {/* Weak topics with micro bars */}
+          {/* Weak subjects with micro bars */}
           {s.weakTopics.length > 0 && (
             <div className="mb-3">
-              <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-2">Weak Topics</p>
+              <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.1em] mb-2">Weak Subjects</p>
               <div className="space-y-1.5">
                 {s.weakTopics.slice(0, 3).map((t, i) => (
                   <div key={t} className="flex items-center gap-2">

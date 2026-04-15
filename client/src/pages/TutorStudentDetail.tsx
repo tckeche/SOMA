@@ -333,7 +333,7 @@ export default function TutorStudentDetail() {
               </div>
             </div>
 
-            {/* ── TOPIC PERFORMANCE ─────────────────────────────── */}
+            {/* ── SUBJECT PERFORMANCE ────────────────────────────── */}
             <div className={GP}>
               <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
                 <div className="flex items-center gap-2.5">
@@ -341,8 +341,8 @@ export default function TutorStudentDetail() {
                     <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-[13px] font-semibold text-slate-100">Topic Performance</h3>
-                    <p className="text-[10px] text-slate-600 font-medium">Ranked by score &middot; trend &middot; evidence</p>
+                    <h3 className="text-[13px] font-semibold text-slate-100">Subject Performance</h3>
+                    <p className="text-[10px] text-slate-600 font-medium">Performance by subject &middot; trend &middot; evidence</p>
                   </div>
                 </div>
               </div>
@@ -357,7 +357,7 @@ export default function TutorStudentDetail() {
                   <table className="w-full min-w-[640px]">
                     <thead>
                       <tr className="border-b border-white/[0.04]">
-                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Topic</th>
+                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Subject</th>
                         <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-44">Score</th>
                         <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Attempts</th>
                         <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Trend</th>
@@ -411,7 +411,7 @@ export default function TutorStudentDetail() {
                       </div>
                       <div>
                         <h3 className="text-[13px] font-semibold text-slate-100">Coverage Matrix</h3>
-                        <p className="text-[10px] text-slate-600 font-medium">Topic depth &middot; assessments &middot; performance</p>
+                        <p className="text-[10px] text-slate-600 font-medium">Subject depth &middot; assessments &middot; performance</p>
                       </div>
                     </div>
                   </div>
@@ -426,7 +426,7 @@ export default function TutorStudentDetail() {
                       <table className="w-full min-w-[550px]">
                         <thead>
                           <tr className="border-b border-white/[0.04]">
-                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Topic</th>
+                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Subject</th>
                             <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-32">Coverage</th>
                             <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Assess.</th>
                             <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Perf.</th>
