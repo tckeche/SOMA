@@ -705,7 +705,7 @@ const somaAiLimiter = rateLimit({
   message: {
     error: {
       code: "RATE_LIMITED",
-      message: "Too many AI requests. Please wait before trying again.",
+      message: "Too many requests. Please wait before trying again.",
       details: { retryWindowMs: 60_000 },
     },
   },
@@ -1064,7 +1064,7 @@ Provide:
     try {
       await storage.updateSomaReport(reportId, {
         status: "failed",
-        aiFeedbackHtml: `<p>AI analysis failed: ${err.message || "Unknown error"}. Please contact your teacher or try again later.</p>`,
+        aiFeedbackHtml: `<p>Analysis failed: ${err.message || "Unknown error"}. Please contact your teacher or try again later.</p>`,
       });
     } catch (dbErr: any) {
       console.error(`[SOMA Grading] Failed to update report ${reportId} to failed status:`, dbErr.message);
@@ -2525,7 +2525,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         tutorId,
         studentId,
         type: "ai_assessment_generating",
-        title: "AI assessment generation started",
+        title: "Assessment generation started",
         message: `Generating ${selected.length} assessment${selected.length !== 1 ? "s" : ""} in the background. This may take a few minutes.`,
         payload: { studentId, suggestionIds: parsed.suggestionIds },
       });
@@ -2633,7 +2633,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             tutorId,
             studentId,
             type: "ai_assessment_published",
-            title: "AI suggested assessments are ready",
+            title: "Suggested assessments are ready",
             message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published.`,
             payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
           });
@@ -3356,7 +3356,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         } else if (graphRequest && requestedAsGraphCount > 0 && validGraphAfterRetry === 0) {
           // Normalization completely failed — no valid graph questions at all
           graphVerificationBlock =
-            `\n\n⚠️ **Graph validation failed:** the AI could not produce valid graph questions ` +
+            `\n\n⚠️ **Graph validation failed:** could not produce valid graph questions ` +
             `(the graph specification was malformed or missing). The draft was not changed for graph positions. ` +
             `Try again, or specify an equation explicitly (e.g. "y = 2x + 1").`;
         }

@@ -674,7 +674,7 @@ export default function TutorStudentDetail() {
                   <>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-[14px] font-semibold text-slate-100">Student Curriculum Profile</h3>
-                      <span className="text-[10px] text-slate-500">Required for AI assessment suggestions</span>
+                      <span className="text-[10px] text-slate-500">Required for assessment suggestions</span>
                     </div>
                     <div className="space-y-2 mb-4">
                       {subjects.map((s) => (
@@ -691,7 +691,7 @@ export default function TutorStudentDetail() {
                           </button>
                         </div>
                       ))}
-                      {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using AI suggestions.</p>}
+                      {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using suggestions.</p>}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                       <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))}>
@@ -721,7 +721,7 @@ export default function TutorStudentDetail() {
                 ) : (
                   <>
                     <h3 className="text-[14px] font-semibold text-slate-100 mb-1">Create Assessment for {displayName}</h3>
-                    <p className="text-[11px] text-slate-500 mb-4">AI analyzes performance history, curriculum metadata, syllabus content, and examiner report misconceptions.</p>
+                    <p className="text-[11px] text-slate-500 mb-4">Analyzes performance history, curriculum metadata, syllabus content, and examiner report misconceptions.</p>
 
                     {subjects.length === 0 ? (
                       <div className="text-center py-8">

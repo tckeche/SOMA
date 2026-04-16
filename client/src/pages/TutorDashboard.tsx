@@ -627,12 +627,12 @@ export default function TutorDashboard() {
             {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
             {activeTab === "notifications" && (
               <FadeInSection>
-                <SectionHeader icon={Bell} title="Notifications" subtitle="Unread/read updates for submissions and AI publishing" />
+                <SectionHeader icon={Bell} title="Notifications" subtitle="Unread/read updates for submissions and publishing" />
                 {(notificationsData?.notifications?.length ?? 0) === 0 ? (
                   <div className={`${GP} px-6 py-16 text-center`}>
                     <Bell className="w-12 h-12 mx-auto text-slate-700 mb-4" />
                     <p className="text-sm text-slate-400 font-medium">No notifications yet</p>
-                    <p className="text-xs text-slate-600 mt-1">New submissions and AI generation updates will appear here</p>
+                    <p className="text-xs text-slate-600 mt-1">New submissions and generation updates will appear here</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
