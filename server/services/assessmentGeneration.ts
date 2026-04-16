@@ -56,15 +56,99 @@ export function buildSyllabusChunks(text: string, maxChunkLength = 900): Array<{
   return chunks;
 }
 
+// Math/science synonym clusters for semantic matching
+const SYNONYM_MAP: Record<string, string[]> = {
+  differentiation: ["derivative", "calculus", "gradient", "tangent", "rate of change"],
+  integration: ["integral", "antiderivative", "area under curve", "calculus"],
+  algebra: ["equation", "expression", "variable", "polynomial", "factoring", "factorisation"],
+  geometry: ["shape", "angle", "triangle", "circle", "polygon", "area", "perimeter"],
+  trigonometry: ["sine", "cosine", "tangent", "trig", "sin", "cos", "tan"],
+  statistics: ["probability", "mean", "median", "mode", "standard deviation", "data"],
+  quadratic: ["parabola", "completing the square", "quadratic formula", "factoring"],
+  logarithm: ["logarithmic", "log", "exponent", "exponential", "indices"],
+  matrix: ["matrices", "determinant", "transformation", "linear algebra"],
+  vector: ["vectors", "magnitude", "direction", "scalar product", "dot product"],
+  sequence: ["series", "arithmetic", "geometric", "progression", "term"],
+  function: ["domain", "range", "mapping", "transformation", "inverse"],
+  fraction: ["ratio", "proportion", "percentage", "decimal"],
+  simultaneous: ["system of equations", "linear equations", "elimination", "substitution"],
+  inequality: ["inequalities", "number line", "region", "boundary"],
+  coordinate: ["cartesian", "graph", "axes", "plotting", "gradient"],
+  mensuration: ["volume", "surface area", "capacity", "measurement"],
+  sets: ["venn diagram", "intersection", "union", "subset", "element"],
+  probability: ["chance", "likelihood", "expected", "tree diagram", "outcome"],
+  number: ["integer", "rational", "irrational", "prime", "factor", "multiple"],
+};
+
+function expandQueryTerms(query: string): { unigrams: Set<string>; bigrams: Set<string>; synonyms: Set<string> } {
+  const lower = query.toLowerCase();
+  const words = lower.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+  const unigrams = new Set(words);
+  const bigrams = new Set<string>();
+  for (let i = 0; i < words.length - 1; i++) {
+    bigrams.add(`${words[i]} ${words[i + 1]}`);
+  }
+  const synonyms = new Set<string>();
+  for (const word of words) {
+    if (SYNONYM_MAP[word]) {
+      for (const syn of SYNONYM_MAP[word]) synonyms.add(syn);
+    }
+    // Reverse lookup: if the word appears in any synonym list, add the key
+    for (const [key, syns] of Object.entries(SYNONYM_MAP)) {
+      if (syns.includes(word) && !unigrams.has(key)) synonyms.add(key);
+    }
+  }
+  return { unigrams, bigrams, synonyms };
+}
+
 export function scoreSyllabusChunks(chunks: Array<{ content: string }>, query: string, limit = 4): string[] {
-  const tokens = new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2));
+  if (chunks.length === 0 || !query.trim()) return [];
+
+  const { unigrams, bigrams, synonyms } = expandQueryTerms(query);
+
+  // Compute document frequency for IDF weighting
+  const docFreq: Record<string, number> = {};
+  for (const chunk of chunks) {
+    const hay = chunk.content.toLowerCase();
+    const seen = new Set<string>();
+    for (const term of unigrams) {
+      if (!seen.has(term) && hay.includes(term)) { docFreq[term] = (docFreq[term] || 0) + 1; seen.add(term); }
+    }
+  }
+  const N = chunks.length;
+
   return chunks
     .map((chunk) => {
       const hay = chunk.content.toLowerCase();
       let score = 0;
-      for (const token of Array.from(tokens)) {
-        if (hay.includes(token)) score += 1;
+
+      // Unigram matches with IDF weighting
+      for (const term of unigrams) {
+        if (hay.includes(term)) {
+          const idf = Math.log((N + 1) / ((docFreq[term] || 0) + 1)) + 1;
+          // Count occurrences for term frequency
+          const count = hay.split(term).length - 1;
+          const tf = 1 + Math.log(Math.max(1, count));
+          score += tf * idf;
+        }
       }
+
+      // Bigram matches score higher (phrase matching)
+      for (const bigram of bigrams) {
+        if (hay.includes(bigram)) score += 3;
+      }
+
+      // Synonym matches add partial credit
+      for (const syn of synonyms) {
+        if (hay.includes(syn)) score += 0.5;
+      }
+
+      // Boost for early mention (likely topic headers/titles)
+      const firstMention = Math.min(
+        ...Array.from(unigrams).map((t) => { const idx = hay.indexOf(t); return idx >= 0 ? idx : Infinity; })
+      );
+      if (firstMention < 100) score *= 1.3;
+
       return { content: chunk.content, score };
     })
     .filter((item) => item.score > 0)

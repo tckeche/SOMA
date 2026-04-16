@@ -871,6 +871,138 @@ function sanitizeSubmittedAnswers(
   return sanitized;
 }
 
+/**
+ * Background: Extract structured topics from syllabus docs and misconceptions from examiner reports.
+ * Runs after a syllabus/examiner report PDF is uploaded.
+ */
+async function extractDocumentIntelligence(doc: {
+  id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null;
+}): Promise<void> {
+  const textSlice = doc.extractedText.slice(0, 6000);
+
+  if (doc.documentType === "examiner_report") {
+    // Extract misconceptions from examiner reports
+    const prompt = `You are an educational data analyst. Extract structured misconceptions from the following examiner report.
+
+For each misconception, identify:
+- topic: the mathematical/subject topic
+- subtopic: specific subtopic (or null)
+- misconception: what students commonly get wrong
+- studentError: the typical incorrect approach
+- correctApproach: what students should do instead
+- frequency: "very_common", "common", or "occasional"
+
+Return a JSON array of objects. Extract up to 15 misconceptions. Only real observations from the text.
+
+EXAMINER REPORT TEXT:
+${textSlice}`;
+
+    try {
+      const { data } = await generateWithFallback(prompt, "Extract misconceptions as JSON array.", undefined);
+      const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const items = JSON.parse(cleaned);
+      if (Array.isArray(items) && items.length > 0) {
+        await storage.createExaminerMisconceptions(
+          items.slice(0, 15).map((item: any) => ({
+            documentId: doc.id,
+            board: doc.board,
+            syllabusCode: doc.syllabusCode,
+            subject: doc.subject || item.subject || null,
+            topic: String(item.topic || "General"),
+            subtopic: item.subtopic || null,
+            misconception: String(item.misconception || ""),
+            studentError: String(item.studentError || item.student_error || ""),
+            correctApproach: String(item.correctApproach || item.correct_approach || ""),
+            frequency: item.frequency || "common",
+          }))
+        );
+        console.log(`[Doc Intelligence] Extracted ${items.length} misconceptions from examiner report ${doc.id}`);
+      }
+    } catch (e: any) {
+      console.error(`[Doc Intelligence] Misconception extraction failed for doc ${doc.id}:`, e.message);
+    }
+  } else {
+    // Extract topic inventory from syllabus documents
+    const prompt = `You are a curriculum analyst. Extract the complete topic and subtopic structure from this syllabus document.
+
+For each entry, provide:
+- topic: main topic name
+- subtopic: subtopic name (or null for top-level topics)
+- description: brief description of what this covers
+
+Return a JSON array. Extract ALL topics and subtopics mentioned. Be thorough.
+
+SYLLABUS TEXT:
+${textSlice}`;
+
+    try {
+      const { data } = await generateWithFallback(prompt, "Extract topic inventory as JSON array.", undefined);
+      const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const items = JSON.parse(cleaned);
+      if (Array.isArray(items) && items.length > 0) {
+        await storage.createSyllabusTopicInventory(
+          items.map((item: any) => ({
+            documentId: doc.id,
+            board: doc.board,
+            syllabusCode: doc.syllabusCode,
+            subject: doc.subject || item.subject || null,
+            topic: String(item.topic || "General"),
+            subtopic: item.subtopic || null,
+            description: item.description || null,
+          }))
+        );
+        console.log(`[Doc Intelligence] Extracted ${items.length} topics from syllabus doc ${doc.id}`);
+      }
+    } catch (e: any) {
+      console.error(`[Doc Intelligence] Topic extraction failed for doc ${doc.id}:`, e.message);
+    }
+  }
+}
+
+/**
+ * Background: Update student topic mastery after quiz submission.
+ * Analyzes per-question correctness and updates mastery records.
+ */
+async function updateMasteryFromSubmission(
+  studentId: string,
+  quizSubject: string | null,
+  questions: { id: number; correctAnswer: string; marks: number; topicTag: string | null; subtopicTag: string | null }[],
+  studentAnswers: Record<string, string>,
+): Promise<void> {
+  // Group by topic+subtopic
+  const groups: Record<string, { correct: number; total: number; marks: number; maxMarks: number }> = {};
+  for (const q of questions) {
+    const topic = q.topicTag || "General";
+    const subtopic = q.subtopicTag || "";
+    const key = `${topic}|||${subtopic}`;
+    if (!groups[key]) groups[key] = { correct: 0, total: 0, marks: 0, maxMarks: 0 };
+    groups[key].total += 1;
+    groups[key].maxMarks += q.marks;
+    const answered = studentAnswers[String(q.id)];
+    if (answered === q.correctAnswer) {
+      groups[key].correct += 1;
+      groups[key].marks += q.marks;
+    }
+  }
+
+  const subject = quizSubject || "General";
+  for (const [key, stats] of Object.entries(groups)) {
+    const [topic, subtopic] = key.split("|||");
+    const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
+    await storage.upsertStudentTopicMastery({
+      studentId,
+      subject,
+      topic,
+      subtopic: subtopic || null,
+      understandingPercent: pct,
+      covered: true,
+      tested: true,
+      totalQuestions: stats.total,
+      correctQuestions: stats.correct,
+    });
+  }
+}
+
 async function runBackgroundGrading(
   reportId: number,
   questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number }[],
@@ -944,16 +1076,72 @@ function normalizeLabel(input: string | null | undefined, fallback: string): str
   return value || fallback;
 }
 
-function computeStudentPerformance(assignments: Array<{
-  quizSubject: string | null;
-  quizTitle: string;
-  score: number | null;
-  maxScore: number;
-}>): {
+interface QuestionPerformanceRow {
+  subject: string;
+  topicTag: string | null;
+  subtopicTag: string | null;
+  correct: boolean;
+  marks: number;
+}
+
+function computeStudentPerformance(
+  assignments: Array<{
+    quizSubject: string | null;
+    quizTitle: string;
+    score: number | null;
+    maxScore: number;
+  }>,
+  questionPerformance?: QuestionPerformanceRow[],
+): {
   weak: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }>;
   strong: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }>;
   uncovered: Array<{ subject: string; topic: string; subtopic: string | null }>;
 } {
+  // If question-level data is available, use it for precise subtopic analysis
+  if (questionPerformance && questionPerformance.length > 0) {
+    const subtopicStats: Record<string, { correct: number; total: number; marks: number; maxMarks: number }> = {};
+    for (const qp of questionPerformance) {
+      const subject = normalizeLabel(qp.subject, "General");
+      const topic = normalizeLabel(qp.topicTag, "General");
+      const subtopic = qp.subtopicTag?.trim() || null;
+      const key = `${subject}|||${topic}|||${subtopic || ""}`;
+      if (!subtopicStats[key]) subtopicStats[key] = { correct: 0, total: 0, marks: 0, maxMarks: 0 };
+      subtopicStats[key].total += 1;
+      subtopicStats[key].maxMarks += qp.marks;
+      if (qp.correct) {
+        subtopicStats[key].correct += 1;
+        subtopicStats[key].marks += qp.marks;
+      }
+    }
+
+    const weak: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }> = [];
+    const strong: Array<{ subject: string; topic: string; subtopic: string | null; understanding: number }> = [];
+
+    for (const [key, stats] of Object.entries(subtopicStats)) {
+      const [subject, topic, subtopic] = key.split("|||");
+      const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
+      if (pct < 75) weak.push({ subject, topic, subtopic: subtopic || null, understanding: pct });
+      if (pct >= 80) strong.push({ subject, topic, subtopic: subtopic || null, understanding: pct });
+    }
+
+    // Sort weak by understanding ascending (worst first), strong by understanding descending
+    weak.sort((a, b) => a.understanding - b.understanding);
+    strong.sort((a, b) => b.understanding - a.understanding);
+
+    // Uncovered from assignment-level data (subjects with no scores)
+    const uncovered: Array<{ subject: string; topic: string; subtopic: string | null }> = [];
+    const coveredSubjects = new Set(questionPerformance.map((q) => normalizeLabel(q.subject, "General")));
+    for (const row of assignments) {
+      const subject = normalizeLabel(row.quizSubject, "General");
+      if (!coveredSubjects.has(subject) && row.score === null) {
+        uncovered.push({ subject, topic: "Core syllabus areas", subtopic: null });
+      }
+    }
+
+    return { weak: weak.slice(0, 5), strong: strong.slice(0, 5), uncovered: uncovered.slice(0, 3) };
+  }
+
+  // Fallback: assignment-level analysis when no question data is available
   const subjectStats: Record<string, { score: number; max: number; count: number; topics: Record<string, { score: number; max: number; count: number }> }> = {};
   for (const row of assignments) {
     const subject = normalizeLabel(row.quizSubject, "General");
@@ -988,7 +1176,7 @@ function computeStudentPerformance(assignments: Array<{
     }
   }
 
-  return { weak: weak.slice(0, 3), strong: strong.slice(0, 3), uncovered: uncovered.slice(0, 3) };
+  return { weak: weak.slice(0, 5), strong: strong.slice(0, 5), uncovered: uncovered.slice(0, 3) };
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -1696,6 +1884,170 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.delete("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const subjectId = Number(req.params.subjectId);
+      if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      await storage.deleteStudentSubject(subjectId, studentId);
+      res.json({ deleted: true });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to delete subject" });
+    }
+  });
+
+  // Get topic inventory for a syllabus
+  app.get("/api/tutor/syllabus-topics", requireTutor, async (req, res) => {
+    try {
+      const { board, syllabusCode, subject } = req.query;
+      const topics = await storage.listSyllabusTopicInventory({
+        board: board ? String(board) : undefined,
+        syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
+        subject: subject ? String(subject) : undefined,
+      });
+      res.json(topics);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+    }
+  });
+
+  // Get examiner misconceptions for a syllabus
+  app.get("/api/tutor/examiner-misconceptions", requireTutor, async (req, res) => {
+    try {
+      const { board, syllabusCode, topic } = req.query;
+      const misconceptions = await storage.listExaminerMisconceptions({
+        board: board ? String(board) : undefined,
+        syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
+        topic: topic ? String(topic) : undefined,
+      });
+      res.json(misconceptions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch misconceptions" });
+    }
+  });
+
+  // Get student mastery data
+  app.get("/api/tutor/students/:studentId/mastery", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      const mastery = await storage.listStudentTopicMastery(studentId);
+      res.json(mastery);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
+    }
+  });
+
+  // Cohort-level weakness report: aggregate mastery across all students
+  app.get("/api/tutor/cohort-weaknesses", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (adopted.length === 0) return res.json({ topics: [], studentCount: 0 });
+
+      const topicAgg: Record<string, {
+        subject: string; topic: string; subtopic: string | null;
+        testedStudents: number; sumPercent: number; belowThreshold: number;
+        totalQuestions: number; totalCorrect: number;
+        studentNames: string[];
+      }> = {};
+
+      for (const student of adopted) {
+        const mastery = await storage.listStudentTopicMastery(student.id);
+        const studentName = student.displayName || student.email?.split("@")[0] || "Student";
+        for (const m of mastery) {
+          if (!m.tested) continue;
+          const key = `${m.subject}|||${m.topic}|||${m.subtopic || ""}`;
+          if (!topicAgg[key]) {
+            topicAgg[key] = {
+              subject: m.subject, topic: m.topic, subtopic: m.subtopic || null,
+              testedStudents: 0, sumPercent: 0, belowThreshold: 0,
+              totalQuestions: 0, totalCorrect: 0, studentNames: [],
+            };
+          }
+          const agg = topicAgg[key];
+          agg.testedStudents++;
+          agg.sumPercent += m.understandingPercent;
+          agg.totalQuestions += m.totalQuestions;
+          agg.totalCorrect += m.correctQuestions;
+          if (m.understandingPercent < 75) {
+            agg.belowThreshold++;
+            agg.studentNames.push(studentName);
+          }
+        }
+      }
+
+      const topics = Object.values(topicAgg)
+        .map((agg) => ({
+          subject: agg.subject,
+          topic: agg.topic,
+          subtopic: agg.subtopic,
+          avgPercent: agg.testedStudents > 0 ? Math.round(agg.sumPercent / agg.testedStudents) : 0,
+          testedStudents: agg.testedStudents,
+          totalStudents: adopted.length,
+          belowThreshold: agg.belowThreshold,
+          struggleRate: agg.testedStudents > 0 ? Math.round((agg.belowThreshold / agg.testedStudents) * 100) : 0,
+          totalQuestions: agg.totalQuestions,
+          accuracy: agg.totalQuestions > 0 ? Math.round((agg.totalCorrect / agg.totalQuestions) * 100) : 0,
+          strugglingStudents: agg.studentNames.slice(0, 5),
+        }))
+        .sort((a, b) => b.struggleRate - a.struggleRate || a.avgPercent - b.avgPercent);
+
+      res.json({ topics, studentCount: adopted.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch cohort data" });
+    }
+  });
+
+  // Spaced repetition: return topics due for review
+  app.get("/api/tutor/students/:studentId/review-schedule", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+
+      const mastery = await storage.listStudentTopicMastery(studentId);
+      const now = new Date();
+
+      const dueForReview = mastery
+        .filter((m) => m.masteryAchieved && m.nextReviewAt && new Date(m.nextReviewAt) <= now)
+        .sort((a, b) => new Date(a.nextReviewAt!).getTime() - new Date(b.nextReviewAt!).getTime())
+        .map((m) => ({
+          topic: m.topic,
+          subtopic: m.subtopic,
+          subject: m.subject,
+          understandingPercent: m.understandingPercent,
+          lastTestedAt: m.lastTestedAt,
+          nextReviewAt: m.nextReviewAt,
+          attempts: m.attempts,
+          daysOverdue: Math.floor((now.getTime() - new Date(m.nextReviewAt!).getTime()) / 86400000),
+        }));
+
+      const upcoming = mastery
+        .filter((m) => m.masteryAchieved && m.nextReviewAt && new Date(m.nextReviewAt) > now)
+        .sort((a, b) => new Date(a.nextReviewAt!).getTime() - new Date(b.nextReviewAt!).getTime())
+        .slice(0, 10)
+        .map((m) => ({
+          topic: m.topic,
+          subtopic: m.subtopic,
+          subject: m.subject,
+          understandingPercent: m.understandingPercent,
+          nextReviewAt: m.nextReviewAt,
+          daysUntilDue: Math.ceil((new Date(m.nextReviewAt!).getTime() - now.getTime()) / 86400000),
+        }));
+
+      res.json({ dueForReview, upcoming });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch review schedule" });
+    }
+  });
+
   app.get("/api/tutor/students/:studentId/performance", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
@@ -1906,13 +2258,34 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       }
 
       const report = await storage.getSomaReportsByStudentId(studentId);
+      const questionPerformance: QuestionPerformanceRow[] = [];
       const assignmentRows = await Promise.all((await storage.getQuizAssignmentsForStudent(studentId)).map(async (a) => {
         const matched = report.find((r) => r.quizId === a.quizId);
         const questions = await storage.getSomaQuestionsByQuizId(a.quizId);
         const maxScore = questions.reduce((sum, q) => sum + q.marks, 0);
+
+        // Build question-level performance data from answersJson
+        if (matched?.answersJson) {
+          const answers = (matched.answersJson || {}) as Record<string, string>;
+          for (const q of questions) {
+            const studentAnswer = answers[String(q.id)];
+            if (studentAnswer !== undefined) {
+              questionPerformance.push({
+                subject: normalizeLabel(a.quiz.subject, "General"),
+                topicTag: q.topicTag,
+                subtopicTag: q.subtopicTag,
+                correct: studentAnswer === q.correctAnswer,
+                marks: q.marks,
+              });
+            }
+          }
+        }
+
         return { quizSubject: a.quiz.subject, quizTitle: a.quiz.title, score: matched?.score ?? null, maxScore };
       }));
-      const analysis = computeStudentPerformance(assignmentRows);
+      const analysis = computeStudentPerformance(assignmentRows, questionPerformance);
+
+      // Update mastery tracking for ALL analyzed items (weak + strong)
       for (const item of analysis.weak) {
         await storage.upsertStudentTopicMastery({
           studentId,
@@ -1920,40 +2293,187 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           topic: item.topic,
           subtopic: item.subtopic,
           understandingPercent: item.understanding,
+          masteryAchieved: false,
+          covered: true,
+          tested: true,
+        });
+      }
+      for (const item of analysis.strong) {
+        await storage.upsertStudentTopicMastery({
+          studentId,
+          subject: item.subject,
+          topic: item.topic,
+          subtopic: item.subtopic,
+          understandingPercent: item.understanding,
+          masteryAchieved: item.understanding >= 75,
           covered: true,
           tested: true,
         });
       }
 
-      const primarySubject = subjects[0];
-      const suggestions = [
-        {
-          subject: primarySubject.subject,
+      // Remediation loop: check existing mastery records for topics still below 75%
+      // These get priority over generic weak areas — the student was already flagged
+      // and still hasn't reached satisfactory understanding
+      const existingMastery = await storage.listStudentTopicMastery(studentId);
+      const remediationTargets = existingMastery
+        .filter((m) => m.tested && !m.masteryAchieved && m.understandingPercent < 75)
+        .sort((a, b) => a.understandingPercent - b.understandingPercent);
+
+      const displayName = student?.displayName || "Student";
+
+      // Multi-subject: gather topic inventory & misconceptions from ALL subjects
+      const allMisconceptions: Array<{ topic: string; subtopic: string | null; misconception: string; frequency: string }> = [];
+      for (const subj of subjects) {
+        const topicInventory = await storage.listSyllabusTopicInventory({
+          board: subj.examBody,
+          syllabusCode: subj.syllabusCode,
+        });
+        if (topicInventory.length > 0) {
+          const coveredTopics = new Set([
+            ...analysis.weak.map((w) => w.topic.toLowerCase()),
+            ...analysis.strong.map((s) => s.topic.toLowerCase()),
+            ...existingMastery.map((m) => m.topic.toLowerCase()),
+          ]);
+          const uncoveredFromInventory = topicInventory
+            .filter((t) => !coveredTopics.has(t.topic.toLowerCase()))
+            .slice(0, 3);
+          for (const t of uncoveredFromInventory) {
+            if (!analysis.uncovered.some((u) => u.topic.toLowerCase() === t.topic.toLowerCase())) {
+              analysis.uncovered.push({ subject: t.subject || subj.subject, topic: t.topic, subtopic: t.subtopic });
+            }
+          }
+        }
+
+        const misconceptions = await storage.listExaminerMisconceptions({
+          board: subj.examBody,
+          syllabusCode: subj.syllabusCode,
+        });
+        for (const m of misconceptions.slice(0, 3)) {
+          allMisconceptions.push({ topic: m.topic, subtopic: m.subtopic, misconception: m.misconception, frequency: m.frequency });
+        }
+      }
+
+      // Build suggestions across ALL subjects
+      const suggestions: Array<{
+        subject: string; purpose: string; rationale: string;
+        topic: string; subtopic: string | null; targetDifficulty: string;
+      }> = [];
+
+      // Per-subject: struggling areas (from remediation targets first, then weak areas)
+      const usedTopics = new Set<string>();
+      for (const subj of subjects) {
+        const subjectRemediations = remediationTargets.filter((r) => r.subject === subj.subject);
+        const subjectWeak = analysis.weak.filter((w) => w.subject === subj.subject);
+        const struggleTopic = subjectRemediations[0] || subjectWeak[0];
+        if (struggleTopic) {
+          const key = `${struggleTopic.topic}|||${struggleTopic.subtopic || ""}`;
+          if (!usedTopics.has(key)) {
+            usedTopics.add(key);
+            const attempts = subjectRemediations[0]?.attempts ?? 0;
+            suggestions.push({
+              subject: subj.subject,
+              purpose: "struggling_areas",
+              rationale: `${displayName} is at ${(struggleTopic as any).understandingPercent ?? (struggleTopic as any).understanding}% in ${struggleTopic.topic}${struggleTopic.subtopic ? ` > ${struggleTopic.subtopic}` : ""}. ${attempts > 0 ? `Previously tested ${attempts} time(s) — still below 75% mastery threshold.` : "Continue targeting until mastery reaches at least 75%."}`,
+              topic: struggleTopic.topic,
+              subtopic: struggleTopic.subtopic ?? null,
+              targetDifficulty: "medium",
+            });
+          }
+        }
+      }
+      // Fallback if no struggling areas found for any subject
+      if (suggestions.filter((s) => s.purpose === "struggling_areas").length === 0) {
+        suggestions.push({
+          subject: subjects[0].subject,
           purpose: "struggling_areas",
-          rationale: analysis.weak.length > 0
-            ? `${student?.displayName || "Student"} is below 75% in ${analysis.weak[0].topic}. Continue targeting this topic/subtopic until mastery reaches at least 75%.`
-            : `${student?.displayName || "Student"} has no acute weak topic yet, so validate prior weak spots.`,
-          topic: analysis.weak[0]?.topic || "Core concepts",
-          subtopic: analysis.weak[0]?.subtopic ?? null,
+          rationale: `${displayName} has no acute weak topic yet, so validate prior weak spots.`,
+          topic: "Core concepts",
+          subtopic: null,
           targetDifficulty: "medium",
-        },
-        {
-          subject: primarySubject.subject,
+        });
+      }
+
+      // Per-subject: uncovered content
+      for (const subj of subjects) {
+        const uncovered = analysis.uncovered.find((u) => u.subject === subj.subject);
+        if (uncovered) {
+          const key = `${uncovered.topic}|||${uncovered.subtopic || ""}`;
+          if (!usedTopics.has(key)) {
+            usedTopics.add(key);
+            suggestions.push({
+              subject: subj.subject,
+              purpose: "uncovered_content",
+              rationale: `Assess uncovered ${subj.subject} syllabus content to improve full coverage.`,
+              topic: uncovered.topic,
+              subtopic: uncovered.subtopic ?? null,
+              targetDifficulty: "easy",
+            });
+          }
+        }
+      }
+      // Fallback uncovered
+      if (suggestions.filter((s) => s.purpose === "uncovered_content").length === 0 && analysis.uncovered.length > 0) {
+        suggestions.push({
+          subject: analysis.uncovered[0].subject,
           purpose: "uncovered_content",
           rationale: "Assess currently uncovered syllabus content to improve full syllabus coverage.",
-          topic: analysis.uncovered[0]?.topic || "Uncovered syllabus content",
-          subtopic: analysis.uncovered[0]?.subtopic ?? null,
+          topic: analysis.uncovered[0].topic,
+          subtopic: analysis.uncovered[0].subtopic ?? null,
           targetDifficulty: "easy",
-        },
-        {
-          subject: primarySubject.subject,
+        });
+      }
+
+      // Per-subject: stretch strengths
+      for (const subj of subjects) {
+        const strong = analysis.strong.find((s) => s.subject === subj.subject);
+        if (strong) {
+          const key = `${strong.topic}|||${strong.subtopic || ""}`;
+          if (!usedTopics.has(key)) {
+            usedTopics.add(key);
+            suggestions.push({
+              subject: subj.subject,
+              purpose: "stretch_strengths",
+              rationale: `${displayName} scores ${strong.understanding}% in ${strong.topic}${strong.subtopic ? ` > ${strong.subtopic}` : ""}. Challenge with progressively harder questions.`,
+              topic: strong.topic,
+              subtopic: strong.subtopic ?? null,
+              targetDifficulty: "hard",
+            });
+          }
+        }
+      }
+      // Fallback stretch
+      if (suggestions.filter((s) => s.purpose === "stretch_strengths").length === 0) {
+        suggestions.push({
+          subject: subjects[0].subject,
           purpose: "stretch_strengths",
           rationale: "Challenge stronger areas with progressively harder questions.",
           topic: analysis.strong[0]?.topic || "Advanced mixed practice",
           subtopic: analysis.strong[0]?.subtopic ?? null,
           targetDifficulty: "hard",
-        },
-      ];
+        });
+      }
+
+      // Spaced repetition: add review suggestions for mastered topics due for review
+      const now = new Date();
+      const dueForReview = existingMastery
+        .filter((m) => m.masteryAchieved && m.nextReviewAt && new Date(m.nextReviewAt) <= now)
+        .sort((a, b) => new Date(a.nextReviewAt!).getTime() - new Date(b.nextReviewAt!).getTime());
+
+      for (const review of dueForReview.slice(0, 2)) {
+        const key = `${review.topic}|||${review.subtopic || ""}`;
+        if (!usedTopics.has(key)) {
+          usedTopics.add(key);
+          const daysOverdue = Math.floor((now.getTime() - new Date(review.nextReviewAt!).getTime()) / 86400000);
+          suggestions.push({
+            subject: review.subject,
+            purpose: "spaced_review",
+            rationale: `${displayName} mastered ${review.topic}${review.subtopic ? ` > ${review.subtopic}` : ""} at ${review.understandingPercent}% but is ${daysOverdue > 0 ? `${daysOverdue} day(s) overdue` : "due today"} for spaced repetition review. Retention check to prevent forgetting.`,
+            topic: review.topic,
+            subtopic: review.subtopic ?? null,
+            targetDifficulty: "medium",
+          });
+        }
+      }
 
       const created = await Promise.all(suggestions.map((s) => storage.createSuggestedAssessment({
         tutorId,
@@ -1965,10 +2485,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       res.json({
         basis: {
           student: { id: studentId, name: student?.displayName || student?.email },
-          curriculum: primarySubject,
+          curriculum: subjects,
           weaknesses: analysis.weak,
           strengths: analysis.strong,
           uncovered: analysis.uncovered,
+          misconceptions: allMisconceptions.slice(0, 8),
+          remediationTargets: remediationTargets.slice(0, 5).map((r) => ({
+            topic: r.topic,
+            subtopic: r.subtopic,
+            understanding: r.understandingPercent,
+            attempts: r.attempts,
+            confidence: r.confidenceLevel,
+          })),
         },
         suggestions: created,
       });
@@ -1983,50 +2511,144 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const studentId = String(req.params.studentId);
       const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(50).default(30) }).parse(req.body || {});
       const subjects = await storage.listStudentSubjects(studentId);
-      const primarySubject = subjects[0];
-      if (!primarySubject) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
+      if (subjects.length === 0) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
       const selected = all.filter((s) => parsed.suggestionIds.includes(s.id));
       if (selected.length === 0) return res.status(404).json({ message: "No matching suggestions found" });
-      const quizzes: any[] = [];
-      for (const item of selected) {
-        const generated = await generateAuditedQuiz({
-          topic: item.topic,
-          subject: item.subject,
-          syllabus: primarySubject.examBody,
-          level: primarySubject.level,
-          subtopic: item.subtopic || undefined,
-          questionCount: parsed.questionCount,
-          copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${primarySubject.syllabusCode}. Include examiner report style difficulty traps and misconceptions.`,
-        });
-        const quiz = await storage.createSomaQuizBundle({
-          quiz: {
-            title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
-            topic: item.topic,
-            subject: item.subject,
-            syllabus: `${primarySubject.examBody} ${primarySubject.syllabusCode}`,
-            level: primarySubject.level,
-            authorId: tutorId,
-            status: "published",
-            timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
-          },
-          questions: generated.questions.map((q) => ({
-            stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
-          })),
-          assignedStudentIds: [studentId],
-        });
-        await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
-        quizzes.push(quiz.quiz);
-      }
+
+      // Return immediately — generate in background
+      res.json({ status: "processing", count: selected.length, message: `${selected.length} assessment${selected.length !== 1 ? "s are" : " is"} being generated. You'll be notified when ready.` });
+
+      // Notify the tutor that generation has started
       await storage.createTutorNotification({
         tutorId,
         studentId,
-        type: "ai_assessment_published",
-        title: "AI suggested assessments are ready",
-        message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published for this student.`,
-        payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
+        type: "ai_assessment_generating",
+        title: "AI assessment generation started",
+        message: `Generating ${selected.length} assessment${selected.length !== 1 ? "s" : ""} in the background. This may take a few minutes.`,
+        payload: { studentId, suggestionIds: parsed.suggestionIds },
       });
-      res.json({ published: quizzes.length, quizzes });
+
+      // Background generation — multi-subject aware
+      (async () => {
+        try {
+          // Pre-cache syllabus docs and misconceptions per subject
+          const subjectCache: Record<string, {
+            syllabusDoc: any; misconceptions: any[]; examinerReportContext: string;
+            examBody: string; syllabusCode: string; level: string;
+          }> = {};
+          for (const subj of subjects) {
+            const syllabusDoc = await storage.getSyllabusDocumentBySelection({
+              board: subj.examBody, level: subj.level, syllabusCode: subj.syllabusCode, tutorId,
+            });
+            const misconceptions = await storage.listExaminerMisconceptions({
+              board: subj.examBody, syllabusCode: subj.syllabusCode,
+            });
+            let examinerReportContext = "";
+            if (misconceptions.length === 0) {
+              const allDocs = await storage.listSyllabusDocuments(tutorId);
+              const examinerDocs = allDocs.filter(
+                (d) => d.documentType === "examiner_report" && d.board === subj.examBody && d.syllabusCode === subj.syllabusCode
+              );
+              if (examinerDocs.length > 0) {
+                examinerReportContext = examinerDocs.map((d) => d.extractedText).join("\n---\n").slice(0, 4000);
+              }
+            }
+            subjectCache[subj.subject] = {
+              syllabusDoc, misconceptions, examinerReportContext,
+              examBody: subj.examBody, syllabusCode: subj.syllabusCode, level: subj.level,
+            };
+          }
+
+          const quizzes: any[] = [];
+          for (const item of selected) {
+            // Find matching subject metadata, fallback to first subject
+            const cached = subjectCache[item.subject] || subjectCache[subjects[0].subject] || Object.values(subjectCache)[0];
+
+            const topicSyllabusContext = cached.syllabusDoc?.chunks?.length
+              ? scoreSyllabusChunks(cached.syllabusDoc.chunks, `${item.topic} ${item.subtopic || ""}`).join("\n")
+              : cached.syllabusDoc?.chunks?.map((c: any) => c.content).join("\n").slice(0, 4000) || "";
+
+            const topicMisconceptions = cached.misconceptions.filter(
+              (m) => m.topic.toLowerCase() === item.topic.toLowerCase() ||
+                     (item.subtopic && m.subtopic?.toLowerCase() === item.subtopic.toLowerCase())
+            );
+            let topicExaminerContext = "";
+            if (topicMisconceptions.length > 0) {
+              topicExaminerContext = `\n\nSTRUCTURED EXAMINER MISCONCEPTIONS for ${item.topic}:\n` +
+                topicMisconceptions.map((m: any) =>
+                  `- Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}\n  Frequency: ${m.frequency}`
+                ).join("\n") +
+                "\nUse these real examiner-identified misconceptions to design distractors and traps.";
+            } else if (cached.examinerReportContext) {
+              topicExaminerContext = `\n\nEXAMINER REPORT INSIGHTS:\n${cached.examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors targeting real student misconceptions.`;
+            }
+
+            let difficultyDistribution: { easy: number; medium: number; hard: number } | undefined;
+            if (item.purpose === "stretch_strengths") {
+              const mastery = (await storage.listStudentTopicMastery(studentId))
+                .find((m) => m.topic === item.topic && (!item.subtopic || m.subtopic === item.subtopic));
+              const pct = mastery?.understandingPercent ?? 80;
+              if (pct >= 95) difficultyDistribution = { easy: 0, medium: 15, hard: 85 };
+              else if (pct >= 90) difficultyDistribution = { easy: 5, medium: 25, hard: 70 };
+              else if (pct >= 85) difficultyDistribution = { easy: 10, medium: 30, hard: 60 };
+              else difficultyDistribution = { easy: 15, medium: 40, hard: 45 };
+            } else if (item.purpose === "struggling_areas") {
+              difficultyDistribution = { easy: 35, medium: 45, hard: 20 };
+            }
+
+            const generated = await generateAuditedQuiz({
+              topic: item.topic,
+              subject: item.subject,
+              syllabus: cached.examBody,
+              level: cached.level,
+              subtopic: item.subtopic || undefined,
+              questionCount: parsed.questionCount,
+              difficultyDistribution,
+              copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
+              supportingDocText: topicSyllabusContext + topicExaminerContext,
+            });
+            const quiz = await storage.createSomaQuizBundle({
+              quiz: {
+                title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
+                topic: item.topic,
+                subject: item.subject,
+                syllabus: `${cached.examBody} ${cached.syllabusCode}`,
+                level: cached.level,
+                authorId: tutorId,
+                status: "published",
+                timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
+              },
+              questions: generated.questions.map((q) => ({
+                stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
+              })),
+              assignedStudentIds: [studentId],
+            });
+            await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
+            quizzes.push(quiz.quiz);
+          }
+
+          await storage.createTutorNotification({
+            tutorId,
+            studentId,
+            type: "ai_assessment_published",
+            title: "AI suggested assessments are ready",
+            message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published.`,
+            payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
+          });
+          console.log(`[AI Publish] Successfully generated ${quizzes.length} assessments for student ${studentId}`);
+        } catch (bgErr: any) {
+          console.error(`[AI Publish] Background generation failed for student ${studentId}:`, bgErr.message);
+          await storage.createTutorNotification({
+            tutorId,
+            studentId,
+            type: "ai_assessment_failed",
+            title: "Assessment generation failed",
+            message: `Failed to generate assessments: ${bgErr.message}. Please try again.`,
+            payload: { studentId, error: bgErr.message },
+          });
+        }
+      })();
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Failed to publish suggested assessments" });
     }
@@ -2338,6 +2960,11 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         uploadedAt: created.document.uploadedAt,
         chunkCount: created.chunks.length,
       });
+
+      // Background: extract structured topics and misconceptions via AI
+      extractDocumentIntelligence(created.document).catch((e) =>
+        console.error("[Doc Intelligence] Extraction failed:", e.message)
+      );
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Failed to upload syllabus PDF" });
     }
@@ -3363,6 +3990,14 @@ ${JSON.stringify({
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
       runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore).catch(() => {});
+
+      // Auto-update topic mastery from this submission
+      updateMasteryFromSubmission(
+        studentId,
+        quiz?.subject || null,
+        allQuestions.map((q) => ({ id: q.id, correctAnswer: q.correctAnswer, marks: q.marks, topicTag: q.topicTag, subtopicTag: q.subtopicTag })),
+        sanitizedAnswers,
+      ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

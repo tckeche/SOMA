@@ -20,6 +20,8 @@ import {
   ResponsiveContainer,
   RadarChart, Radar as RechartsRadar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Legend,
+  LineChart, Line,
 } from "recharts";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -125,6 +127,7 @@ export default function TutorStudentDetail() {
   const [showSummary, setShowSummary] = useState(false);
   const [newSubject, setNewSubject] = useState({ subject: "", examBody: "", syllabusCode: "", level: "" });
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<number[]>([]);
+  const [profileTab, setProfileTab] = useState<"curriculum" | "assessments">("curriculum");
 
   const { userId } = useSupabaseSession();
 
@@ -174,6 +177,42 @@ export default function TutorStudentDetail() {
       toast({ title: "Subject added" });
     },
     onError: (err: Error) => toast({ title: "Could not add subject", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteSubjectMutation = useMutation({
+    mutationFn: async (subjectId: number) => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/subjects/${subjectId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/students", studentId, "subjects"] });
+      toast({ title: "Subject removed" });
+    },
+    onError: () => toast({ title: "Failed to remove subject", variant: "destructive" }),
+  });
+
+  const { data: reviewSchedule } = useQuery<{
+    dueForReview: Array<{ topic: string; subtopic: string | null; subject: string; understandingPercent: number; daysOverdue: number; attempts: number }>;
+    upcoming: Array<{ topic: string; subtopic: string | null; subject: string; understandingPercent: number; daysUntilDue: number }>;
+  }>({
+    queryKey: ["/api/tutor/students", studentId, "review-schedule"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/review-schedule`);
+      if (!res.ok) return { dueForReview: [], upcoming: [] };
+      return res.json();
+    },
+    enabled: !!userId && !!studentId,
+  });
+
+  const { data: masteryData } = useQuery<Array<{ topic: string; subtopic: string | null; understandingPercent: number; attempts: number; confidenceLevel: string; totalQuestions: number; lastTestedAt: string | null }>>({
+    queryKey: ["/api/tutor/students", studentId, "mastery"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/mastery`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!userId && !!studentId,
   });
 
   const { data: suggestionsData, refetch: refetchSuggestions, isFetching: suggestionsLoading } = useQuery<{ suggestions: SuggestedAssessment[]; basis: any }>({
@@ -330,6 +369,56 @@ export default function TutorStudentDetail() {
     return dates[0] || null;
   }, [assignments]);
 
+  // ── LEARNING CURVE DATA ──────────────────────────────
+  const learningCurveData = useMemo(() => {
+    const graded = assignments
+      .filter((a) => a.score !== null && a.maxScore > 0 && a.completedAt)
+      .sort((a, b) => new Date(a.completedAt!).getTime() - new Date(b.completedAt!).getTime());
+    if (graded.length === 0) return { chartData: [], subjects: [] };
+
+    const subjectSet = new Set<string>();
+    const dateMap: Record<string, Record<string, number[]>> = {};
+
+    for (const a of graded) {
+      const subj = (a.quizSubject || "General").trim();
+      subjectSet.add(subj);
+      const dateKey = format(new Date(a.completedAt!), "yyyy-MM-dd");
+      if (!dateMap[dateKey]) dateMap[dateKey] = {};
+      if (!dateMap[dateKey][subj]) dateMap[dateKey][subj] = [];
+      dateMap[dateKey][subj].push(Math.round((a.score! / a.maxScore) * 100));
+    }
+
+    const subjects = Array.from(subjectSet);
+    const chartData = Object.entries(dateMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateKey, subjScores]) => {
+        const point: Record<string, any> = { date: format(new Date(dateKey), "MMM d") };
+        for (const subj of subjects) {
+          if (subjScores[subj]) {
+            const scores = subjScores[subj];
+            point[subj] = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+          }
+        }
+        // Overall average for the day
+        const allScores = Object.values(subjScores).flat();
+        point.overall = Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length);
+        return point;
+      });
+
+    // Add cumulative moving average
+    let runningSum = 0;
+    let runningCount = 0;
+    for (const point of chartData) {
+      runningSum += point.overall;
+      runningCount++;
+      point.movingAvg = Math.round(runningSum / runningCount);
+    }
+
+    return { chartData, subjects };
+  }, [assignments]);
+
+  const subjectChartColors = ["#8B5CF6", "#22D3EE", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#6366F1", "#14B8A6"];
+
   const TrendIcon = overallTrend === "declining" ? TrendingDown : overallTrend === "improving" ? TrendingUp : Minus;
   const trendColor = overallTrend === "declining" ? "text-red-400" : overallTrend === "improving" ? "text-emerald-400" : "text-slate-500";
   const trendBg = overallTrend === "declining" ? "bg-red-500/8" : overallTrend === "improving" ? "bg-emerald-500/8" : "bg-slate-500/8";
@@ -413,54 +502,367 @@ export default function TutorStudentDetail() {
               </div>
             </div>
 
-            <div className={`${GP} p-5`}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[14px] font-semibold text-slate-100">Student Curriculum Profile</h3>
-                <span className="text-[10px] text-slate-500">Required for AI assessment suggestions</span>
-              </div>
-              <div className="space-y-2 mb-4">
-                {subjects.map((s) => (
-                  <div key={s.id} className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px] text-slate-300">
-                    <strong>{s.subject}</strong> · {s.examBody} · {s.syllabusCode} · {s.level}
+            {/* ── LEARNING CURVE ──────────────────────────────────── */}
+            {learningCurveData.chartData.length >= 2 && (
+              <div className={GP}>
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
+                      <Activity className="w-3.5 h-3.5 text-violet-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Learning Curve</h3>
+                      <p className="text-[10px] text-slate-600 font-medium">Score progression over time &middot; {learningCurveData.chartData.length} data points</p>
+                    </div>
                   </div>
-                ))}
-                {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using AI suggestions.</p>}
+                  <div className="flex items-center gap-3">
+                    {learningCurveData.subjects.map((subj, i) => (
+                      <div key={subj} className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: subjectChartColors[i % subjectChartColors.length] }} />
+                        <span className="text-[10px] text-slate-400 font-medium">{subj}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-0.5 rounded-full bg-slate-400" />
+                      <span className="text-[10px] text-slate-500 font-medium">Moving Avg</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-5">
+                  <div style={{ height: 280 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={learningCurveData.chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                        <defs>
+                          {learningCurveData.subjects.map((subj, i) => {
+                            const color = subjectChartColors[i % subjectChartColors.length];
+                            return (
+                              <linearGradient key={subj} id={`lc-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                                <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                              </linearGradient>
+                            );
+                          })}
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+                        <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                        <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                        <Tooltip
+                          content={({ active, payload, label }: any) => {
+                            if (!active || !payload?.length) return null;
+                            return (
+                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-white/[0.08] backdrop-blur-xl" style={{ background: "rgba(15,23,42,0.95)" }}>
+                                <p className="text-slate-300 font-semibold mb-1">{label}</p>
+                                {payload.map((entry: any, i: number) => (
+                                  <div key={i} className="flex items-center gap-2 py-0.5">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color || entry.stroke }} />
+                                    <span className="text-slate-400">{entry.name}:</span>
+                                    <span className="text-white font-bold tabular-nums">{entry.value}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }}
+                        />
+                        {learningCurveData.subjects.map((subj, i) => (
+                          <Area
+                            key={subj}
+                            type="monotone"
+                            dataKey={subj}
+                            stroke={subjectChartColors[i % subjectChartColors.length]}
+                            fill={`url(#lc-grad-${i})`}
+                            strokeWidth={2}
+                            dot={{ r: 3, fill: subjectChartColors[i % subjectChartColors.length] }}
+                            connectNulls
+                          />
+                        ))}
+                        <Line
+                          type="monotone"
+                          dataKey="movingAvg"
+                          name="Moving Avg"
+                          stroke="#94a3b8"
+                          strokeWidth={1.5}
+                          strokeDasharray="6 3"
+                          dot={false}
+                          connectNulls
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Subject" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))} />
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Exam body (e.g. Cambridge)" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))} />
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
-                <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Level" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))} />
-              </div>
-              <button onClick={() => addSubjectMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
-                <PlusCircle className="w-4 h-4" /> Add Subject
-              </button>
+            )}
 
-              <div className="mt-6 pt-4 border-t border-white/[0.06]">
-                <h3 className="text-[14px] font-semibold text-slate-100 mb-2">Create Assessment for {displayName}</h3>
-                <p className="text-[11px] text-slate-500 mb-3">AI uses this student's performance history, curriculum metadata, syllabus resources, and examiner-report difficulty patterns.</p>
-                <div className="flex items-center gap-2 mb-3">
-                  <button onClick={() => refetchSuggestions()} className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">
-                    <Wand2 className="w-4 h-4" /> {suggestionsLoading ? "Analyzing..." : "Generate Suggested Assessments"}
-                  </button>
-                  {suggestionsData?.basis?.curriculum && (
-                    <span className="text-[11px] text-slate-400">Using {suggestionsData.basis.curriculum.subject} · {suggestionsData.basis.curriculum.examBody} · {suggestionsData.basis.curriculum.syllabusCode} · {suggestionsData.basis.curriculum.level}</span>
+            {/* ── SPACED REPETITION REVIEW SCHEDULE ────────────────── */}
+            {reviewSchedule && (reviewSchedule.dueForReview.length > 0 || reviewSchedule.upcoming.length > 0) && (
+              <div className={GP}>
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
+                      <Calendar className="w-3.5 h-3.5 text-violet-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-semibold text-slate-100">Spaced Repetition Schedule</h3>
+                      <p className="text-[10px] text-slate-600 font-medium">Review mastered topics at 7 / 30 / 90 day intervals to prevent forgetting</p>
+                    </div>
+                  </div>
+                  {reviewSchedule.dueForReview.length > 0 && (
+                    <Badge className="text-[9px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/20">
+                      {reviewSchedule.dueForReview.length} due now
+                    </Badge>
                   )}
                 </div>
-                <div className="space-y-2">
-                  {(suggestionsData?.suggestions || []).map((s) => (
-                    <label key={s.id} className="flex items-start gap-2 rounded-md border border-white/[0.07] bg-white/[0.02] p-3">
-                      <input type="checkbox" checked={selectedSuggestionIds.includes(s.id)} onChange={(e) => setSelectedSuggestionIds((prev) => e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id))} />
-                      <div>
-                        <p className="text-[12px] text-slate-200 font-semibold">{s.purpose.replace(/_/g, " ")} — {s.topic}</p>
-                        <p className="text-[11px] text-slate-500">{s.rationale}</p>
+                <div className="px-6 py-4">
+                  {reviewSchedule.dueForReview.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-2">Overdue Reviews</p>
+                      <div className="space-y-1.5">
+                        {reviewSchedule.dueForReview.map((r, i) => (
+                          <div key={i} className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="text-[12px] text-slate-200 font-medium">{r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}</span>
+                              <span className="text-[10px] text-slate-500">{r.subject}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`text-[11px] font-bold tabular-nums ${r.understandingPercent >= 75 ? "text-emerald-400" : "text-amber-400"}`}>
+                                {r.understandingPercent}%
+                              </span>
+                              <span className="text-[10px] text-amber-400 font-medium">
+                                {r.daysOverdue > 0 ? `${r.daysOverdue}d overdue` : "Due today"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </label>
-                  ))}
+                    </div>
+                  )}
+                  {reviewSchedule.upcoming.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">Upcoming Reviews</p>
+                      <div className="flex flex-wrap gap-2">
+                        {reviewSchedule.upcoming.map((r, i) => (
+                          <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-slate-500/8 text-slate-400 border border-slate-500/15">
+                            {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""} — in {r.daysUntilDue}d
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button disabled={selectedSuggestionIds.length === 0 || publishSuggestionsMutation.isPending} onClick={() => publishSuggestionsMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 disabled:opacity-40">
-                  Publish Selected ({selectedSuggestionIds.length})
+              </div>
+            )}
+
+            <div className={GP}>
+              {/* Tab header */}
+              <div className="flex items-center border-b border-white/[0.06]">
+                <button
+                  onClick={() => setProfileTab("curriculum")}
+                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "curriculum" ? "text-violet-300 border-violet-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}
+                >
+                  Curriculum Profile
                 </button>
+                <button
+                  onClick={() => setProfileTab("assessments")}
+                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "assessments" ? "text-emerald-300 border-emerald-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}
+                >
+                  Suggested Assessments
+                </button>
+              </div>
+
+              <div className="p-5">
+                {profileTab === "curriculum" ? (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-[14px] font-semibold text-slate-100">Student Curriculum Profile</h3>
+                      <span className="text-[10px] text-slate-500">Required for AI assessment suggestions</span>
+                    </div>
+                    <div className="space-y-2 mb-4">
+                      {subjects.map((s) => (
+                        <div key={s.id} className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2">
+                          <span className="text-[12px] text-slate-300">
+                            <strong>{s.subject}</strong> · {s.examBody} · {s.syllabusCode} · {s.level}
+                          </span>
+                          <button
+                            onClick={() => deleteSubjectMutation.mutate(s.id)}
+                            className="p-1 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors"
+                            title="Remove subject"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using AI suggestions.</p>}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                      <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))}>
+                        <option value="" className="text-slate-500">Select Subject</option>
+                        {["Mathematics", "Physics", "Chemistry", "Biology", "Economics", "Business Studies", "English", "Computer Science", "Accounting", "Geography", "History"].map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))}>
+                        <option value="" className="text-slate-500">Exam Body</option>
+                        {["Cambridge (CAIE)", "Edexcel", "IEB", "AQA", "OCR", "ZIMSEC", "WJEC"].map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                      <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code (e.g. 0580)" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
+                      <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))}>
+                        <option value="" className="text-slate-500">Level</option>
+                        {["IGCSE", "O Level", "AS Level", "A Level", "Grade 10", "Grade 11", "Grade 12", "IB SL", "IB HL"].map((l) => (
+                          <option key={l} value={l}>{l}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button onClick={() => addSubjectMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                      <PlusCircle className="w-4 h-4" /> Add Subject
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-[14px] font-semibold text-slate-100 mb-1">Create Assessment for {displayName}</h3>
+                    <p className="text-[11px] text-slate-500 mb-4">AI analyzes performance history, curriculum metadata, syllabus content, and examiner report misconceptions.</p>
+
+                    {subjects.length === 0 ? (
+                      <div className="text-center py-8">
+                        <AlertTriangle className="w-8 h-8 mx-auto text-amber-400/60 mb-2" />
+                        <p className="text-[12px] text-amber-300 font-medium">Curriculum profile required</p>
+                        <p className="text-[11px] text-slate-500 mt-1">Switch to the Curriculum Profile tab and add at least one subject.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 mb-4">
+                          <button
+                            onClick={() => { refetchSuggestions(); setSelectedSuggestionIds([]); }}
+                            disabled={suggestionsLoading}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                          >
+                            <Wand2 className="w-4 h-4" />
+                            {suggestionsLoading ? "Analyzing student data..." : "Generate Suggested Assessments"}
+                          </button>
+                          {suggestionsData?.basis?.curriculum && (
+                            <span className="text-[10px] text-slate-500">
+                              {Array.isArray(suggestionsData.basis.curriculum)
+                                ? suggestionsData.basis.curriculum.map((c: any) => `${c.subject} (${c.examBody} ${c.syllabusCode})`).join(" · ")
+                                : `${suggestionsData.basis.curriculum.examBody} · ${suggestionsData.basis.curriculum.syllabusCode} · ${suggestionsData.basis.curriculum.level}`}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Suggestion cards with assessment history */}
+                        {suggestionsData?.suggestions && suggestionsData.suggestions.length > 0 && (
+                          <div className="space-y-3 mb-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-slate-400 font-medium">{suggestionsData.suggestions.length} suggestions generated</span>
+                              <button
+                                onClick={() => {
+                                  const allIds = suggestionsData.suggestions.map((s) => s.id);
+                                  setSelectedSuggestionIds(selectedSuggestionIds.length === allIds.length ? [] : allIds);
+                                }}
+                                className="text-[11px] text-violet-400 hover:text-violet-300 font-medium"
+                              >
+                                {selectedSuggestionIds.length === suggestionsData.suggestions.length ? "Deselect All" : "Select All"}
+                              </button>
+                            </div>
+
+                            {suggestionsData.suggestions.map((s) => {
+                              const purposeLabels: Record<string, { label: string; color: string; icon: typeof Target }> = {
+                                struggling_areas: { label: "Remediation", color: "text-red-400 bg-red-500/10 border-red-500/20", icon: TrendingDown },
+                                uncovered_content: { label: "New Content", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", icon: BookOpen },
+                                stretch_strengths: { label: "Challenge", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: TrendingUp },
+                                spaced_review: { label: "Spaced Review", color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Clock },
+                              };
+                              const purpose = purposeLabels[s.purpose] || { label: s.purpose, color: "text-slate-400 bg-slate-500/10 border-slate-500/20", icon: Target };
+                              const PurposeIcon = purpose.icon;
+                              const isSelected = selectedSuggestionIds.includes(s.id);
+
+                              // Find mastery data for this topic
+                              const topicMastery = masteryData?.find(
+                                (m) => m.topic.toLowerCase() === s.topic.toLowerCase() && (!s.subtopic || m.subtopic?.toLowerCase() === s.subtopic.toLowerCase())
+                              );
+
+                              return (
+                                <label
+                                  key={s.id}
+                                  className={`block rounded-xl border p-4 cursor-pointer transition-all ${isSelected ? "border-violet-500/40 bg-violet-500/[0.06]" : "border-white/[0.07] bg-white/[0.02] hover:border-white/[0.12]"}`}
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <input
+                                      type="checkbox"
+                                      className="mt-1 accent-violet-500"
+                                      checked={isSelected}
+                                      onChange={(e) => setSelectedSuggestionIds((prev) => e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id))}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1.5">
+                                        <Badge className={`text-[9px] font-bold border ${purpose.color}`}>
+                                          <PurposeIcon className="w-2.5 h-2.5 mr-1" />
+                                          {purpose.label}
+                                        </Badge>
+                                        <span className="text-[13px] font-semibold text-slate-200">{s.topic}</span>
+                                        {s.subtopic && <span className="text-[11px] text-slate-500">{s.subtopic}</span>}
+                                      </div>
+                                      <p className="text-[11px] text-slate-400 leading-relaxed mb-2">{s.rationale}</p>
+
+                                      {/* Assessment history for this topic */}
+                                      {topicMastery && (
+                                        <div className="flex items-center gap-3 text-[10px]">
+                                          <span className={`font-bold tabular-nums ${topicMastery.understandingPercent >= 75 ? "text-emerald-400" : topicMastery.understandingPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                            {topicMastery.understandingPercent}% mastery
+                                          </span>
+                                          <span className="text-slate-600">|</span>
+                                          <span className="text-slate-500">{topicMastery.totalQuestions} questions attempted</span>
+                                          <span className="text-slate-600">|</span>
+                                          <span className="text-slate-500">{topicMastery.attempts} assessment{topicMastery.attempts !== 1 ? "s" : ""}</span>
+                                          <span className="text-slate-600">|</span>
+                                          <Badge className={`text-[8px] border ${topicMastery.confidenceLevel === "high" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/15" : topicMastery.confidenceLevel === "medium" ? "text-amber-400 bg-amber-500/8 border-amber-500/15" : "text-slate-400 bg-slate-500/8 border-slate-500/15"}`}>
+                                            {topicMastery.confidenceLevel} confidence
+                                          </Badge>
+                                        </div>
+                                      )}
+                                      {!topicMastery && (
+                                        <span className="text-[10px] text-slate-600">No prior assessment data for this topic</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Publish button */}
+                        {suggestionsData?.suggestions && suggestionsData.suggestions.length > 0 && (
+                          <button
+                            disabled={selectedSuggestionIds.length === 0 || publishSuggestionsMutation.isPending}
+                            onClick={() => publishSuggestionsMutation.mutate()}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-all disabled:opacity-40"
+                          >
+                            {publishSuggestionsMutation.isPending ? (
+                              <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                            ) : (
+                              <>Publish {selectedSuggestionIds.length} Assessment{selectedSuggestionIds.length !== 1 ? "s" : ""}</>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Remediation & misconception insights */}
+                        {suggestionsData?.basis?.remediationTargets && suggestionsData.basis.remediationTargets.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-white/[0.06]">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">Remediation Targets (below 75%)</p>
+                            <div className="flex flex-wrap gap-2">
+                              {suggestionsData.basis.remediationTargets.map((r: any, i: number) => (
+                                <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-red-500/8 text-red-400 border border-red-500/15">
+                                  {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}: {r.understanding}% ({r.attempts} attempts)
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
