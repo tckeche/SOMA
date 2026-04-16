@@ -290,9 +290,9 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
   const { data, hasEnoughData } = useMemo(() => {
-    const subjects = [...new Set(
+    const subjects = Array.from(new Set(
       (stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean)
-    )] as string[];
+    )) as string[];
 
     // Check if any subject has at least 5 submissions
     const sufficientData = subjects.some((subj) => {
@@ -462,9 +462,9 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
 export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
   if (!stats) return null;
   const { matrix, subjects, students } = useMemo(() => {
-    const subjects = [...new Set((stats.cohortAverages || []).map((c) => c.subject))];
-    const subFromSubs = [...new Set((stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean) as string[])];
-    const allSubjects = [...new Set([...subjects, ...subFromSubs])];
+    const subjects = Array.from(new Set((stats.cohortAverages || []).map((c) => c.subject)));
+    const subFromSubs = Array.from(new Set((stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean) as string[]));
+    const allSubjects = Array.from(new Set([...subjects, ...subFromSubs]));
 
     const students = (stats.studentInsights || []).map((s) => s.studentName);
 

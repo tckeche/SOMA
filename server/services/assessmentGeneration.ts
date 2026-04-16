@@ -80,25 +80,25 @@ const SYNONYM_MAP: Record<string, string[]> = {
   number: ["integer", "rational", "irrational", "prime", "factor", "multiple"],
 };
 
-function expandQueryTerms(query: string): { unigrams: Set<string>; bigrams: Set<string>; synonyms: Set<string> } {
+function expandQueryTerms(query: string): { unigrams: string[]; bigrams: string[]; synonyms: string[] } {
   const lower = query.toLowerCase();
   const words = lower.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-  const unigrams = new Set(words);
-  const bigrams = new Set<string>();
+  const unigramSet = new Set(words);
+  const bigramSet = new Set<string>();
   for (let i = 0; i < words.length - 1; i++) {
-    bigrams.add(`${words[i]} ${words[i + 1]}`);
+    bigramSet.add(`${words[i]} ${words[i + 1]}`);
   }
-  const synonyms = new Set<string>();
+  const synonymSet = new Set<string>();
   for (const word of words) {
     if (SYNONYM_MAP[word]) {
-      for (const syn of SYNONYM_MAP[word]) synonyms.add(syn);
+      for (const syn of SYNONYM_MAP[word]) synonymSet.add(syn);
     }
     // Reverse lookup: if the word appears in any synonym list, add the key
     for (const [key, syns] of Object.entries(SYNONYM_MAP)) {
-      if (syns.includes(word) && !unigrams.has(key)) synonyms.add(key);
+      if (syns.includes(word) && !unigramSet.has(key)) synonymSet.add(key);
     }
   }
-  return { unigrams, bigrams, synonyms };
+  return { unigrams: Array.from(unigramSet), bigrams: Array.from(bigramSet), synonyms: Array.from(synonymSet) };
 }
 
 export function scoreSyllabusChunks(chunks: Array<{ content: string }>, query: string, limit = 4): string[] {

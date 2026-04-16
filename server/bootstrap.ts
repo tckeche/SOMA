@@ -36,6 +36,15 @@ const BOOTSTRAP_QUERIES = [
   `CREATE UNIQUE INDEX IF NOT EXISTS student_topic_mastery_unique_idx ON student_topic_mastery(student_id, subject, topic, subtopic)`,
   `CREATE TABLE IF NOT EXISTS tutor_notifications (id SERIAL PRIMARY KEY, tutor_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, student_id UUID REFERENCES soma_users(id) ON DELETE SET NULL, type TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, payload JSONB, read_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS suggested_assessments (id SERIAL PRIMARY KEY, tutor_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, subject TEXT NOT NULL, purpose TEXT NOT NULL, rationale TEXT NOT NULL, topic TEXT NOT NULL, subtopic TEXT, target_difficulty TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'suggested', generated_quiz_id INTEGER REFERENCES soma_quizzes(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  // PR #53: new columns on student_topic_mastery for spaced repetition + confidence scoring
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS total_questions INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS correct_questions INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS confidence_level TEXT NOT NULL DEFAULT 'low'`,
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ`,
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS next_review_at TIMESTAMPTZ`,
+  // PR #53: new tables for examiner misconceptions + syllabus topic inventory (TF-IDF retrieval)
+  `CREATE TABLE IF NOT EXISTS examiner_misconceptions (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, misconception TEXT NOT NULL, student_error TEXT NOT NULL, correct_approach TEXT NOT NULL, frequency TEXT NOT NULL DEFAULT 'common', extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS syllabus_topic_inventory (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, description TEXT, extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
 ] as const;
 
 function logBootstrap(message: string) {
