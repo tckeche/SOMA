@@ -159,6 +159,8 @@ export interface IStorage {
 
   deleteStudentSubject(id: number, studentId: string): Promise<void>;
 
+  getExaminerReportsWithChunks(filter: { board: string; syllabusCode: string; tutorId?: string }): Promise<Array<SyllabusDocument & { chunks: SyllabusChunk[] }>>;
+
   // Examiner misconception storage
   createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]>;
   listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]>;
@@ -399,6 +401,20 @@ class DatabaseStorage implements IStorage {
     await this.database
       .delete(studentSubjects)
       .where(and(eq(studentSubjects.id, id), eq(studentSubjects.studentId, studentId)));
+  }
+
+  async getExaminerReportsWithChunks(filter: { board: string; syllabusCode: string; tutorId?: string }): Promise<Array<SyllabusDocument & { chunks: SyllabusChunk[] }>> {
+    const conditions: any[] = [
+      eq(syllabusDocuments.board, filter.board),
+      eq(syllabusDocuments.syllabusCode, filter.syllabusCode),
+      eq(syllabusDocuments.documentType, "examiner_report"),
+    ];
+    if (filter.tutorId) conditions.push(or(eq(syllabusDocuments.tutorId, filter.tutorId), isNull(syllabusDocuments.tutorId)));
+    const docs = await this.database.select().from(syllabusDocuments).where(and(...conditions));
+    return Promise.all(docs.map(async (doc) => {
+      const chunks = await this.database.select().from(syllabusChunks).where(eq(syllabusChunks.documentId, doc.id));
+      return { ...doc, chunks };
+    }));
   }
 
   async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {
@@ -1443,6 +1459,20 @@ class MemoryStorage implements IStorage {
     this.studentSubjectsList = this.studentSubjectsList.filter(
       (s) => !(s.id === id && s.studentId === studentId)
     );
+  }
+
+  async getExaminerReportsWithChunks(filter: { board: string; syllabusCode: string; tutorId?: string }): Promise<Array<SyllabusDocument & { chunks: SyllabusChunk[] }>> {
+    return this.syllabusDocumentsList
+      .filter((doc) =>
+        doc.documentType === "examiner_report" &&
+        doc.board === filter.board &&
+        doc.syllabusCode === filter.syllabusCode &&
+        (!filter.tutorId || doc.tutorId === filter.tutorId || doc.tutorId === null)
+      )
+      .map((doc) => ({
+        ...doc,
+        chunks: this.syllabusChunksList.filter((c) => c.documentId === doc.id),
+      }));
   }
 
   async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {

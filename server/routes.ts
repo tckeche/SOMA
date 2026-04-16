@@ -929,11 +929,15 @@ function sanitizeSubmittedAnswers(
 async function extractDocumentIntelligence(doc: {
   id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null;
 }): Promise<void> {
-  const textSlice = doc.extractedText.slice(0, 6000);
-
   if (doc.documentType === "examiner_report") {
-    // Extract misconceptions from examiner reports
-    const prompt = `You are an educational data analyst. Extract structured misconceptions from the following examiner report.
+    const chunks = buildSyllabusChunks(doc.extractedText, 1800);
+    const BATCH_SIZE = 3;
+    const allMisconceptions: any[] = [];
+    const seenKeys = new Set<string>();
+
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batchText = chunks.slice(i, i + BATCH_SIZE).map((c) => c.content).join("\n---\n");
+      const prompt = `You are an educational data analyst. Extract structured misconceptions from the following examiner report section.
 
 For each misconception, identify:
 - topic: the mathematical/subject topic
@@ -943,34 +947,45 @@ For each misconception, identify:
 - correctApproach: what students should do instead
 - frequency: "very_common", "common", or "occasional"
 
-Return a JSON array of objects. Extract up to 15 misconceptions. Only real observations from the text.
+Return a JSON array of objects. Extract ALL misconceptions you find. Only real observations from the text.
 
-EXAMINER REPORT TEXT:
-${textSlice}`;
+EXAMINER REPORT TEXT (section ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(chunks.length / BATCH_SIZE)}):
+${batchText}`;
 
-    try {
-      const { data } = await generateWithFallback(prompt, "Extract misconceptions as JSON array.", undefined);
-      const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const items = JSON.parse(cleaned);
-      if (Array.isArray(items) && items.length > 0) {
-        await storage.createExaminerMisconceptions(
-          items.slice(0, 15).map((item: any) => ({
-            documentId: doc.id,
-            board: doc.board,
-            syllabusCode: doc.syllabusCode,
-            subject: doc.subject || item.subject || null,
-            topic: String(item.topic || "General"),
-            subtopic: item.subtopic || null,
-            misconception: String(item.misconception || ""),
-            studentError: String(item.studentError || item.student_error || ""),
-            correctApproach: String(item.correctApproach || item.correct_approach || ""),
-            frequency: item.frequency || "common",
-          }))
-        );
-        console.log(`[Doc Intelligence] Extracted ${items.length} misconceptions from examiner report ${doc.id}`);
+      try {
+        const { data } = await generateWithFallback(prompt, "Extract misconceptions as JSON array.", undefined);
+        const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        const items = JSON.parse(cleaned);
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            const key = `${String(item.topic || "").toLowerCase()}|${String(item.misconception || "").toLowerCase().slice(0, 60)}`;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              allMisconceptions.push(item);
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error(`[Doc Intelligence] Batch ${Math.floor(i / BATCH_SIZE) + 1} failed for doc ${doc.id}:`, e.message);
       }
-    } catch (e: any) {
-      console.error(`[Doc Intelligence] Misconception extraction failed for doc ${doc.id}:`, e.message);
+    }
+
+    if (allMisconceptions.length > 0) {
+      await storage.createExaminerMisconceptions(
+        allMisconceptions.slice(0, 40).map((item: any) => ({
+          documentId: doc.id,
+          board: doc.board,
+          syllabusCode: doc.syllabusCode,
+          subject: doc.subject || item.subject || null,
+          topic: String(item.topic || "General"),
+          subtopic: item.subtopic || null,
+          misconception: String(item.misconception || ""),
+          studentError: String(item.studentError || item.student_error || ""),
+          correctApproach: String(item.correctApproach || item.correct_approach || ""),
+          frequency: item.frequency || "common",
+        }))
+      );
+      console.log(`[Doc Intelligence] Extracted ${allMisconceptions.length} misconceptions from examiner report ${doc.id} (${chunks.length} chunks processed)`);
     }
   } else {
     // Extract topic inventory from syllabus documents
@@ -2585,7 +2600,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         try {
           // Pre-cache syllabus docs and misconceptions per subject
           const subjectCache: Record<string, {
-            syllabusDoc: any; misconceptions: any[]; examinerReportContext: string;
+            syllabusDoc: any; misconceptions: any[]; examinerChunks: any[];
             examBody: string; syllabusCode: string; level: string;
           }> = {};
           for (const subj of subjects) {
@@ -2595,18 +2610,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             const misconceptions = await storage.listExaminerMisconceptions({
               board: subj.examBody, syllabusCode: subj.syllabusCode,
             });
-            let examinerReportContext = "";
-            if (misconceptions.length === 0) {
-              const allDocs = await storage.listSyllabusDocuments(tutorId);
-              const examinerDocs = allDocs.filter(
-                (d) => d.documentType === "examiner_report" && d.board === subj.examBody && d.syllabusCode === subj.syllabusCode
-              );
-              if (examinerDocs.length > 0) {
-                examinerReportContext = examinerDocs.map((d) => d.extractedText).join("\n---\n").slice(0, 4000);
-              }
-            }
+            const examinerReports = await storage.getExaminerReportsWithChunks({
+              board: subj.examBody, syllabusCode: subj.syllabusCode, tutorId,
+            });
+            const examinerChunks = examinerReports.flatMap((d) => d.chunks);
             subjectCache[subj.subject] = {
-              syllabusDoc, misconceptions, examinerReportContext,
+              syllabusDoc, misconceptions, examinerChunks,
               examBody: subj.examBody, syllabusCode: subj.syllabusCode, level: subj.level,
             };
           }
@@ -2620,19 +2629,27 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               ? scoreSyllabusChunks(cached.syllabusDoc.chunks, `${item.topic} ${item.subtopic || ""}`).join("\n")
               : cached.syllabusDoc?.chunks?.map((c: any) => c.content).join("\n").slice(0, 4000) || "";
 
-            const topicMisconceptions = cached.misconceptions.filter(
-              (m) => m.topic.toLowerCase() === item.topic.toLowerCase() ||
-                     (item.subtopic && m.subtopic?.toLowerCase() === item.subtopic.toLowerCase())
-            );
+            const topicLower = item.topic.toLowerCase();
+            const subtopicLower = item.subtopic?.toLowerCase() || "";
+            const topicMisconceptions = cached.misconceptions.filter((m: any) => {
+              const mt = m.topic.toLowerCase();
+              const ms = m.subtopic?.toLowerCase() || "";
+              return mt === topicLower || topicLower.includes(mt) || mt.includes(topicLower) ||
+                (subtopicLower && (ms === subtopicLower || subtopicLower.includes(ms) || ms.includes(subtopicLower)));
+            });
             let topicExaminerContext = "";
             if (topicMisconceptions.length > 0) {
               topicExaminerContext = `\n\nSTRUCTURED EXAMINER MISCONCEPTIONS for ${item.topic}:\n` +
-                topicMisconceptions.map((m: any) =>
+                topicMisconceptions.slice(0, 8).map((m: any) =>
                   `- Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}\n  Frequency: ${m.frequency}`
                 ).join("\n") +
                 "\nUse these real examiner-identified misconceptions to design distractors and traps.";
-            } else if (cached.examinerReportContext) {
-              topicExaminerContext = `\n\nEXAMINER REPORT INSIGHTS:\n${cached.examinerReportContext.slice(0, 2000)}\nUse these examiner observations to craft distractors targeting real student misconceptions.`;
+            }
+            if (cached.examinerChunks.length > 0) {
+              const scoredExaminerChunks = scoreSyllabusChunks(cached.examinerChunks, `${item.topic} ${item.subtopic || ""}`, 3);
+              if (scoredExaminerChunks.length > 0) {
+                topicExaminerContext += `\n\nEXAMINER REPORT INSIGHTS for ${item.topic}:\n${scoredExaminerChunks.join("\n---\n")}\nUse these examiner observations to craft distractors targeting real student weaknesses.`;
+              }
             }
 
             let difficultyDistribution: { easy: number; medium: number; hard: number } | undefined;
@@ -3070,6 +3087,38 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
         const relevantChunks = scoreSyllabusChunks(syllabusDocument.chunks, text);
         supportingText += `\nSelected syllabus: ${syllabusContextLabel}\n${relevantChunks.join("\n---\n") || syllabusDocument.extractedText.slice(0, 2000)}`;
+      }
+
+      if (syllabusSelection?.board && syllabusSelection?.syllabusCode) {
+        const board = String(syllabusSelection.board);
+        const code = String(syllabusSelection.syllabusCode);
+        const tutorId = (req as any).tutorId;
+
+        const misconceptions = await storage.listExaminerMisconceptions({ board, syllabusCode: code });
+        if (misconceptions.length > 0) {
+          const matched = misconceptions.filter((m) => {
+            const hay = text.toLowerCase();
+            const t = m.topic.toLowerCase();
+            return hay.includes(t) || t.includes(hay.split(/\s+/).filter((w: string) => w.length > 3).join(" ") || "§§§");
+          });
+          const toUse = matched.length > 0 ? matched.slice(0, 6) : misconceptions.slice(0, 4);
+          supportingText += `\n\nEXAMINER REPORT MISCONCEPTIONS:\n` +
+            toUse.map((m) =>
+              `- Topic: ${m.topic}${m.subtopic ? ` > ${m.subtopic}` : ""}\n  Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}\n  Frequency: ${m.frequency}`
+            ).join("\n") +
+            "\nUse these real examiner-identified misconceptions to design realistic distractors.";
+        }
+
+        const examinerDocs = await storage.getExaminerReportsWithChunks({ board, syllabusCode: code, tutorId });
+        if (examinerDocs.length > 0) {
+          const allChunks = examinerDocs.flatMap((d) => d.chunks);
+          if (allChunks.length > 0) {
+            const scoredChunks = scoreSyllabusChunks(allChunks, text, 3);
+            if (scoredChunks.length > 0) {
+              supportingText += `\n\nEXAMINER REPORT INSIGHTS:\n${scoredChunks.join("\n---\n")}\nUse these examiner observations to craft questions targeting real student weaknesses.`;
+            }
+          }
+        }
       }
 
       const paperCode = text.match(/\b\d{4}\/v\d\/\d{4}\b/i)?.[0];
@@ -3594,6 +3643,40 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json([]);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch submissions" });
+    }
+  });
+
+  app.get("/api/student/mastery", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const mastery = await storage.listStudentTopicMastery(studentId);
+      const now = new Date();
+      const enriched = mastery.map((m) => ({
+        ...m,
+        reviewStatus: m.masteryAchieved && m.nextReviewAt
+          ? new Date(m.nextReviewAt) <= now ? "due" : "scheduled"
+          : m.masteryAchieved ? "mastered" : "learning",
+        daysUntilReview: m.nextReviewAt
+          ? Math.ceil((new Date(m.nextReviewAt).getTime() - now.getTime()) / 86400000)
+          : null,
+      }));
+      const bySubject: Record<string, typeof enriched> = {};
+      for (const item of enriched) {
+        (bySubject[item.subject] ??= []).push(item);
+      }
+      res.json({
+        topics: enriched,
+        bySubject,
+        summary: {
+          totalTopics: enriched.length,
+          mastered: enriched.filter((m) => m.masteryAchieved).length,
+          learning: enriched.filter((m) => !m.masteryAchieved && m.tested).length,
+          untested: enriched.filter((m) => !m.tested).length,
+          reviewDue: enriched.filter((m) => m.reviewStatus === "due").length,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
     }
   });
 

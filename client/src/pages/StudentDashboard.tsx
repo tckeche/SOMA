@@ -11,7 +11,7 @@ import { format } from "date-fns";
 import {
   LogOut, BookOpen, Clock, ArrowRight, CheckCircle2,
   Loader2, AlertTriangle, Sparkles, RefreshCw,
-  Eye, FileText, Calendar,
+  Eye, FileText, Calendar, Target, TrendingUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { subscribeToSomaMutations } from "@/lib/realtimeEvents";
@@ -180,6 +180,26 @@ export default function StudentDashboard() {
     enabled: !!userId,
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
+  });
+
+  const { data: masteryData } = useQuery<{
+    topics: Array<{
+      subject: string; topic: string; subtopic: string | null;
+      understandingPercent: number; masteryAchieved: boolean;
+      confidenceLevel: string; reviewStatus: string; daysUntilReview: number | null;
+      attempts: number; totalQuestions: number; correctQuestions: number;
+    }>;
+    summary: { totalTopics: number; mastered: number; learning: number; untested: number; reviewDue: number };
+  }>({
+    queryKey: ["/api/student/mastery", userId],
+    queryFn: async () => {
+      if (!userId) return { topics: [], summary: { totalTopics: 0, mastered: 0, learning: 0, untested: 0, reviewDue: 0 } };
+      const res = await authFetch("/api/student/mastery");
+      if (!res.ok) return { topics: [], summary: { totalTopics: 0, mastered: 0, learning: 0, untested: 0, reviewDue: 0 } };
+      return res.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 30000,
   });
 
   const subjectStats = useMemo(() => {
@@ -647,6 +667,66 @@ export default function StudentDashboard() {
                 </div>
               </section>
             </div>
+
+            {masteryData && masteryData.topics.length > 0 && (
+              <section className={CARD_CLASS} data-testid="section-mastery">
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-violet-400" />
+                    <h2 className="text-lg font-bold text-slate-200">Topic Mastery</h2>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px]">
+                    <span className="text-emerald-400">{masteryData.summary.mastered} mastered</span>
+                    <span className="text-cyan-400">{masteryData.summary.learning} in progress</span>
+                    {masteryData.summary.reviewDue > 0 && (
+                      <span className="text-amber-400">{masteryData.summary.reviewDue} due for review</span>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {masteryData.topics
+                    .sort((a, b) => {
+                      if (a.reviewStatus === "due" && b.reviewStatus !== "due") return -1;
+                      if (b.reviewStatus === "due" && a.reviewStatus !== "due") return 1;
+                      return b.understandingPercent - a.understandingPercent;
+                    })
+                    .slice(0, 12)
+                    .map((t, i) => {
+                      const sc = getSubjectColor(t.subject);
+                      const barColor = t.masteryAchieved ? "#10b981" : t.understandingPercent >= 50 ? "#06b6d4" : "#f43f5e";
+                      return (
+                        <div key={i} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 transition-colors" data-testid={`mastery-topic-${i}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${sc.bg} ${sc.label}`}>{t.subject}</span>
+                              <span className="text-xs text-slate-200 font-medium truncate">{t.topic}</span>
+                              {t.subtopic && <span className="text-[10px] text-slate-500 truncate">· {t.subtopic}</span>}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.understandingPercent}%`, backgroundColor: barColor }} />
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400 w-8 text-right">{t.understandingPercent}%</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {t.reviewStatus === "due" && (
+                              <span className="text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">Review due</span>
+                            )}
+                            {t.masteryAchieved && t.reviewStatus !== "due" && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            )}
+                            {!t.masteryAchieved && t.attempts > 0 && (
+                              <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+                            )}
+                            <span className="text-[9px] text-slate-500">{t.attempts} attempt{t.attempts !== 1 ? "s" : ""}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </section>
+            )}
 
             <section className="flex justify-center pt-2 pb-6">
               <button

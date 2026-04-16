@@ -274,6 +274,7 @@ Never drift to adjacent topics not explicitly in scope.
 Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
 Hard questions must involve reasoning/application (not recall).
 For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.
+If EXAMINER MISCONCEPTIONS are provided in the supporting context, design at least one distractor per question that targets a listed misconception. Prioritise "very_common" misconceptions.
 
 CRITICAL LATEX FORMATTING RULE — THIS IS MANDATORY AND NON-NEGOTIABLE:
 Every mathematical expression in EVERY stem, option, and explanation MUST be wrapped in LaTeX delimiters.
