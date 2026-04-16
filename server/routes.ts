@@ -14,11 +14,12 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
-import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
+import { detectGraphIntent, validateWithAutoFix, type GraphIntentInput } from "./services/cambridgeGraphEngine";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
  * Returns the parsed spec on success, or null if it cannot be repaired.
+ * This function focuses purely on structural repair (range ordering, missing labels, etc.).
  */
 function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSpec | null {
   if (!raw || typeof raw !== "object") return null;
@@ -249,23 +250,30 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   };
 
   const parsed = graphQuestionSpecSchema.safeParse(repaired);
-  if (!parsed.success) return null;
+  return parsed.success ? parsed.data : null;
+}
 
-  const inferredIntent = detectGraphIntent({
-    prompt: asString(r.prompt_text) ?? asString(r.prompt) ?? asString(r.question),
-    objective: asString(r.objective),
-    commandWords: Array.isArray(r.commandWords) ? r.commandWords.map(String) : undefined,
-    skillType: asString(r.skillType),
-    subject: asString(r.subject) ?? parsed.data.subjectPreset ?? "Mathematics",
-    level: asString(r.level) ?? "IGCSE",
-    syllabus: asString(r.syllabus),
-    syllabusCode: asString(r.syllabusCode),
-    topic: asString(r.topic),
-    subtopic: asString(r.subtopic),
-    paperStyle: asString(r.paperStyle),
-  });
+/**
+ * Enrich a structurally valid GraphQuestionSpec with Cambridge curriculum metadata:
+ * intent classification, validation auto-fixes, and audit notes.
+ * Separated from repairGraphSpec so structural repair stays simple and testable.
+ */
+function enrichWithCambridgeMetadata(
+  spec: import("@shared/schema").GraphQuestionSpec,
+  context: Partial<GraphIntentInput>,
+): import("@shared/schema").GraphQuestionSpec {
+  const filtered = Object.fromEntries(
+    Object.entries(context).filter(([, v]) => v !== undefined),
+  );
+  const intentInput: GraphIntentInput = {
+    subject: spec.subjectPreset ?? "Mathematics",
+    level: "IGCSE",
+    ...filtered,
+  };
 
-  const checked = validateWithAutoFix(parsed.data, inferredIntent);
+  const inferredIntent = detectGraphIntent(intentInput);
+  const checked = validateWithAutoFix(spec, inferredIntent);
+
   return {
     ...checked.spec,
     auditNotes: [
@@ -511,13 +519,16 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
   if (raw.graph_spec) {
     const repaired = repairGraphSpec(raw.graph_spec);
     if (repaired) {
-      graphSpec = repaired;
+      graphSpec = enrichWithCambridgeMetadata(repaired, {
+        prompt: String(raw.prompt_text || raw.question || ""),
+        subject: raw.subject ? String(raw.subject) : undefined,
+        level: raw.level ? String(raw.level) : undefined,
+        topic: raw.topic_tag ? String(raw.topic_tag) : undefined,
+        subtopic: raw.subtopic_tag ? String(raw.subtopic_tag) : undefined,
+      });
       questionType = "graph";
     }
-    // If repair failed, stays as "multiple_choice" — prevents ghost "graph" questions with no spec
   }
-  // Note: raw.question_type === "graph" without a graph_spec means the AI omitted the spec;
-  // we treat it as multiple_choice so the draft count is honest (no blank graph slots)
 
   return {
     draftId: `draft-${crypto.randomUUID()}`,
@@ -2877,10 +2888,15 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         if (q.graph_spec) {
           const repaired = repairGraphSpec(q.graph_spec);
           if (repaired) {
-            graphSpec = repaired;
+            graphSpec = enrichWithCambridgeMetadata(repaired, {
+              prompt: String(q.prompt_text || q.stem || ""),
+              subject: q.subject ? String(q.subject) : undefined,
+              level: q.level ? String(q.level) : undefined,
+              topic: q.topic_tag ? String(q.topic_tag) : undefined,
+              subtopic: q.subtopic_tag ? String(q.subtopic_tag) : undefined,
+            });
             questionType = "graph";
           } else {
-            // Cannot repair — downgrade to MCQ so it still saves as a usable question
             questionType = "multiple_choice";
           }
         }

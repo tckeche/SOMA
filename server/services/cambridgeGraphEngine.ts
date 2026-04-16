@@ -225,15 +225,24 @@ function formatAxisLabel(quantity: string, unit?: string): string {
 function niceStep(span: number): number {
   if (!Number.isFinite(span) || span <= 0) return 1;
   const rough = span / 8;
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  if (rough < 1e-15) return 1;
+  const logVal = Math.log10(rough);
+  if (!Number.isFinite(logVal)) return 1;
+  const magnitude = 10 ** Math.floor(logVal);
   const normalised = rough / magnitude;
   const nice = normalised <= 1 ? 1 : normalised <= 2 ? 2 : normalised <= 5 ? 5 : 10;
   return nice * magnitude;
 }
 
 export function buildAxisScale(values: number[], opts?: { includeZero?: boolean; allowFalseOrigin?: boolean }): { min: number; max: number; tick: number; gridUtilization: number; usedFalseOrigin: boolean } {
+  if (values.length === 0) {
+    return { min: 0, max: 10, tick: 1, gridUtilization: 0, usedFalseOrigin: false };
+  }
   const min = Math.min(...values);
   const max = Math.max(...values);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: 0, max: 10, tick: 1, gridUtilization: 0, usedFalseOrigin: false };
+  }
   const span = Math.max(1e-6, max - min);
   const includeZero = opts?.includeZero ?? false;
   const allowFalseOrigin = opts?.allowFalseOrigin ?? true;
@@ -241,11 +250,11 @@ export function buildAxisScale(values: number[], opts?: { includeZero?: boolean;
   let axisMin = includeZero ? Math.min(0, min) : min;
   let axisMax = includeZero ? Math.max(0, max) : max;
 
-  const canUseFalseOrigin = allowFalseOrigin && min > 0 && (max / Math.max(min, 1e-6) < 4);
+  const canUseFalseOrigin = allowFalseOrigin && min > 0 && !includeZero && (max / Math.max(min, 1e-6) < 4);
   if (canUseFalseOrigin) {
     axisMin = Math.max(0, min - span * 0.15);
-  } else {
-    axisMin = includeZero ? axisMin : min - span * 0.1;
+  } else if (!includeZero) {
+    axisMin = min - span * 0.1;
   }
   axisMax = axisMax + span * 0.1;
 
@@ -374,10 +383,18 @@ export function validateGraphSpecForCambridge(spec: GraphQuestionSpec, intent?: 
     issues.push({ code: "invalid_tick", severity: "error", message: "Tick interval must be positive", suggestion: "Use a positive tick interval" });
   }
 
-  const utilizationX = Math.abs(xSpan) / (Math.abs(spec.xRange[1]) + Math.abs(spec.xRange[0]) + 1e-6);
-  const utilizationY = Math.abs(ySpan) / (Math.abs(spec.yRange[1]) + Math.abs(spec.yRange[0]) + 1e-6);
-  if (utilizationX < 0.5 || utilizationY < 0.5) {
-    warnings.push({ code: "grid_utilization", severity: "warning", message: "Scale may under-use plotting grid", suggestion: "Adjust range/scale to use more than half of graph area" });
+  // Grid utilization heuristic: if an axis starts at 0 but the range is very
+  // large relative to the likely data zone (e.g. [0, 1000] when data lives near
+  // 900-1000), a false origin would be better. We approximate this: when the
+  // axis starts at 0 and the tick count is very high (>20 ticks), the grid is
+  // likely under-utilized. The definitive check requires actual data points and
+  // is done in buildAxisScale / generateGraphAssessmentPackage instead.
+  if (xSpan > 0 && ySpan > 0 && spec.tickInterval > 0) {
+    const xTicks = xSpan / spec.tickInterval;
+    const yTicks = ySpan / spec.tickInterval;
+    if (xTicks > 20 || yTicks > 20) {
+      warnings.push({ code: "grid_utilization", severity: "warning", message: "Scale may under-use plotting grid (excessive tick count)", suggestion: "Adjust range/scale to use more than half of graph area" });
+    }
   }
 
   if (intent?.skills.includes("use_error_bars") && !spec.graphKind?.toLowerCase().includes("error")) {

@@ -145,7 +145,7 @@ export function scoreSyllabusChunks(chunks: Array<{ content: string }>, query: s
 
       // Boost for early mention (likely topic headers/titles)
       const firstMention = Math.min(
-        ...Array.from(unigrams).map((t) => { const idx = hay.indexOf(t); return idx >= 0 ? idx : Infinity; })
+        ...unigrams.map((t) => { const idx = hay.indexOf(t); return idx >= 0 ? idx : Infinity; })
       );
       if (firstMention < 100) score *= 1.3;
 
