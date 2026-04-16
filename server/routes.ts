@@ -14,6 +14,7 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
+import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -248,7 +249,45 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   };
 
   const parsed = graphQuestionSpecSchema.safeParse(repaired);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) return null;
+
+  const inferredIntent = detectGraphIntent({
+    prompt: asString(r.prompt_text) ?? asString(r.prompt) ?? asString(r.question),
+    objective: asString(r.objective),
+    commandWords: Array.isArray(r.commandWords) ? r.commandWords.map(String) : undefined,
+    skillType: asString(r.skillType),
+    subject: asString(r.subject) ?? parsed.data.subjectPreset ?? "Mathematics",
+    level: asString(r.level) ?? "IGCSE",
+    syllabus: asString(r.syllabus),
+    syllabusCode: asString(r.syllabusCode),
+    topic: asString(r.topic),
+    subtopic: asString(r.subtopic),
+    paperStyle: asString(r.paperStyle),
+  });
+
+  const checked = validateWithAutoFix(parsed.data, inferredIntent);
+  return {
+    ...checked.spec,
+    auditNotes: [
+      ...(checked.spec.auditNotes ?? []),
+      ...inferredIntent.reasons,
+      ...checked.validation.audit,
+      ...checked.appliedFixes.map((fix) => `Auto-fix: ${fix}`),
+    ],
+    graphFamily: inferredIntent.family,
+    sourceContext: {
+      ...(checked.spec.sourceContext ?? {}),
+      commandWords: inferredIntent.skills,
+      skillType: inferredIntent.skills.join(","),
+      intent: inferredIntent.figureMode,
+    },
+    validationTargets: {
+      ...(checked.spec.validationTargets ?? {}),
+      requireFrequencyDensityLabel: inferredIntent.family === "histogram_frequency_density",
+      requireErrorBars: inferredIntent.skills.includes("use_error_bars"),
+      requireBestFit: inferredIntent.family === "scatter_best_fit",
+    },
+  };
 }
 
 const adminRateLimiter = rateLimit({

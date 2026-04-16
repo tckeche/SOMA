@@ -59,6 +59,48 @@ export const graphQuestionSpecSchema = z.object({
   })).optional(),
   subjectPreset: z.enum(["mathematics", "physics", "economics", "business", "chemistry", "biology"]).optional(),
   graphKind: z.string().optional(),
+  // Cambridge-aware graph/diagram metadata (non-breaking extension)
+  examBoard: z.string().optional(),
+  level: z.string().optional(),
+  subjectCode: z.string().optional(),
+  syllabusRange: z.string().optional(),
+  paperContext: z.string().optional(),
+  graphFamily: z.string().optional(),
+  scaleSettings: z.object({
+    xTick: z.number().positive().optional(),
+    yTick: z.number().positive().optional(),
+    useFalseOrigin: z.boolean().optional(),
+    gridUtilizationTarget: z.number().min(0).max(1).optional(),
+  }).optional(),
+  seriesStyle: z.object({
+    marker: z.enum(["cross", "plus", "dot", "circled_dot"]).optional(),
+    line: z.enum(["straight", "smooth", "piecewise"]).optional(),
+    thickness: z.number().positive().optional(),
+    hatchPattern: z.string().optional(),
+  }).optional(),
+  legendKey: z.array(z.object({
+    label: z.string(),
+    marker: z.string().optional(),
+    hatch: z.string().optional(),
+  })).optional(),
+  validationTargets: z.object({
+    requireUnits: z.boolean().optional(),
+    requireFrequencyDensityLabel: z.boolean().optional(),
+    requireErrorBars: z.boolean().optional(),
+    requireBestFit: z.boolean().optional(),
+  }).optional(),
+  errorBars: z.array(z.object({
+    x: z.number(),
+    y: z.number(),
+    xError: z.number().nonnegative().optional(),
+    yError: z.number().nonnegative().optional(),
+  })).optional(),
+  sourceContext: z.object({
+    commandWords: z.array(z.string()).optional(),
+    skillType: z.string().optional(),
+    intent: z.string().optional(),
+  }).optional(),
+  auditNotes: z.array(z.string()).optional(),
 });
 
 export type GraphQuestionSpec = z.infer<typeof graphQuestionSpecSchema>;
