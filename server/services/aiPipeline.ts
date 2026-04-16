@@ -279,7 +279,8 @@ CRITICAL LATEX FORMATTING RULE — THIS IS MANDATORY AND NON-NEGOTIABLE:
 Every mathematical expression in EVERY stem, option, and explanation MUST be wrapped in LaTeX delimiters.
 - Inline math: $...$  (e.g. $\\frac{1}{2}xe^{x^2}+C$, $\\sqrt{x^2+1}$, $x^2 + 3x - 4$)
 - Display math: $$...$$ (for standalone equations)
-NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$. Every answer option that contains any mathematical notation must start and end with $ delimiters.`;
+NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$. Every answer option that contains any mathematical notation must start and end with $ delimiters.
+CURRENCY RULE: When writing monetary amounts (e.g. $9,000 or $100,000), write them as plain text WITHOUT a dollar sign prefix, or use the word "dollars" — NEVER use a bare $ before a number as this will be parsed as a math delimiter. WRONG: "$9,000" RIGHT: "9,000 dollars" or "USD 9,000".`;
   const checkerPrompt = `You are Gemini (Checker). Audit the Maker JSON with strict accuracy.
 You must evaluate ONLY the provided topic/context and input JSON.
 Do not hallucinate facts, syllabus requirements, or missing context.

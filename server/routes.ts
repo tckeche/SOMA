@@ -427,7 +427,8 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 - Display/standalone math: $$\\frac{a}{b}$$ (double dollar signs)
 - NEVER write maths without delimiters. WRONG: "2x + 1"  RIGHT: "$2x + 1$"
 - IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression — do NOT use LaTeX there.
-- The "label" field inside graph_spec is plain text (Unicode math symbols like °, ², ³, π, ˣ are fine).`;
+- The "label" field inside graph_spec is plain text (Unicode math symbols like °, ², ³, π, ˣ are fine).
+- CURRENCY RULE: Never use a bare $ before a number for currency (e.g. $9,000 or $100,000) — the $ will be parsed as a LaTeX math delimiter and corrupt the question. Write currency as "9,000 dollars", "USD 9,000", or just the number "9,000".`;
 
 /** Fisher-Yates shuffle — returns a new shuffled array */
 function shuffleOptions<T>(arr: T[]): T[] {
@@ -3210,6 +3211,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 - Use proper LaTeX: $\\frac{1}{2}$ for fractions, $x^{-2}$ for powers, $\\sqrt{x}$ for roots
 - IMPORTANT: The "equation" field inside graph_spec is a JavaScript expression (e.g. "2*x + 1") — do NOT use LaTeX delimiters there. LaTeX is only for prompt_text, options, and explanation.
 - The "label" field inside graph_spec is plain text with Unicode math notation (e.g. "y = sin x°", "y = x²") — no LaTeX, no JS code.
+- CURRENCY RULE: Never use a bare $ before a number for currency amounts (e.g. $9,000 or $100,000). The $ will be parsed as a LaTeX math delimiter and corrupt the rendering. Write currency as "9,000 dollars", "USD 9,000", or simply the number "9,000".
 
 ## CRITICAL RULES:
 - correct_answer must exactly match one of the 4 options (copy verbatim)

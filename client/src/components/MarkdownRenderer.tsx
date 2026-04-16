@@ -12,6 +12,13 @@ interface MarkdownRendererProps {
 function normalizeLatexDelimiters(text: string): string {
   let result = text;
 
+  // Step 0: Escape currency dollar signs BEFORE any other processing.
+  // A "$" immediately followed by a digit is a currency symbol (e.g. $100,000 or $9,000),
+  // NOT a LaTeX math delimiter. Without this, remark-math treats the text between two
+  // currency amounts as a math expression and renders it in italic KaTeX style.
+  // In markdown, \$ is a backslash-escaped dollar sign that renders as a literal "$".
+  result = result.replace(/\$(?=\d)/g, "\\$");
+
   // Step 1: \[...\] → $$...$$
   result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`);
 
