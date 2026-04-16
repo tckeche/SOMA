@@ -818,11 +818,11 @@ export default function BuilderPage() {
             )}
           </div>
 
-          {/* 2. AI Copilot — Main Focus */}
+          {/* 2. Co-Pilot — Main Focus */}
           <div className="glass-card flex flex-col overflow-hidden" style={{ minHeight: "400px" }}>
             <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-violet-400" />
-              <span className="text-sm font-semibold text-slate-200" data-testid="tab-copilot">AI Co-Pilot</span>
+              <span className="text-sm font-semibold text-slate-200" data-testid="tab-copilot">Co-Pilot</span>
               {pipelineActive && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400 ml-auto" />}
               {totalQuestions > 0 && !pipelineActive && (
                 <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] ml-auto">
@@ -881,7 +881,7 @@ export default function BuilderPage() {
               {chat.length === 0 && (
                 <div className="text-center pt-8 space-y-2">
                   <Sparkles className="w-8 h-8 mx-auto text-violet-400/40" />
-                  <p className="text-sm text-slate-400">Ask the AI to generate assessment questions.</p>
+                  <p className="text-sm text-slate-400">Generate assessment questions using the Co-Pilot.</p>
                   <p className="text-xs text-slate-500">Questions are auto-saved to the database.</p>
                   <p className="text-xs text-slate-600 italic">"Generate 5 IGCSE quadratics MCQs"</p>
                 </div>
@@ -972,7 +972,7 @@ export default function BuilderPage() {
               <div className="py-8 text-center space-y-2">
                 <FileStack className="w-8 h-8 mx-auto text-slate-700" />
                 <p className="text-sm text-slate-500">No draft questions yet.</p>
-                <p className="text-xs text-slate-600">Use the AI Co-Pilot to generate questions. They'll appear here before you publish.</p>
+                <p className="text-xs text-slate-600">Use the Co-Pilot to generate questions. They'll appear here before you publish.</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[50vh] md:max-h-[calc(100vh-280px)] overflow-auto pr-1">

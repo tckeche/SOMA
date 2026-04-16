@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ChevronRight, SkipForward, Send, ArrowLeft, Home,
+  ChevronLeft, ChevronRight, SkipForward, Send, ArrowLeft, Home,
   AlertCircle, Loader2, CheckCircle2, Circle, BookOpen, X, Award, Clock
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
@@ -87,36 +87,52 @@ function ErrorView({ message }: { message: string }) {
 function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: string; totalScore: number; maxPossibleScore: number }) {
   const percentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
 
+  const tier = percentage >= 80
+    ? { label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", glow: "rgba(16,185,129,0.4)", message: "Outstanding work! You've demonstrated a strong grasp of the material." }
+    : percentage >= 65
+      ? { label: "Good", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30", glow: "rgba(6,182,212,0.4)", message: "Well done! You're on the right track. Review any areas you found tricky." }
+      : percentage >= 50
+        ? { label: "Satisfactory", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", glow: "rgba(245,158,11,0.4)", message: "A solid effort! Focus on the areas you found challenging to keep improving." }
+        : { label: "Needs Practice", color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30", glow: "rgba(244,63,94,0.4)", message: "Don't worry — every expert was once a beginner. Review the feedback and try again!" };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="glass-card w-full max-w-md text-center p-10">
-        <div className="w-20 h-20 rounded-full bg-violet-500/10 flex items-center justify-center mx-auto mb-5 border border-violet-500/30">
-          <Award className="w-10 h-10 text-violet-400" />
+        <div className={`w-20 h-20 rounded-full ${tier.bg} flex items-center justify-center mx-auto mb-5 border ${tier.border}`}>
+          <Award className={`w-10 h-10 ${tier.color}`} />
         </div>
         <h2 className="text-2xl font-bold mb-1 gradient-text" data-testid="text-results-title">
           Assessment Complete
         </h2>
         <p className="text-sm text-slate-400 mb-6">{quizTitle}</p>
 
-        <div className="bg-white/5 rounded-2xl p-6 border border-white/10 mb-6">
-          <p className="text-5xl font-black text-violet-300 drop-shadow-[0_0_15px_rgba(139,92,246,0.4)]" data-testid="text-grade-percentage">
+        <div className="bg-white/5 rounded-2xl p-6 border border-white/10 mb-4">
+          <p className={`text-5xl font-black ${tier.color}`} style={{ filter: `drop-shadow(0 0 15px ${tier.glow})` }} data-testid="text-grade-percentage">
             {percentage}%
           </p>
           <p className="text-sm text-slate-400 mt-2" data-testid="text-grade-score">
             {totalScore} / {maxPossibleScore} marks
           </p>
+          <span className={`inline-block mt-3 text-xs font-semibold px-3 py-1 rounded-full ${tier.bg} ${tier.color} ${tier.border} border`} data-testid="badge-performance-tier">
+            {tier.label}
+          </span>
         </div>
 
-        <p className="text-sm text-slate-400 italic mb-8" data-testid="text-wait-message">
-          Your results are being analyzed by AI. Check your dashboard for feedback.
+        <p className="text-sm text-slate-300 mb-2" data-testid="text-encouragement">
+          {tier.message}
+        </p>
+        <p className="text-xs text-slate-500 italic mb-8" data-testid="text-wait-message">
+          Your detailed report is being generated. Check your dashboard shortly for feedback.
         </p>
 
-        <Link href="/dashboard">
-          <Button className="glow-button w-full" data-testid="button-back-home">
-            <Home className="w-4 h-4 mr-1.5" />
-            Return to Dashboard
-          </Button>
-        </Link>
+        <div className="flex flex-col gap-3">
+          <Link href="/dashboard">
+            <Button className="glow-button w-full" data-testid="button-back-home">
+              <Home className="w-4 h-4 mr-1.5" />
+              Return to Dashboard
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -632,6 +648,17 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         </div>
 
         <div className="flex items-center gap-3 mb-8">
+          {currentIndex > 0 && (
+            <Button
+              variant="outline"
+              className="glow-button-outline min-h-[44px] px-4"
+              onClick={() => setCurrentIndex((i) => i - 1)}
+              data-testid="button-previous"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Previous
+            </Button>
+          )}
           <Button
             variant="outline"
             className="flex-1 glow-button-outline min-h-[44px]"

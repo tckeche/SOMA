@@ -118,7 +118,7 @@ export default function SomaChatPage() {
 
       const payload = {
         message: JSON.stringify({
-          instruction: "Analyze this student's complete academic performance across all their quizzes and assessments. Aggregate all the individual AI analyses and quiz results into ONE comprehensive standing report.",
+          instruction: "Analyze this student's complete academic performance across all their quizzes and assessments. Aggregate all the individual analyses and quiz results into ONE comprehensive standing report.",
           studentName: displayName,
           overallAveragePercentage: avgScore,
           totalAssessments: reportSummaries.length + submissionSummaries.length,
@@ -306,7 +306,7 @@ export default function SomaChatPage() {
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-slate-100 mb-1">Comprehensive Standing Analysis</h2>
               <p className="text-sm text-slate-400 mb-4">
-                Analyzing all your quiz results and individual AI feedback reports to build a comprehensive picture of your academic standing, strengths, and weak areas.
+                Analyzing all your quiz results and individual feedback reports to build a comprehensive picture of your academic standing, strengths, and weak areas.
               </p>
               {!hasData && !isDataLoading ? (
                 <div className="flex items-center gap-2 text-amber-400 text-sm">

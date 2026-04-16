@@ -10,7 +10,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { format } from "date-fns";
 import {
   LogOut, BookOpen, Clock, ArrowRight, CheckCircle2,
-  Loader2, AlertTriangle, Sparkles,
+  Loader2, AlertTriangle, Sparkles, RefreshCw,
   Eye, FileText, Calendar,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -339,6 +339,22 @@ export default function StudentDashboard() {
           </div>
         ) : (
           <>
+            {/* Welcome greeting */}
+            <section className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-100" data-testid="text-welcome">
+                  Welcome back, {displayName.split(" ")[0]}
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  {availableQuizzes.length > 0
+                    ? `You have ${availableQuizzes.length} assessment${availableQuizzes.length !== 1 ? "s" : ""} available`
+                    : completedItems.length > 0
+                      ? "Great progress! Check your completed quizzes below."
+                      : "No assessments yet — your tutor will assign them soon."}
+                </p>
+              </div>
+            </section>
+
             {subjectStats.length > 0 && (
               <section>
                 <h2 className={`${SECTION_LABEL} mb-5`} data-testid="text-section-performance">
@@ -514,7 +530,16 @@ export default function StudentDashboard() {
                                   ) : isFailed ? (
                                     <span className="flex items-center gap-1 text-[10px] text-red-400" data-testid={`status-failed-${item.id}`}>
                                       <AlertTriangle className="w-3 h-3" />
-                                      Analysis Failed
+                                      Report Failed
+                                      <button
+                                        className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors"
+                                        onClick={(e) => { e.stopPropagation(); retryMutation.mutate(item.id); }}
+                                        disabled={retryMutation.isPending}
+                                        data-testid={`button-retry-${item.id}`}
+                                      >
+                                        <RefreshCw className={`w-2.5 h-2.5 ${retryMutation.isPending ? "animate-spin" : ""}`} />
+                                        Retry
+                                      </button>
                                     </span>
                                   ) : (
                                     <span className="flex items-center gap-1 text-[10px] text-emerald-400" data-testid={`status-completed-${item.id}`}>
