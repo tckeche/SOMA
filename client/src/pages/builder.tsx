@@ -15,7 +15,7 @@ import {
   ArrowLeft, Send, Loader2, Sparkles, FileStack, Trash2,
   X, Pencil, BookOpen,
   Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard,
-  Save, AlertCircle
+  Save, AlertCircle, AlertTriangle
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
 import { unescapeLatex } from '@/lib/render-latex';
@@ -142,10 +142,9 @@ function getDraftValidationError(questions: DraftQuestion[]): string | null {
 const LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
 
 const PIPELINE_STAGES = [
-  { stage: 1, icon: "search", label: "Reading syllabus & context", aiName: "Context" },
-  { stage: 2, icon: "brain", label: "Analysing requirements", aiName: "Analysis" },
-  { stage: 3, icon: "scan", label: "Drafting questions & balancing options", aiName: "Drafting" },
-  { stage: 4, icon: "pencil", label: "Preparing summary & saving", aiName: "Summary" },
+  { stage: 1, icon: "brain", label: "Drafting questions (GPT-4o)", aiName: "Maker" },
+  { stage: 2, icon: "scan", label: "Auditing formatting & accuracy (Gemini Flash)", aiName: "Checker" },
+  { stage: 3, icon: "pencil", label: "Polishing flagged issues (Claude Sonnet)", aiName: "Polish" },
 ];
 
 
@@ -163,7 +162,7 @@ export default function BuilderPage() {
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
 
   const [msg, setMsg] = useState("");
-  const [chat, setChat] = useState<{ role: "user" | "ai"; text: string; metadata?: { provider: string; model: string; durationMs: number } }[]>([]);
+  const [chat, setChat] = useState<{ role: "user" | "ai"; text: string; metadata?: { provider: string; model: string; durationMs: number }; warnings?: { questionIndex: number; field: string; issue: string; autoFixed: boolean }[] }[]>([]);
   const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
@@ -498,7 +497,8 @@ export default function BuilderPage() {
       } else if (reviewReady) {
         setGenerationState("ready_for_review");
       }
-      setChat((prev) => [...prev, { role: "user", text: message }, { role: "ai", text: `${data.reply}\n\n${polishedFollowup}`, metadata: data.metadata }]);
+      const respWarnings = (data as any).warnings;
+      setChat((prev) => [...prev, { role: "user", text: message }, { role: "ai", text: `${data.reply}\n\n${polishedFollowup}`, metadata: data.metadata, warnings: Array.isArray(respWarnings) ? respWarnings : undefined }]);
       setMsg("");
     },
     onError: (err: Error) => {
@@ -898,6 +898,26 @@ export default function BuilderPage() {
                       <div className="mt-1.5 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-900/50 border border-white/5 text-[9px] text-slate-400 font-mono" data-testid={`badge-telemetry-${i}`}>
                         <span>{m.metadata.model}</span>
                         <span>{(m.metadata.durationMs / 1000).toFixed(2)}s</span>
+                      </div>
+                    )}
+                    {m.warnings && m.warnings.length > 0 && (
+                      <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-left" data-testid={`block-warnings-${i}`}>
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 mb-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Quality check flagged {m.warnings.length} issue{m.warnings.length === 1 ? "" : "s"}</span>
+                        </div>
+                        <ul className="space-y-1 text-[11px] text-amber-100/90 leading-relaxed">
+                          {m.warnings.map((w, wi) => (
+                            <li key={wi} className="flex items-start gap-1.5" data-testid={`text-warning-${i}-${wi}`}>
+                              <span className="font-mono text-amber-400/80 shrink-0">{w.questionIndex > 0 ? `Q${w.questionIndex}` : "All"}</span>
+                              <span className="text-amber-300/70 shrink-0">[{w.field}]</span>
+                              <span className="flex-1">{w.issue}</span>
+                              <span className={`shrink-0 px-1 rounded text-[9px] font-mono ${w.autoFixed ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}>
+                                {w.autoFixed ? "fixed" : "review"}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>

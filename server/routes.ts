@@ -10,7 +10,7 @@ import jwt from "jsonwebtoken";
 import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
-import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers } from "./services/aiPipeline";
+import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runGeminiFormattingCheck, runClaudePolish, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
@@ -2749,6 +2749,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
               supportingDocText: topicSyllabusContext + topicExaminerContext,
             });
+            if (generated.warnings.length > 0) {
+              console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
+            }
             const quiz = await storage.createSomaQuizBundle({
               quiz: {
                 title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
@@ -3435,6 +3438,67 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
+      // ── Step 2.5: Gemini formatting check + conditional Claude polish on NEW MCQ questions ──
+      // Only audits questions added/replaced this turn; graph questions and pure DELETE/REORDER/NONE actions are skipped.
+      let pipelineWarnings: PipelineWarning[] = [];
+      const newQuestionActions = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED"];
+      const mcqIndices: number[] = [];
+      const mcqToCheck: any[] = [];
+      normalisedQuestions.forEach((q, idx) => {
+        if (q.questionType === "multiple_choice") {
+          mcqIndices.push(idx);
+          mcqToCheck.push({
+            stem: q.stem,
+            options: q.options,
+            correct_answer: q.correctAnswer,
+            explanation: q.explanation,
+            marks: q.marks,
+            difficulty_tag: (q.difficultyTag as any) || undefined,
+            topic_tag: q.topicTag || undefined,
+            subtopic_tag: q.subtopicTag || undefined,
+          });
+        }
+      });
+      if (newQuestionActions.includes(structured.action) && mcqToCheck.length > 0) {
+        const meta = (assessmentContext as any)?.assessmentMeta || {};
+        const checkerContext: SomaGenerationContext = {
+          topic: String(text).slice(0, 200),
+          subject: meta.subject || "Mathematics",
+          syllabus: meta.syllabus || "General",
+          level: meta.level || "Grade 12",
+        };
+        try {
+          const checkResult = await runGeminiFormattingCheck(mcqToCheck, checkerContext);
+          let fixedQs = checkResult.questions;
+          pipelineWarnings = checkResult.warnings;
+          // Cost gate: only invoke Claude polish when the checker actually ran AND
+          // produced real warnings. checkerOk=false means availability noise only.
+          if (checkResult.checkerOk && pipelineWarnings.length > 0) {
+            const polished = await runClaudePolish(fixedQs, pipelineWarnings, checkerContext);
+            fixedQs = polished.questions;
+          }
+          // Write fixes back into normalisedQuestions at the original indices
+          mcqIndices.forEach((origIdx, i) => {
+            const fixed = fixedQs[i];
+            if (!fixed) return;
+            const orig = normalisedQuestions[origIdx];
+            normalisedQuestions[origIdx] = {
+              ...orig,
+              stem: fixed.stem,
+              options: fixed.options,
+              correctAnswer: fixed.correct_answer,
+              explanation: fixed.explanation,
+              marks: fixed.marks,
+              difficultyTag: fixed.difficulty_tag ?? orig.difficultyTag,
+              topicTag: fixed.topic_tag ?? orig.topicTag,
+              subtopicTag: fixed.subtopic_tag ?? orig.subtopicTag,
+            };
+          });
+        } catch (e: any) {
+          console.warn(`[COPILOT_AUDIT] Gemini/Claude audit pass failed: ${e?.message || "unknown"}; returning unaudited drafts.`);
+        }
+      }
+
       // ── Step 3: Simulate the final draft state on the server to compute
       //    verified graph positions (what the client will actually see)
       const simulatedDraft = applyDraftActionServer(
@@ -3560,6 +3624,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         })),
         summary,
         metadata,
+        warnings: pipelineWarnings,
         needsClarification: false,
       });
     } catch (err: any) {
@@ -4179,14 +4244,15 @@ ${JSON.stringify({
       res.json({
         quiz,
         questions: insertedQuestions,
+        warnings: result.warnings,
         pipeline: {
           stages: [
-            "Claude Sonnet (Maker)",
-            "Gemini 2.5 Flash (Checker)",
-            "Claude Sonnet (Post-Check)",
-            "Cross-Subject Adversarial Verifier",
+            `Maker (${result.telemetry.makerModel})`,
+            `Checker (${result.telemetry.checkerModel})`,
+            result.telemetry.polishModel ? `Polisher (${result.telemetry.polishModel})` : "Polisher (skipped — no warnings)",
           ],
           totalQuestions: insertedQuestions.length,
+          totalDurationMs: result.telemetry.totalDurationMs,
         },
       });
     } catch (err: any) {
@@ -4259,14 +4325,15 @@ ${JSON.stringify({
         questions: bundle.questions,
         assignments: bundle.assignments.length,
         assignedStudentIds: validAssignedStudentIds,
+        warnings: result.warnings,
         pipeline: {
           stages: [
-            "Claude Sonnet (Maker)",
-            "Gemini 2.5 Flash (Checker)",
-            "Claude Sonnet (Post-Check)",
-            "Cross-Subject Adversarial Verifier",
+            `Maker (${result.telemetry.makerModel})`,
+            `Checker (${result.telemetry.checkerModel})`,
+            result.telemetry.polishModel ? `Polisher (${result.telemetry.polishModel})` : "Polisher (skipped — no warnings)",
           ],
           totalQuestions: bundle.questions.length,
+          totalDurationMs: result.telemetry.totalDurationMs,
         },
       });
     } catch (err: any) {

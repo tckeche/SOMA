@@ -108,7 +108,7 @@ function resolveJsonSchema(schema: any): any {
   return schema;
 }
 
-async function callGoogle(
+export async function callGoogle(
   model: string,
   systemPrompt: string,
   userPrompt: string,

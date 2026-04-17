@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { generateWithFallback } from "./aiOrchestrator";
+import { generateWithFallback, callGoogle } from "./aiOrchestrator";
 import Anthropic from "@anthropic-ai/sdk";
 
 export const QuestionSchema = z.object({
@@ -19,6 +19,41 @@ export const QuizResultSchema = z.object({
 });
 
 export type QuizResult = z.infer<typeof QuizResultSchema>;
+
+export interface PipelineWarning {
+  questionIndex: number;
+  field: "stem" | "options" | "explanation" | "correct_answer" | "overall";
+  issue: string;
+  autoFixed: boolean;
+}
+
+export interface PipelineTelemetry {
+  makerModel: string;
+  checkerModel: string;
+  polishModel: string | null;
+  totalDurationMs: number;
+}
+
+export interface AuditedQuizResult {
+  questions: QuizResult["questions"];
+  warnings: PipelineWarning[];
+  telemetry: PipelineTelemetry;
+}
+
+const GeminiCheckerResponseSchema = z.object({
+  questions: z.array(QuestionSchema).min(1),
+  warnings: z
+    .array(
+      z.object({
+        questionIndex: z.number().int().min(1),
+        field: z.enum(["stem", "options", "explanation", "correct_answer", "overall"]),
+        issue: z.string(),
+        autoFixed: z.boolean(),
+      }),
+    )
+    .default([]),
+});
+
 export interface SomaGenerationContext {
   topic: string;
   subject: string;
@@ -285,142 +320,136 @@ export function validateAndCorrectMcqAnswers(
 }
 
 /**
- * Final Anthropic-only post-check pass to reduce mathematically incorrect answers.
- * Why this exists:
- * - The previous pipeline validated JSON shape + option alignment, but it did not
- *   guarantee symbolic/math correctness (e.g. calculus antiderivative slips).
- * - This pass re-solves each question and forces corrections before data is returned.
+ * STAGE 2 — Dedicated Gemini 2.5 Flash formatting checker.
+ * Audits LaTeX, currency, options, scope, accuracy. Auto-fixes what it can.
+ * Reports both auto-fixed and unfixable issues as structured warnings.
  */
-async function runClaudePostCheck(
+export async function runGeminiFormattingCheck(
   questions: QuizResult["questions"],
   context: SomaGenerationContext,
-): Promise<QuizResult["questions"]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (process.env.NODE_ENV === "test" || !apiKey) {
-    console.warn("[SOMA_CLAUDE_POST_CHECK] Skipped (test mode or missing ANTHROPIC_API_KEY).");
-    return questions;
+): Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[]; checkerOk: boolean; durationMs: number }> {
+  const startTime = Date.now();
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || process.env.NODE_ENV === "test") {
+    console.warn("[GEMINI_CHECKER] Skipped (test mode or no GEMINI_API_KEY).");
+    return { questions, warnings: [], checkerOk: false, durationMs: 0 };
   }
 
-  const anthropic = new Anthropic({ apiKey });
-  const schema = zodToJsonSchema(QuizResultSchema, "QuizResult");
-  const systemPrompt = `You are Claude Post-Checker, the FINAL mathematical correctness gate for SOMA quiz questions.
-Your job is to re-solve every question and ensure the marked correct answer is truly correct.
-If a question is wrong, fix it.
+  const systemPrompt = `You are SOMA Format Checker (Gemini 2.5 Flash). Your job is FORMATTING + STRUCTURAL audit, not deep content rewrite.
 
-Strict rules:
-1. Return only a valid JSON object matching the provided schema.
-2. Keep exactly the same number of questions.
-3. Preserve each question stem intent and difficulty where possible.
-4. Ensure correct_answer exactly equals one of the 4 options.
-5. If the true answer is not in options, replace the weakest distractor with the true answer.
-6. Rewrite explanation so it explicitly justifies the corrected answer.
-7. Be especially careful with derivatives, integrals, algebraic signs, constants, and domain conditions.`;
+AUDIT every question for these issues, then AUTO-FIX what you can:
+1. LATEX DELIMITERS — every math expression MUST be wrapped in $...$ (inline) or $$...$$ (display). Raw LaTeX commands like \\frac, \\sqrt, \\int, ^{...}, _{...} MUST live inside $ delimiters. If you find unwrapped math, wrap it and set autoFixed: true.
+2. CURRENCY — bare $ before a number (e.g. "$9,000") will break math rendering. Convert to "9,000 dollars" or "USD 9,000". Set autoFixed: true if you fix it.
+3. OPTIONS — exactly 4 distinct options. correct_answer MUST exactly match one option verbatim.
+4. EXPLANATION — non-empty, must justify the correct answer.
+5. SCOPE — questions must stay within subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+6. ACCURACY — flag (don't rewrite) any answer that looks objectively wrong; set autoFixed: false so the polisher can re-derive.
 
-  const userPrompt = `Context:
-subject=${context.subject}
-syllabus=${context.syllabus}
-level=${context.level}
-topic=${context.topic}
-subtopic=${context.subtopic || "none"}
+REPORT every issue you found, whether you fixed it or not:
+- autoFixed: true → you fixed it in the returned questions
+- autoFixed: false → you couldn't fix safely; the user/polisher must intervene
 
-Questions JSON to audit and correct:
-${JSON.stringify({ questions })}`;
+questionIndex is 1-based. Be concise in the issue field (one sentence).
+
+Return strict JSON matching the schema. NEVER drop or add questions — return exactly ${questions.length}.`;
+
+  const userPrompt = `Audit and fix these ${questions.length} questions:\n${JSON.stringify({ questions }, null, 2)}`;
 
   try {
+    const checkerSchema = zodToJsonSchema(GeminiCheckerResponseSchema, "GeminiCheckerResponse");
+    const data = await callGoogle("gemini-2.5-flash", systemPrompt, userPrompt, checkerSchema);
+    const parsed = GeminiCheckerResponseSchema.parse(JSON.parse(data));
+    if (parsed.questions.length !== questions.length) {
+      console.warn(`[GEMINI_CHECKER] Question count drift: input=${questions.length}, output=${parsed.questions.length}. Keeping output.`);
+    }
+    console.log(`[GEMINI_CHECKER] Audited ${parsed.questions.length} questions, ${parsed.warnings.length} warnings (${parsed.warnings.filter((w) => w.autoFixed).length} auto-fixed).`);
+    return { questions: parsed.questions, warnings: parsed.warnings, checkerOk: true, durationMs: Date.now() - startTime };
+  } catch (error: any) {
+    console.warn(`[GEMINI_CHECKER] Failed; pipeline continues without formatting audit. Reason: ${error?.message || "unknown"}`);
+    // checkerOk=false ⇒ callers MUST NOT trigger Claude polish (nothing to polish against).
+    // We still surface a UI-visible warning so the tutor knows the audit was skipped.
+    return {
+      questions,
+      warnings: [{
+        questionIndex: 0,
+        field: "overall",
+        issue: `Format checker unavailable (${error?.message || "unknown error"}). Questions delivered without auto-fix.`,
+        autoFixed: false,
+      }],
+      checkerOk: false,
+      durationMs: Date.now() - startTime,
+    };
+  }
+}
+
+/**
+ * STAGE 3 — Conditional Claude Sonnet polisher.
+ * Only runs when Gemini surfaced warnings. Polishes wording, resolves any
+ * unfixed issues, and re-derives flagged answers.
+ */
+export async function runClaudePolish(
+  questions: QuizResult["questions"],
+  warnings: PipelineWarning[],
+  context: SomaGenerationContext,
+): Promise<{ questions: QuizResult["questions"]; durationMs: number }> {
+  const startTime = Date.now();
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || warnings.length === 0 || process.env.NODE_ENV === "test") {
+    return { questions, durationMs: 0 };
+  }
+
+  const issuesSummary = warnings
+    .map((w) => `Q${w.questionIndex} [${w.field}] ${w.issue}${w.autoFixed ? " (auto-fixed by checker)" : " (UNFIXED — needs your attention)"}`)
+    .join("\n");
+
+  const systemPrompt = `You are Claude Polisher (claude-sonnet-4-6), the final wording and clarity gate.
+
+The Gemini checker flagged these issues:
+${issuesSummary}
+
+Your job:
+1. Polish wording for pedagogical clarity and tone.
+2. Resolve every UNFIXED issue (re-derive answers, rewrite ambiguous stems, replace weak distractors).
+3. Re-verify auto-fixed issues — confirm Gemini's fix is sound.
+4. Preserve question intent, difficulty, and topic coverage.
+5. Keep exactly the same number of questions.
+6. correct_answer MUST exactly match one of the 4 options.
+
+Subject=${context.subject}; syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
+
+Return strict JSON matching the schema.`;
+
+  try {
+    const anthropic = new Anthropic({ apiKey });
+    const schema = zodToJsonSchema(QuizResultSchema, "QuizResult");
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 16_384,
       temperature: 0,
       system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
+      messages: [{ role: "user", content: `Polish these questions:\n${JSON.stringify({ questions })}` }],
       tools: [{
-        name: "return_validated_quiz",
-        description: "Return audited and corrected quiz JSON matching the schema.",
+        name: "return_polished_quiz",
+        description: "Return polished quiz JSON.",
         input_schema: schema as any,
       }],
-      tool_choice: { type: "tool", name: "return_validated_quiz" },
+      tool_choice: { type: "tool", name: "return_polished_quiz" },
     });
-
-    const toolBlock = response.content.find((block: any) => block.type === "tool_use");
-    if (!toolBlock || toolBlock.type !== "tool_use") {
-      throw new Error("Claude post-check returned no tool output");
-    }
-
+    const toolBlock = response.content.find((b: any) => b.type === "tool_use");
+    if (!toolBlock || toolBlock.type !== "tool_use") throw new Error("Polisher returned no tool output");
     const parsed = QuizResultSchema.parse(toolBlock.input);
-    console.log(`[SOMA_CLAUDE_POST_CHECK] Completed for ${parsed.questions.length} questions.`);
-    return parsed.questions;
+    console.log(`[CLAUDE_POLISH] Polished ${parsed.questions.length} questions in ${Date.now() - startTime}ms.`);
+    return { questions: parsed.questions, durationMs: Date.now() - startTime };
   } catch (error: any) {
-    console.warn(`[SOMA_CLAUDE_POST_CHECK] Failed; keeping pre-check set. Reason: ${error?.message || "unknown error"}`);
-    return questions;
+    console.warn(`[CLAUDE_POLISH] Failed; keeping checker output. Reason: ${error?.message || "unknown"}`);
+    return { questions, durationMs: Date.now() - startTime };
   }
-}
-
-/**
- * Cross-provider adversarial verifier to harden correctness across ALL subjects.
- * Unlike the Claude-only pass, this uses the fallback chain so a single provider
- * mistake does not silently pass without challenge.
- */
-async function runCrossSubjectVerifier(
-  questions: QuizResult["questions"],
-  context: SomaGenerationContext,
-): Promise<QuizResult["questions"]> {
-  const verifierPrompt = `You are a strict cross-subject examiner QA verifier.
-Audit and correct every question for subject-matter truth, not style.
-
-Verification requirements:
-1. Re-solve / re-derive each answer where possible.
-2. Ensure each correct_answer is objectively correct for ${context.subject}.
-3. Ensure each explanation is logically valid and aligned with the corrected answer.
-4. Keep exactly 4 distinct options and the same number of questions.
-5. If a true answer is missing, replace the weakest distractor with the true answer.
-6. Reject hidden answer leaks, contradiction, and self-inconsistent stems.
-7. Keep syllabus/level scope: ${context.syllabus} / ${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
-
-Return strict JSON only, matching the schema.`;
-
-  try {
-    const { data } = await generateWithFallback(
-      verifierPrompt,
-      `Input quiz JSON:\n${JSON.stringify({ questions })}\n\nSupporting curriculum context:\n${context.supportingDocText || "None provided."}`,
-      jsonSchema,
-    );
-    const parsed = extractJson(data);
-    return parsed.questions;
-  } catch (error: any) {
-    console.warn(`[SOMA_CROSS_SUBJECT_VERIFIER] Failed; keeping current set. Reason: ${error?.message || "unknown error"}`);
-    return questions;
-  }
-}
-
-async function runThreeStageGeneration(
-  context: SomaGenerationContext,
-  questionCount: number,
-  makerPrompt: string,
-  checkerPrompt: string,
-  finalizerPrompt: string,
-): Promise<QuizResult> {
-  const { data: maker } = await generateWithFallback(
-    makerPrompt,
-    `Topic: ${context.topic}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
-    jsonSchema,
-  );
-  const { data: checker } = await generateWithFallback(
-    checkerPrompt,
-    `Topic: ${context.topic}\nInput JSON:\n${maker}`,
-    jsonSchema,
-  );
-  const { data: final } = await generateWithFallback(
-    finalizerPrompt,
-    `Topic: ${context.topic}\nInput JSON:\n${checker}`,
-    jsonSchema,
-  );
-  return extractJson(final);
 }
 
 async function runEmergencySingleStageGeneration(
   context: SomaGenerationContext,
   questionCount: number,
-): Promise<QuizResult> {
+): Promise<{ result: QuizResult; model: string }> {
   const emergencyPrompt = `You are an emergency assessment generation fallback.
 Return strictly valid JSON with exactly ${questionCount} high-quality MCQ questions.
 Subject=${context.subject}; syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
@@ -433,34 +462,62 @@ Critical requirements:
 5) Keep questions within provided syllabus/topic scope only.
 6) Return JSON only matching the schema.`;
 
-  const { data } = await generateWithFallback(
+  const { data, metadata } = await generateWithFallback(
     emergencyPrompt,
     `Curriculum context:\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
     jsonSchema,
   );
-  return extractJson(data);
+  return { result: extractJson(data), model: `${metadata.provider}/${metadata.model}` };
 }
 
-export async function generateAuditedQuiz(input: SomaGenerationContext | string): Promise<QuizResult> {
+/**
+ * Pipeline (Option C):
+ *   1. MAKER         — GPT-4o (with fallback chain) creates questions
+ *   2. GEMINI CHECK  — Gemini 2.5 Flash audits formatting + auto-fixes (cheap, ~50× cheaper than GPT-4o)
+ *   3. CLAUDE POLISH — Only runs if checker surfaced warnings (skipped on clean output)
+ *   4. Deterministic guards (free) — dedupe options, align answers
+ *
+ * Returns questions + warnings (for Co-Pilot UI) + telemetry (for cost tracking).
+ */
+export async function generateAuditedQuiz(input: SomaGenerationContext | string): Promise<AuditedQuizResult> {
+  const overallStart = Date.now();
   const context: SomaGenerationContext = typeof input === "string"
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
     : input;
 
   const questionCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+
+  // Batch large quizzes — recurse with smaller counts and merge
   if (questionCount > 20) {
     const batchSize = 15;
     const merged: QuizResult["questions"] = [];
+    const allWarnings: PipelineWarning[] = [];
+    let lastTelemetry: PipelineTelemetry = {
+      makerModel: "unknown", checkerModel: "google/gemini-2.5-flash", polishModel: null, totalDurationMs: 0,
+    };
     let remaining = questionCount;
     while (remaining > 0) {
       const currentBatch = Math.min(batchSize, remaining);
-      const batch = await generateAuditedQuiz({ ...context, questionCount: currentBatch });
-      merged.push(...batch.questions);
+      const baseIndex = merged.length;
+      const batchResult = await generateAuditedQuiz({ ...context, questionCount: currentBatch });
+      merged.push(...batchResult.questions);
+      for (const w of batchResult.warnings) {
+        allWarnings.push({ ...w, questionIndex: w.questionIndex + baseIndex });
+      }
+      lastTelemetry = batchResult.telemetry;
       remaining -= currentBatch;
     }
-    return { questions: validateAndCorrectMcqAnswers(merged.slice(0, questionCount)) };
+    return {
+      questions: validateAndCorrectMcqAnswers(merged.slice(0, questionCount)),
+      warnings: allWarnings,
+      telemetry: { ...lastTelemetry, totalDurationMs: Date.now() - overallStart },
+    };
   }
+
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
-  const makerPrompt = `You are Claude (Maker), an expert ${context.subject} assessment designer.
+
+  // ── STAGE 1: MAKER (GPT-4o → fallback chain) ──────────────────────
+  const makerPrompt = `You are an expert ${context.subject} assessment designer.
 Generate exactly ${questionCount} MCQ questions for ${context.subject}.
 STRICT SCOPE: syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
 Never drift to adjacent topics not explicitly in scope.
@@ -468,55 +525,78 @@ Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}
 Hard questions must involve reasoning/application (not recall).
 For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.
 
-CRITICAL LATEX FORMATTING RULE — THIS IS MANDATORY AND NON-NEGOTIABLE:
+CRITICAL LATEX FORMATTING RULE — MANDATORY:
 Every mathematical expression in EVERY stem, option, and explanation MUST be wrapped in LaTeX delimiters.
 - Inline math: $...$  (e.g. $\\frac{1}{2}xe^{x^2}+C$, $\\sqrt{x^2+1}$, $x^2 + 3x - 4$)
 - Display math: $$...$$ (for standalone equations)
-NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$. Every answer option that contains any mathematical notation must start and end with $ delimiters.
-CURRENCY RULE: When writing monetary amounts (e.g. $9,000 or $100,000), write them as plain text WITHOUT a dollar sign prefix, or use the word "dollars" — NEVER use a bare $ before a number as this will be parsed as a math delimiter. WRONG: "$9,000" RIGHT: "9,000 dollars" or "USD 9,000".
+NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$.
+CURRENCY RULE: NEVER use a bare $ before a number for currency (e.g. $9,000). Write "9,000 dollars" or "USD 9,000".
 SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.subject}.`;
-  const checkerPrompt = `You are Gemini (Checker). Audit the Maker JSON with strict accuracy.
-You must evaluate ONLY the provided topic/context and input JSON.
-Do not hallucinate facts, syllabus requirements, or missing context.
-Reject or correct anything unsupported by the provided data.
-Enforce subject-matter correctness for ${context.subject}, strict JSON structure, and syllabus-level alignment (${context.syllabus}/${context.level}).
-Return only validated JSON that is fully supported by the given input.
-
-LATEX VALIDATION — CHECK EVERY FIELD:
-Scan every stem, every option, and every explanation. Any mathematical expression NOT wrapped in $...$ or $$...$$ must be fixed by wrapping it. Raw LaTeX commands (\\frac, \\sqrt, \\int, ^{, _{) MUST be inside $ delimiters. Fix them if the Maker missed any.`;
-  const finalizerPrompt = `Perform final curriculum compliance and syllabus audit.
-Reject questions outside topic/subtopic scope.
-Return strictly valid JSON only with exactly ${questionCount} questions.`;
 
   let parsed: QuizResult;
+  let makerModel = "unknown";
   try {
-    parsed = await runThreeStageGeneration(context, questionCount, makerPrompt, checkerPrompt, finalizerPrompt);
+    const { data, metadata } = await generateWithFallback(
+      makerPrompt,
+      `Topic: ${context.topic}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
+      jsonSchema,
+    );
+    parsed = extractJson(data);
+    makerModel = `${metadata.provider}/${metadata.model}`;
   } catch (error: any) {
     if (process.env.NODE_ENV === "test") throw error;
-    console.warn(`[SOMA_PIPELINE] Three-stage generation failed, attempting emergency fallback. Reason: ${error?.message || "unknown error"}`);
-    parsed = await runEmergencySingleStageGeneration(context, questionCount);
+    console.warn(`[SOMA_PIPELINE] Maker failed, attempting emergency fallback. Reason: ${error?.message || "unknown"}`);
+    const emergency = await runEmergencySingleStageGeneration(context, questionCount);
+    parsed = emergency.result;
+    makerModel = `emergency:${emergency.model}`;
   }
+
+  // Scope filter
   const scopeTokens = [context.topic, context.subtopic].filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
   if (scopeTokens.length > 0) {
     const scoped = parsed.questions.filter((q) => {
       const hay = `${q.stem} ${q.explanation} ${q.topic_tag || ""} ${q.subtopic_tag || ""}`.toLowerCase();
       return scopeTokens.some((token) => hay.includes(token));
     });
-    if (scoped.length > 0) {
-      parsed.questions = scoped;
-    }
+    if (scoped.length > 0) parsed.questions = scoped;
   }
   if (parsed.questions.length < questionCount && parsed.questions.length > 0) {
-    console.warn(`[SOMA_GENERATION_SCOPE] Only ${parsed.questions.length}/${questionCount} questions strongly matched topic scope; keeping best validated set.`);
+    console.warn(`[SOMA_PIPELINE] Only ${parsed.questions.length}/${questionCount} questions strongly matched topic scope; keeping best set.`);
   }
   parsed.questions = parsed.questions.slice(0, questionCount);
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
-  parsed.questions = await runClaudePostCheck(parsed.questions, context);
-  parsed.questions = await runCrossSubjectVerifier(parsed.questions, context);
+
+  // ── STAGE 2: GEMINI FORMATTING CHECK ──────────────────────────────
+  const checkResult = await runGeminiFormattingCheck(parsed.questions, context);
+  parsed.questions = checkResult.questions;
+  const warnings = checkResult.warnings;
+
+  // ── STAGE 3: CONDITIONAL CLAUDE POLISH ────────────────────────────
+  // Cost gate: ONLY run Claude when the checker actually ran AND surfaced real
+  // question-level issues. If the checker itself failed (checkerOk=false) the
+  // warnings are availability noise, not content issues — polishing them wastes
+  // ~$0.05/quiz.
+  let polishModel: string | null = null;
+  const polishWorthyWarnings = checkResult.checkerOk ? warnings : [];
+  if (polishWorthyWarnings.length > 0) {
+    const polishResult = await runClaudePolish(parsed.questions, polishWorthyWarnings, context);
+    parsed.questions = polishResult.questions;
+    if (polishResult.durationMs > 0) polishModel = "anthropic/claude-sonnet-4-6";
+  }
+
+  // Final deterministic guards (cheap, free)
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
-  parsed.questions = await runClaudePostCheck(parsed.questions, context);
-  parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
-  return parsed;
+
+  return {
+    questions: parsed.questions,
+    warnings,
+    telemetry: {
+      makerModel,
+      checkerModel: "google/gemini-2.5-flash",
+      polishModel,
+      totalDurationMs: Date.now() - overallStart,
+    },
+  };
 }
