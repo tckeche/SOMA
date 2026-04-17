@@ -1715,8 +1715,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       const assignments = await storage.createQuizAssignments(quizId, validIds, dueDate);
 
-      // Notify each student that a new quiz is waiting for them
-      await Promise.all(validIds.map((studentId) =>
+      // Notify ONLY students who received a brand-new assignment row.
+      // createQuizAssignments uses onConflictDoNothing, so re-assigning the
+      // same quiz to the same student returns an empty array for that student
+      // and we must skip notifying them again to avoid duplicates.
+      const newlyAssignedIds = new Set(assignments.map((a) => a.studentId));
+      await Promise.all(Array.from(newlyAssignedIds).map((studentId) =>
         storage.createStudentNotification({
           studentId,
           type: "assignment_new",
