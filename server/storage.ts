@@ -14,10 +14,13 @@ import {
   type SuggestedAssessment, type InsertSuggestedAssessment,
   type ExaminerMisconception, type InsertExaminerMisconception,
   type SyllabusTopicInventoryItem, type InsertSyllabusTopicInventoryItem,
+  type StudentNotification, type InsertStudentNotification,
+  type FlaggedQuestion, type InsertFlaggedQuestion,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
   studentSubjects, tutorNotifications, studentTopicMastery, suggestedAssessments,
   examinerMisconceptions, syllabusTopicInventory,
+  studentNotifications, flaggedQuestions,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
@@ -166,6 +169,19 @@ export interface IStorage {
   // Syllabus topic inventory
   createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]>;
   listSyllabusTopicInventory(filter: { board?: string; syllabusCode?: string; subject?: string }): Promise<SyllabusTopicInventoryItem[]>;
+
+  // Student-facing notifications
+  createStudentNotification(notification: InsertStudentNotification): Promise<StudentNotification>;
+  listStudentNotifications(studentId: string, options?: { limit?: number }): Promise<StudentNotification[]>;
+  markStudentNotificationRead(notificationId: number, studentId: string): Promise<StudentNotification | undefined>;
+  markAllStudentNotificationsRead(studentId: string): Promise<number>;
+
+  // Question-level flag raised by a student during a quiz
+  flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion>;
+  listFlaggedQuestionsForTutor(tutorId: string, filter?: { quizId?: number; studentId?: string; unresolvedOnly?: boolean }): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz; student: { id: string; displayName: string | null; email: string } }>>;
+  listFlaggedQuestionsForStudent(studentId: string): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz }>>;
+  resolveFlaggedQuestion(flagId: number, tutorId: string): Promise<FlaggedQuestion | undefined>;
+  unflagQuestion(studentId: string, questionId: number): Promise<void>;
 
 }
 
@@ -427,6 +443,114 @@ class DatabaseStorage implements IStorage {
     if (filter.subject) conditions.push(eq(syllabusTopicInventory.subject, filter.subject));
     if (conditions.length === 0) return this.database.select().from(syllabusTopicInventory);
     return this.database.select().from(syllabusTopicInventory).where(and(...conditions));
+  }
+
+  async createStudentNotification(notification: InsertStudentNotification): Promise<StudentNotification> {
+    const [row] = await this.database.insert(studentNotifications).values(notification).returning();
+    return row;
+  }
+
+  async listStudentNotifications(studentId: string, options: { limit?: number } = {}): Promise<StudentNotification[]> {
+    const limit = options.limit ?? 25;
+    return this.database
+      .select()
+      .from(studentNotifications)
+      .where(eq(studentNotifications.studentId, studentId))
+      .orderBy(desc(studentNotifications.createdAt))
+      .limit(limit);
+  }
+
+  async markStudentNotificationRead(notificationId: number, studentId: string): Promise<StudentNotification | undefined> {
+    const [row] = await this.database
+      .update(studentNotifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(studentNotifications.id, notificationId), eq(studentNotifications.studentId, studentId)))
+      .returning();
+    return row;
+  }
+
+  async markAllStudentNotificationsRead(studentId: string): Promise<number> {
+    const rows = await this.database
+      .update(studentNotifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(studentNotifications.studentId, studentId), isNull(studentNotifications.readAt)))
+      .returning();
+    return rows.length;
+  }
+
+  async flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion> {
+    const [row] = await this.database
+      .insert(flaggedQuestions)
+      .values(input)
+      .onConflictDoUpdate({
+        target: [flaggedQuestions.studentId, flaggedQuestions.questionId],
+        set: {
+          quizId: input.quizId,
+          reportId: input.reportId ?? null,
+          reason: input.reason ?? null,
+          resolvedAt: null,
+          tutorViewedAt: null,
+          createdAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async listFlaggedQuestionsForTutor(
+    tutorId: string,
+    filter: { quizId?: number; studentId?: string; unresolvedOnly?: boolean } = {},
+  ): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz; student: { id: string; displayName: string | null; email: string } }>> {
+    const conditions = [eq(somaQuizzes.authorId, tutorId)];
+    if (filter.quizId !== undefined) conditions.push(eq(flaggedQuestions.quizId, filter.quizId));
+    if (filter.studentId) conditions.push(eq(flaggedQuestions.studentId, filter.studentId));
+    if (filter.unresolvedOnly) conditions.push(isNull(flaggedQuestions.resolvedAt));
+    const rows = await this.database
+      .select({ flag: flaggedQuestions, question: somaQuestions, quiz: somaQuizzes, student: somaUsers })
+      .from(flaggedQuestions)
+      .innerJoin(somaQuestions, eq(flaggedQuestions.questionId, somaQuestions.id))
+      .innerJoin(somaQuizzes, eq(flaggedQuestions.quizId, somaQuizzes.id))
+      .innerJoin(somaUsers, eq(flaggedQuestions.studentId, somaUsers.id))
+      .where(and(...conditions))
+      .orderBy(desc(flaggedQuestions.createdAt));
+    return rows.map((r) => ({
+      ...r.flag,
+      question: r.question,
+      quiz: r.quiz,
+      student: { id: r.student.id, displayName: r.student.displayName, email: r.student.email },
+    }));
+  }
+
+  async listFlaggedQuestionsForStudent(studentId: string): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz }>> {
+    const rows = await this.database
+      .select({ flag: flaggedQuestions, question: somaQuestions, quiz: somaQuizzes })
+      .from(flaggedQuestions)
+      .innerJoin(somaQuestions, eq(flaggedQuestions.questionId, somaQuestions.id))
+      .innerJoin(somaQuizzes, eq(flaggedQuestions.quizId, somaQuizzes.id))
+      .where(eq(flaggedQuestions.studentId, studentId))
+      .orderBy(desc(flaggedQuestions.createdAt));
+    return rows.map((r) => ({ ...r.flag, question: r.question, quiz: r.quiz }));
+  }
+
+  async resolveFlaggedQuestion(flagId: number, tutorId: string): Promise<FlaggedQuestion | undefined> {
+    const [target] = await this.database
+      .select({ flag: flaggedQuestions })
+      .from(flaggedQuestions)
+      .innerJoin(somaQuizzes, eq(flaggedQuestions.quizId, somaQuizzes.id))
+      .where(and(eq(flaggedQuestions.id, flagId), eq(somaQuizzes.authorId, tutorId)));
+    if (!target) return undefined;
+    const [row] = await this.database
+      .update(flaggedQuestions)
+      .set({ resolvedAt: new Date(), tutorViewedAt: new Date() })
+      .where(eq(flaggedQuestions.id, flagId))
+      .returning();
+    return row;
+  }
+
+  async unflagQuestion(studentId: string, questionId: number): Promise<void> {
+    await this.database
+      .delete(flaggedQuestions)
+      .where(and(eq(flaggedQuestions.studentId, studentId), eq(flaggedQuestions.questionId, questionId)));
   }
 
   async getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>> {
@@ -991,6 +1115,8 @@ class MemoryStorage implements IStorage {
   private suggestedAssessmentsList: SuggestedAssessment[] = [];
   private examinerMisconceptionsList: ExaminerMisconception[] = [];
   private syllabusTopicInventoryList: SyllabusTopicInventoryItem[] = [];
+  private studentNotificationsList: StudentNotification[] = [];
+  private flaggedQuestionsList: FlaggedQuestion[] = [];
   private somaQuizId = 1;
   private somaQuestionId = 1;
   private somaReportId = 1;
@@ -1004,6 +1130,8 @@ class MemoryStorage implements IStorage {
   private suggestedAssessmentId = 1;
   private examinerMisconceptionId = 1;
   private syllabusTopicInventoryId = 1;
+  private studentNotificationId = 1;
+  private flaggedQuestionId = 1;
 
   async createSomaQuiz(quiz: InsertSomaQuiz): Promise<SomaQuiz> {
     const created: SomaQuiz = {
@@ -1544,6 +1672,126 @@ class MemoryStorage implements IStorage {
 
   async logPasswordResetRequest(_email: string): Promise<void> {
     // no-op in memory storage
+  }
+
+  async createStudentNotification(notification: InsertStudentNotification): Promise<StudentNotification> {
+    const row: StudentNotification = {
+      id: this.studentNotificationId++,
+      createdAt: new Date(),
+      readAt: null,
+      payload: null,
+      ...notification,
+    };
+    this.studentNotificationsList.push(row);
+    return row;
+  }
+
+  async listStudentNotifications(studentId: string, options: { limit?: number } = {}): Promise<StudentNotification[]> {
+    const limit = options.limit ?? 25;
+    return this.studentNotificationsList
+      .filter((n) => n.studentId === studentId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+  }
+
+  async markStudentNotificationRead(notificationId: number, studentId: string): Promise<StudentNotification | undefined> {
+    const row = this.studentNotificationsList.find((n) => n.id === notificationId && n.studentId === studentId);
+    if (!row) return undefined;
+    row.readAt = new Date();
+    return row;
+  }
+
+  async markAllStudentNotificationsRead(studentId: string): Promise<number> {
+    let n = 0;
+    for (const row of this.studentNotificationsList) {
+      if (row.studentId === studentId && !row.readAt) {
+        row.readAt = new Date();
+        n++;
+      }
+    }
+    return n;
+  }
+
+  async flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion> {
+    const existing = this.flaggedQuestionsList.find(
+      (f) => f.studentId === input.studentId && f.questionId === input.questionId,
+    );
+    if (existing) {
+      existing.quizId = input.quizId;
+      existing.reportId = input.reportId ?? null;
+      existing.reason = input.reason ?? null;
+      existing.resolvedAt = null;
+      existing.tutorViewedAt = null;
+      existing.createdAt = new Date();
+      return existing;
+    }
+    const row: FlaggedQuestion = {
+      id: this.flaggedQuestionId++,
+      studentId: input.studentId,
+      questionId: input.questionId,
+      quizId: input.quizId,
+      reportId: input.reportId ?? null,
+      reason: input.reason ?? null,
+      resolvedAt: null,
+      tutorViewedAt: null,
+      createdAt: new Date(),
+    };
+    this.flaggedQuestionsList.push(row);
+    return row;
+  }
+
+  async listFlaggedQuestionsForTutor(
+    tutorId: string,
+    filter: { quizId?: number; studentId?: string; unresolvedOnly?: boolean } = {},
+  ): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz; student: { id: string; displayName: string | null; email: string } }>> {
+    return this.flaggedQuestionsList
+      .map((flag) => {
+        const quiz = this.somaQuizzesList.find((q) => q.id === flag.quizId);
+        if (!quiz || quiz.authorId !== tutorId) return null;
+        if (filter.quizId !== undefined && flag.quizId !== filter.quizId) return null;
+        if (filter.studentId && flag.studentId !== filter.studentId) return null;
+        if (filter.unresolvedOnly && flag.resolvedAt) return null;
+        const question = this.somaQuestionsList.find((q) => q.id === flag.questionId);
+        const student = this.somaUsersList.find((u) => u.id === flag.studentId);
+        if (!question || !student) return null;
+        return {
+          ...flag,
+          question,
+          quiz,
+          student: { id: student.id, displayName: student.displayName, email: student.email },
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async listFlaggedQuestionsForStudent(studentId: string): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz }>> {
+    return this.flaggedQuestionsList
+      .filter((f) => f.studentId === studentId)
+      .map((flag) => {
+        const quiz = this.somaQuizzesList.find((q) => q.id === flag.quizId);
+        const question = this.somaQuestionsList.find((q) => q.id === flag.questionId);
+        if (!quiz || !question) return null;
+        return { ...flag, question, quiz };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async resolveFlaggedQuestion(flagId: number, tutorId: string): Promise<FlaggedQuestion | undefined> {
+    const row = this.flaggedQuestionsList.find((f) => f.id === flagId);
+    if (!row) return undefined;
+    const quiz = this.somaQuizzesList.find((q) => q.id === row.quizId);
+    if (!quiz || quiz.authorId !== tutorId) return undefined;
+    row.resolvedAt = new Date();
+    row.tutorViewedAt = new Date();
+    return row;
+  }
+
+  async unflagQuestion(studentId: string, questionId: number): Promise<void> {
+    this.flaggedQuestionsList = this.flaggedQuestionsList.filter(
+      (f) => !(f.studentId === studentId && f.questionId === questionId),
+    );
   }
 }
 

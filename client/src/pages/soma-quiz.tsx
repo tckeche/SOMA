@@ -18,6 +18,7 @@ import MarkdownRenderer from '@/components/MarkdownRenderer';
 import GraphPlot from "@/components/GraphPlot";
 import { authFetch } from "@/lib/supabase";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
+import FlagQuestionButton from "@/components/student/FlagQuestionButton";
 
 export type StudentQuestion = {
   id: number;
@@ -597,6 +598,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 <p className="text-xs text-violet-400/70">{currentQuestion.marks} mark{currentQuestion.marks > 1 ? "s" : ""}</p>
               </div>
             </div>
+            <FlagQuestionButton questionId={currentQuestion.id} quizId={currentQuestion.quizId} />
           </div>
 
           <div className="text-lg text-slate-100 leading-relaxed mb-2" data-testid="text-question-stem">

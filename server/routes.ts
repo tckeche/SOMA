@@ -16,6 +16,8 @@ import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
+import { buildStudentDashboard } from "./services/studentDashboard";
+import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -1027,6 +1029,16 @@ async function updateMasteryFromSubmission(
   }
 
   const subject = quizSubject || "General";
+  // Snapshot prior mastery so we can fire milestone notifications when a topic
+  // newly crosses into "mastered" territory.
+  const priorMastery = await storage.listStudentTopicMastery(studentId).catch(() => []);
+  const priorByKey = new Map<string, { mastered: boolean; pct: number }>();
+  for (const m of priorMastery) {
+    if (m.subject !== subject) continue;
+    const k = `${m.topic}|||${m.subtopic ?? ""}`;
+    priorByKey.set(k, { mastered: m.masteryAchieved || m.understandingPercent >= 80, pct: m.understandingPercent });
+  }
+
   for (const [key, stats] of Object.entries(groups)) {
     const [topic, subtopic] = key.split("|||");
     const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
@@ -1041,6 +1053,18 @@ async function updateMasteryFromSubmission(
       totalQuestions: stats.total,
       correctQuestions: stats.correct,
     });
+
+    const prior = priorByKey.get(key);
+    const newlyMastered = pct >= 80 && !(prior?.mastered);
+    if (newlyMastered) {
+      await storage.createStudentNotification({
+        studentId,
+        type: "milestone_mastery",
+        title: `Mastery in ${topic}`,
+        message: `Nice work — your accuracy on ${subject} → ${topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
+        payload: { subject, topic, subtopic: subtopic || null, percent: pct },
+      }).catch((err) => console.error("[Milestone Notification] failed:", err));
+    }
   }
 }
 
@@ -1050,6 +1074,7 @@ async function runBackgroundGrading(
   studentAnswers: Record<string, string>,
   totalScore: number,
   maxPossibleScore: number,
+  studentMeta?: { studentId: string; quizTitle: string; quizSubject?: string | null },
 ) {
   const GRADING_TIMEOUT_MS = 180_000;
   try {
@@ -1097,6 +1122,17 @@ Provide:
       status: "completed",
       aiFeedbackHtml: data,
     });
+
+    if (studentMeta?.studentId) {
+      const scorePctNotif = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
+      await storage.createStudentNotification({
+        studentId: studentMeta.studentId,
+        type: "feedback_ready",
+        title: "Feedback ready",
+        message: `Your personalised feedback for "${studentMeta.quizTitle}" is ready. You scored ${scorePctNotif}%.`,
+        payload: { reportId, quizTitle: studentMeta.quizTitle, quizSubject: studentMeta.quizSubject ?? null, scorePercent: scorePctNotif },
+      }).catch((err) => console.error("[Feedback Notification] failed:", err));
+    }
 
     console.log(`[SOMA Grading] Report ${reportId} graded successfully`);
   } catch (err: any) {
@@ -1655,6 +1691,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(400).json({ message: "None of the provided students are adopted by you" });
       }
       const assignments = await storage.createQuizAssignments(quizId, validIds, dueDate);
+
+      // Notify each student that a new quiz is waiting for them
+      await Promise.all(validIds.map((studentId) =>
+        storage.createStudentNotification({
+          studentId,
+          type: "assignment_new",
+          title: "New assessment assigned",
+          message: dueDate
+            ? `Your tutor assigned "${quiz.title}". It's due ${dueDate.toDateString()}.`
+            : `Your tutor assigned "${quiz.title}". Take it whenever you're ready.`,
+          payload: { quizId: quiz.id, quizTitle: quiz.title, dueDate: dueDate ? dueDate.toISOString() : null },
+        }).catch((err) => console.error("[Assign Notification] failed:", err)),
+      ));
+
       res.json({ assigned: assignments.length, assignments });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to assign quiz" });
@@ -2201,6 +2251,39 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(stats);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch stats" });
+    }
+  });
+
+  // Tutor view of question-level flags raised by students on the tutor's quizzes
+  app.get("/api/tutor/flagged-questions", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizIdRaw = req.query.quizId;
+      const studentIdRaw = req.query.studentId;
+      const unresolvedOnly = String(req.query.unresolvedOnly || "") === "true";
+      const filter: { quizId?: number; studentId?: string; unresolvedOnly?: boolean } = { unresolvedOnly };
+      if (quizIdRaw) {
+        const id = parseInt(String(quizIdRaw), 10);
+        if (Number.isInteger(id)) filter.quizId = id;
+      }
+      if (studentIdRaw) filter.studentId = String(studentIdRaw);
+      const flags = await storage.listFlaggedQuestionsForTutor(tutorId, filter);
+      res.json({ flags });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch flagged questions" });
+    }
+  });
+
+  app.post("/api/tutor/flagged-questions/:id/resolve", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid flag id" });
+      const updated = await storage.resolveFlaggedQuestion(id, tutorId);
+      if (!updated) return res.status(404).json({ message: "Flag not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to resolve flag" });
     }
   });
 
@@ -3599,6 +3682,173 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
+  // Composite student dashboard payload — drives the redesigned student home page.
+  app.get("/api/student/dashboard", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const student = await storage.getSomaUserById(studentId);
+      if (!student) return res.status(404).json({ message: "Student not found" });
+      const payload = await buildStudentDashboard({ storage, student });
+      res.json(payload);
+    } catch (err: any) {
+      console.error("[Student Dashboard] Error:", err);
+      res.status(500).json({ message: err.message || "Failed to load dashboard" });
+    }
+  });
+
+  app.get("/api/student/notifications", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const items = await storage.listStudentNotifications(studentId, { limit: 50 });
+      const unreadCount = items.filter((n) => !n.readAt).length;
+      res.json({ items, unreadCount });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/student/notifications/:id/read", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid notification id" });
+      const updated = await storage.markStudentNotificationRead(id, studentId);
+      if (!updated) return res.status(404).json({ message: "Notification not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to mark notification read" });
+    }
+  });
+
+  app.post("/api/student/notifications/read-all", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const count = await storage.markAllStudentNotificationsRead(studentId);
+      res.json({ updated: count });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to mark notifications read" });
+    }
+  });
+
+  app.get("/api/student/syllabus-coverage", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const student = await storage.getSomaUserById(studentId);
+      if (!student) return res.status(404).json({ message: "Student not found" });
+      const dashboard = await buildStudentDashboard({ storage, student });
+      res.json({ subjects: dashboard.subjects });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch coverage" });
+    }
+  });
+
+  app.get("/api/student/performance", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const student = await storage.getSomaUserById(studentId);
+      if (!student) return res.status(404).json({ message: "Student not found" });
+      const dashboard = await buildStudentDashboard({ storage, student });
+      res.json({
+        performance: dashboard.performance,
+        completed: dashboard.completed,
+        subjects: dashboard.subjects.map((s) => ({
+          subject: s.subject,
+          level: s.level,
+          averageScorePercent: s.averageScorePercent,
+          completedCount: s.completedCount,
+          recentTrend: s.recentTrend,
+          coverage: s.coverage,
+        })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+    }
+  });
+
+  app.get("/api/student/reminders", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const subjects = await storage.listStudentSubjects(studentId);
+      const grouped = new Map<string, string[]>();
+      for (const s of subjects) {
+        if (!grouped.has(s.subject)) grouped.set(s.subject, []);
+        if (s.level) grouped.get(s.subject)!.push(s.level);
+      }
+      const subjectLevels = Array.from(grouped.entries()).map(([subject, levels]) => ({
+        subject,
+        level: pickEffectiveLevel(levels),
+      }));
+      const reminders = composeReminders(subjectLevels, { max: 8 });
+      res.json({ reminders });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch reminders" });
+    }
+  });
+
+  // Topic list (used by the syllabus-coverage UI when the student picks a single subject)
+  app.get("/api/student/topics", requireSupabaseAuth, async (req, res) => {
+    try {
+      const subject = String(req.query.subject || "").trim();
+      const level = String(req.query.level || "").trim();
+      if (!subject || !level) return res.status(400).json({ message: "subject and level are required" });
+      const topics = getCurriculumTopics(subject, pickEffectiveLevel([level]));
+      res.json({ subject, level, topics });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+    }
+  });
+
+  // Question-level flags raised by the student during a quiz
+  const flagSchema = z.object({
+    questionId: z.number().int().positive(),
+    quizId: z.number().int().positive(),
+    reportId: z.number().int().positive().optional(),
+    reason: z.string().max(500).optional(),
+  });
+
+  app.post("/api/student/flags", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const parsed = flagSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid flag payload", errors: parsed.error.flatten() });
+      }
+      const flag = await storage.flagQuestion({
+        studentId,
+        questionId: parsed.data.questionId,
+        quizId: parsed.data.quizId,
+        reportId: parsed.data.reportId ?? null,
+        reason: parsed.data.reason ?? null,
+      });
+      res.json(flag);
+    } catch (err: any) {
+      console.error("[Student Flag] Error:", err);
+      res.status(500).json({ message: err.message || "Failed to flag question" });
+    }
+  });
+
+  app.delete("/api/student/flags/:questionId", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const questionId = parseInt(String(req.params.questionId), 10);
+      if (!Number.isInteger(questionId)) return res.status(400).json({ message: "Invalid question id" });
+      await storage.unflagQuestion(studentId, questionId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to remove flag" });
+    }
+  });
+
+  app.get("/api/student/flags", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const flags = await storage.listFlaggedQuestionsForStudent(studentId);
+      res.json({ flags });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list flags" });
+    }
+  });
+
   app.get("/api/quizzes/available", requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
@@ -4139,7 +4389,11 @@ ${JSON.stringify({
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
-      runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore).catch(() => {});
+      runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore, {
+        studentId,
+        quizTitle: quiz?.title || "your assessment",
+        quizSubject: quiz?.subject ?? null,
+      }).catch(() => {});
 
       // Auto-update topic mastery from this submission
       updateMasteryFromSubmission(

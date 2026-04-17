@@ -1938,3 +1938,206 @@ describe("Autosave: quiz created via POST /api/tutor/quizzes is persisted", () =
     expect(new Set(stems).size).toBe(2);
   });
 });
+
+// ─── STUDENT FLAGS: question-level flags raised by students ─────────────────
+describe("Student question flags", () => {
+  let tutorToken: string;
+  let studentToken: string;
+  const STUDENT_UUID = "bbbbbbbb-1111-2222-3333-444444444444";
+  let quizId: number;
+  let questionId: number;
+
+  beforeAll(async () => {
+    tutorToken = await getTutorToken();
+    studentToken = await createAuthToken(STUDENT_UUID, "flagstudent@example.com");
+
+    const quizRes = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${tutorToken}`)
+      .send({ title: "Flag Test Quiz", timeLimitMinutes: 30, syllabus: "IGCSE", level: "Grade 6-12" });
+    quizId = quizRes.body.id;
+
+    await request.post(`/api/tutor/quizzes/${quizId}/questions`)
+      .set("Authorization", `Bearer ${tutorToken}`)
+      .send({ questions: [{ prompt_text: "Solve x+1=3", options: ["1","2","3","4"], correct_answer: "2", marks_worth: 1 }] });
+
+    const detail = await request.get(`/api/tutor/quizzes/${quizId}/detail`)
+      .set("Authorization", `Bearer ${tutorToken}`);
+    questionId = detail.body.questions[0].id;
+  });
+
+  it("rejects unauthenticated POST /api/student/flags", async () => {
+    const res = await request.post("/api/student/flags").send({ questionId, quizId });
+    expect(res.status).toBe(401);
+  });
+
+  it("creates a flag for the student", async () => {
+    const res = await request.post("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`)
+      .send({ questionId, quizId, reason: "Stem ambiguous" });
+    expect(res.status).toBe(200);
+    expect(res.body.questionId).toBe(questionId);
+    expect(res.body.studentId).toBe(STUDENT_UUID);
+    expect(res.body.reason).toBe("Stem ambiguous");
+    expect(res.body.resolvedAt).toBeNull();
+  });
+
+  it("re-flagging the same question is idempotent (upsert resets resolution)", async () => {
+    const a = await request.post("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`)
+      .send({ questionId, quizId, reason: "Take 2" });
+    const b = await request.post("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`)
+      .send({ questionId, quizId, reason: "Take 3" });
+    expect(a.body.id).toBe(b.body.id);
+    expect(b.body.reason).toBe("Take 3");
+    expect(b.body.resolvedAt).toBeNull();
+  });
+
+  it("validates payload (missing questionId returns 400)", async () => {
+    const res = await request.post("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`)
+      .send({ quizId });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /api/student/flags returns the student's own flags", async () => {
+    const res = await request.get("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.flags)).toBe(true);
+    const mine = res.body.flags.find((f: any) => f.questionId === questionId);
+    expect(mine).toBeDefined();
+    expect(mine.question).toBeDefined();
+    expect(mine.quiz.id).toBe(quizId);
+  });
+
+  it("GET /api/tutor/flagged-questions returns flags for tutor's own quiz", async () => {
+    const res = await request.get(`/api/tutor/flagged-questions?quizId=${quizId}`)
+      .set("Authorization", `Bearer ${tutorToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.flags.length).toBeGreaterThan(0);
+    const flag = res.body.flags[0];
+    expect(flag.student).toBeDefined();
+    expect(flag.student.email).toBe("flagstudent@example.com");
+    expect(flag.question).toBeDefined();
+    expect(flag.quiz.id).toBe(quizId);
+  });
+
+  it("unresolvedOnly=true filters out resolved flags", async () => {
+    const allRes = await request.get(`/api/tutor/flagged-questions?quizId=${quizId}&unresolvedOnly=true`)
+      .set("Authorization", `Bearer ${tutorToken}`);
+    expect(allRes.body.flags.every((f: any) => !f.resolvedAt)).toBe(true);
+  });
+
+  it("POST /api/tutor/flagged-questions/:id/resolve marks the flag resolved", async () => {
+    const list = await request.get(`/api/tutor/flagged-questions?quizId=${quizId}`)
+      .set("Authorization", `Bearer ${tutorToken}`);
+    const flagId = list.body.flags[0].id;
+    const resolved = await request.post(`/api/tutor/flagged-questions/${flagId}/resolve`)
+      .set("Authorization", `Bearer ${tutorToken}`);
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.resolvedAt).not.toBeNull();
+    expect(resolved.body.tutorViewedAt).not.toBeNull();
+  });
+
+  it("DELETE /api/student/flags/:questionId removes the flag", async () => {
+    // Re-flag first to have something to delete
+    await request.post("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`)
+      .send({ questionId, quizId });
+    const del = await request.delete(`/api/student/flags/${questionId}`)
+      .set("Authorization", `Bearer ${studentToken}`);
+    expect(del.status).toBe(200);
+    expect(del.body.ok).toBe(true);
+    const after = await request.get("/api/student/flags")
+      .set("Authorization", `Bearer ${studentToken}`);
+    expect(after.body.flags.find((f: any) => f.questionId === questionId)).toBeUndefined();
+  });
+});
+
+// ─── STUDENT DASHBOARD: composite payload shape ─────────────────────────────
+describe("GET /api/student/dashboard", () => {
+  it("returns 401 without auth", async () => {
+    const res = await request.get("/api/student/dashboard");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns the full dashboard payload shape for an authenticated student", async () => {
+    const token = await createAuthToken("cccccccc-1111-2222-3333-444444444444", "dashstudent@example.com");
+    const res = await request.get("/api/student/dashboard")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    // Top-level keys produced by buildStudentDashboard
+    expect(res.body).toHaveProperty("student");
+    expect(res.body).toHaveProperty("greeting");
+    expect(res.body).toHaveProperty("dueSummary");
+    expect(res.body).toHaveProperty("notifications");
+    expect(res.body.notifications).toHaveProperty("items");
+    expect(res.body.notifications).toHaveProperty("unreadCount");
+    expect(res.body).toHaveProperty("subjects");
+    expect(Array.isArray(res.body.subjects)).toBe(true);
+    expect(res.body).toHaveProperty("performance");
+    expect(res.body.performance).toHaveProperty("message");
+    expect(res.body).toHaveProperty("assignments");
+    expect(res.body).toHaveProperty("completed");
+    expect(res.body).toHaveProperty("nextActions");
+    expect(res.body).toHaveProperty("recentWins");
+    expect(res.body).toHaveProperty("reminders");
+  });
+});
+
+// ─── STUDENT NOTIFICATIONS ──────────────────────────────────────────────────
+describe("Student notifications", () => {
+  const STUDENT_UUID = "dddddddd-1111-2222-3333-444444444444";
+  let token: string;
+
+  beforeAll(async () => {
+    token = await createAuthToken(STUDENT_UUID, "notifystudent@example.com");
+  });
+
+  it("GET /api/student/notifications returns items + unreadCount", async () => {
+    const res = await request.get("/api/student/notifications")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(typeof res.body.unreadCount).toBe("number");
+  });
+
+  it("creates a notification when tutor assigns a quiz to the student", async () => {
+    const tutorToken = await getTutorToken();
+
+    // Tutor must adopt the student first to be allowed to assign
+    await request.post("/api/tutor/students/adopt")
+      .set("Authorization", `Bearer ${tutorToken}`)
+      .send({ studentIds: [STUDENT_UUID] });
+
+    const quizRes = await request.post("/api/tutor/quizzes")
+      .set("Authorization", `Bearer ${tutorToken}`)
+      .send({ title: "Assignment Notif Quiz", timeLimitMinutes: 30 });
+    const quizId = quizRes.body.id;
+
+    const assignRes = await request.post(`/api/tutor/quizzes/${quizId}/assign`)
+      .set("Authorization", `Bearer ${tutorToken}`)
+      .send({ studentIds: [STUDENT_UUID] });
+    expect([200, 201]).toContain(assignRes.status);
+
+    const notifRes = await request.get("/api/student/notifications")
+      .set("Authorization", `Bearer ${token}`);
+    expect(notifRes.status).toBe(200);
+    const newAssign = notifRes.body.items.find(
+      (n: any) => n.type === "assignment_new" && n.payload?.quizId === quizId,
+    );
+    expect(newAssign).toBeDefined();
+    expect(newAssign.title).toMatch(/assigned/i);
+  });
+
+  it("POST /api/student/notifications/read-all marks all unread as read", async () => {
+    const res = await request.post("/api/student/notifications/read-all")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(typeof res.body.updated).toBe("number");
+    const after = await request.get("/api/student/notifications")
+      .set("Authorization", `Bearer ${token}`);
+    expect(after.body.unreadCount).toBe(0);
+  });
+});

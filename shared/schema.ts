@@ -291,6 +291,38 @@ export const examinerMisconceptions = pgTable("examiner_misconceptions", {
   extractedAt: timestamp("extracted_at").defaultNow().notNull(),
 });
 
+// Notifications shown to students on their dashboard. Generated when a tutor
+// assigns a quiz, when feedback is ready, or when the student hits a milestone.
+// Time-derived items like "due today" are computed at read-time and merged on
+// the server, so this table only stores durable events.
+export const studentNotifications = pgTable("student_notifications", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  payload: jsonb("payload"),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Question-level flag raised by a student during a quiz. The issuing tutor
+// (quiz author) can see these and analyse them later; the in-progress quiz
+// attempt is not interrupted.
+export const flaggedQuestions = pgTable("flagged_questions", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  questionId: integer("question_id").notNull().references(() => somaQuestions.id, { onDelete: "cascade" }),
+  quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }),
+  reportId: integer("report_id").references(() => somaReports.id, { onDelete: "set null" }),
+  reason: text("reason"),
+  resolvedAt: timestamp("resolved_at"),
+  tutorViewedAt: timestamp("tutor_viewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("flagged_question_unique_idx").on(table.studentId, table.questionId),
+]);
+
 // Structured topic inventory extracted from syllabus documents via AI
 export const syllabusTopicInventory = pgTable("syllabus_topic_inventory", {
   id: serial("id").primaryKey(),
@@ -432,6 +464,14 @@ export type InsertExaminerMisconception = z.infer<typeof insertExaminerMisconcep
 export const insertSyllabusTopicInventorySchema = createInsertSchema(syllabusTopicInventory).omit({ id: true, extractedAt: true });
 export type SyllabusTopicInventoryItem = typeof syllabusTopicInventory.$inferSelect;
 export type InsertSyllabusTopicInventoryItem = z.infer<typeof insertSyllabusTopicInventorySchema>;
+
+export const insertStudentNotificationSchema = createInsertSchema(studentNotifications).omit({ id: true, createdAt: true, readAt: true });
+export type StudentNotification = typeof studentNotifications.$inferSelect;
+export type InsertStudentNotification = z.infer<typeof insertStudentNotificationSchema>;
+
+export const insertFlaggedQuestionSchema = createInsertSchema(flaggedQuestions).omit({ id: true, createdAt: true, resolvedAt: true, tutorViewedAt: true });
+export type FlaggedQuestion = typeof flaggedQuestions.$inferSelect;
+export type InsertFlaggedQuestion = z.infer<typeof insertFlaggedQuestionSchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables, but these schemas are

@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 
 interface StudentAssignment {
   assignmentId: number;
@@ -492,6 +493,9 @@ export default function TutorAssessmentDetails() {
             </table>
           </div>
         </div>
+
+        {/* Student-flagged questions for this assessment */}
+        <TutorFlagsPanel quizId={quizId} />
       </div>
 
       {/* Revoke Confirmation Dialog */}
