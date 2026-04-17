@@ -9,7 +9,7 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
-function normalizeLatexDelimiters(text: string): string {
+export function normalizeLatexDelimiters(text: string): string {
   let result = text;
 
   // Step 0: Escape currency dollar signs BEFORE any other processing.
@@ -25,7 +25,16 @@ function normalizeLatexDelimiters(text: string): string {
   // Step 2: \(...\) → $...$
   result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
 
-  // Step 3: bare \begin{env}...\end{env} environments → $$...$$
+  // Step 3: Fix malformed matrix row separators " \ " -> " \\ " inside matrix-like envs.
+  result = result.replace(
+    /(\\begin\{(?:array|tabular|aligned|cases|matrix|pmatrix|bmatrix|vmatrix)\})([\s\S]*?)(\\end\{(?:array|tabular|aligned|cases|matrix|pmatrix|bmatrix|vmatrix)\})/g,
+    (_match, open, body, close) => {
+      const fixedBody = body.replace(/\s\\\s/g, " \\\\ ");
+      return `${open}${fixedBody}${close}`;
+    },
+  );
+
+  // Step 4: bare \begin{env}...\end{env} environments → $$...$$
   result = result.replace(
     /(\\begin\{(?:array|tabular|aligned|cases|matrix|pmatrix|bmatrix|vmatrix)\}[\s\S]*?\\end\{(?:array|tabular|aligned|cases|matrix|pmatrix|bmatrix|vmatrix)\})/g,
     (match, _group, offset, string) => {
@@ -38,7 +47,15 @@ function normalizeLatexDelimiters(text: string): string {
     },
   );
 
-  // Step 4: bare LaTeX — AI-generated math options often have NO delimiters at all.
+  // Step 5: If AI puts display math $$...$$ inline in a sentence, treat it as inline math.
+  // remark-math often expects $$ blocks on their own line.
+  result = result.replace(/\$\$([^\n$]+?)\$\$/g, (_, math) => `$${math}$`);
+
+  // Step 6: Wrap common command-led expressions that appear right before a math block.
+  // Example: "\\mathbf{a}= $$...$$" -> "$\\mathbf{a}=$ $...$"
+  result = result.replace(/(\\[a-zA-Z]+\{[^}]+\}\s*=\s*)(?=\$|\\\[|\\\()/g, (_, expr) => `$${expr}$`);
+
+  // Step 7: bare LaTeX — AI-generated math options often have NO delimiters at all.
   // e.g. \frac{1}{2}xe^{x^2}+C   or   xe^{x^2}+C   or   \sqrt{x^2+1}
   // Detect any LaTeX command (\word) or brace-exponent notation (x^{, x_{})
   // that is NOT already inside a $ or \[ delimiter, then wrap the whole string.

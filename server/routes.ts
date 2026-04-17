@@ -15,6 +15,7 @@ import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilot
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
+import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -1246,6 +1247,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.use("/api/student", studentApiLimiter);
   app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
+
+  app.post("/api/graph/render-svg", async (req, res) => {
+    const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid graph spec",
+        details: parsed.error.flatten(),
+      });
+    }
+
+    const svg = await renderGraphSvgWithPython(parsed.data);
+    if (!svg) {
+      return res.status(503).json({ message: "Python graph rendering unavailable" });
+    }
+
+    return res.json({ svg });
+  });
 
   app.post("/api/auth/sync", async (req, res) => {
     try {
