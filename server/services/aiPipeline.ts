@@ -516,5 +516,7 @@ Return strictly valid JSON only with exactly ${questionCount} questions.`;
   parsed.questions = await runCrossSubjectVerifier(parsed.questions, context);
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
+  parsed.questions = await runClaudePostCheck(parsed.questions, context);
+  parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
   return parsed;
 }
