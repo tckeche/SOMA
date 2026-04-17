@@ -1,4 +1,4 @@
-import React, { useId } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { applyGraphPreset } from "@/lib/graphPresets";
 
@@ -457,6 +457,41 @@ function isValidSpec(spec: GraphQuestionSpec): boolean {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const resolvedSpec = applyGraphPreset(spec);
+  const [pythonSvg, setPythonSvg] = useState<string | null>(null);
+  const [pythonUnavailable, setPythonUnavailable] = useState(false);
+  const specKey = useMemo(() => JSON.stringify(resolvedSpec), [resolvedSpec]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPythonSvg(null);
+    setPythonUnavailable(false);
+
+    fetch("/api/graph/render-svg", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spec: resolvedSpec }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`render-failed-${res.status}`);
+        return res.json();
+      })
+      .then((data: { svg?: string }) => {
+        if (cancelled) return;
+        if (typeof data.svg === "string" && data.svg.trim().length > 0) {
+          setPythonSvg(data.svg);
+          return;
+        }
+        setPythonUnavailable(true);
+      })
+      .catch(() => {
+        if (!cancelled) setPythonUnavailable(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [specKey]);
+
   // Generate unique IDs per instance so multiple graphs on the same page
   // never share clipPath or marker IDs — SVG ID conflicts cause wrong clipping
   // and missing arrowheads on all but the first graph.
@@ -472,6 +507,20 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         data-testid="graph-invalid"
       >
         <p className="text-slate-400 text-sm">Graph specification is invalid or incomplete.</p>
+      </div>
+    );
+  }
+
+  if (pythonSvg) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 md:p-4" data-testid="graph-plot-python">
+        <div className="w-full max-w-[620px] mx-auto">
+          <img
+            src={`data:image/svg+xml;utf8,${encodeURIComponent(pythonSvg)}`}
+            alt="Exam-style graph"
+            className="w-full block rounded"
+          />
+        </div>
       </div>
     );
   }
@@ -541,6 +590,9 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
       className="rounded-2xl border border-cyan-500/20 bg-slate-950/70 p-3 md:p-4"
       data-testid="graph-plot"
     >
+      {pythonUnavailable && (
+        <p className="mb-2 text-[11px] text-slate-400">Using browser graph fallback while Python renderer is unavailable.</p>
+      )}
       {resolvedSpec.equation && <span className="sr-only">Equation: {resolvedSpec.equation}</span>}
       {/*
         SVG sizing: `w-full` + no fixed height → browser computes height from viewBox aspect
