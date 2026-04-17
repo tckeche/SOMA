@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { generateWithFallback } from "./aiOrchestrator";
+import Anthropic from "@anthropic-ai/sdk";
 
 export const QuestionSchema = z.object({
   stem: z.string(),
@@ -248,6 +249,77 @@ export function validateAndCorrectMcqAnswers(
   });
 }
 
+/**
+ * Final Anthropic-only post-check pass to reduce mathematically incorrect answers.
+ * Why this exists:
+ * - The previous pipeline validated JSON shape + option alignment, but it did not
+ *   guarantee symbolic/math correctness (e.g. calculus antiderivative slips).
+ * - This pass re-solves each question and forces corrections before data is returned.
+ */
+async function runClaudePostCheck(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+): Promise<QuizResult["questions"]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (process.env.NODE_ENV === "test" || !apiKey) {
+    console.warn("[SOMA_CLAUDE_POST_CHECK] Skipped (test mode or missing ANTHROPIC_API_KEY).");
+    return questions;
+  }
+
+  const anthropic = new Anthropic({ apiKey });
+  const schema = zodToJsonSchema(QuizResultSchema, "QuizResult");
+  const systemPrompt = `You are Claude Post-Checker, the FINAL mathematical correctness gate for SOMA quiz questions.
+Your job is to re-solve every question and ensure the marked correct answer is truly correct.
+If a question is wrong, fix it.
+
+Strict rules:
+1. Return only a valid JSON object matching the provided schema.
+2. Keep exactly the same number of questions.
+3. Preserve each question stem intent and difficulty where possible.
+4. Ensure correct_answer exactly equals one of the 4 options.
+5. If the true answer is not in options, replace the weakest distractor with the true answer.
+6. Rewrite explanation so it explicitly justifies the corrected answer.
+7. Be especially careful with derivatives, integrals, algebraic signs, constants, and domain conditions.`;
+
+  const userPrompt = `Context:
+subject=${context.subject}
+syllabus=${context.syllabus}
+level=${context.level}
+topic=${context.topic}
+subtopic=${context.subtopic || "none"}
+
+Questions JSON to audit and correct:
+${JSON.stringify({ questions })}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 16_384,
+      temperature: 0,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+      tools: [{
+        name: "return_validated_quiz",
+        description: "Return audited and corrected quiz JSON matching the schema.",
+        input_schema: schema as any,
+      }],
+      tool_choice: { type: "tool", name: "return_validated_quiz" },
+    });
+
+    const toolBlock = response.content.find((block: any) => block.type === "tool_use");
+    if (!toolBlock || toolBlock.type !== "tool_use") {
+      throw new Error("Claude post-check returned no tool output");
+    }
+
+    const parsed = QuizResultSchema.parse(toolBlock.input);
+    console.log(`[SOMA_CLAUDE_POST_CHECK] Completed for ${parsed.questions.length} questions.`);
+    return parsed.questions;
+  } catch (error: any) {
+    console.warn(`[SOMA_CLAUDE_POST_CHECK] Failed; keeping pre-check set. Reason: ${error?.message || "unknown error"}`);
+    return questions;
+  }
+}
+
 export async function generateAuditedQuiz(input: SomaGenerationContext | string): Promise<QuizResult> {
   const context: SomaGenerationContext = typeof input === "string"
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
@@ -312,6 +384,8 @@ Return strictly valid JSON only with exactly ${questionCount} questions.`;
     console.warn(`[SOMA_GENERATION_SCOPE] Only ${parsed.questions.length}/${questionCount} questions strongly matched topic scope; keeping best validated set.`);
   }
   parsed.questions = parsed.questions.slice(0, questionCount);
+  parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
+  parsed.questions = await runClaudePostCheck(parsed.questions, context);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
   return parsed;
 }
