@@ -421,7 +421,12 @@ Return strict JSON matching the schema.`;
 
   try {
     const anthropic = new Anthropic({ apiKey });
-    const schema = zodToJsonSchema(QuizResultSchema, "QuizResult");
+    // Anthropic requires `type` at the root of input_schema; unwrap the Zod wrapper.
+    const wrapped: any = zodToJsonSchema(QuizResultSchema, "QuizResult");
+    const inner: any = wrapped?.definitions?.QuizResult ?? zodToJsonSchema(QuizResultSchema);
+    const inputSchema: any = { ...inner, type: inner?.type || "object" };
+    delete inputSchema.$schema;
+    delete inputSchema.$ref;
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 16_384,
@@ -431,7 +436,7 @@ Return strict JSON matching the schema.`;
       tools: [{
         name: "return_polished_quiz",
         description: "Return polished quiz JSON.",
-        input_schema: schema as any,
+        input_schema: inputSchema,
       }],
       tool_choice: { type: "tool", name: "return_polished_quiz" },
     });
