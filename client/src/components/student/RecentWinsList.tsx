@@ -1,0 +1,67 @@
+import { Trophy, Sparkles, Flag, Award } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import type { DashboardRecentWin } from "@/types/studentDashboard";
+
+interface Props {
+  wins: DashboardRecentWin[];
+}
+
+const TYPE_META: Record<DashboardRecentWin["type"], { Icon: typeof Trophy; tone: string }> = {
+  high_score: { Icon: Trophy, tone: "text-amber-300" },
+  first_completion: { Icon: Flag, tone: "text-emerald-300" },
+  improvement: { Icon: Sparkles, tone: "text-cyan-300" },
+  streak: { Icon: Sparkles, tone: "text-violet-300" },
+  mastery: { Icon: Award, tone: "text-emerald-300" },
+};
+
+export default function RecentWinsList({ wins }: Props) {
+  if (wins.length === 0) {
+    return (
+      <section
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-lg"
+        aria-label="Recent wins"
+        data-testid="panel-recent-wins"
+      >
+        <header className="flex items-center gap-2 mb-3">
+          <Trophy className="w-5 h-5 text-amber-300" />
+          <h2 className="text-sm font-semibold text-slate-100">Recent wins</h2>
+        </header>
+        <p className="text-xs text-slate-400">
+          Once you've completed a few assessments, your highlights will show up here. Onwards.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-lg"
+      aria-label="Recent wins"
+      data-testid="panel-recent-wins"
+    >
+      <header className="flex items-center gap-2 mb-3">
+        <Trophy className="w-5 h-5 text-amber-300" />
+        <div>
+          <h2 className="text-sm font-semibold text-slate-100">Recent wins</h2>
+          <p className="text-[11px] text-slate-400">Worth pausing on</p>
+        </div>
+      </header>
+      <ul className="space-y-2.5">
+        {wins.map((w, i) => {
+          const meta = TYPE_META[w.type];
+          const Icon = meta.Icon;
+          return (
+            <li key={i} className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/50 p-3" data-testid={`win-${w.type}-${i}`}>
+              <Icon className={`w-4 h-4 mt-0.5 ${meta.tone} shrink-0`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-100">{w.title}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{w.detail}</p>
+                <p className="text-[10px] text-slate-500 mt-1">{formatDistanceToNow(new Date(w.ts), { addSuffix: true })}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
