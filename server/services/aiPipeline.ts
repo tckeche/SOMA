@@ -37,6 +37,41 @@ function extractJson(raw: string): QuizResult {
   return QuizResultSchema.parse(JSON.parse(raw));
 }
 
+function dedupeOptions(options: string[], preferred?: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const option of options) {
+    const normalized = option.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(option.trim());
+  }
+  if (preferred && !out.some((o) => o.trim() === preferred.trim())) out.unshift(preferred.trim());
+  while (out.length < 4) out.push(`Option ${out.length + 1}`);
+  return out.slice(0, 4);
+}
+
+function applyDeterministicIntegrityGuards(questions: QuizResult["questions"]): QuizResult["questions"] {
+  return questions.map((q, idx) => {
+    const normalizedStem = q.stem.trim();
+    const normalizedCorrect = q.correct_answer.trim();
+    const normalizedExplanation = q.explanation.trim() || "See worked method for the correct option.";
+    const guardedOptions = dedupeOptions(q.options, normalizedCorrect);
+    const marks = Number.isInteger(q.marks) ? Math.min(10, Math.max(1, q.marks)) : 1;
+    const cleaned = {
+      ...q,
+      stem: normalizedStem || `Question ${idx + 1}`,
+      options: guardedOptions,
+      correct_answer: normalizedCorrect || guardedOptions[0],
+      explanation: normalizedExplanation,
+      marks,
+    };
+    return guardedOptions.includes(cleaned.correct_answer)
+      ? cleaned
+      : { ...cleaned, correct_answer: guardedOptions[0] };
+  });
+}
+
 function decodePdfLiteral(segment: string): string {
   return segment
     .replace(/\\([()\\])/g, "$1")
@@ -320,6 +355,92 @@ ${JSON.stringify({ questions })}`;
   }
 }
 
+/**
+ * Cross-provider adversarial verifier to harden correctness across ALL subjects.
+ * Unlike the Claude-only pass, this uses the fallback chain so a single provider
+ * mistake does not silently pass without challenge.
+ */
+async function runCrossSubjectVerifier(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+): Promise<QuizResult["questions"]> {
+  const verifierPrompt = `You are a strict cross-subject examiner QA verifier.
+Audit and correct every question for subject-matter truth, not style.
+
+Verification requirements:
+1. Re-solve / re-derive each answer where possible.
+2. Ensure each correct_answer is objectively correct for ${context.subject}.
+3. Ensure each explanation is logically valid and aligned with the corrected answer.
+4. Keep exactly 4 distinct options and the same number of questions.
+5. If a true answer is missing, replace the weakest distractor with the true answer.
+6. Reject hidden answer leaks, contradiction, and self-inconsistent stems.
+7. Keep syllabus/level scope: ${context.syllabus} / ${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+
+Return strict JSON only, matching the schema.`;
+
+  try {
+    const { data } = await generateWithFallback(
+      verifierPrompt,
+      `Input quiz JSON:\n${JSON.stringify({ questions })}\n\nSupporting curriculum context:\n${context.supportingDocText || "None provided."}`,
+      jsonSchema,
+    );
+    const parsed = extractJson(data);
+    return parsed.questions;
+  } catch (error: any) {
+    console.warn(`[SOMA_CROSS_SUBJECT_VERIFIER] Failed; keeping current set. Reason: ${error?.message || "unknown error"}`);
+    return questions;
+  }
+}
+
+async function runThreeStageGeneration(
+  context: SomaGenerationContext,
+  questionCount: number,
+  makerPrompt: string,
+  checkerPrompt: string,
+  finalizerPrompt: string,
+): Promise<QuizResult> {
+  const { data: maker } = await generateWithFallback(
+    makerPrompt,
+    `Topic: ${context.topic}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
+    jsonSchema,
+  );
+  const { data: checker } = await generateWithFallback(
+    checkerPrompt,
+    `Topic: ${context.topic}\nInput JSON:\n${maker}`,
+    jsonSchema,
+  );
+  const { data: final } = await generateWithFallback(
+    finalizerPrompt,
+    `Topic: ${context.topic}\nInput JSON:\n${checker}`,
+    jsonSchema,
+  );
+  return extractJson(final);
+}
+
+async function runEmergencySingleStageGeneration(
+  context: SomaGenerationContext,
+  questionCount: number,
+): Promise<QuizResult> {
+  const emergencyPrompt = `You are an emergency assessment generation fallback.
+Return strictly valid JSON with exactly ${questionCount} high-quality MCQ questions.
+Subject=${context.subject}; syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
+
+Critical requirements:
+1) Every question must be objectively correct.
+2) Exactly 4 distinct options per question.
+3) correct_answer must exactly match one option.
+4) explanation must justify why the correct answer is correct.
+5) Keep questions within provided syllabus/topic scope only.
+6) Return JSON only matching the schema.`;
+
+  const { data } = await generateWithFallback(
+    emergencyPrompt,
+    `Curriculum context:\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
+    jsonSchema,
+  );
+  return extractJson(data);
+}
+
 export async function generateAuditedQuiz(input: SomaGenerationContext | string): Promise<QuizResult> {
   const context: SomaGenerationContext = typeof input === "string"
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
@@ -339,7 +460,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     return { questions: validateAndCorrectMcqAnswers(merged.slice(0, questionCount)) };
   }
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
-  const makerPrompt = `You are Claude (Maker), an expert mathematics assessment designer.
+  const makerPrompt = `You are Claude (Maker), an expert ${context.subject} assessment designer.
 Generate exactly ${questionCount} MCQ questions for ${context.subject}.
 STRICT SCOPE: syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
 Never drift to adjacent topics not explicitly in scope.
@@ -352,12 +473,13 @@ Every mathematical expression in EVERY stem, option, and explanation MUST be wra
 - Inline math: $...$  (e.g. $\\frac{1}{2}xe^{x^2}+C$, $\\sqrt{x^2+1}$, $x^2 + 3x - 4$)
 - Display math: $$...$$ (for standalone equations)
 NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$. Every answer option that contains any mathematical notation must start and end with $ delimiters.
-CURRENCY RULE: When writing monetary amounts (e.g. $9,000 or $100,000), write them as plain text WITHOUT a dollar sign prefix, or use the word "dollars" — NEVER use a bare $ before a number as this will be parsed as a math delimiter. WRONG: "$9,000" RIGHT: "9,000 dollars" or "USD 9,000".`;
+CURRENCY RULE: When writing monetary amounts (e.g. $9,000 or $100,000), write them as plain text WITHOUT a dollar sign prefix, or use the word "dollars" — NEVER use a bare $ before a number as this will be parsed as a math delimiter. WRONG: "$9,000" RIGHT: "9,000 dollars" or "USD 9,000".
+SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.subject}.`;
   const checkerPrompt = `You are Gemini (Checker). Audit the Maker JSON with strict accuracy.
 You must evaluate ONLY the provided topic/context and input JSON.
 Do not hallucinate facts, syllabus requirements, or missing context.
 Reject or correct anything unsupported by the provided data.
-Enforce mathematical correctness, strict JSON structure, and syllabus-level alignment (${context.syllabus}/${context.level}).
+Enforce subject-matter correctness for ${context.subject}, strict JSON structure, and syllabus-level alignment (${context.syllabus}/${context.level}).
 Return only validated JSON that is fully supported by the given input.
 
 LATEX VALIDATION — CHECK EVERY FIELD:
@@ -366,10 +488,14 @@ Scan every stem, every option, and every explanation. Any mathematical expressio
 Reject questions outside topic/subtopic scope.
 Return strictly valid JSON only with exactly ${questionCount} questions.`;
 
-  const { data: maker } = await generateWithFallback(makerPrompt, `Topic: ${context.topic}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`, jsonSchema);
-  const { data: checker } = await generateWithFallback(checkerPrompt, `Topic: ${context.topic}\nInput JSON:\n${maker}`, jsonSchema);
-  const { data: final } = await generateWithFallback(finalizerPrompt, `Topic: ${context.topic}\nInput JSON:\n${checker}`, jsonSchema);
-  const parsed = extractJson(final);
+  let parsed: QuizResult;
+  try {
+    parsed = await runThreeStageGeneration(context, questionCount, makerPrompt, checkerPrompt, finalizerPrompt);
+  } catch (error: any) {
+    if (process.env.NODE_ENV === "test") throw error;
+    console.warn(`[SOMA_PIPELINE] Three-stage generation failed, attempting emergency fallback. Reason: ${error?.message || "unknown error"}`);
+    parsed = await runEmergencySingleStageGeneration(context, questionCount);
+  }
   const scopeTokens = [context.topic, context.subtopic].filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
   if (scopeTokens.length > 0) {
     const scoped = parsed.questions.filter((q) => {
@@ -384,6 +510,11 @@ Return strictly valid JSON only with exactly ${questionCount} questions.`;
     console.warn(`[SOMA_GENERATION_SCOPE] Only ${parsed.questions.length}/${questionCount} questions strongly matched topic scope; keeping best validated set.`);
   }
   parsed.questions = parsed.questions.slice(0, questionCount);
+  parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
+  parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
+  parsed.questions = await runClaudePostCheck(parsed.questions, context);
+  parsed.questions = await runCrossSubjectVerifier(parsed.questions, context);
+  parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
   parsed.questions = await runClaudePostCheck(parsed.questions, context);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);

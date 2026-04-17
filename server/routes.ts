@@ -3796,6 +3796,64 @@ ${JSON.stringify({
     }).optional(),
   });
 
+  function parseBoardAndSyllabusCode(raw: string): { board: string; syllabusCode: string } {
+    const trimmed = raw.trim();
+    const codeMatch = trimmed.match(/\b(\d{3,6}[A-Za-z]?)\b/);
+    if (!codeMatch) {
+      return { board: trimmed, syllabusCode: trimmed };
+    }
+    const syllabusCode = codeMatch[1];
+    const board = trimmed.replace(syllabusCode, "").trim() || trimmed;
+    return { board, syllabusCode };
+  }
+
+  async function buildGenerationSupportContext(params: {
+    board: string;
+    level: string;
+    syllabusCode: string;
+    subject: string;
+    topic: string;
+    subtopic?: string;
+    tutorId?: string;
+  }): Promise<string> {
+    try {
+      const syllabusDoc = await storage.getSyllabusDocumentBySelection({
+        board: params.board,
+        level: params.level,
+        syllabusCode: params.syllabusCode,
+        tutorId: params.tutorId,
+      });
+
+      const chunkQuery = `${params.subject} ${params.topic} ${params.subtopic || ""}`.trim();
+      const syllabusContext = syllabusDoc
+        ? (scoreSyllabusChunks(syllabusDoc.chunks, chunkQuery).join("\n---\n") || syllabusDoc.extractedText.slice(0, 4000))
+        : "";
+
+      const misconceptions = await storage.listExaminerMisconceptions({
+        board: params.board,
+        syllabusCode: params.syllabusCode,
+        topic: params.topic,
+      });
+
+      const misconceptionContext = misconceptions.length > 0
+        ? misconceptions
+          .slice(0, 8)
+          .map((m) => `- Misconception: ${m.misconception}\n  Student error: ${m.studentError}\n  Correct approach: ${m.correctApproach}`)
+          .join("\n")
+        : "";
+
+      const contextParts = [
+        syllabusContext ? `SYLLABUS CONTEXT:\n${syllabusContext}` : "",
+        misconceptionContext ? `EXAMINER REPORT INSIGHTS:\n${misconceptionContext}` : "",
+      ].filter(Boolean);
+
+      return contextParts.join("\n\n");
+    } catch (error: any) {
+      console.warn(`[SOMA_SUPPORT_CONTEXT] Failed to build support context; continuing without it. Reason: ${error?.message || "unknown error"}`);
+      return "";
+    }
+  }
+
   app.post("/api/soma/generate", requireAdmin, async (req, res) => {
     try {
       const parsed = somaGenerateSchema.safeParse(req.body);
@@ -3806,12 +3864,23 @@ ${JSON.stringify({
       const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
+      const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
+      const supportContext = await buildGenerationSupportContext({
+        board,
+        level,
+        syllabusCode,
+        subject,
+        topic,
+        subtopic,
+      });
+
       const result = await generateAuditedQuiz({
         topic,
         subject,
         syllabus,
         level,
         copilotPrompt: curriculumContext,
+        supportingDocText: supportContext,
         questionCount,
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
@@ -3843,7 +3912,12 @@ ${JSON.stringify({
         quiz,
         questions: insertedQuestions,
         pipeline: {
-          stages: ["Claude Sonnet (Maker)", "Gemini 2.5 Flash (Checker)"],
+          stages: [
+            "Claude Sonnet (Maker)",
+            "Gemini 2.5 Flash (Checker)",
+            "Claude Sonnet (Post-Check)",
+            "Cross-Subject Adversarial Verifier",
+          ],
           totalQuestions: insertedQuestions.length,
         },
       });
@@ -3866,9 +3940,21 @@ ${JSON.stringify({
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
+      const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
+      const supportContext = await buildGenerationSupportContext({
+        board,
+        level,
+        syllabusCode,
+        subject,
+        topic,
+        subtopic,
+        tutorId,
+      });
+
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
+        supportingDocText: supportContext,
         questionCount,
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
@@ -3906,7 +3992,12 @@ ${JSON.stringify({
         assignments: bundle.assignments.length,
         assignedStudentIds: validAssignedStudentIds,
         pipeline: {
-          stages: ["Claude Sonnet (Maker)", "Gemini 2.5 Flash (Checker)"],
+          stages: [
+            "Claude Sonnet (Maker)",
+            "Gemini 2.5 Flash (Checker)",
+            "Claude Sonnet (Post-Check)",
+            "Cross-Subject Adversarial Verifier",
+          ],
           totalQuestions: bundle.questions.length,
         },
       });

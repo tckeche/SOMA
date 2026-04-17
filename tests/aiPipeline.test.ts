@@ -1,8 +1,8 @@
 /**
  * AI PIPELINE (SOMA) TESTS
  * Tests the multi-agent quiz generation pipeline.
- * Covers: QuestionSchema validation, QuizResultSchema, 3-stage pipeline
- * (generate → math audit → syllabus audit), error propagation.
+ * Covers: QuestionSchema validation, QuizResultSchema, multi-stage pipeline
+ * (generate → checker → syllabus audit → adversarial verifier), error propagation.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -144,9 +144,9 @@ describe("generateAuditedQuiz: Full pipeline success", () => {
     mockGenerateWithFallback.mockResolvedValue(makeAIResult(JSON.stringify(validQuizResult)));
   });
 
-  it("calls generateWithFallback 3 times (3 pipeline stages)", async () => {
+  it("calls generateWithFallback 4 times (including cross-subject verifier)", async () => {
     await generateAuditedQuiz("Algebra");
-    expect(mockGenerateWithFallback).toHaveBeenCalledTimes(3);
+    expect(mockGenerateWithFallback).toHaveBeenCalledTimes(4);
   });
 
   it("returns a valid QuizResult object", async () => {
@@ -184,9 +184,15 @@ describe("generateAuditedQuiz: Full pipeline success", () => {
     expect(thirdUserPrompt).toMatch(/Number Theory/i);
   });
 
+  it("fourth call performs final cross-subject verification", async () => {
+    await generateAuditedQuiz("Number Theory");
+    const [fourthSystemPrompt] = mockGenerateWithFallback.mock.calls[3];
+    expect(fourthSystemPrompt.toLowerCase()).toMatch(/cross-subject|verifier|strict/i);
+  });
+
   it("each stage passes a schema to generateWithFallback", async () => {
     await generateAuditedQuiz("Probability");
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       expect(mockGenerateWithFallback.mock.calls[i][2]).toBeDefined();
     }
   });
@@ -197,8 +203,8 @@ describe("generateAuditedQuiz: Full pipeline success", () => {
     const result = await generateAuditedQuiz({ topic: "Algebra", subject: "Mathematics", syllabus: "Cambridge", level: "IGCSE", questionCount: 30 });
     expect(result.questions.length).toBeGreaterThan(0);
     expect(result.questions.length).toBeLessThanOrEqual(30);
-    // 30 questions => two 15-question batches; each batch runs 3 AI stages
-    expect(mockGenerateWithFallback).toHaveBeenCalledTimes(6);
+    // 30 questions => two 15-question batches; each batch runs 4 AI stages
+    expect(mockGenerateWithFallback).toHaveBeenCalledTimes(8);
   });
 });
 
@@ -267,6 +273,12 @@ describe("generateAuditedQuiz: System prompt content", () => {
     await generateAuditedQuiz("Algebra");
     const [systemPrompt] = mockGenerateWithFallback.mock.calls[2];
     expect(systemPrompt.toLowerCase()).toMatch(/syllabus|curriculum|compliance/i);
+  });
+
+  it("stage 4 system prompt mentions cross-subject verification", async () => {
+    await generateAuditedQuiz("Algebra");
+    const [systemPrompt] = mockGenerateWithFallback.mock.calls[3];
+    expect(systemPrompt.toLowerCase()).toMatch(/cross-subject|verifier|audit/i);
   });
 });
 
