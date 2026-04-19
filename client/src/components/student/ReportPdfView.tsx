@@ -3,8 +3,8 @@ import { forwardRef } from "react";
 // Print-friendly report view. Rendered hidden off-screen and passed to
 // html2pdf.js as the rasterisation source. Uses inline styles (not Tailwind)
 // so the PDF output is stable regardless of the app's dark theme and custom
-// CSS variables. The layout is deliberately plain: white background, black
-// text, simple rules — optimised for printing and reading at A4.
+// CSS variables. The 700px width matches A4 usable area at 96 DPI with 12mm
+// margins, so the rasteriser does not have to scale the layout.
 
 export interface ReportPdfQuestion {
   id: number;
@@ -29,6 +29,8 @@ export interface ReportPdfData {
   answers: Record<string, string>;
 }
 
+const LOGO_URL = "/MCEC Transparent Logo.jpg";
+
 function formatDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -40,70 +42,103 @@ function stripHtml(s: string): string {
   return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+const FONT_SERIF = "Georgia, 'Times New Roman', serif";
+const FONT_SANS = "Helvetica, Arial, sans-serif";
+const INK = "#1a1a1a";
+const MUTED = "#6b6b6b";
+const RULE = "#d4d4d4";
+
 const S = {
   page: {
-    fontFamily: "Georgia, 'Times New Roman', serif",
-    color: "#1a1a1a",
+    fontFamily: FONT_SERIF,
+    color: INK,
     background: "#ffffff",
-    padding: "24px",
-    width: "780px",
+    padding: "28px 32px",
+    width: "700px",
     boxSizing: "border-box" as const,
     lineHeight: 1.5,
   },
-  header: {
-    borderBottom: "2px solid #1a1a1a",
-    paddingBottom: "14px",
-    marginBottom: "18px",
+  topBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "16px",
   },
-  brand: {
-    fontSize: "11px",
+  logoImg: {
+    height: "44px",
+    width: "auto",
+    objectFit: "contain" as const,
+    display: "block",
+  },
+  brandRight: {
+    textAlign: "right" as const,
+    fontFamily: FONT_SANS,
+    fontSize: "10px",
     letterSpacing: "0.18em",
     textTransform: "uppercase" as const,
-    color: "#6b6b6b",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    color: MUTED,
+    lineHeight: 1.4,
+  },
+  header: {
+    borderTop: "2px solid " + INK,
+    borderBottom: "1px solid " + RULE,
+    padding: "14px 0 16px 0",
+    marginBottom: "20px",
+  },
+  eyebrow: {
+    fontSize: "10px",
+    letterSpacing: "0.2em",
+    textTransform: "uppercase" as const,
+    color: MUTED,
+    fontFamily: FONT_SANS,
   },
   title: {
     fontSize: "22px",
     fontWeight: 700,
-    margin: "6px 0 4px 0",
+    margin: "6px 0 6px 0",
+    lineHeight: 1.2,
   },
   meta: {
     fontSize: "12px",
     color: "#4a4a4a",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    fontFamily: FONT_SANS,
+  },
+  metaLine: {
+    margin: "2px 0",
   },
   scoreRow: {
     display: "flex",
-    gap: "12px",
-    marginTop: "14px",
+    gap: "10px",
+    marginTop: "16px",
   },
   scoreCell: {
     flex: 1,
-    border: "1px solid #d4d4d4",
+    border: "1px solid " + RULE,
     padding: "10px 12px",
     textAlign: "center" as const,
   },
   scoreNum: {
-    fontSize: "18px",
+    fontSize: "20px",
     fontWeight: 700,
+    lineHeight: 1.1,
   },
   scoreLabel: {
     fontSize: "10px",
     textTransform: "uppercase" as const,
     letterSpacing: "0.1em",
-    color: "#6b6b6b",
-    marginTop: "2px",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    color: MUTED,
+    marginTop: "4px",
+    fontFamily: FONT_SANS,
   },
   sectionHeading: {
-    fontSize: "13px",
+    fontSize: "12px",
     textTransform: "uppercase" as const,
-    letterSpacing: "0.12em",
-    color: "#6b6b6b",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    letterSpacing: "0.14em",
+    color: MUTED,
+    fontFamily: FONT_SANS,
     marginTop: "22px",
-    marginBottom: "8px",
-    borderBottom: "1px solid #d4d4d4",
+    marginBottom: "10px",
+    borderBottom: "1px solid " + RULE,
     paddingBottom: "4px",
   },
   aiBox: {
@@ -112,38 +147,43 @@ const S = {
     padding: "14px 16px",
     fontSize: "12.5px",
     lineHeight: 1.6,
+    breakInside: "avoid" as const,
+    pageBreakInside: "avoid" as const,
   },
   question: {
     breakInside: "avoid" as const,
     pageBreakInside: "avoid" as const,
-    border: "1px solid #d4d4d4",
+    border: "1px solid " + RULE,
     padding: "14px 16px",
     marginTop: "12px",
   },
   qHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "center",
     marginBottom: "8px",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    fontFamily: FONT_SANS,
   },
   qNum: {
     fontSize: "11px",
     letterSpacing: "0.1em",
     textTransform: "uppercase" as const,
-    color: "#6b6b6b",
+    color: MUTED,
     fontWeight: 600,
   },
   qVerdict: {
-    fontSize: "11px",
+    fontSize: "10px",
     fontWeight: 700,
-    padding: "2px 8px",
+    padding: "3px 10px",
     border: "1px solid",
     borderRadius: "3px",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase" as const,
   },
   qStem: {
     fontSize: "13px",
     marginBottom: "10px",
+    lineHeight: 1.55,
   },
   optionList: {
     listStyle: "none",
@@ -152,36 +192,45 @@ const S = {
   },
   optionRow: {
     fontSize: "12px",
-    padding: "6px 8px",
+    padding: "7px 10px",
     borderLeft: "3px solid #e4e4e4",
-    marginBottom: "3px",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    marginBottom: "4px",
+    fontFamily: FONT_SANS,
+    lineHeight: 1.5,
+  },
+  optionTag: {
+    color: MUTED,
+    fontSize: "10px",
+    marginLeft: "8px",
+    fontStyle: "italic" as const,
   },
   explanation: {
     fontSize: "12px",
     background: "#fafafa",
     borderLeft: "3px solid #9ca3af",
-    padding: "8px 12px",
-    marginTop: "8px",
-    lineHeight: 1.55,
+    padding: "10px 12px",
+    marginTop: "10px",
+    lineHeight: 1.6,
   },
   explLabel: {
     fontSize: "10px",
     fontWeight: 700,
     textTransform: "uppercase" as const,
-    letterSpacing: "0.1em",
-    color: "#6b6b6b",
+    letterSpacing: "0.12em",
+    color: MUTED,
     marginBottom: "4px",
-    fontFamily: "Helvetica, Arial, sans-serif",
+    fontFamily: FONT_SANS,
   },
   footer: {
-    marginTop: "24px",
+    marginTop: "28px",
     paddingTop: "10px",
-    borderTop: "1px solid #d4d4d4",
+    borderTop: "1px solid " + RULE,
     fontSize: "10px",
     color: "#8a8a8a",
-    textAlign: "center" as const,
-    fontFamily: "Helvetica, Arial, sans-serif",
+    fontFamily: FONT_SANS,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
 };
 
@@ -192,20 +241,32 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
 
     return (
       <div ref={ref} style={S.page}>
+        <div style={S.topBar}>
+          <img
+            src={LOGO_URL}
+            alt="MelaniCalvin Education Centre"
+            style={S.logoImg}
+            crossOrigin="anonymous"
+          />
+          <div style={S.brandRight}>
+            <div>MelaniCalvin Education Centre</div>
+            <div style={{ opacity: 0.75 }}>soma · assessment report</div>
+          </div>
+        </div>
+
         <div style={S.header}>
-          <div style={S.brand}>soma · assessment report</div>
+          <div style={S.eyebrow}>Assessment report</div>
           <h1 style={S.title}>{data.title}</h1>
           <div style={S.meta}>
-            {metaBits.length > 0 && <div>{metaBits.join(" · ")}</div>}
-            <div>
+            {metaBits.length > 0 && <div style={S.metaLine}>{metaBits.join(" · ")}</div>}
+            <div style={S.metaLine}>
               <strong>Student:</strong> {data.studentName}
-              {data.completedAt && (
-                <>
-                  {"  ·  "}
-                  <strong>Completed:</strong> {formatDate(data.completedAt)}
-                </>
-              )}
             </div>
+            {data.completedAt && (
+              <div style={S.metaLine}>
+                <strong>Completed:</strong> {formatDate(data.completedAt)}
+              </div>
+            )}
           </div>
 
           <div style={S.scoreRow}>
@@ -289,9 +350,7 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
                     >
                       <strong>{letter}.</strong> {stripHtml(option)}
                       {tags.length > 0 && (
-                        <span style={{ color: "#6b6b6b", fontSize: "10px", marginLeft: "6px" }}>
-                          ({tags.join(", ")})
-                        </span>
+                        <span style={S.optionTag}>({tags.join(", ")})</span>
                       )}
                     </li>
                   );
@@ -309,7 +368,8 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
         })}
 
         <div style={S.footer}>
-          Generated by soma · {formatDate(new Date().toISOString())}
+          <span>Prepared by MelaniCalvin Education Centre · soma</span>
+          <span>{formatDate(new Date().toISOString())}</span>
         </div>
       </div>
     );

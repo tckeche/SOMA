@@ -154,6 +154,17 @@ export default function SomaQuizReview() {
     if (!pdfRef.current || downloading) return;
     setDownloading(true);
     try {
+      const images = Array.from(pdfRef.current.querySelectorAll("img"));
+      await Promise.all(
+        images.map((img) =>
+          img.complete && img.naturalWidth > 0
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                img.addEventListener("load", () => resolve(), { once: true });
+                img.addEventListener("error", () => resolve(), { once: true });
+              }),
+        ),
+      );
       const html2pdf = (await import("html2pdf.js")).default;
       await html2pdf().set({
         margin: [12, 12, 12, 12],
