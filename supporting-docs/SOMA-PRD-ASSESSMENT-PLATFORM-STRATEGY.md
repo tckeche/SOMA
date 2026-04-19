@@ -105,10 +105,11 @@ The chosen template shapes the Co-Pilot system prompt (question count, tone, mar
 
 ### 3.4 Topic Selection — Subject × Level × Syllabus
 
-After subject and level are chosen, an optional **Topics** multi-select appears. Topics are sourced from the relevant syllabus (e.g. Cambridge IGCSE Mathematics → Algebra, Linear equations, Graphs, Geometry, Trigonometry, Mensuration, Probability, Statistics).
+After subject, level, and syllabus are chosen, an optional **Topics** dropdown (multi-select) appears. Topics are sourced from the selected syllabus mapping (e.g. Cambridge IGCSE Mathematics → Algebra, Linear equations, Graphs, Geometry, Trigonometry, Mensuration, Probability, Statistics).
 
 Rules:
 - Topic selection is always optional.
+- Ordering is fixed: **Subject → Level → Syllabus → Topics**.
 - If no syllabus mapping exists for the chosen subject/level, the field is hidden or shown as "No topics available — generate from prompt instead."
 - Selected topics propagate to: assessment generation, feedback, per-student reports, syllabus coverage tracking, and the radar graph.
 
@@ -302,13 +303,30 @@ Tutors can ask soma, in natural language:
 - "Check for duplicate answer options."
 - "Check for ambiguous wording."
 
-Publishing is blocked (with a clear warning) if:
-- A question has no correct answer
-- Answer options are duplicated
-- The explanation contradicts the answer
-- The level appears far too high or too low
-- The question does not match selected topics
-- Maths formatting is broken
+**Question validity checker (Gemini)**
+
+Before publishing, each generated question is checked by a Gemini-based validator service. The checker runs per question and returns structured pass/fail signals plus reasons. A quiz-level pass requires all mandatory checks to pass for all questions.
+
+Per-question checks:
+- At least one answer is correct (single-answer questions must have exactly one correct option).
+- Duplicate answer options are not present.
+- Explanation does not contradict the marked correct answer.
+- Subject/level/syllabus/topic alignment is acceptable.
+- Maths/symbol rendering is valid (no broken LaTeX/plain-text artefacts).
+- Wording is not ambiguous beyond threshold (checker confidence + ambiguity flag).
+
+Quiz-level checks:
+- Question set is internally consistent with selected subject/level/syllabus/topics.
+- No unresolved failed questions remain.
+- Overall checker confidence clears a minimum threshold.
+
+Publishing remains available, but validator failures are handled safely with clear remediation:
+- If a question has no correct answer, Gemini proposes and inserts a corrected answer candidate automatically (marked "auto-corrected by soma") for tutor review.
+- If answer options are duplicated, Gemini rewrites duplicate distractors and marks the question as "auto-corrected."
+- If explanation contradicts the answer, Gemini regenerates the explanation and tags the change.
+- If level/topic/syllabus mismatch is detected, the question is flagged "needs review" and suggested replacement text is provided.
+- If maths formatting is broken, soma attempts automatic rendering repair and surfaces before/after preview.
+- Publish action remains enabled; unresolved issues are summarized in a pre-publish warning panel and in post-publish quality logs.
 
 ### 3.18 Destructive-Action Warnings
 
@@ -339,6 +357,36 @@ Canonical verbs: **Add Students** (not "Adopt Students"), **Create Assessment**,
 - In-app messaging / notes to students
 - Email report, parent-share, CSV export, external integrations
 - Class-first or school-first organisational model
+
+### 3.22 Cost Estimate — Gemini Question Validation
+
+Because validator cost is a concern, use Gemini as the default checker for per-question validation.
+
+Assumptions for a planning estimate:
+- Average generated quiz: 12 questions
+- Validation calls: 1 call per question + 1 quiz-level call = 13 calls/quiz
+- Average checker tokens/call (prompt + response): ~1,200 tokens
+- Total checker tokens/quiz: ~15,600 tokens
+- Monthly volume scenarios:
+  - Low: 2,000 quizzes/month
+  - Medium: 10,000 quizzes/month
+  - High: 50,000 quizzes/month
+
+Estimated monthly checker token volume:
+- Low: 31.2M tokens/month
+- Medium: 156M tokens/month
+- High: 780M tokens/month
+
+Budgeting model:
+- Monthly checker cost ≈ `(input_tokens / 1M * input_rate) + (output_tokens / 1M * output_rate)`
+- For planning, split total tokens as ~80% input and ~20% output unless measured data says otherwise.
+- Use the current Gemini pricing page to plug exact rates at implementation time.
+
+Cost controls:
+- Skip re-check of unchanged questions after minor edits.
+- Re-check only edited questions plus one final quiz-level pass.
+- Cache checker results by question hash for repeated generation attempts.
+- Run full strict validation only at publish time (lighter checks during drafting).
 
 ---
 
@@ -397,9 +445,11 @@ Canonical verbs: **Add Students** (not "Adopt Students"), **Create Assessment**,
 - **Given** the creation flow, **When** subject and level are chosen, **Then** the optional syllabus, topics, and template fields become available.
 - **Given** no template is selected, **Then** Co-Pilot still generates using subject, level, topics (if any), and free-text prompt.
 - **Given** a generated assessment, **When** the tutor types "make question 2 harder", **Then** only question 2 is regenerated and a diff highlights the change before publishing.
-- **Given** Co-Pilot generation, **When** a question has no correct answer, duplicated options, contradictory explanation, broken maths, or topic mismatch, **Then** publishing is blocked with a specific warning.
+- **Given** Co-Pilot generation, **When** Gemini checker finds a per-question issue (no correct answer, duplicated options, contradictory explanation, broken maths, or topic mismatch), **Then** soma auto-corrects what it can and shows question-level warnings/reasons.
+- **Given** unresolved issues remain, **Then** publishing is still enabled, and the pre-publish panel clearly lists unresolved items for tutor decision.
 
 ### Topic selection
+- **Given** subject and level are selected, **When** syllabus is selected, **Then** an optional topics dropdown appears in this order: Subject → Level → Syllabus → Topics.
 - **Given** subject = Mathematics and level = IGCSE with Cambridge syllabus, **Then** the topics dropdown lists Algebra, Linear equations, Graphs, Geometry, Trigonometry, Mensuration, Probability, Statistics.
 - **Given** no syllabus mapping exists, **Then** the topics dropdown is hidden or disabled with an explanatory message, and Co-Pilot still works.
 
@@ -464,13 +514,13 @@ Canonical verbs: **Add Students** (not "Adopt Students"), **Create Assessment**,
 4. Optional: free-text prompt.
 5. **Generate with soma** → questions render with confidence indicators.
 6. Tutor refines via natural language ("make 3 harder", "add an explanation for each").
-7. Pre-publish check surfaces any warnings (no correct answer, duplicates, etc.).
+7. Pre-publish Gemini check validates every question and the full quiz; auto-corrections are applied where possible, and unresolved issues are shown per question.
 8. **Publish** → assessment is assignable.
 
 ### 6.4 Tutor selects subject, level, and topics
 1. Subject (required) → Level (required).
 2. If a syllabus mapping exists: Syllabus dropdown appears, defaulting to the most common option.
-3. Topics multi-select appears, populated from that syllabus.
+3. After syllabus selection, Topics dropdown (multi-select) appears, populated from that syllabus.
 4. If no mapping: topics field hides with a note — "Generate from prompt instead."
 
 ### 6.5 Tutor assigns an assessment
@@ -525,6 +575,7 @@ Canonical verbs: **Add Students** (not "Adopt Students"), **Create Assessment**,
 6. **PDF reports** — a real, structured, downloadable PDF (not a screenshot), including logo, identity, scores, per-question breakdown, date, and coverage.
 7. **Autosave and resume** for in-progress student assessments.
 8. **Robust maths rendering** across questions, options, explanations, review, PDF, and dashboard tips.
+9. **Gemini per-question validity checker** with auto-correction plus unresolved-issue warnings (publish remains available).
 
 ### 7.2 High-Impact Improvements (next)
 - Co-Pilot template options (Mixed revision / Diagnostic / Homework check / Exam-style mini paper).
@@ -626,7 +677,7 @@ Canonical verbs: **Add Students** (not "Adopt Students"), **Create Assessment**,
 | Student refreshes or closes the browser | Re-entry restores current question, answers, flags, and elapsed time exactly. |
 | Tutor selects the wrong student in the picker | Picker shows name **and** email to disambiguate; assignment step has a final confirmation listing the names. |
 | Tutor duplicates an assignment to the same student | System detects an existing identical assignment and asks for confirmation before creating a duplicate. |
-| Co-Pilot generates a bad question | Pre-publish checks (no correct answer, duplicate options, contradictory explanation, level mismatch, broken maths, topic mismatch) block publish and surface a specific warning; tutor can regenerate a single question without losing the rest. |
+| Co-Pilot generates a bad question | Pre-publish Gemini checks auto-correct where possible (answer/explanation/duplicate options/formatting), flag unresolved issues, and keep publish available; tutor can regenerate a single question without losing the rest. |
 | Co-Pilot generation times out or fails | Tutor input is preserved; clear error with **Retry** action; draft is auto-saved. |
 | No topics exist for the chosen subject × level | Topics field hides with an explanatory note; Co-Pilot generates from subject, level, and prompt alone. |
 | Admin switches role mode | The toggle is explicit and persistent; each mode switch is audit-logged; the current mode is shown prominently in the header. |
@@ -649,7 +700,7 @@ Concretely, the release should be measured against four qualities:
 
 1. **Never lose work.** Autosave, draft recovery, and reliable Co-Pilot retries are not optional polish — they are the foundation of trust. Ship these first.
 2. **Always be clear about what's next.** The student dashboard, the assignment start screen, and the tutor's assignment status board should make the next action obvious without the user having to think. Every notification should earn its colour and icon.
-3. **Be honest about AI.** Show confidence indicators, block publishing on broken questions, and make it trivial for a tutor to ask soma to double-check its own output. Trust in AI-generated assessments is the single biggest risk to adoption, and visible checks are what convert sceptical tutors.
+3. **Be honest about AI.** Show confidence indicators, auto-correct obvious issues, clearly flag unresolved risks, and make it trivial for a tutor to ask soma to double-check its own output. Trust in AI-generated assessments is the single biggest risk to adoption, and visible checks are what convert sceptical tutors.
 4. **Be professional on every surface.** Maths that renders correctly, a PDF that a parent would be proud to receive, consistent terminology ("soma", "Add Students", "Download Report"), and a quiz that works on a phone. These are the details that separate a classroom-ready product from a prototype.
 
 Hold the scope line. Resist in-app messaging, feedback timing controls, CSV exports, and a full onboarding flow in this release — each of them is reasonable later, but including them now would dilute the improvements that actually move the needle. Keep individual students as the default, keep groups optional, keep feedback immediate, and keep question editing inside Co-Pilot. Soma becomes trustworthy when it does a small number of things exceptionally well.
