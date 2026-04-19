@@ -333,39 +333,62 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
 
 
   // Restore autosaved state (answers, current question, start time) on mount.
+  // Any saved payload represents a real resume because the autosave write
+  // effect is gated on hasStarted — so the mere presence of a payload means
+  // the student already pressed Start. Honoring startedAt unconditionally
+  // here closes the timer-bypass loophole where a student could Start, wait,
+  // refresh, and pick up a fresh timer.
   useEffect(() => {
     if (!autosaveKey || autosaveRestored) return;
     const restored = readAutosave(autosaveKey);
     if (restored) {
       const answerCount = Object.keys(restored.answers || {}).length;
-      const isResuming = isResumableAutosave(restored);
       if (answerCount > 0) {
         setAnswers(restored.answers);
       }
       if (Number.isFinite(restored.currentIndex) && restored.currentIndex >= 0) {
         setCurrentIndex(restored.currentIndex);
       }
-      if (restored.startedAt && isResuming) {
-        // Only carry over the start time when the student is mid-attempt.
-        // An empty shell left by a previous visit that never started shouldn't
-        // silently eat into the time limit.
+      if (restored.startedAt) {
         setQuizStartedAt(restored.startedAt);
       }
-      if (isResuming) {
-        setLastSavedAt(restored.savedAt);
-        setSaveStatus("saved");
-        setHasStarted(true);
-        if (!savedToastShownRef.current) {
-          savedToastShownRef.current = true;
-          toast({
-            title: "Welcome back",
-            description: "We restored your progress from where you left off.",
-          });
-        }
+      setLastSavedAt(restored.savedAt);
+      setSaveStatus("saved");
+      setHasStarted(true);
+      // Only show the welcome-back toast when there's visible progress to talk
+      // about. An empty post-Start shell shouldn't pop a banner.
+      if (isResumableAutosave(restored) && !savedToastShownRef.current) {
+        savedToastShownRef.current = true;
+        toast({
+          title: "Welcome back",
+          description: "We restored your progress from where you left off.",
+        });
       }
     }
     setAutosaveRestored(true);
   }, [autosaveKey, autosaveRestored, toast]);
+
+  // Once questions load, clamp the restored currentIndex to the available
+  // range and drop any saved answers that point to question IDs which no
+  // longer exist (e.g. the tutor edited the quiz between sessions). Without
+  // this, a stale autosave can land the student on a non-existent question
+  // and trigger the "Question not found" error screen.
+  useEffect(() => {
+    if (!fetchedQuestions || fetchedQuestions.length === 0) return;
+    const maxIndex = fetchedQuestions.length - 1;
+    if (currentIndex > maxIndex) setCurrentIndex(maxIndex);
+    const validIds = new Set(fetchedQuestions.map((q) => q.id));
+    setAnswers((prev) => {
+      let changed = false;
+      const next: Record<number, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const id = Number(k);
+        if (validIds.has(id)) next[id] = v;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [fetchedQuestions, currentIndex]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {

@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import DOMPurify from "dompurify";
 import { normalizeLatexDelimiters } from "@/components/MarkdownRenderer";
 
 // Print-friendly report view. Rendered hidden off-screen and passed to
@@ -397,7 +398,7 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
             <div style={S.sectionHeading}>soma feedback</div>
             <div
               style={S.aiBox}
-              dangerouslySetInnerHTML={{ __html: data.aiFeedbackHtml }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(data.aiFeedbackHtml) }}
             />
           </>
         )}
