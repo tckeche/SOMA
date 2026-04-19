@@ -22,6 +22,12 @@
  *
  * Subtopics inherit the parent section's level tier. Topic numbers are
  * integers; subtopic numbers are "N.M".
+ *
+ * 9705 Design & Technology skips the N.M level entirely — its topics roll
+ * straight into "Content" blocks of `•` bullets. We detect that sub-variant
+ * by the presence of `•` bullets under an active topic with no `N.M` subtopic
+ * open, synthesise a "N.1 Content" subtopic, and harvest each `•` bullet as
+ * an LR (sub-bullets "–" fold into the parent).
  */
 
 import { commandWordOf, COMMAND_WORD_COMPETENCY_MAP } from "../commandWords";
@@ -53,6 +59,18 @@ const SUBTOPIC_RX = /^\s{0,14}(\d{1,2}\.\d{1,2})\s+([A-Z][^\n]*?)\s*$/;
 // The leading whitespace is generous so right-column bullets in the
 // two-column sciences layout are caught too.
 const REQUIREMENT_RX = /^\s{0,60}(\d{1,2})(?:\.\s*|\s{3,})([A-Za-z].*?)\s*$/;
+
+// 9705 Design & Technology bullet styles. The top-level `•` marks a new LR,
+// the `–` sub-bullet folds into the active LR as a comma-joined clause.
+const DT_BULLET_RX = /^\s{0,20}•\s+(.*)$/;
+const DT_SUB_BULLET_RX = /^\s{0,28}–\s+(.*)$/;
+
+// Deep-indented topic header: 9701 Chemistry prints "13 An introduction to
+// AS Level organic chemistry" inside a functional-group table whose pdftotext
+// output has 40+ leading spaces. The normal TOPIC_RX caps at 16 so these get
+// missed; a post-pass recovers the title when the parser synthesised a
+// placeholder because only `N.M` subtopics were seen.
+const DEEP_TOPIC_RX = /^\s+(\d{1,2})\s{2,}([A-Z][^\n]*?)\s*$/;
 
 // Not anchored to start-of-line: Biology 9700 renders the "Candidates should
 // be able to:" marker in the right column of a two-column table, so the line
@@ -96,6 +114,11 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
     let activeSubtopic: WorkingSubtopic | null = null;
     let inCandidatesBlock = false;
     let bulletBuffer: { bullet: number; lines: string[] } | null = null;
+    // 9705 Design & Technology harvest: when the active topic has no N.M
+    // subtopic and a `•` bullet is seen, we synthesise a "N.1 Content"
+    // subtopic and capture each bullet as an LR. Sub-bullets fold into the
+    // parent statement.
+    let dtBulletBuffer: { lines: string[] } | null = null;
 
     const flushBullet = () => {
       if (!bulletBuffer || !activeSubtopic) {
@@ -112,11 +135,46 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
       bulletBuffer = null;
     };
 
+    const flushDtBullet = () => {
+      if (!dtBulletBuffer || !activeSubtopic) {
+        dtBulletBuffer = null;
+        return;
+      }
+      const statement = collapseWhitespace(dtBulletBuffer.lines.join(" "));
+      if (statement) {
+        activeSubtopic.requirements.push({
+          statement,
+          commandWord: commandWordOf(statement),
+        });
+      }
+      dtBulletBuffer = null;
+    };
+
+    const ensureDtSubtopic = () => {
+      if (!activeTopic) return null;
+      if (activeSubtopic && activeSubtopic.number.startsWith(`${activeTopic.number}.`)) {
+        return activeSubtopic;
+      }
+      const number = `${activeTopic.number}.1`;
+      activeSubtopic = activeTopic.subtopics.find((s) => s.number === number) ?? null;
+      if (!activeSubtopic) {
+        activeSubtopic = {
+          number,
+          title: "Content",
+          levelTier: section.tier,
+          requirements: [],
+        };
+        activeTopic.subtopics.push(activeSubtopic);
+      }
+      return activeSubtopic;
+    };
+
     for (const raw of section.lines) {
       const trimmed = raw.trim();
       if (!trimmed) {
         // blank line ends the current bullet but stays inside the current block
         flushBullet();
+        flushDtBullet();
         continue;
       }
       if (isPageNoise(trimmed)) continue;
@@ -146,6 +204,7 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
         // fall through to the bullet handler below
       } else if (topicMatch && !subtopicMatch) {
         flushBullet();
+        flushDtBullet();
         inCandidatesBlock = false;
         const [, number, title] = topicMatch;
         activeTopic = topicIndex.get(number) ?? {
@@ -157,6 +216,11 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
         if (!topicIndex.has(number)) {
           topicIndex.set(number, activeTopic);
           topics.push(asParsedTopic(activeTopic));
+        } else if (activeTopic.title === number) {
+          // Recover a placeholder title set earlier when a subtopic appeared
+          // before the topic header (happens when headers are rendered inside
+          // a wide table, e.g. 9701 Chemistry topics 13 / 29).
+          activeTopic.title = collapseWhitespace(title);
         }
         activeSubtopic = null;
         continue;
@@ -164,6 +228,7 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
 
       if (subtopicMatch) {
         flushBullet();
+        flushDtBullet();
         inCandidatesBlock = false;
         const [, number, title] = subtopicMatch;
         const parent = number.split(".")[0];
@@ -202,7 +267,31 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
 
       if (CANDIDATES_HEADER.test(trimmed)) {
         flushBullet();
+        flushDtBullet();
         inCandidatesBlock = true;
+        continue;
+      }
+
+      // 9705 Design & Technology: `•` bullets appear directly under a topic
+      // with no N.M subtopic and no "Candidates should be able to:" header.
+      // Auto-create a "Content" subtopic and harvest each bullet as an LR.
+      const dtBulletMatch = !inCandidatesBlock ? DT_BULLET_RX.exec(raw) : null;
+      if (dtBulletMatch && activeTopic) {
+        flushDtBullet();
+        ensureDtSubtopic();
+        dtBulletBuffer = { lines: [dtBulletMatch[1].trim()] };
+        continue;
+      }
+
+      const dtSubBulletMatch = !inCandidatesBlock ? DT_SUB_BULLET_RX.exec(raw) : null;
+      if (dtSubBulletMatch && dtBulletBuffer) {
+        dtBulletBuffer.lines.push(dtSubBulletMatch[1].trim());
+        continue;
+      }
+
+      if (dtBulletBuffer && !inCandidatesBlock) {
+        // Continuation of the current DT bullet (wrapped line).
+        dtBulletBuffer.lines.push(trimmed);
         continue;
       }
 
@@ -224,7 +313,10 @@ export function parsePatternA(syllabusCode: string, text: string): ParsedSyllabu
     }
 
     flushBullet();
+    flushDtBullet();
   }
+
+  recoverSynthTopicTitles(text, topicIndex);
 
   // Promote the working subtopics onto the parsed topics (the entries in
   // `topics` are references to the same sub-arrays via asParsedTopic — we
@@ -313,6 +405,35 @@ function asParsedTopic(working: WorkingTopic): ParsedTopic {
 
 function emptyParsed(syllabusCode: string, warnings: string[]): ParsedSyllabus {
   return { syllabusCode, pattern: "A", strands: [], papers: [], topics: [], warnings };
+}
+
+/**
+ * Post-pass: replace any topic whose title still equals its number with the
+ * first deep-indented `NN    Title` line we can find in the raw text.
+ * Cambridge 9701 Chemistry renders its organic-chemistry topic headers inside
+ * a functional-group table whose pdftotext output pushes the heading to
+ * column 40+ — the main TOPIC_RX caps leading whitespace at 16 so these get
+ * missed and a placeholder is synthesised when the first subtopic is seen.
+ */
+function recoverSynthTopicTitles(text: string, topicIndex: Map<string, WorkingTopic>): void {
+  const synth = new Map<string, WorkingTopic>();
+  for (const [num, t] of topicIndex) {
+    if (t.title === num) synth.set(num, t);
+  }
+  if (!synth.size) return;
+
+  for (const raw of text.split(/\r?\n/)) {
+    const m = DEEP_TOPIC_RX.exec(raw);
+    if (!m) continue;
+    const [, num, title] = m;
+    const target = synth.get(num);
+    if (!target) continue;
+    const clean = collapseWhitespace(title).replace(/\s+continued$/i, "");
+    if (!clean || clean === num) continue;
+    target.title = clean;
+    synth.delete(num);
+    if (!synth.size) break;
+  }
 }
 
 function startsWithCommandWord(title: string): boolean {
