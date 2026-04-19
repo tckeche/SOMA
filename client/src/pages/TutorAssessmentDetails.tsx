@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
+import AssignmentStatusBadge from "@/components/tutor/AssignmentStatusBadge";
+import type { AssignmentStatus } from "@shared/assignmentStatus";
 
 interface StudentAssignment {
   assignmentId: number;
@@ -36,6 +38,8 @@ interface StudentAssignment {
   studentEmail: string;
   assignmentStatus: string;
   status: "Not Started" | "In Progress" | "Submitted" | "Failed";
+  detailedStatus: AssignmentStatus;
+  detailedStatusLabel: string;
   startTime: string | null;
   submissionTime: string | null;
   finalGrade: number | null;
@@ -62,19 +66,6 @@ const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center ga
 
 function toProperCase(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function getStatusColor(status: StudentAssignment["status"]) {
-  switch (status) {
-    case "Submitted":
-      return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
-    case "In Progress":
-      return "bg-blue-500/10 text-blue-400 border-blue-500/30";
-    case "Failed":
-      return "bg-red-500/10 text-red-400 border-red-500/30";
-    default:
-      return "bg-slate-500/10 text-slate-400 border-slate-500/30";
-  }
 }
 
 function formatDate(dateStr: string | null) {
@@ -440,9 +431,10 @@ export default function TutorAssessmentDetails() {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <Badge className={`text-xs border ${getStatusColor(assignment.status)}`}>
-                          {assignment.status}
-                        </Badge>
+                        <AssignmentStatusBadge
+                          status={assignment.detailedStatus}
+                          dueDate={assignment.dueDate}
+                        />
                       </td>
                       <td className="py-4 px-4 text-sm text-slate-300">
                         {formatDate(assignment.startTime)}
@@ -468,7 +460,7 @@ export default function TutorAssessmentDetails() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
-                          {assignment.reportId && assignment.status === "Submitted" && (
+                          {assignment.reportId && (assignment.detailedStatus === "submitted" || assignment.detailedStatus === "feedback_ready") && (
                             <Link href={`/soma/review/${assignment.reportId}`}>
                               <button
                                 className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
