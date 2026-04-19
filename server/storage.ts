@@ -270,13 +270,18 @@ class DatabaseStorage implements IStorage {
   }
 
   async listCanonicalSyllabi(filter: { subject?: string; level?: string; board?: string } = {}): Promise<SyllabusDocument[]> {
+    // Case-insensitive matching on subject/level/board: the builder dropdown
+    // sends `STANDARDIZED_SUBJECTS` values like "Mathematics" / "A Level",
+    // while the curriculum ingest script stores tokens lowercased ("mathematics")
+    // straight from the filename. A naive `eq()` here returns an empty list
+    // and silently empties the syllabus picker.
     const conditions = [
       isNull(syllabusDocuments.tutorId),
       eq(syllabusDocuments.documentType, "syllabus"),
     ];
-    if (filter.board) conditions.push(eq(syllabusDocuments.board, filter.board));
-    if (filter.level) conditions.push(eq(syllabusDocuments.level, filter.level));
-    if (filter.subject) conditions.push(eq(syllabusDocuments.subject, filter.subject));
+    if (filter.board) conditions.push(sql`lower(${syllabusDocuments.board}) = lower(${filter.board})`);
+    if (filter.level) conditions.push(sql`lower(${syllabusDocuments.level}) = lower(${filter.level})`);
+    if (filter.subject) conditions.push(sql`lower(${syllabusDocuments.subject}) = lower(${filter.subject})`);
     return this.database.select().from(syllabusDocuments).where(and(...conditions)).orderBy(syllabusDocuments.subject, syllabusDocuments.syllabusCode);
   }
 
@@ -449,10 +454,14 @@ class DatabaseStorage implements IStorage {
   }
 
   async listSyllabusTopicInventory(filter: { board?: string; syllabusCode?: string; subject?: string }): Promise<SyllabusTopicInventoryItem[]> {
+    // Case-insensitive matching — see note on listCanonicalSyllabi above. The
+    // builder forwards the syllabus doc's stored subject verbatim, but a
+    // future change to either side could re-introduce the same case mismatch
+    // and silently empty the topic picker.
     const conditions = [];
-    if (filter.board) conditions.push(eq(syllabusTopicInventory.board, filter.board));
-    if (filter.syllabusCode) conditions.push(eq(syllabusTopicInventory.syllabusCode, filter.syllabusCode));
-    if (filter.subject) conditions.push(eq(syllabusTopicInventory.subject, filter.subject));
+    if (filter.board) conditions.push(sql`lower(${syllabusTopicInventory.board}) = lower(${filter.board})`);
+    if (filter.syllabusCode) conditions.push(sql`lower(${syllabusTopicInventory.syllabusCode}) = lower(${filter.syllabusCode})`);
+    if (filter.subject) conditions.push(sql`lower(${syllabusTopicInventory.subject}) = lower(${filter.subject})`);
     if (conditions.length === 0) return this.database.select().from(syllabusTopicInventory);
     return this.database.select().from(syllabusTopicInventory).where(and(...conditions));
   }
