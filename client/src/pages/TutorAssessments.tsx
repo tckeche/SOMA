@@ -281,6 +281,16 @@ export default function TutorAssessments() {
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
   const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
   const [allocationDateFilter, setAllocationDateFilter] = useState("");
+  const [assignSearch, setAssignSearch] = useState("");
+  const [assignResult, setAssignResult] = useState<{
+    quizId: number;
+    requested: number;
+    assigned: number;
+    alreadyAssigned: number;
+    notAdopted: number;
+    failed: number;
+    perStudent: Array<{ studentId: string; name: string; email: string | null; status: "assigned" | "already_assigned" | "not_adopted" | "failed" }>;
+  } | null>(null);
 
   const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -338,13 +348,15 @@ export default function TutorAssessments() {
       setShowAssignModal(null);
       setSelectedStudentIds(new Set());
       setDueDate("");
-      const count = data?.assigned ?? 0;
-      toast({
-        title: count > 0 ? "Assessment assigned" : "Already assigned",
-        description: count > 0
-          ? `${count} student${count !== 1 ? "s" : ""} assigned successfully.`
-          : "All selected students already have an assignment for this quiz.",
-        variant: count > 0 ? "default" : "destructive",
+      setAssignSearch("");
+      setAssignResult({
+        quizId: variables.quizId,
+        requested: data?.requested ?? 0,
+        assigned: data?.assigned ?? 0,
+        alreadyAssigned: data?.alreadyAssigned ?? 0,
+        notAdopted: data?.notAdopted ?? 0,
+        failed: data?.failed ?? 0,
+        perStudent: Array.isArray(data?.perStudent) ? data.perStudent : [],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", variables.quizId, "assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
@@ -804,35 +816,85 @@ export default function TutorAssessments() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 mb-4">Select from your adopted students to assign this assessment:</p>
+            <p className="text-xs text-slate-400 mb-3">Select from your adopted students to assign this assessment:</p>
             {adoptedStudents.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">You have no adopted students. Adopt students first.</p>
             ) : (
               <>
-                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                  {adoptedStudents.map((student) => (
-                    <button
-                      key={student.id}
-                      onClick={() => toggleStudentSelection(student.id)}
-                      className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
-                        selectedStudentIds.has(student.id)
-                          ? "bg-emerald-500/20 border border-emerald-500/40"
-                          : "bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60"
-                      }`}
-                      data-testid={`assign-student-${student.id}`}
-                    >
-                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${
-                        selectedStudentIds.has(student.id) ? "bg-emerald-500 border-emerald-500" : "border-slate-600"
-                      }`}>
-                        {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-200">{student.displayName || "Student"}</p>
-                        <p className="text-xs text-slate-400">{student.email}</p>
-                      </div>
-                    </button>
-                  ))}
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    value={assignSearch}
+                    onChange={(e) => setAssignSearch(e.target.value)}
+                    placeholder="Search by name or email..."
+                    className="w-full h-11 px-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/40"
+                    data-testid="input-search-assign"
+                  />
                 </div>
+                {(() => {
+                  const q = assignSearch.trim().toLowerCase();
+                  const filtered = q
+                    ? adoptedStudents.filter((s) =>
+                        (s.displayName || "").toLowerCase().includes(q) ||
+                        (s.email || "").toLowerCase().includes(q),
+                      )
+                    : adoptedStudents;
+                  const allVisibleSelected =
+                    filtered.length > 0 && filtered.every((s) => selectedStudentIds.has(s.id));
+                  const toggleAll = () => {
+                    setSelectedStudentIds((prev) => {
+                      const next = new Set(prev);
+                      if (allVisibleSelected) filtered.forEach((s) => next.delete(s.id));
+                      else filtered.forEach((s) => next.add(s.id));
+                      return next;
+                    });
+                  };
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-2 text-[11px] text-slate-500 px-1">
+                        <span>
+                          {filtered.length} shown · {selectedStudentIds.size} selected
+                        </span>
+                        {filtered.length > 0 && (
+                          <button
+                            onClick={toggleAll}
+                            className="text-emerald-300 hover:text-emerald-200 font-medium"
+                            data-testid="button-select-all-assign"
+                          >
+                            {allVisibleSelected ? "Clear selection" : "Select all visible"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                        {filtered.length === 0 ? (
+                          <p className="text-xs text-slate-500 text-center py-6">No matches for "{assignSearch}"</p>
+                        ) : filtered.map((student) => (
+                          <button
+                            key={student.id}
+                            onClick={() => toggleStudentSelection(student.id)}
+                            className={`w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
+                              selectedStudentIds.has(student.id)
+                                ? "bg-emerald-500/20 border-2 border-emerald-500/60"
+                                : "bg-slate-800/40 border-2 border-slate-700/50 hover:bg-slate-800/60"
+                            }`}
+                            data-testid={`assign-student-${student.id}`}
+                            aria-pressed={selectedStudentIds.has(student.id)}
+                          >
+                            <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                              selectedStudentIds.has(student.id) ? "bg-emerald-500 border-emerald-500" : "border-slate-500"
+                            }`}>
+                              {selectedStudentIds.has(student.id) && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-100 truncate">{student.displayName || "Student"}</p>
+                              <p className="text-xs text-slate-400 truncate">{student.email}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="mt-4 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-slate-300 mb-2">
                     <Clock className="w-3.5 h-3.5 text-violet-400" />
@@ -860,6 +922,101 @@ export default function TutorAssessments() {
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {assignResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setAssignResult(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-100">Assignment dispatched</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  {assignResult.assigned} newly assigned
+                  {assignResult.alreadyAssigned > 0 ? ` · ${assignResult.alreadyAssigned} already had it` : ""}
+                  {assignResult.failed > 0 ? ` · ${assignResult.failed} failed` : ""}
+                </p>
+              </div>
+              <button onClick={() => setAssignResult(null)} className="text-slate-400 hover:text-slate-300 p-1" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-emerald-300/80">Newly Assigned</p>
+                <p className="text-lg font-bold text-emerald-300">{assignResult.assigned}</p>
+              </div>
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-amber-300/80">Already Had</p>
+                <p className="text-lg font-bold text-amber-300">{assignResult.alreadyAssigned}</p>
+              </div>
+              <div className="rounded-lg border border-rose-500/30 bg-rose-500/[0.06] px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-rose-300/80">Failed</p>
+                <p className="text-lg font-bold text-rose-300">{assignResult.failed + assignResult.notAdopted}</p>
+              </div>
+            </div>
+            <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+              {assignResult.perStudent.map((p) => {
+                const statusLabel = p.status === "assigned"
+                  ? "Sent"
+                  : p.status === "already_assigned"
+                    ? "Already assigned"
+                    : p.status === "not_adopted"
+                      ? "Not in your cohort"
+                      : "Error";
+                const pill =
+                  p.status === "assigned"
+                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                    : p.status === "already_assigned"
+                      ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                      : "bg-rose-500/15 text-rose-300 border-rose-500/30";
+                return (
+                  <div
+                    key={p.studentId}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-800/40 px-3 py-2"
+                    data-testid={`assign-result-${p.studentId}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-200 truncate">{p.name}</p>
+                      {p.email && <p className="text-[11px] text-slate-500 truncate">{p.email}</p>}
+                    </div>
+                    <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${pill}`}>{statusLabel}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-5">
+              {(assignResult.failed > 0 || assignResult.notAdopted > 0) && (
+                <button
+                  onClick={() => {
+                    const retryable = assignResult.perStudent
+                      .filter((p) => p.status === "failed")
+                      .map((p) => p.studentId);
+                    if (retryable.length === 0) {
+                      setAssignResult(null);
+                      return;
+                    }
+                    assignMutation.mutate({
+                      quizId: assignResult.quizId,
+                      studentIds: retryable,
+                      dueDate: dueDate || undefined,
+                    });
+                  }}
+                  className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-rose-200 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20"
+                  data-testid="button-retry-failed-assignments"
+                >
+                  Retry failed
+                </button>
+              )}
+              <button
+                onClick={() => setAssignResult(null)}
+                className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-slate-200 bg-slate-700 hover:bg-slate-600"
+                data-testid="button-close-assign-result"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

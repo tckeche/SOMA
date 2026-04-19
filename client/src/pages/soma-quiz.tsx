@@ -127,10 +127,10 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: s
         </p>
 
         <div className="flex flex-col gap-3">
-          <Link href="/dashboard">
+          <Link href="/dashboard?tab=completed">
             <Button className="glow-button w-full" data-testid="button-back-home">
               <Home className="w-4 h-4 mr-1.5" />
-              Return to Dashboard
+              View Completed Assessments
             </Button>
           </Link>
         </div>
@@ -354,6 +354,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
       if (answersCacheKey) localStorage.removeItem(answersCacheKey);
       queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/soma/quizzes", quizId, "check-submission"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/student/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/student/notifications"] });
       emitSomaMutation({ type: "assessment_submitted", quizId });
     },
     onError: (err: any) => {
@@ -572,9 +574,11 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                     ? "bg-red-500/15 text-red-400 border-red-500/30 animate-pulse"
                     : "bg-amber-500/10 text-amber-300 border-amber-500/30"
                 }`}
+                title="Time remaining"
                 data-testid="badge-timer"
               >
                 <Clock className="w-3.5 h-3.5" />
+                <span className="uppercase text-[10px] tracking-wider font-bold mr-0.5">Left</span>
                 {Math.floor(timeRemainingSeconds / 60)}:{String(timeRemainingSeconds % 60).padStart(2, "0")}
               </Badge>
             )}
@@ -586,6 +590,23 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             </Badge>
           </div>
         </div>
+
+        {!isPreview && (
+          <div
+            className="sticky top-2 z-20 mb-4 rounded-full bg-slate-900/70 border border-slate-800 h-2.5 overflow-hidden backdrop-blur"
+            role="progressbar"
+            aria-label="Answered progress"
+            aria-valuenow={answeredCount}
+            aria-valuemin={0}
+            aria-valuemax={questions.length}
+            data-testid="progress-answered"
+          >
+            <div
+              className="h-full bg-gradient-to-r from-violet-500 via-cyan-400 to-emerald-400 transition-all duration-300"
+              style={{ width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%` }}
+            />
+          </div>
+        )}
 
         <div className="glass-card p-8 mb-6" style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}>
           <div className="flex items-center justify-between mb-6">

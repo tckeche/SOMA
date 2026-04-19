@@ -29,6 +29,7 @@ import {
   WorkloadHeatmap,
   ActivityTimelineChart,
 } from "@/components/dashboard-charts";
+import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 
 interface DashboardStats {
   totalStudents: number;
@@ -700,7 +701,10 @@ export default function TutorDashboard() {
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-rose-500/15 border border-rose-500/20">
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
                       </div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
+                      <div>
+                        <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Students who are slipping or stalled — auto-populated from scores and completion.</p>
+                      </div>
                     </div>
                     <Link href="/tutor/students">
                       <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
@@ -797,6 +801,28 @@ export default function TutorDashboard() {
                       })}
                     </div>
                   )}
+                </div>
+              </div>
+            </FadeInSection>
+
+            {/* ══════════════════════════════════════════════════════
+                Flagged Questions — cross-quiz view for tutor triage
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection>
+              <div className={`${GP}`}>
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide">Student Flags</h3>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Questions your students flagged for review — across all assessments.</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <TutorFlagsPanel />
                 </div>
               </div>
             </FadeInSection>

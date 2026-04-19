@@ -1708,19 +1708,43 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       const adopted = await storage.getAdoptedStudents(tutorId);
-      const adoptedIds = new Set(adopted.map((s) => s.id));
-      const validIds = studentIds.filter((id: string) => adoptedIds.has(id));
+      const adoptedById = new Map(adopted.map((s) => [s.id, s]));
+      const notAdoptedIds = studentIds.filter((id: string) => !adoptedById.has(id));
+      const validIds = studentIds.filter((id: string) => adoptedById.has(id));
       if (validIds.length === 0) {
         return res.status(400).json({ message: "None of the provided students are adopted by you" });
       }
-      const assignments = await storage.createQuizAssignments(quizId, validIds, dueDate);
 
-      // Notify ONLY students who received a brand-new assignment row.
-      // createQuizAssignments uses onConflictDoNothing, so re-assigning the
-      // same quiz to the same student returns an empty array for that student
-      // and we must skip notifying them again to avoid duplicates.
-      const newlyAssignedIds = new Set(assignments.map((a) => a.studentId));
-      await Promise.all(Array.from(newlyAssignedIds).map((studentId) =>
+      const existing = await storage.getQuizAssignmentsForQuiz(quizId);
+      const existingIds = new Set(existing.map((a) => a.student.id));
+      const alreadyAssignedIds = validIds.filter((id) => existingIds.has(id));
+      const toCreateIds = validIds.filter((id) => !existingIds.has(id));
+
+      const newAssignments = toCreateIds.length > 0
+        ? await storage.createQuizAssignments(quizId, toCreateIds, dueDate)
+        : [];
+
+      const perStudent = studentIds.map((id: string) => {
+        const student = adoptedById.get(id);
+        const name = student?.displayName || student?.email || id;
+        const email = student?.email || null;
+        if (!adoptedById.has(id)) {
+          return { studentId: id, name, email, status: "not_adopted" as const };
+        }
+        if (existingIds.has(id)) {
+          return { studentId: id, name, email, status: "already_assigned" as const };
+        }
+        const persisted = newAssignments.some((a: any) => a.studentId === id);
+        return {
+          studentId: id,
+          name,
+          email,
+          status: persisted ? ("assigned" as const) : ("failed" as const),
+        };
+      });
+
+      // Notify each student that a new quiz is waiting for them (new assignments only)
+      await Promise.all(toCreateIds.map((studentId) =>
         storage.createStudentNotification({
           studentId,
           type: "assignment_new",
@@ -1732,7 +1756,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }).catch((err) => console.error("[Assign Notification] failed:", err)),
       ));
 
-      res.json({ assigned: assignments.length, assignments });
+      res.json({
+        requested: studentIds.length,
+        assigned: newAssignments.length,
+        alreadyAssigned: alreadyAssignedIds.length,
+        notAdopted: notAdoptedIds.length,
+        failed: perStudent.filter((p) => p.status === "failed").length,
+        assignments: newAssignments,
+        perStudent,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to assign quiz" });
     }
