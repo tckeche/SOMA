@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Link } from "wouter";
@@ -19,6 +19,14 @@ import GraphPlot from "@/components/GraphPlot";
 import { authFetch } from "@/lib/supabase";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import FlagQuestionButton from "@/components/student/FlagQuestionButton";
+import AutosaveIndicator from "@/components/student/AutosaveIndicator";
+import {
+  buildAutosaveKey,
+  readAutosave,
+  writeAutosave,
+  clearAutosave,
+  type SaveStatus,
+} from "@/lib/quizAutosave";
 
 export type StudentQuestion = {
   id: number;
@@ -276,12 +284,17 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [showSummary, setShowSummary] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<{ score: number; maxScore: number } | null>(null);
-  const [quizStartedAt] = useState<string>(new Date().toISOString());
+  const [quizStartedAt, setQuizStartedAt] = useState<string>(() => new Date().toISOString());
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [autosaveRestored, setAutosaveRestored] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedToastShownRef = useRef(false);
 
   const userId = session?.user?.id;
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Student";
-  const answersCacheKey = !isPreview && quizId > 0 ? `soma_quiz_answers_${quizId}_${userId || "guest"}` : null;
+  const autosaveKey = !isPreview ? buildAutosaveKey(quizId, userId) : null;
 
   const { data: quiz, isLoading: quizLoading, error: quizError } = useQuery<SomaQuiz>({
     queryKey: ["/api/soma/quizzes", quizId],
@@ -314,22 +327,32 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   });
 
 
+  // Restore autosaved state (answers, current question, start time) on mount.
   useEffect(() => {
-    if (!answersCacheKey) return;
-    const raw = localStorage.getItem(answersCacheKey);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        const restored = Object.fromEntries(
-          Object.entries(parsed as Record<string, string>).map(([k, v]) => [Number(k), String(v)])
-        );
-        setAnswers(restored);
+    if (!autosaveKey || autosaveRestored) return;
+    const restored = readAutosave(autosaveKey);
+    if (restored) {
+      if (restored.answers && Object.keys(restored.answers).length > 0) {
+        setAnswers(restored.answers);
       }
-    } catch {
-      localStorage.removeItem(answersCacheKey);
+      if (Number.isFinite(restored.currentIndex) && restored.currentIndex >= 0) {
+        setCurrentIndex(restored.currentIndex);
+      }
+      if (restored.startedAt) {
+        setQuizStartedAt(restored.startedAt);
+      }
+      setLastSavedAt(restored.savedAt);
+      setSaveStatus("saved");
+      if (!savedToastShownRef.current && (Object.keys(restored.answers || {}).length > 0 || restored.currentIndex > 0)) {
+        savedToastShownRef.current = true;
+        toast({
+          title: "Welcome back",
+          description: "We restored your progress from where you left off.",
+        });
+      }
     }
-  }, [answersCacheKey]);
+    setAutosaveRestored(true);
+  }, [autosaveKey, autosaveRestored, toast]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -351,7 +374,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     onSuccess: (data: any) => {
       const totalMarks = questions ? questions.reduce((s, q) => s + q.marks, 0) : 0;
       setSubmissionResult({ score: data.score, maxScore: totalMarks });
-      if (answersCacheKey) localStorage.removeItem(answersCacheKey);
+      clearAutosave(autosaveKey);
       queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/soma/quizzes", quizId, "check-submission"] });
       queryClient.invalidateQueries({ queryKey: ["/api/student/dashboard"] });
@@ -363,11 +386,20 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     },
   });
 
-  // Initialize countdown timer from quiz's timeLimitMinutes
+  // Initialize countdown timer from quiz's timeLimitMinutes, accounting for
+  // any time already elapsed since the quiz was originally started — so a
+  // refresh or resume doesn't silently hand the student extra time.
   useEffect(() => {
     if (isPreview || !quiz?.timeLimitMinutes || submissionResult) return;
+    if (!autosaveRestored) return; // wait for startedAt to be restored
     const totalSeconds = quiz.timeLimitMinutes * 60;
-    setTimeRemainingSeconds(totalSeconds);
+    const elapsedSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(quizStartedAt).getTime()) / 1000),
+    );
+    const remaining = Math.max(0, totalSeconds - elapsedSeconds);
+    setTimeRemainingSeconds(remaining);
+    if (remaining <= 0) return;
     const interval = setInterval(() => {
       setTimeRemainingSeconds((prev) => {
         if (prev === null || prev <= 1) {
@@ -378,7 +410,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isPreview, quiz?.timeLimitMinutes, submissionResult]);
+  }, [isPreview, quiz?.timeLimitMinutes, submissionResult, autosaveRestored, quizStartedAt]);
 
   // Auto-submit when timer reaches 0
   useEffect(() => {
@@ -405,20 +437,36 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     return questions.reduce((s, q) => s + q.marks, 0);
   }, [questions]);
 
-  const handleSelectAnswer = (questionId: number, option: string) => {
-    setAnswers((prev) => {
-      const next = { ...prev, [questionId]: option };
-      if (answersCacheKey) {
-        setTimeout(() => {
-          try {
-            localStorage.setItem(answersCacheKey, JSON.stringify(next));
-          } catch {
-            // ignore storage quota/private mode failures
-          }
-        }, 0);
+  // Debounced autosave: whenever answers or the current question change we
+  // schedule a write a moment later so rapid taps don't hit localStorage on
+  // every keystroke.
+  useEffect(() => {
+    if (!autosaveKey || !autosaveRestored || submissionResult) return;
+    setSaveStatus("saving");
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const result = writeAutosave(autosaveKey, {
+        answers,
+        currentIndex,
+        startedAt: quizStartedAt,
+      });
+      if (result.ok) {
+        setSaveStatus("saved");
+        setLastSavedAt(result.savedAt);
+      } else {
+        setSaveStatus("failed");
       }
-      return next;
-    });
+    }, 400);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [answers, currentIndex, quizStartedAt, autosaveKey, autosaveRestored, submissionResult]);
+
+  const handleSelectAnswer = (questionId: number, option: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: option }));
   };
 
   const handleNext = () => {
@@ -566,7 +614,10 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
               </Button>
             </Link>
           )}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+            {!isPreview && (
+              <AutosaveIndicator status={saveStatus} savedAt={lastSavedAt} />
+            )}
             {!isPreview && timeRemainingSeconds !== null && (
               <Badge
                 className={`flex items-center gap-1.5 ${
