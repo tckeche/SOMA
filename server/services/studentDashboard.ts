@@ -119,7 +119,7 @@ export interface DerivedNotification {
   type: "due_today" | "due_tomorrow" | "overdue";
   title: string;
   message: string;
-  payload: { quizId: number; quizTitle: string };
+  payload: { quizId: number; quizTitle: string; dueDate: string | null };
   readAt: null;
   createdAt: string;
   derived: true;
@@ -518,7 +518,7 @@ function buildDerivedNotifications(assignments: AssignmentRow[]): DerivedNotific
         type: "overdue",
         title: "Overdue assessment",
         message: `"${a.quizTitle}" is overdue. Take it as soon as you can.`,
-        payload: { quizId: a.quizId, quizTitle: a.quizTitle },
+        payload: { quizId: a.quizId, quizTitle: a.quizTitle, dueDate: a.dueDate },
         readAt: null,
         createdAt: a.dueDate,
         derived: true,
@@ -529,7 +529,7 @@ function buildDerivedNotifications(assignments: AssignmentRow[]): DerivedNotific
         type: "due_today",
         title: "Due today",
         message: `"${a.quizTitle}" is due today.`,
-        payload: { quizId: a.quizId, quizTitle: a.quizTitle },
+        payload: { quizId: a.quizId, quizTitle: a.quizTitle, dueDate: a.dueDate },
         readAt: null,
         createdAt: new Date().toISOString(),
         derived: true,
@@ -540,7 +540,7 @@ function buildDerivedNotifications(assignments: AssignmentRow[]): DerivedNotific
         type: "due_tomorrow",
         title: "Due tomorrow",
         message: `"${a.quizTitle}" is due tomorrow.`,
-        payload: { quizId: a.quizId, quizTitle: a.quizTitle },
+        payload: { quizId: a.quizId, quizTitle: a.quizTitle, dueDate: a.dueDate },
         readAt: null,
         createdAt: new Date().toISOString(),
         derived: true,
