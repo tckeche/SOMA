@@ -151,23 +151,33 @@ For each question return:
 - rationale (brief)
 Return valid JSON only.`;
 
-  const questionPayload = questions.map((q, idx) => ({ questionIndex: idx + 1, stem: q.stem }));
+  // Skip questions that the deterministic math validator can already verify.
+  // This avoids paying LLM blind-check cost on items where Stage 4 has final authority.
+  const candidateIndexes: number[] = [];
+  const questionPayload: Array<{ questionIndex: number; stem: string }> = [];
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const deterministic = validateMathQuestion(q.stem, q.options, q.correct_answer);
+    if (deterministic.verifiable) continue;
+    const questionIndex = i + 1;
+    candidateIndexes.push(questionIndex);
+    questionPayload.push({ questionIndex, stem: q.stem });
+  }
+  if (questionPayload.length === 0) {
+    return { warnings: [], questions };
+  }
+
   const userPrompt = `Syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
 Questions:
 ${JSON.stringify(questionPayload, null, 2)}`;
 
-  let geminiParsed: z.infer<typeof BlindCheckerResponseSchema> | null = null;
-  let claudeParsed: z.infer<typeof BlindCheckerResponseSchema> | null = null;
-
-  try {
+  const geminiPromise = (async () => {
     const schema = zodToJsonSchema(BlindCheckerResponseSchema, "BlindCheckerResponse");
     const raw = await callGoogle("gemini-2.5-flash", solverPrompt, userPrompt, schema);
-    geminiParsed = BlindCheckerResponseSchema.parse(JSON.parse(raw));
-  } catch (error: any) {
-    console.warn(`[BLIND_CHECK][Gemini] Failed: ${error?.message || "unknown"}`);
-  }
+    return BlindCheckerResponseSchema.parse(JSON.parse(raw));
+  })();
 
-  try {
+  const claudePromise = (async () => {
     const anthropic = new Anthropic({ apiKey: anthropicKey });
     const wrapped: any = zodToJsonSchema(BlindCheckerResponseSchema, "BlindCheckerResponse");
     const inner: any = wrapped?.definitions?.BlindCheckerResponse ?? zodToJsonSchema(BlindCheckerResponseSchema);
@@ -189,8 +199,18 @@ ${JSON.stringify(questionPayload, null, 2)}`;
     });
     const toolBlock = response.content.find((b: any) => b.type === "tool_use");
     if (!toolBlock || toolBlock.type !== "tool_use") throw new Error("No Claude tool output");
-    claudeParsed = BlindCheckerResponseSchema.parse(toolBlock.input);
-  } catch (error: any) {
+    return BlindCheckerResponseSchema.parse(toolBlock.input);
+  })();
+
+  const [geminiResult, claudeResult] = await Promise.allSettled([geminiPromise, claudePromise]);
+  const geminiParsed = geminiResult.status === "fulfilled" ? geminiResult.value : null;
+  const claudeParsed = claudeResult.status === "fulfilled" ? claudeResult.value : null;
+  if (geminiResult.status === "rejected") {
+    const error: any = geminiResult.reason;
+    console.warn(`[BLIND_CHECK][Gemini] Failed: ${error?.message || "unknown"}`);
+  }
+  if (claudeResult.status === "rejected") {
+    const error: any = claudeResult.reason;
     console.warn(`[BLIND_CHECK][Claude] Failed: ${error?.message || "unknown"}`);
   }
 
@@ -203,8 +223,8 @@ ${JSON.stringify(questionPayload, null, 2)}`;
 
   const nextQuestions = [...questions];
   const warnings: PipelineWarning[] = [];
-  for (let i = 0; i < nextQuestions.length; i++) {
-    const questionIndex = i + 1;
+  for (const questionIndex of candidateIndexes) {
+    const i = questionIndex - 1;
     const q = nextQuestions[i];
     const gem = geminiByIndex.get(questionIndex);
     const cla = claudeByIndex.get(questionIndex);
@@ -753,11 +773,13 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
   }
 
   // ── STAGE 3.5: BLIND DUAL-CHECK CONSENSUS (Claude + Gemini) ───────
-  // Both models re-solve each question from the stem only (without options).
-  // We only auto-override when both independently map to the same option.
-  const blindCheckResult = await runBlindAnswerConsensusCheck(parsed.questions, context);
-  parsed.questions = blindCheckResult.questions;
-  warnings.push(...blindCheckResult.warnings);
+  // Cost gate: run only when checker raised issues, and only on non-deterministically
+  // verifiable questions (math-verifiable questions are handled by Stage 4).
+  if (checkResult.checkerOk && warnings.length > 0) {
+    const blindCheckResult = await runBlindAnswerConsensusCheck(parsed.questions, context);
+    parsed.questions = blindCheckResult.questions;
+    warnings.push(...blindCheckResult.warnings);
+  }
 
   // ── STAGE 4: DETERMINISTIC MATH VALIDATION ────────────────────────
   // For verifiable maths questions (function evaluation, arithmetic) we re-derive
