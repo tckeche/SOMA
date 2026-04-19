@@ -148,22 +148,6 @@ function getDraftValidationError(questions: DraftQuestion[]): string | null {
   return null;
 }
 
-const ALL_LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
-const SYLLABUS_LEVEL_MAP: Record<string, string[]> = {
-  cambridge: ["IGCSE", "AS", "A2", "Other"],
-  edexcel: ["IGCSE", "AS", "A2", "Other"],
-  aqa: ["IGCSE", "AS", "A2", "Other"],
-  ocr: ["IGCSE", "AS", "A2", "Other"],
-  ib: ["IGCSE", "Other"],
-};
-function getLevelsForSyllabus(syllabus: string): string[] {
-  const key = syllabus.trim().toLowerCase();
-  for (const [prefix, levels] of Object.entries(SYLLABUS_LEVEL_MAP)) {
-    if (key.includes(prefix)) return levels;
-  }
-  return ALL_LEVEL_OPTIONS;
-}
-
 const PIPELINE_STAGES = [
   { stage: 1, icon: "brain", label: "Drafting questions (GPT-4o)", aiName: "Maker" },
   { stage: 2, icon: "scan", label: "Auditing formatting & accuracy (Gemini Flash)", aiName: "Checker" },
@@ -403,97 +387,43 @@ export default function BuilderPage() {
 
   const authenticated = tutorSession?.authenticated === true;
 
-  // Canonical curriculum library — the board-issued syllabi ingested from
-  // /curriculum-docs. Source of truth for the Syllabus dropdown; tutor-private
-  // uploads are NOT included here.
-  interface SyllabusDocSummary {
-    id: number;
-    board: string;
-    level: string | null;
-    syllabusCode: string;
-    subject: string | null;
-    filename: string;
+  // Curriculum option tree — the single source of truth for the four chained
+  // dropdowns: Syllabus (exam body) → Level → Subject → Topics.
+  //
+  // The tree is served in one shot so every picker below is a simple derived
+  // list indexed by the tutor's running selection — no chained fetches, no
+  // waiting on AI extraction. Cambridge IGCSE and A Level are covered end to
+  // end; additional boards (IB, Edexcel, …) can be added to the seed on the
+  // server without any UI change.
+  interface CurriculumOptionTreeResponse {
+    boards: string[];
+    levels: Record<string, string[]>;               // board → levels
+    subjects: Record<string, string[]>;             // `${board}|${level}` → subjects
+    topics: Record<string, { topic: string; subtopics?: string[] }[]>;
   }
-  const curriculumQueryParams = useMemo(() => {
-    const params = new URLSearchParams();
-    if (subject) params.set("subject", subject);
-    if (level) params.set("level", level);
-    return params.toString();
-  }, [subject, level]);
-  const { data: syllabusDocs = [], isLoading: syllabusDocsLoading } = useQuery<SyllabusDocSummary[]>({
-    queryKey: ["/api/tutor/curriculum/syllabi", curriculumQueryParams],
+  const { data: curriculumTree } = useQuery<CurriculumOptionTreeResponse>({
+    queryKey: ["/api/tutor/curriculum/options"],
     queryFn: async () => {
-      const url = curriculumQueryParams
-        ? `/api/tutor/curriculum/syllabi?${curriculumQueryParams}`
-        : "/api/tutor/curriculum/syllabi";
-      const res = await authFetch(url);
-      if (!res.ok) return [];
+      const res = await authFetch("/api/tutor/curriculum/options");
+      if (!res.ok) return { boards: [], levels: {}, subjects: {}, topics: {} };
       return res.json();
     },
     enabled: authenticated,
+    // Static catalogue — cache for the session.
+    staleTime: 10 * 60 * 1000,
   });
 
-  // The user picks a specific canonical syllabus document; that choice both
-  // fills the free-text `syllabus` column on the quiz and drives the topic
-  // picker below. Stored as the doc id so we can look up board/code/subject
-  // for the topics query without re-fetching.
-  const [syllabusDocId, setSyllabusDocId] = useState<number | null>(null);
-  const selectedSyllabusDoc = useMemo(
-    () => syllabusDocs.find((d) => d.id === syllabusDocId) ?? null,
-    [syllabusDocs, syllabusDocId],
-  );
-
-  // Human-readable syllabus string we store on the quiz row. Used by the
-  // existing level-map heuristic and shown on the student dashboard.
-  function formatSyllabusLabel(doc: SyllabusDocSummary): string {
-    return [doc.board, doc.syllabusCode].filter(Boolean).join(" · ");
-  }
-
-  // Topic inventory for the selected syllabus — AI-extracted rows keyed on
-  // (board, syllabusCode, subject). One row per (topic, subtopic) pair.
-  interface SyllabusTopic {
-    id: number;
-    board: string;
-    syllabusCode: string;
-    subject: string | null;
-    topic: string;
-    subtopic: string | null;
-  }
-  const topicsQueryParams = useMemo(() => {
-    if (!selectedSyllabusDoc) return null;
-    const params = new URLSearchParams();
-    params.set("board", selectedSyllabusDoc.board);
-    params.set("syllabusCode", selectedSyllabusDoc.syllabusCode);
-    if (selectedSyllabusDoc.subject) params.set("subject", selectedSyllabusDoc.subject);
-    return params.toString();
-  }, [selectedSyllabusDoc]);
-  const { data: syllabusTopics = [], isLoading: topicsLoading } = useQuery<SyllabusTopic[]>({
-    queryKey: ["/api/tutor/syllabus-topics", topicsQueryParams],
-    queryFn: async () => {
-      if (!topicsQueryParams) return [];
-      const res = await authFetch(`/api/tutor/syllabus-topics?${topicsQueryParams}`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: authenticated && !!topicsQueryParams,
-  });
-
-  // Group the flat inventory into { topic → subtopics[] } for rendering. The
-  // tutor ticks at the topic level (one box per topic); selecting a topic
-  // covers all of its subtopics. Subtopics are shown as a short hint.
+  // Derived option lists for each picker. Each one falls back to an empty
+  // array until the tree loads or until the prior selection is made.
+  const boardOptions = curriculumTree?.boards ?? [];
+  const levelOptions = syllabus ? curriculumTree?.levels?.[syllabus] ?? [] : [];
+  const subjectOptions =
+    syllabus && level ? curriculumTree?.subjects?.[`${syllabus}|${level}`] ?? [] : [];
   const topicGroups = useMemo(() => {
-    const groups = new Map<string, Set<string>>();
-    for (const row of syllabusTopics) {
-      const topicName = (row.topic || "").trim();
-      if (!topicName) continue;
-      if (!groups.has(topicName)) groups.set(topicName, new Set());
-      const sub = (row.subtopic || "").trim();
-      if (sub) groups.get(topicName)!.add(sub);
-    }
-    return Array.from(groups.entries())
-      .map(([topic, subs]) => ({ topic, subtopics: Array.from(subs).sort((a, b) => a.localeCompare(b)) }))
-      .sort((a, b) => a.topic.localeCompare(b.topic));
-  }, [syllabusTopics]);
+    if (!syllabus || !level || !subject || !curriculumTree) return [];
+    const rows = curriculumTree.topics[`${syllabus}|${level}|${subject}`] ?? [];
+    return rows.map((r) => ({ topic: r.topic, subtopics: r.subtopics ?? [] }));
+  }, [syllabus, level, subject, curriculumTree]);
 
 
   const { data: quizData, isLoading: quizLoading } = useQuery<SomaQuiz & { questions: SomaQuestion[] }>({
@@ -529,14 +459,18 @@ export default function BuilderPage() {
     }
   }, [quizData, populated]);
 
-  // Once both the quiz metadata and the syllabus catalogue have loaded, try
-  // to pre-select the syllabus document that matches the stored syllabus
-  // string so the topic dropdown can populate without extra clicks.
+  // When loading an existing quiz, the stored syllabus string may be a
+  // legacy value ("IEB", "Cambridge · 0580", …). If it isn't a plain exam
+  // body the tree recognises, normalise it so the chained pickers behave
+  // predictably — we keep the first token, which is always the board name.
   useEffect(() => {
-    if (!populated || syllabusDocId !== null || !syllabus || syllabusDocs.length === 0) return;
-    const match = syllabusDocs.find((d) => formatSyllabusLabel(d) === syllabus || d.board === syllabus);
-    if (match) setSyllabusDocId(match.id);
-  }, [populated, syllabusDocId, syllabus, syllabusDocs]);
+    if (!populated || !syllabus || !curriculumTree) return;
+    if (curriculumTree.boards.includes(syllabus)) return;
+    const guessedBoard = syllabus.split(/[·—\-|]/)[0]?.trim();
+    if (guessedBoard && curriculumTree.boards.includes(guessedBoard)) {
+      setSyllabus(guessedBoard);
+    }
+  }, [populated, syllabus, curriculumTree]);
 
   // Load draft from server when quiz is first opened (edit mode).
   // IMPORTANT: We only mark draftLoaded=true once we either:
@@ -1069,66 +1003,32 @@ export default function BuilderPage() {
                   data-testid="input-quiz-title"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-slate-400 text-xs uppercase">Subject</Label>
-                <select
-                  value={subject}
-                  onChange={(e) => { setSubject(e.target.value); markMeta(); }}
-                  className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
-                  data-testid="input-quiz-subject"
-                >
-                  <option value="">Select subject</option>
-                  {STANDARDIZED_SUBJECTS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Syllabus = exam body (Cambridge, IB, …). We chain the next
+                  three pickers off this selection so the tutor always sees
+                  options that actually exist in the curriculum library. */}
               <div className="space-y-1.5">
                 <Label className="text-slate-400 text-xs uppercase">Syllabus</Label>
                 <select
-                  value={syllabusDocId ?? ""}
+                  value={syllabus}
                   onChange={(e) => {
-                    const raw = e.target.value;
-                    if (!raw) {
-                      setSyllabusDocId(null);
-                      setSyllabus("");
-                      setTopics([]);
-                      markMeta();
-                      return;
-                    }
-                    const id = Number(raw);
-                    const doc = syllabusDocs.find((d) => d.id === id) ?? null;
-                    setSyllabusDocId(doc ? doc.id : null);
-                    setSyllabus(doc ? formatSyllabusLabel(doc) : "");
-                    // Changing syllabus invalidates any previous topic picks.
+                    setSyllabus(e.target.value);
+                    // Changing the exam body invalidates everything downstream.
+                    setLevel("");
+                    setSubject("");
                     setTopics([]);
                     markMeta();
                   }}
                   className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
                   data-testid="select-quiz-syllabus"
-                  disabled={!subject}
                 >
-                  <option value="">
-                    {!subject
-                      ? "Pick a subject first"
-                      : syllabusDocsLoading
-                        ? "Loading syllabi…"
-                        : syllabusDocs.length === 0
-                          ? "No syllabi for this subject in the curriculum library"
-                          : "Select syllabus"}
-                  </option>
-                  {/* When editing a legacy quiz whose stored syllabus string doesn't
-                      match any uploaded doc, surface it as a disabled option so the
-                      tutor can see what was previously saved. */}
-                  {syllabus && !selectedSyllabusDoc && (
-                    <option value="" disabled>{syllabus} (not in library)</option>
+                  <option value="">Select exam body</option>
+                  {/* Preserve a legacy stored value so tutors editing old
+                      quizzes still see what was saved. */}
+                  {syllabus && !boardOptions.includes(syllabus) && (
+                    <option value={syllabus}>{syllabus} (legacy)</option>
                   )}
-                  {syllabusDocs.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {formatSyllabusLabel(d)}
-                      {d.subject ? ` — ${d.subject}` : ""}
-                      {d.level ? ` (${d.level})` : ""}
-                    </option>
+                  {boardOptions.map((b) => (
+                    <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
               </div>
@@ -1137,12 +1037,53 @@ export default function BuilderPage() {
                 <select
                   className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
                   value={level}
-                  onChange={(e) => { setLevel(e.target.value); markMeta(); }}
+                  onChange={(e) => {
+                    setLevel(e.target.value);
+                    setSubject("");
+                    setTopics([]);
+                    markMeta();
+                  }}
                   data-testid="select-quiz-level"
+                  disabled={!syllabus}
                 >
-                  <option value="">Select level</option>
-                  {getLevelsForSyllabus(syllabus).map((l) => (
+                  <option value="">
+                    {syllabus ? "Select level" : "Pick a syllabus first"}
+                  </option>
+                  {level && !levelOptions.includes(level) && (
+                    <option value={level}>{level} (legacy)</option>
+                  )}
+                  {levelOptions.map((l) => (
                     <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-400 text-xs uppercase">Subject</Label>
+                <select
+                  value={subject}
+                  onChange={(e) => {
+                    setSubject(e.target.value);
+                    setTopics([]);
+                    markMeta();
+                  }}
+                  className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
+                  data-testid="input-quiz-subject"
+                  disabled={!syllabus || !level}
+                >
+                  <option value="">
+                    {!syllabus
+                      ? "Pick a syllabus first"
+                      : !level
+                        ? "Pick a level first"
+                        : subjectOptions.length === 0
+                          ? "No subjects for this level"
+                          : "Select subject"}
+                  </option>
+                  {subject && subjectOptions.length > 0 && !subjectOptions.includes(subject) && (
+                    <option value={subject}>{subject} (legacy)</option>
+                  )}
+                  {(subjectOptions.length > 0 ? subjectOptions : STANDARDIZED_SUBJECTS).map((s) => (
+                    <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
@@ -1166,11 +1107,11 @@ export default function BuilderPage() {
               </div>
             </div>
 
-            {/* Topics — optional multi-select, appears once subject + syllabus
-                are chosen. Sourced from the canonical syllabus's parsed topic
-                inventory so every option is a real curriculum topic the AI can
-                ground on. Tutors may tick one, many, or none (= whole syllabus). */}
-            {subject && selectedSyllabusDoc && (
+            {/* Topics — optional multi-select. Appears once the tutor has
+                narrowed Syllabus → Level → Subject, sourced from the canonical
+                curriculum seed so every option is a real top-level syllabus
+                area. Tutors may tick one, many, or none (= whole subject). */}
+            {syllabus && level && subject && (
               <div className="mt-3">
                 <Label className="text-slate-400 text-xs uppercase flex items-center gap-2">
                   Topics <span className="text-[10px] text-slate-500 normal-case tracking-normal">(optional — pick one or more)</span>
@@ -1179,11 +1120,9 @@ export default function BuilderPage() {
                   className="mt-1.5 rounded-lg bg-black/20 border border-white/10 p-3 max-h-64 overflow-y-auto"
                   data-testid="multiselect-quiz-topics"
                 >
-                  {topicsLoading ? (
-                    <p className="text-xs text-slate-500">Loading topics…</p>
-                  ) : topicGroups.length === 0 ? (
+                  {topicGroups.length === 0 ? (
                     <p className="text-xs text-slate-500">
-                      No topics have been parsed from this syllabus yet. Leave blank to target the whole syllabus.
+                      No topics seeded for this subject yet. Leave blank to target the whole subject.
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5">
@@ -1234,8 +1173,8 @@ export default function BuilderPage() {
                 </div>
                 <p className="mt-1.5 text-[11px] text-slate-500">
                   {topicGroups.length > 0
-                    ? `${topicGroups.length} topic${topicGroups.length === 1 ? "" : "s"} parsed from ${selectedSyllabusDoc.board} ${selectedSyllabusDoc.syllabusCode}.`
-                    : "Topics appear here once the syllabus has been parsed."}
+                    ? `${topicGroups.length} topic${topicGroups.length === 1 ? "" : "s"} from the ${syllabus} ${level} ${subject} syllabus.`
+                    : "Topics appear here once the subject has a seeded inventory."}
                 </p>
               </div>
             )}

@@ -19,6 +19,7 @@ import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGrap
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
+import { getCurriculumOptions } from "./data/cambridgeCurriculumSeed";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -3142,9 +3143,56 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     }
   });
 
+  // Curriculum option tree — the single source of truth for the four chained
+  // dropdowns in the assessment builder (Syllabus → Level → Subject → Topics).
+  //
+  // Topics are served from a hand-curated seed (server/data/cambridgeCurriculumSeed.ts)
+  // so every option is available immediately, without waiting for a per-PDF AI
+  // extraction pass. Any topic rows already present in syllabus_topic_inventory
+  // are merged in so AI-extracted subtopics enrich the seed when available.
+  app.get("/api/tutor/curriculum/options", requireTutor, async (_req, res) => {
+    try {
+      const tree = getCurriculumOptions();
+
+      // Best-effort merge: for each (board, level, subject) we already have a
+      // seeded entry for, fold in any AI-extracted subtopics so they show up
+      // beside the seed topic names without duplicating.
+      const merged: typeof tree.topics = { ...tree.topics };
+      for (const key of Object.keys(merged)) {
+        const [board, , subject] = key.split("|");
+        try {
+          const extracted = await storage.listSyllabusTopicInventory({ board, subject });
+          if (extracted.length === 0) continue;
+          const extra = new Map<string, Set<string>>();
+          for (const row of extracted) {
+            const t = (row.topic || "").trim();
+            if (!t) continue;
+            if (!extra.has(t)) extra.set(t, new Set());
+            const s = (row.subtopic || "").trim();
+            if (s) extra.get(t)!.add(s);
+          }
+          merged[key] = merged[key].map((seed) => {
+            const subs = extra.get(seed.topic);
+            if (!subs || subs.size === 0) return seed;
+            const base = new Set(seed.subtopics ?? []);
+            subs.forEach((s) => base.add(s));
+            return { ...seed, subtopics: Array.from(base).sort((a, b) => a.localeCompare(b)) };
+          });
+        } catch {
+          // If the inventory table query fails (e.g. fresh DB), fall back to
+          // the seed alone — the builder must still be usable.
+        }
+      }
+
+      res.json({ ...tree, topics: merged });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to load curriculum options" });
+    }
+  });
+
   // Canonical curriculum library — the board-issued syllabi ingested from
-  // curriculum-docs/. This is the source of truth for the builder's syllabus
-  // dropdown; tutor-private uploads do NOT appear here.
+  // curriculum-docs/. Retained so other flows (e.g. syllabus-chunk retrieval)
+  // can still resolve a specific PDF by board/level/syllabusCode.
   app.get("/api/tutor/curriculum/syllabi", requireTutor, async (req, res) => {
     try {
       const { subject, level, board } = req.query;
