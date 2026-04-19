@@ -10,11 +10,12 @@
  * Environment:
  *   SUPABASE_URL (or DATABASE_URL) — Postgres connection string
  *
- * Phase 3b.1 adds Pattern A (A Level sciences) and Pattern D (IGCSE
- * Core/Extended) parsers, writing topics, subtopics, learning_requirements
- * and the per-topic/per-subtopic competency rollups. Patterns B (9709) and
- * C (9708/9609/9706) are still skipped at the parse stage — their syllabi
- * rows are still written by Phase 3a and they pick up topics in Phase 3b.2.
+ * Phase 3b.1 added Pattern A (A Level sciences) and Pattern D (IGCSE
+ * Core/Extended). Phase 3b.2 adds Pattern B (9709 Mathematics) and Pattern C
+ * (9708 / 9609 / 9706), plus papers and paper↔topic / paper↔subtopic
+ * mappings for every syllabus that exposes them (today, just Patterns B and
+ * C). Unclassified syllabi still receive a syllabi row and are deferred to
+ * Phase 3c.
  */
 
 import "dotenv/config";
@@ -96,6 +97,8 @@ interface EntrySummary {
   topicsWritten?: number;
   subtopicsWritten?: number;
   requirementsWritten?: number;
+  papersWritten?: number;
+  paperMappingsWritten?: number;
   writeWarnings?: string[];
 }
 
@@ -162,6 +165,8 @@ async function main(): Promise<void> {
     let totalTopics = 0;
     let totalSubtopics = 0;
     let totalRequirements = 0;
+    let totalPapers = 0;
+    let totalPaperMappings = 0;
 
     for (const summary of summaries) {
       const result = await upsertSyllabus(db, cambridge.id, summary.entry);
@@ -175,19 +180,24 @@ async function main(): Promise<void> {
         summary.topicsWritten = write.topicsWritten;
         summary.subtopicsWritten = write.subtopicsWritten;
         summary.requirementsWritten = write.requirementsWritten;
+        summary.papersWritten = write.papersWritten;
+        summary.paperMappingsWritten = write.paperMappingsWritten;
         summary.writeWarnings = write.warnings;
         parsedCount++;
         totalTopics += write.topicsWritten;
         totalSubtopics += write.subtopicsWritten;
         totalRequirements += write.requirementsWritten;
+        totalPapers += write.papersWritten;
+        totalPaperMappings += write.paperMappingsWritten;
       }
     }
 
     console.log(`\nSyllabus upsert: ${wrote} written, ${unchanged} unchanged (hash match).`);
     console.log(`Content extraction: ${parsedCount} syllabi parsed → ${totalTopics} topics, ${totalSubtopics} subtopics, ${totalRequirements} learning requirements.`);
+    console.log(`Papers: ${totalPapers} rows, ${totalPaperMappings} paper↔topic/subtopic mappings.`);
     const skipped = summaries.filter((s) => !s.parsed).length;
     if (skipped) {
-      console.log(`Skipped ${skipped} syllabi with no Phase 3b.1 parser (Patterns B/C + unclassified — handled in 3b.2 / 3c).`);
+      console.log(`Skipped ${skipped} syllabi with no parser (unclassified — handled in Phase 3c).`);
     }
   } finally {
     await pool.end();
@@ -201,7 +211,7 @@ function printPlan(summaries: EntrySummary[]): void {
     const e = s.entry;
     const tiers = e.supportedTiers.join("+");
     const parseCounts = s.parsed
-      ? ` topics=${s.parsed.topics.length} subtopics=${countSubtopics(s.parsed)} LRs=${countRequirements(s.parsed)}`
+      ? ` topics=${s.parsed.topics.length} subtopics=${countSubtopics(s.parsed)} LRs=${countRequirements(s.parsed)} papers=${s.parsed.papers.length}`
       : " (no parser)";
     console.log(
       `  ${e.topBand.padEnd(8)} ${e.syllabusCode}  ${e.subject.padEnd(24)} ${tiers.padEnd(6)} pages=${String(s.pageCount).padStart(3)} pattern=${s.pattern.padEnd(13)}${parseCounts}`,

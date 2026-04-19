@@ -2,28 +2,33 @@
  * Persist a `ParsedSyllabus` into topics / subtopics / learning_requirements,
  * with competency rollups (learning_requirement_competencies,
  * subtopic_competencies, topic_competencies) and topic-level levelTiers.
+ * Also persists papers and their topic/subtopic mappings for Patterns B
+ * (9709) and C (9708 / 9609 / 9706).
  *
  * Idempotency strategy: every upsert is keyed on a natural unique index:
+ *   - papers: (syllabus_id, paper_number)
  *   - topics: (syllabus_id, topic_number)
  *   - subtopics: (topic_id, subtopic_number)
  *   - learning_requirements: replaced wholesale per subtopic (cheap, and
  *     keeps the sort_order aligned with the parser output)
+ *   - paper_topic_mappings / subtopic_paper_mappings: replaced wholesale
+ *     per topic / subtopic
  *   - rollups: full delete-and-reinsert per topic/subtopic
- *
- * Papers and paper mappings are intentionally omitted here; they arrive in
- * Phase 3b.2 alongside the Pattern B (9709) parser.
  */
 
 import { and, eq, inArray } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import type { CompetencyCode, LevelTier } from "@shared/schema";
-import type { ParsedSyllabus, ParsedTopic, ParsedSubtopic, ParsedStrand } from "./parsers";
+import type { ParsedSyllabus, ParsedTopic, ParsedSubtopic, ParsedStrand, ParsedPaper } from "./parsers";
 import { competenciesFor } from "./commandWords";
 
 type DB = NodePgDatabase<typeof schema>;
 
 const {
+  papers,
+  paperTopicMappings,
+  subtopicPaperMappings,
   topics,
   subtopics,
   learningRequirements,
@@ -38,6 +43,8 @@ export interface UpsertParsedResult {
   topicsWritten: number;
   subtopicsWritten: number;
   requirementsWritten: number;
+  papersWritten: number;
+  paperMappingsWritten: number;
   warnings: string[];
 }
 
@@ -50,15 +57,29 @@ export async function upsertParsedSyllabus(
 
   const competencyIdByCode = await loadCompetencyIndex(db);
   const strandIdByName = await upsertStrands(db, syllabusId, parsed.strands);
+  const paperIdByNumber = await upsertPapers(db, syllabusId, parsed.papers);
 
   let topicsWritten = 0;
   let subtopicsWritten = 0;
   let requirementsWritten = 0;
+  let paperMappingsWritten = 0;
 
   for (let i = 0; i < parsed.topics.length; i++) {
     const parsedTopic = parsed.topics[i];
     const topicId = await upsertTopic(db, syllabusId, parsedTopic, strandIdByName, i);
     topicsWritten++;
+
+    // Rewrite paper ↔ topic mappings wholesale.
+    await db.delete(paperTopicMappings).where(eq(paperTopicMappings.topicId, topicId));
+    for (const paperNumber of parsedTopic.paperNumbers ?? []) {
+      const paperId = paperIdByNumber.get(paperNumber);
+      if (paperId == null) {
+        warnings.push(`Topic ${parsedTopic.number} references unknown paper ${paperNumber}`);
+        continue;
+      }
+      await db.insert(paperTopicMappings).values({ paperId, topicId, weight: "covered" });
+      paperMappingsWritten++;
+    }
 
     const topicCompetencyTally = new Map<number, number>();
 
@@ -66,6 +87,18 @@ export async function upsertParsedSyllabus(
       const parsedSubtopic = parsedTopic.subtopics[j];
       const subtopicId = await upsertSubtopic(db, topicId, parsedSubtopic, j);
       subtopicsWritten++;
+
+      // Rewrite paper ↔ subtopic mappings wholesale.
+      await db.delete(subtopicPaperMappings).where(eq(subtopicPaperMappings.subtopicId, subtopicId));
+      for (const paperNumber of parsedSubtopic.paperNumbers ?? []) {
+        const paperId = paperIdByNumber.get(paperNumber);
+        if (paperId == null) {
+          warnings.push(`Subtopic ${parsedSubtopic.number} references unknown paper ${paperNumber}`);
+          continue;
+        }
+        await db.insert(subtopicPaperMappings).values({ subtopicId, paperId });
+        paperMappingsWritten++;
+      }
 
       const subtopicCompetencyTally = new Map<number, number>();
 
@@ -124,7 +157,24 @@ export async function upsertParsedSyllabus(
     warnings.push(`Removed ${orphanIds.length} topic rows no longer present in the syllabus`);
   }
 
-  return { topicsWritten, subtopicsWritten, requirementsWritten, warnings };
+  // Clean up orphan papers similarly.
+  const parsedPaperNumbers = new Set(parsed.papers.map((p) => p.number));
+  const existingPapers = await db.select({ id: papers.id, number: papers.paperNumber })
+    .from(papers).where(eq(papers.syllabusId, syllabusId));
+  const orphanPaperIds = existingPapers.filter((r) => !parsedPaperNumbers.has(r.number)).map((r) => r.id);
+  if (orphanPaperIds.length) {
+    await db.delete(papers).where(inArray(papers.id, orphanPaperIds));
+    warnings.push(`Removed ${orphanPaperIds.length} paper rows no longer present in the syllabus`);
+  }
+
+  return {
+    topicsWritten,
+    subtopicsWritten,
+    requirementsWritten,
+    papersWritten: paperIdByNumber.size,
+    paperMappingsWritten,
+    warnings,
+  };
 }
 
 async function loadCompetencyIndex(db: DB): Promise<Map<string, number>> {
@@ -153,6 +203,38 @@ async function upsertStrands(
         sortOrder: s.sortOrder,
       }).returning({ id: syllabusStrands.id });
       out.set(s.name, inserted.id);
+    }
+  }
+  return out;
+}
+
+async function upsertPapers(
+  db: DB,
+  syllabusId: number,
+  parsedPapers: ParsedPaper[],
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  for (const p of parsedPapers) {
+    const existing = await db.select().from(papers).where(and(
+      eq(papers.syllabusId, syllabusId),
+      eq(papers.paperNumber, p.number),
+    )).limit(1);
+    if (existing.length) {
+      await db.update(papers).set({
+        title: p.title,
+        levelTier: p.levelTier,
+        coreOrExtended: p.coreOrExtended ?? null,
+      }).where(eq(papers.id, existing[0].id));
+      out.set(p.number, existing[0].id);
+    } else {
+      const [inserted] = await db.insert(papers).values({
+        syllabusId,
+        paperNumber: p.number,
+        title: p.title,
+        levelTier: p.levelTier,
+        coreOrExtended: p.coreOrExtended ?? null,
+      }).returning({ id: papers.id });
+      out.set(p.number, inserted.id);
     }
   }
   return out;
