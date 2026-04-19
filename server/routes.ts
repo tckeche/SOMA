@@ -2,6 +2,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
 import { insertSomaUserSchema, graphQuestionSpecSchema } from "@shared/schema";
+import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -1811,16 +1812,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const questions = await storage.getSomaQuestionsByQuizId(quizId);
       const maxGrade = questions.reduce((sum, q) => sum + q.marks, 0);
 
+      const now = new Date();
+
       // Map assignments with their submission status and grades
       const studentDetails = assignments.map((assignment) => {
         const report = (allReports as any[]).find((r) => r.studentId === assignment.student.id);
+        const detailedStatus: AssignmentStatus = computeAssignmentStatus({
+          dueDate: assignment.dueDate ?? null,
+          report: report
+            ? {
+                status: report.status,
+                answersJson: report.answersJson,
+                aiFeedbackHtml: report.aiFeedbackHtml,
+                completedAt: report.completedAt,
+              }
+            : null,
+          now,
+        });
         return {
           assignmentId: assignment.id,
           studentId: assignment.student.id,
           studentName: assignment.student.displayName || assignment.student.email,
           studentEmail: assignment.student.email,
           assignmentStatus: assignment.status,
+          // Legacy coarse status — kept for backwards compatibility with
+          // existing client code that hasn't migrated yet.
           status: report ? (report.status === "completed" ? "Submitted" : report.status === "failed" ? "Failed" : "In Progress") : "Not Started",
+          // New 8-value canonical status (PRD-aligned).
+          detailedStatus,
+          detailedStatusLabel: ASSIGNMENT_STATUS_META[detailedStatus].label,
           startTime: report?.startedAt || report?.createdAt || null,
           submissionTime: report?.completedAt || null,
           finalGrade: report?.score ?? null,
@@ -1834,7 +1854,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         quiz,
         assignments: studentDetails,
         totalAssigned: studentDetails.length,
-        totalSubmitted: studentDetails.filter((s) => s.status === "Submitted").length,
+        totalSubmitted: studentDetails.filter((s) => s.detailedStatus === "submitted" || s.detailedStatus === "feedback_ready").length,
       });
     } catch (err: any) {
       console.error("Failed to fetch quiz details:", err);

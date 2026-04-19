@@ -24,6 +24,15 @@ import SomaQuizEngine from "./soma-quiz";
 import type { StudentQuestion } from "./soma-quiz";
 import { createIdentityHeaders } from "@/lib/identityHeaders";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
+import {
+  buildTutorDraftKey,
+  readTutorDraft,
+  writeTutorDraft,
+  clearTutorDraft,
+  isMeaningfulDraft,
+  type TutorAssessmentDraft,
+} from "@/lib/tutorAssessmentDraft";
+import DraftRecoveryBanner from "@/components/tutor/DraftRecoveryBanner";
 
 // ── Draft question type (mirrors server DraftQuestion) ───────────────────────
 export interface DraftQuestion {
@@ -204,6 +213,13 @@ export default function BuilderPage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Pre-publish draft recovery (only relevant while activeQuizId is null —
+  // once the server has a quiz row, its own draft API takes over).
+  const [recoveredDraft, setRecoveredDraft] = useState<TutorAssessmentDraft | null>(null);
+  const [draftBannerDismissed, setDraftBannerDismissed] = useState(false);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftCheckedRef = useRef(false);
+
   const { session: supaSession, isLoading: supaLoading, userId: tutorUserId } = useSupabaseSession();
   const supaAccessToken = supaSession?.access_token;
   const isTutorAuth = !!tutorUserId;
@@ -253,6 +269,80 @@ export default function BuilderPage() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDraftDirty, metaDirty]);
+
+  // ── Pre-publish draft recovery ─────────────────────────────────────────────
+  // When a tutor opens the builder in new-assessment mode, look up any local
+  // draft they left behind. Skip entirely in edit mode — the server is the
+  // source of truth once a quiz row exists.
+  useEffect(() => {
+    if (isEditMode || draftCheckedRef.current || !tutorUserId) return;
+    draftCheckedRef.current = true;
+    const key = buildTutorDraftKey(tutorUserId);
+    const existing = readTutorDraft(key);
+    if (isMeaningfulDraft(existing)) {
+      setRecoveredDraft(existing);
+    }
+  }, [isEditMode, tutorUserId]);
+
+  // Debounced write: while the quiz has not yet been created server-side,
+  // persist metadata + initial prompt to localStorage so a refresh doesn't
+  // wipe the tutor's work.
+  useEffect(() => {
+    if (isEditMode || !tutorUserId || activeQuizId !== null) return;
+    const key = buildTutorDraftKey(tutorUserId);
+    if (!key) return;
+    // Don't save an empty shell — just clutters storage.
+    const hasContent =
+      title.trim() || subject.trim() || level.trim() ||
+      syllabus.trim() || msg.trim();
+    if (!hasContent) return;
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      writeTutorDraft(key, {
+        title,
+        subject,
+        level,
+        syllabus,
+        timeLimitMinutes,
+        prompt: msg,
+      });
+    }, 400);
+    return () => {
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [isEditMode, tutorUserId, activeQuizId, title, subject, level, syllabus, timeLimitMinutes, msg]);
+
+  // Clear the local draft as soon as the server-side quiz row exists — the
+  // server's draft API owns post-creation state.
+  useEffect(() => {
+    if (!tutorUserId || activeQuizId === null) return;
+    const key = buildTutorDraftKey(tutorUserId);
+    clearTutorDraft(key);
+    setRecoveredDraft(null);
+  }, [activeQuizId, tutorUserId]);
+
+  const applyRecoveredDraft = useCallback(() => {
+    if (!recoveredDraft) return;
+    setTitle(recoveredDraft.title);
+    setSubject(recoveredDraft.subject);
+    setLevel(recoveredDraft.level);
+    setSyllabus(recoveredDraft.syllabus);
+    setTimeLimitMinutes(
+      Number.isFinite(recoveredDraft.timeLimitMinutes) && recoveredDraft.timeLimitMinutes > 0
+        ? recoveredDraft.timeLimitMinutes
+        : 60,
+    );
+    setMsg(recoveredDraft.prompt);
+    setRecoveredDraft(null);
+    setDraftBannerDismissed(true);
+  }, [recoveredDraft]);
+
+  const deleteRecoveredDraft = useCallback(() => {
+    clearTutorDraft(buildTutorDraftKey(tutorUserId));
+    setRecoveredDraft(null);
+    setDraftBannerDismissed(true);
+    toast({ title: "Draft deleted", description: "Your unfinished assessment draft was discarded." });
+  }, [tutorUserId, toast]);
 
   const validateMeta = useCallback(() => {
     if (!title.trim()) return "Assessment title is required.";
@@ -828,6 +918,18 @@ export default function BuilderPage() {
 
       {/* Main content — single column on mobile, 2-col grid on desktop */}
       <main className="max-w-[1600px] mx-auto flex flex-col md:grid md:grid-cols-12 gap-4 p-4 md:p-6 lg:p-8">
+
+        {/* Draft recovery banner — only before the first server-side save */}
+        {recoveredDraft && !draftBannerDismissed && !activeQuizId && (
+          <div className="md:col-span-12">
+            <DraftRecoveryBanner
+              draft={recoveredDraft}
+              onContinue={applyRecoveredDraft}
+              onDelete={deleteRecoveredDraft}
+              onDismiss={() => setDraftBannerDismissed(true)}
+            />
+          </div>
+        )}
 
         {/* LEFT COLUMN (parameters + copilot + pipeline + docs) */}
         <div className="md:col-span-8 flex flex-col gap-4">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Link } from "wouter";
@@ -19,6 +19,16 @@ import GraphPlot from "@/components/GraphPlot";
 import { authFetch } from "@/lib/supabase";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import FlagQuestionButton from "@/components/student/FlagQuestionButton";
+import AutosaveIndicator from "@/components/student/AutosaveIndicator";
+import AssessmentStartScreen from "@/components/student/AssessmentStartScreen";
+import {
+  buildAutosaveKey,
+  readAutosave,
+  writeAutosave,
+  clearAutosave,
+  isResumableAutosave,
+  type SaveStatus,
+} from "@/lib/quizAutosave";
 
 export type StudentQuestion = {
   id: number;
@@ -276,12 +286,20 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [showSummary, setShowSummary] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<{ score: number; maxScore: number } | null>(null);
-  const [quizStartedAt] = useState<string>(new Date().toISOString());
+  const [quizStartedAt, setQuizStartedAt] = useState<string>(() => new Date().toISOString());
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [autosaveRestored, setAutosaveRestored] = useState(false);
+  // The student must click Start on the intro screen before the timer begins
+  // and autosave writes fire. Previews skip the intro entirely.
+  const [hasStarted, setHasStarted] = useState<boolean>(isPreview);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedToastShownRef = useRef(false);
 
   const userId = session?.user?.id;
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Student";
-  const answersCacheKey = !isPreview && quizId > 0 ? `soma_quiz_answers_${quizId}_${userId || "guest"}` : null;
+  const autosaveKey = !isPreview ? buildAutosaveKey(quizId, userId) : null;
 
   const { data: quiz, isLoading: quizLoading, error: quizError } = useQuery<SomaQuiz>({
     queryKey: ["/api/soma/quizzes", quizId],
@@ -314,22 +332,40 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   });
 
 
+  // Restore autosaved state (answers, current question, start time) on mount.
   useEffect(() => {
-    if (!answersCacheKey) return;
-    const raw = localStorage.getItem(answersCacheKey);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        const restored = Object.fromEntries(
-          Object.entries(parsed as Record<string, string>).map(([k, v]) => [Number(k), String(v)])
-        );
-        setAnswers(restored);
+    if (!autosaveKey || autosaveRestored) return;
+    const restored = readAutosave(autosaveKey);
+    if (restored) {
+      const answerCount = Object.keys(restored.answers || {}).length;
+      const isResuming = isResumableAutosave(restored);
+      if (answerCount > 0) {
+        setAnswers(restored.answers);
       }
-    } catch {
-      localStorage.removeItem(answersCacheKey);
+      if (Number.isFinite(restored.currentIndex) && restored.currentIndex >= 0) {
+        setCurrentIndex(restored.currentIndex);
+      }
+      if (restored.startedAt && isResuming) {
+        // Only carry over the start time when the student is mid-attempt.
+        // An empty shell left by a previous visit that never started shouldn't
+        // silently eat into the time limit.
+        setQuizStartedAt(restored.startedAt);
+      }
+      if (isResuming) {
+        setLastSavedAt(restored.savedAt);
+        setSaveStatus("saved");
+        setHasStarted(true);
+        if (!savedToastShownRef.current) {
+          savedToastShownRef.current = true;
+          toast({
+            title: "Welcome back",
+            description: "We restored your progress from where you left off.",
+          });
+        }
+      }
     }
-  }, [answersCacheKey]);
+    setAutosaveRestored(true);
+  }, [autosaveKey, autosaveRestored, toast]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -351,7 +387,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     onSuccess: (data: any) => {
       const totalMarks = questions ? questions.reduce((s, q) => s + q.marks, 0) : 0;
       setSubmissionResult({ score: data.score, maxScore: totalMarks });
-      if (answersCacheKey) localStorage.removeItem(answersCacheKey);
+      clearAutosave(autosaveKey);
       queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/soma/quizzes", quizId, "check-submission"] });
       queryClient.invalidateQueries({ queryKey: ["/api/student/dashboard"] });
@@ -363,11 +399,20 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     },
   });
 
-  // Initialize countdown timer from quiz's timeLimitMinutes
+  // Initialize countdown timer from quiz's timeLimitMinutes, accounting for
+  // any time already elapsed since the quiz was originally started — so a
+  // refresh or resume doesn't silently hand the student extra time.
   useEffect(() => {
     if (isPreview || !quiz?.timeLimitMinutes || submissionResult) return;
+    if (!autosaveRestored || !hasStarted) return; // wait for student to click Start
     const totalSeconds = quiz.timeLimitMinutes * 60;
-    setTimeRemainingSeconds(totalSeconds);
+    const elapsedSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(quizStartedAt).getTime()) / 1000),
+    );
+    const remaining = Math.max(0, totalSeconds - elapsedSeconds);
+    setTimeRemainingSeconds(remaining);
+    if (remaining <= 0) return;
     const interval = setInterval(() => {
       setTimeRemainingSeconds((prev) => {
         if (prev === null || prev <= 1) {
@@ -378,7 +423,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isPreview, quiz?.timeLimitMinutes, submissionResult]);
+  }, [isPreview, quiz?.timeLimitMinutes, submissionResult, autosaveRestored, quizStartedAt]);
 
   // Auto-submit when timer reaches 0
   useEffect(() => {
@@ -405,20 +450,37 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     return questions.reduce((s, q) => s + q.marks, 0);
   }, [questions]);
 
-  const handleSelectAnswer = (questionId: number, option: string) => {
-    setAnswers((prev) => {
-      const next = { ...prev, [questionId]: option };
-      if (answersCacheKey) {
-        setTimeout(() => {
-          try {
-            localStorage.setItem(answersCacheKey, JSON.stringify(next));
-          } catch {
-            // ignore storage quota/private mode failures
-          }
-        }, 0);
+  // Debounced autosave: whenever answers or the current question change we
+  // schedule a write a moment later so rapid taps don't hit localStorage on
+  // every keystroke. Gated on hasStarted so the intro screen doesn't spawn
+  // an empty autosave record.
+  useEffect(() => {
+    if (!autosaveKey || !autosaveRestored || !hasStarted || submissionResult) return;
+    setSaveStatus("saving");
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const result = writeAutosave(autosaveKey, {
+        answers,
+        currentIndex,
+        startedAt: quizStartedAt,
+      });
+      if (result.ok) {
+        setSaveStatus("saved");
+        setLastSavedAt(result.savedAt);
+      } else {
+        setSaveStatus("failed");
       }
-      return next;
-    });
+    }, 400);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [answers, currentIndex, quizStartedAt, autosaveKey, autosaveRestored, hasStarted, submissionResult]);
+
+  const handleSelectAnswer = (questionId: number, option: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: option }));
   };
 
   const handleNext = () => {
@@ -519,6 +581,22 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     return <ResultsView quizTitle={effectiveQuiz.title} totalScore={submissionResult.score} maxPossibleScore={submissionResult.maxScore} />;
   }
 
+  // Pre-quiz start screen — only on a fresh attempt. Resumes set hasStarted
+  // during the autosave-restore effect so they bypass this entirely.
+  if (!isPreview && autosaveRestored && !hasStarted) {
+    return (
+      <AssessmentStartScreen
+        quiz={effectiveQuiz}
+        questionCount={questions.length}
+        totalMarks={totalMarks}
+        onStart={() => {
+          setQuizStartedAt(new Date().toISOString());
+          setHasStarted(true);
+        }}
+      />
+    );
+  }
+
   if (showSummary) {
     return (
       <>
@@ -543,30 +621,40 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const answeredCount = Object.keys(answers).length;
 
   return (
-    <div className="min-h-screen bg-background px-4 py-8">
+    <div className="min-h-screen bg-background px-3 sm:px-4 py-4 sm:py-8 pb-28 md:pb-8">
       {previewBanner}
       <div className={`max-w-3xl mx-auto ${isPreview ? "pt-8" : ""}`}>
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
           {isPreview ? (
             <Button
               variant="ghost"
               size="default"
-              className="text-slate-400 hover:text-slate-200"
+              className="text-slate-400 hover:text-slate-200 px-2 sm:px-3"
               onClick={(props as PreviewProps).onExitPreview}
+              aria-label="Exit preview"
               data-testid="button-preview-back"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Exit Preview
+              <ArrowLeft className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Exit Preview</span>
             </Button>
           ) : (
             <Link href="/dashboard">
-              <Button variant="ghost" size="default" className="text-slate-400 hover:text-slate-200" aria-label="Back to dashboard" data-testid="button-soma-back">
-                <ArrowLeft className="w-4 h-4 mr-1" />
-                Exit Assessment
+              <Button
+                variant="ghost"
+                size="default"
+                className="text-slate-400 hover:text-slate-200 px-2 sm:px-3"
+                aria-label="Exit assessment"
+                data-testid="button-soma-back"
+              >
+                <ArrowLeft className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Exit Assessment</span>
               </Button>
             </Link>
           )}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap justify-end">
+            {!isPreview && (
+              <AutosaveIndicator status={saveStatus} savedAt={lastSavedAt} />
+            )}
             {!isPreview && timeRemainingSeconds !== null && (
               <Badge
                 className={`flex items-center gap-1.5 ${
@@ -578,14 +666,14 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 data-testid="badge-timer"
               >
                 <Clock className="w-3.5 h-3.5" />
-                <span className="uppercase text-[10px] tracking-wider font-bold mr-0.5">Left</span>
+                <span className="uppercase text-[10px] tracking-wider font-bold mr-0.5 hidden sm:inline">Left</span>
                 {Math.floor(timeRemainingSeconds / 60)}:{String(timeRemainingSeconds % 60).padStart(2, "0")}
               </Badge>
             )}
             <Badge className="bg-violet-500/10 text-violet-300 border-violet-500/30" data-testid="badge-progress">
               {currentIndex + 1} / {questions.length}
             </Badge>
-            <Badge className="bg-white/5 text-slate-400 border-white/10" data-testid="badge-marks">
+            <Badge className="bg-white/5 text-slate-400 border-white/10 hidden sm:inline-flex" data-testid="badge-marks">
               {totalMarks} marks
             </Badge>
           </div>
@@ -608,21 +696,21 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           </div>
         )}
 
-        <div className="glass-card p-8 mb-6" style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/30 to-cyan-500/20 flex items-center justify-center border border-violet-500/30 text-lg font-bold text-violet-300">
+        <div className="glass-card p-4 sm:p-6 md:p-8 mb-4 sm:mb-6" style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}>
+          <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-violet-500/30 to-cyan-500/20 flex items-center justify-center border border-violet-500/30 text-base sm:text-lg font-bold text-violet-300 shrink-0">
                 {currentIndex + 1}
               </div>
-              <div>
-                <p className="text-xs text-slate-400 uppercase tracking-wider">Question {currentIndex + 1} of {questions.length}</p>
-                <p className="text-xs text-violet-400/70">{currentQuestion.marks} mark{currentQuestion.marks > 1 ? "s" : ""}</p>
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs text-slate-400 uppercase tracking-wider truncate">Question {currentIndex + 1} of {questions.length}</p>
+                <p className="text-[11px] sm:text-xs text-violet-400/70">{currentQuestion.marks} mark{currentQuestion.marks > 1 ? "s" : ""}</p>
               </div>
             </div>
             <FlagQuestionButton questionId={currentQuestion.id} quizId={currentQuestion.quizId} />
           </div>
 
-          <div className="text-lg text-slate-100 leading-relaxed mb-2" data-testid="text-question-stem">
+          <div className="text-base sm:text-lg text-slate-100 leading-relaxed mb-2" data-testid="text-question-stem">
             <MarkdownRenderer content={currentQuestion.stem} />
           </div>
           {currentQuestion.questionType === "graph" ? (
@@ -638,7 +726,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           ) : null}
         </div>
 
-        <div className="grid gap-3 mb-8">
+        <div className="grid gap-2.5 sm:gap-3 mb-6 sm:mb-8">
           {currentQuestion.options.map((option, idx) => {
             const letter = String.fromCharCode(65 + idx);
             const isSelected = selectedAnswer === option;
@@ -646,14 +734,14 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
               <button
                 key={idx}
                 onClick={() => handleSelectAnswer(currentQuestion.id, option)}
-                className={`w-full text-left p-5 rounded-2xl border transition-all duration-200 ${
+                className={`w-full text-left p-4 sm:p-5 min-h-[60px] rounded-2xl border transition-all duration-200 active:scale-[0.99] ${
                   isSelected
                     ? "bg-violet-500/15 border-violet-500/40 shadow-[0_0_20px_rgba(139,92,246,0.15)]"
                     : "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
                 }`}
                 data-testid={`button-option-${idx}`}
               >
-                <div className="flex items-start gap-4">
+                <div className="flex items-start gap-3 sm:gap-4">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-semibold ${
                     isSelected
                       ? "bg-violet-500/30 text-violet-200 border border-violet-500/50"
@@ -661,7 +749,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                   }`}>
                     {letter}
                   </div>
-                  <div className="text-sm text-slate-200 pt-1 flex-1">
+                  <div className="text-[15px] sm:text-base text-slate-200 pt-0.5 sm:pt-1 flex-1 leading-relaxed">
                     <MarkdownRenderer content={option} />
                   </div>
                 </div>
@@ -670,49 +758,65 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           })}
         </div>
 
-        <div className="flex items-center gap-3 mb-8">
-          {currentIndex > 0 && (
+        {/* Action bar — sticky to the viewport bottom on mobile so Next/Prev
+            stay reachable after scrolling through a long question; inline on
+            desktop where vertical space isn't as precious. */}
+        <div
+          className="fixed bottom-0 left-0 right-0 z-30 md:static md:z-auto bg-background/85 md:bg-transparent backdrop-blur-md md:backdrop-blur-0 border-t border-white/5 md:border-0 px-3 sm:px-4 md:px-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:py-0 md:mb-8"
+          data-testid="quiz-action-bar"
+        >
+          <div className="max-w-3xl mx-auto flex items-center gap-2 sm:gap-3">
+            {currentIndex > 0 && (
+              <Button
+                variant="outline"
+                className="glow-button-outline min-h-[48px] px-3 sm:px-4"
+                onClick={() => setCurrentIndex((i) => i - 1)}
+                aria-label="Previous question"
+                data-testid="button-previous"
+              >
+                <ChevronLeft className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Previous</span>
+              </Button>
+            )}
             <Button
               variant="outline"
-              className="glow-button-outline min-h-[44px] px-4"
-              onClick={() => setCurrentIndex((i) => i - 1)}
-              data-testid="button-previous"
+              className="flex-1 glow-button-outline min-h-[48px]"
+              onClick={handleSkip}
+              data-testid="button-skip"
             >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Previous
+              <SkipForward className="w-4 h-4 mr-1.5" />
+              Skip
             </Button>
-          )}
-          <Button
-            variant="outline"
-            className="flex-1 glow-button-outline min-h-[44px]"
-            onClick={handleSkip}
-            data-testid="button-skip"
-          >
-            <SkipForward className="w-4 h-4 mr-1.5" />
-            Skip
-          </Button>
-          {currentIndex === questions.length - 1 ? (
-            <Button
-              className="flex-1 glow-button min-h-[44px]"
-              onClick={() => setShowSummary(true)}
-              data-testid="button-submit-exam"
-            >
-              <Send className="w-4 h-4 mr-1.5" />
-              Review & Submit
-            </Button>
-          ) : (
-            <Button
-              className="flex-1 glow-button min-h-[44px]"
-              onClick={handleNext}
-              data-testid="button-next"
-            >
-              Next Question
-              <ChevronRight className="w-4 h-4 ml-1.5" />
-            </Button>
-          )}
+            {currentIndex === questions.length - 1 ? (
+              <Button
+                className="flex-1 glow-button min-h-[48px]"
+                onClick={() => setShowSummary(true)}
+                data-testid="button-submit-exam"
+              >
+                <Send className="w-4 h-4 mr-1.5" />
+                <span className="sm:hidden">Review</span>
+                <span className="hidden sm:inline">Review &amp; Submit</span>
+              </Button>
+            ) : (
+              <Button
+                className="flex-1 glow-button min-h-[48px]"
+                onClick={handleNext}
+                data-testid="button-next"
+              >
+                <span className="sm:hidden">Next</span>
+                <span className="hidden sm:inline">Next Question</span>
+                <ChevronRight className="w-4 h-4 ml-1.5" />
+              </Button>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center justify-center gap-2 flex-wrap px-2" data-testid="nav-dots">
+        {/* Nav dots are a nice-to-have on desktop and fight for space on mobile.
+            The sticky action bar + progress counter already cover mobile nav. */}
+        <div
+          className="hidden md:flex items-center justify-center gap-2 flex-wrap px-2"
+          data-testid="nav-dots"
+        >
           {questions.map((q, idx) => (
             <button
               key={q.id}
@@ -730,7 +834,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           ))}
         </div>
 
-        <div className="text-center mt-4">
+        <div className="hidden md:block text-center mt-4">
           <p className="text-xs text-slate-400">
             {answeredCount} of {questions.length} answered
           </p>
