@@ -29,6 +29,7 @@ export default function TutorStudents() {
   const [showAdoptModal, setShowAdoptModal] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
+  const [addModalSearch, setAddModalSearch] = useState("");
 
   const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -250,11 +251,11 @@ export default function TutorStudents() {
       </main>
 
       {showAdoptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-lg p-4" onClick={() => setShowAdoptModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-lg p-4" onClick={() => { setShowAdoptModal(false); setAddModalSearch(""); }}>
           <div className="glass-panel-elite max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
               <h3 className="text-base font-bold text-slate-100">Add Students</h3>
-              <button onClick={() => setShowAdoptModal(false)} className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors">
+              <button onClick={() => { setShowAdoptModal(false); setAddModalSearch(""); }} className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -262,8 +263,42 @@ export default function TutorStudents() {
               <p className="text-sm text-slate-400 text-center py-8">No students available to add</p>
             ) : (
               <>
+                {availableStudents.length > 5 && (
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Search by name or email..."
+                      value={addModalSearch}
+                      onChange={(e) => setAddModalSearch(e.target.value)}
+                      className="w-full pl-9 pr-9 py-2.5 min-h-[40px] rounded-xl bg-slate-800/40 border border-slate-700/50 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40"
+                      data-testid="input-search-add-students"
+                    />
+                    {addModalSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setAddModalSearch("")}
+                        aria-label="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"
+                        data-testid="button-clear-search-add-students"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {(() => {
+                  const sorted = [...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b)));
+                  const q = addModalSearch.trim().toLowerCase();
+                  const matches = q
+                    ? sorted.filter((s) => formatStudentName(s).toLowerCase().includes(q) || (s.email || "").toLowerCase().includes(q))
+                    : sorted;
+                  if (matches.length === 0) {
+                    return <p className="text-sm text-slate-400 text-center py-8" data-testid="text-no-add-students-match">No students match "{addModalSearch}"</p>;
+                  }
+                  return (
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                  {[...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b))).map((student) => {
+                  {matches.map((student) => {
                     const name = formatStudentName(student);
                     const si = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
                     return (
@@ -290,6 +325,8 @@ export default function TutorStudents() {
                     );
                   })}
                 </div>
+                  );
+                })()}
                 <button
                   onClick={() => adoptMutation.mutate(Array.from(selectedStudentIds))}
                   disabled={selectedStudentIds.size === 0 || adoptMutation.isPending}
