@@ -1,0 +1,958 @@
+{
+  "syllabusCode": "0452",
+  "pattern": "C",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "The fundamentals of accounting",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "The purpose of accounting",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the difference between book-keeping and accounting",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the purposes of measuring business profit and loss",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the role of accounting in providing information for monitoring progress and decision-making",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "The accounting equation",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "assets, liabilities and owner’s equity",
+              "commandWord": "assets"
+            },
+            {
+              "statement": "the accounting equation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to apply the accounting equation",
+              "commandWord": "how"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Sources and recording of data",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "The double entry system of book-keeping",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the double entry system of book-keeping",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare ledger accounts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to post transactions to the ledger accounts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate ledger account balances and make transfers to financial statements",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to interpret ledger accounts and their balances",
+              "commandWord": "how"
+            },
+            {
+              "statement": "ledger accounts that may be presented using a three-column running balance format",
+              "commandWord": "ledger"
+            },
+            {
+              "statement": "the division of the ledger into the sales ledger, the purchases ledger and the nominal (general) ledger",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how ledger accounts can be kept digitally",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "Business documents",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "business documents: invoice, debit note, credit note, cheque counterfoil, paying-in slip, receipt, bank statement, statement of account",
+              "commandWord": "business"
+            },
+            {
+              "statement": "how these business documents are used as sources of information",
+              "commandWord": "how"
+            },
+            {
+              "statement": "these business documents being produced and recorded manually or digitally",
+              "commandWord": "these"
+            }
+          ]
+        },
+        {
+          "number": "2.3",
+          "title": "Books of prime entry",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "how to process accounting data in the books of prime entry: cash book, petty cash book, sales journal, purchases journal, sales returns journal, purchases returns journal and the general journal",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to post the ledger entries from the books of prime entry",
+              "commandWord": "how"
+            },
+            {
+              "statement": "trade discount and cash discount and how these are treated",
+              "commandWord": "trade"
+            },
+            {
+              "statement": "the dual function of the cash book as a book of prime entry and as a ledger account for bank and cash",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to record receipts and payments made by cash, cheques, debit and credit cards, online and bank transfers",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the purpose of the imprest system of petty cash",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to apply the imprest system",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the benefits and limitations of keeping cash at the business property",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the benefits and limitations of using manual methods for the original entry of business transactions",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the benefits and limitations of using digital methods for the original entry of business transactions",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Verification of accounting records",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "The trial balance",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the purposes and limitations of a trial balance",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare a trial balance from a given list of balances and amend a trial balance which contains errors",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the types of errors which do not affect the trial balance: commission, compensating, complete reversal, omission, original entry, principle",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Corrections of errors",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "how to correct errors using journal entries",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the use of a suspense account as a temporary measure to balance the trial balance",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to correct errors using a suspense account",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to adjust a profit or loss for an accounting period after the correction of errors",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the effect of correction of errors on a statement of financial position",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Bank reconciliation",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the use and purpose of a bank statement",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to update the cash book for bank charges, bank interest paid and received, correction of errors, credit transfers, direct debits, and standing orders",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the purpose and preparation of a bank reconciliation statement to include bank errors, uncredited deposits and unpresented cheques",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the impact of digital business transactions on the bank reconciliation process",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.4",
+          "title": "Control accounts",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the purposes of purchases ledger and sales ledger control accounts",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the books of prime entry as sources of information for the control account entries",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare purchases ledger and sales ledger control accounts to include credit purchases and sales, receipts and payments, cash discounts, returns, irrecoverable debts, dishonoured cheques, interest on overdue accounts, contra entries, refunds, opening and closing balances (debit and credit within each account)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the impact of digital recording of business transactions on the preparation and use of control accounts",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Accounting procedures",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Capital and revenue expenditure and receipts",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the distinction between capital expenditure and revenue expenditure",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to account for capital expenditure and revenue expenditure",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the distinction between capital receipts and revenue receipts",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to account for capital receipts and revenue receipts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to identify and calculate the effect on profit of incorrect treatment",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to identify and calculate the effect on asset valuations of incorrect treatment",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "Accounting for depreciation and disposal of non-current assets",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the meaning of depreciation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the need to account for depreciation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to calculate depreciation using the straight-line, reducing balance and revaluation methods",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the appropriate methods of depreciation that can be applied to different types of non-current assets",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare journal entries and ledger accounts to record depreciation",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare journal entries to record the purchase and sale of non-current assets",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare ledger accounts to record the purchase and sale of non-current assets: non-current asset account, provision for depreciation account, and disposal of non-current asset account",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate profit or loss on disposal of a non-current asset",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "4.3",
+          "title": "Other payables and other receivables",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the importance of matching costs and revenues",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to apply the matching / accruals concepts by using accruals and pre-payments",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare journal entries and ledger accounts to record accrued and prepaid expenses",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare journal entries and ledger accounts to record accrued and prepaid incomes",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "4.4",
+          "title": "Irrecoverable debts and allowance for irrecoverable debts",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the meaning of irrecoverable debts and irrecoverable debts recovered",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare journal entries and ledger accounts to record irrecoverable debts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare journal entries and ledger accounts to record irrecoverable debts recovered",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the need for maintaining an allowance for irrecoverable debts",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare journal entries and ledger accounts to record the creation of, and adjustments to, an allowance for irrecoverable debts",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "4.5",
+          "title": "Valuation of inventory",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the valuation of inventory at the lower of cost and net realisable value",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to calculate the value of inventory",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the effect of an incorrect valuation of inventory on gross profit, profit for the year, equity and asset valuation",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Preparation of financial statements",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "Sole traders",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the advantages and disadvantages of operating as a sole trader",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how a sole trader can be a trading, service, manufacturing business or a combination of these",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the importance of preparing statements of profit or loss and statements of financial position",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare statements of profit or loss for trading, service, manufacturing businesses, or businesses which are a combination of these",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the importance of producing statements of financial position to record assets and liabilities on a specified date",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to define the content of a statement of financial position: non-current assets, intangible assets, current assets, current liabilities, non-current liabilities and capital",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the effect of a change in an account balance on other account balances in the financial statements",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare statements of financial position for trading, service, manufacturing businesses, or businesses which are a combination of these",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments for accumulated depreciation using the straight line, reducing balance and revaluation methods",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments for accrued and prepaid expenses and accrued and prepaid income",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments for irrecoverable debts and allowance for irrecoverable debts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments for drawings: goods and other assets taken by the owner, owner’s private expenses paid by the business",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "5.2",
+          "title": "Partnerships",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "how a partnership can be a trading, service, manufacturing business or a combination of these",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the advantages and disadvantages of forming a partnership",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the importance and contents of a partnership agreement",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the purpose of an appropriation account",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare statements of profit or loss, appropriation accounts and statements of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to record interest on partners’ loans, interest on capital, interest on drawings, partners’ salaries and the division of the balance of profit or loss",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments to financial statements as detailed in 5.1 (sole traders)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the uses of and differences between partners’ capital and current accounts",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare partners’ capital and current accounts in ledger account form and as part of a statement of financial position",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "5.3",
+          "title": "Limited companies",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "how a limited company can be a trading, service, manufacturing business or a combination of these",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the advantages and disadvantages of operating as a limited company",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the term ‘limited liability’",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the term ‘equity’",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the capital structure of a limited company comprising preference share capital, ordinary share capital, general reserve and retained earnings",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the features of ordinary share capital and loan capital (debentures)",
+              "commandWord": "the"
+            },
+            {
+              "statement": "share capital: issued, called-up, and paid-up",
+              "commandWord": "share"
+            },
+            {
+              "statement": "how to prepare statements of profit or loss, statements of changes in equity and statements of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments to financial statements as detailed in 5.1 (sole traders)",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "5.4",
+          "title": "Manufacturing accounts",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "direct and indirect costs",
+              "commandWord": "direct"
+            },
+            {
+              "statement": "direct material, direct labour, prime cost and factory overheads",
+              "commandWord": "direct"
+            },
+            {
+              "statement": "how to make adjustments for work in progress",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate factory cost of production",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare manufacturing accounts, statements of profit or loss and statements of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments to financial statements as detailed in 5.1 (sole traders)",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "5.5",
+          "title": "Clubs and societies",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "receipts and payments accounts and income and expenditure accounts",
+              "commandWord": "receipts"
+            },
+            {
+              "statement": "how to prepare receipts and payments accounts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare accounts for revenue-generating activities, e.g. refreshments, subscriptions",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare income and expenditure accounts and statements of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments to financial statements as detailed in 5.1 (sole traders)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to define and calculate the accumulated fund",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "5.6",
+          "title": "Incomplete records",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "why businesses keep different types of accounting records rather than using the full double entry system",
+              "commandWord": "why"
+            },
+            {
+              "statement": "the advantages and disadvantages of not maintaining a full set of accounting records",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare opening and closing statements of affairs",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate profit or loss for the year from changes in capital over time",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate sales, purchases, gross profit, trade receivables and trade payables and other figures from incomplete information",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare statements of profit or loss and statements of financial position from incomplete records",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments to financial statements as detailed in 5.1 (sole traders)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to apply the techniques of mark-up, margin and inventory turnover to arrive at missing figures",
+              "commandWord": "how"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Analysis and interpretation",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Calculation and understanding of accounting ratios",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "gross profit margin",
+              "commandWord": "gross"
+            },
+            {
+              "statement": "mark-up",
+              "commandWord": "mark-up"
+            },
+            {
+              "statement": "profit margin",
+              "commandWord": "profit"
+            },
+            {
+              "statement": "return on capital employed (ROCE)",
+              "commandWord": "return"
+            },
+            {
+              "statement": "current (working capital) ratio",
+              "commandWord": "current"
+            },
+            {
+              "statement": "acid test (liquid) ratio",
+              "commandWord": "acid"
+            },
+            {
+              "statement": "rate of inventory turnover (times)",
+              "commandWord": "rate"
+            },
+            {
+              "statement": "inventory turnover (days)",
+              "commandWord": "inventory"
+            },
+            {
+              "statement": "trade receivables turnover (days)",
+              "commandWord": "trade"
+            },
+            {
+              "statement": "trade payables turnover (days)",
+              "commandWord": "trade"
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Interpretation of accounting ratios",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "how to prepare and comment on statements showing comparison of results for different years",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to interpret the ratios calculated in 6.1",
+              "commandWord": "how"
+            },
+            {
+              "statement": "make suggestions and recommendations for improving profitability, liquidity and working capital",
+              "commandWord": "make"
+            },
+            {
+              "statement": "the gross profit margin and the profit margin as indicators of a business’s profitability",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how gross profit for the year can be affected by the valuation of inventory, sales quantity and changes in selling and purchasing prices",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how profit for the year can be affected by changes in gross profit, other income and expenses",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the reasons for the difference between cash and profit",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "6.3",
+          "title": "Inter-business comparison",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the factors that may affect the ratios of two businesses",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the problems of inter-business comparison",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "6.4",
+          "title": "Interested parties",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "owners",
+              "commandWord": "owners"
+            },
+            {
+              "statement": "managers",
+              "commandWord": "managers"
+            },
+            {
+              "statement": "employees",
+              "commandWord": "employees"
+            },
+            {
+              "statement": "banks",
+              "commandWord": "banks"
+            },
+            {
+              "statement": "investors and lenders",
+              "commandWord": "investors"
+            },
+            {
+              "statement": "suppliers",
+              "commandWord": "suppliers"
+            },
+            {
+              "statement": "customers",
+              "commandWord": "customers"
+            },
+            {
+              "statement": "governments / tax authorities",
+              "commandWord": "governments"
+            },
+            {
+              "statement": "club members",
+              "commandWord": "club"
+            },
+            {
+              "statement": "other interested parties, e.g. public and environmental bodies",
+              "commandWord": "other"
+            }
+          ]
+        },
+        {
+          "number": "6.5",
+          "title": "Limitations of accounting statements",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "historic cost",
+              "commandWord": "historic"
+            },
+            {
+              "statement": "application of accounting policies",
+              "commandWord": "application"
+            },
+            {
+              "statement": "non-financial aspects for example, skill of the workforce, location of the business, economic climate",
+              "commandWord": "non-financial"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Accounting concepts and modern practice",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Accounting concepts",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "business entity",
+              "commandWord": "business"
+            },
+            {
+              "statement": "consistency",
+              "commandWord": "consistency"
+            },
+            {
+              "statement": "duality",
+              "commandWord": "duality"
+            },
+            {
+              "statement": "going concern",
+              "commandWord": "going"
+            },
+            {
+              "statement": "historic cost",
+              "commandWord": "historic"
+            },
+            {
+              "statement": "matching / accruals",
+              "commandWord": "matching"
+            },
+            {
+              "statement": "materiality",
+              "commandWord": "materiality"
+            },
+            {
+              "statement": "money measurement",
+              "commandWord": "money"
+            },
+            {
+              "statement": "prudence",
+              "commandWord": "prudence"
+            },
+            {
+              "statement": "realisation",
+              "commandWord": "realisation"
+            }
+          ]
+        },
+        {
+          "number": "7.2",
+          "title": "Ethical considerations",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the need for an ethical framework in accounting",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the fundamental principles of: integrity objectivity professional competence and due care confidentiality professional behaviour",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the significance to stakeholders and society of applying an ethical framework",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "7.3",
+          "title": "Technology and sustainability",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "the use of digital applications for all or part of the accounting records",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the need to store accounting data safely and sustainably",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the risks associated with not storing accounting data safely and sustainably",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the different types of storage systems: manual, data storage devices, cloud services, other digital services",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages of the different types of storage systems",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
