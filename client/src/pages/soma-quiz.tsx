@@ -20,11 +20,13 @@ import { authFetch } from "@/lib/supabase";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import FlagQuestionButton from "@/components/student/FlagQuestionButton";
 import AutosaveIndicator from "@/components/student/AutosaveIndicator";
+import AssessmentStartScreen from "@/components/student/AssessmentStartScreen";
 import {
   buildAutosaveKey,
   readAutosave,
   writeAutosave,
   clearAutosave,
+  isResumableAutosave,
   type SaveStatus,
 } from "@/lib/quizAutosave";
 
@@ -289,6 +291,9 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [autosaveRestored, setAutosaveRestored] = useState(false);
+  // The student must click Start on the intro screen before the timer begins
+  // and autosave writes fire. Previews skip the intro entirely.
+  const [hasStarted, setHasStarted] = useState<boolean>(isPreview);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedToastShownRef = useRef(false);
 
@@ -332,23 +337,31 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     if (!autosaveKey || autosaveRestored) return;
     const restored = readAutosave(autosaveKey);
     if (restored) {
-      if (restored.answers && Object.keys(restored.answers).length > 0) {
+      const answerCount = Object.keys(restored.answers || {}).length;
+      const isResuming = isResumableAutosave(restored);
+      if (answerCount > 0) {
         setAnswers(restored.answers);
       }
       if (Number.isFinite(restored.currentIndex) && restored.currentIndex >= 0) {
         setCurrentIndex(restored.currentIndex);
       }
-      if (restored.startedAt) {
+      if (restored.startedAt && isResuming) {
+        // Only carry over the start time when the student is mid-attempt.
+        // An empty shell left by a previous visit that never started shouldn't
+        // silently eat into the time limit.
         setQuizStartedAt(restored.startedAt);
       }
-      setLastSavedAt(restored.savedAt);
-      setSaveStatus("saved");
-      if (!savedToastShownRef.current && (Object.keys(restored.answers || {}).length > 0 || restored.currentIndex > 0)) {
-        savedToastShownRef.current = true;
-        toast({
-          title: "Welcome back",
-          description: "We restored your progress from where you left off.",
-        });
+      if (isResuming) {
+        setLastSavedAt(restored.savedAt);
+        setSaveStatus("saved");
+        setHasStarted(true);
+        if (!savedToastShownRef.current) {
+          savedToastShownRef.current = true;
+          toast({
+            title: "Welcome back",
+            description: "We restored your progress from where you left off.",
+          });
+        }
       }
     }
     setAutosaveRestored(true);
@@ -391,7 +404,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   // refresh or resume doesn't silently hand the student extra time.
   useEffect(() => {
     if (isPreview || !quiz?.timeLimitMinutes || submissionResult) return;
-    if (!autosaveRestored) return; // wait for startedAt to be restored
+    if (!autosaveRestored || !hasStarted) return; // wait for student to click Start
     const totalSeconds = quiz.timeLimitMinutes * 60;
     const elapsedSeconds = Math.max(
       0,
@@ -439,9 +452,10 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
 
   // Debounced autosave: whenever answers or the current question change we
   // schedule a write a moment later so rapid taps don't hit localStorage on
-  // every keystroke.
+  // every keystroke. Gated on hasStarted so the intro screen doesn't spawn
+  // an empty autosave record.
   useEffect(() => {
-    if (!autosaveKey || !autosaveRestored || submissionResult) return;
+    if (!autosaveKey || !autosaveRestored || !hasStarted || submissionResult) return;
     setSaveStatus("saving");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -463,7 +477,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         saveTimerRef.current = null;
       }
     };
-  }, [answers, currentIndex, quizStartedAt, autosaveKey, autosaveRestored, submissionResult]);
+  }, [answers, currentIndex, quizStartedAt, autosaveKey, autosaveRestored, hasStarted, submissionResult]);
 
   const handleSelectAnswer = (questionId: number, option: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: option }));
@@ -565,6 +579,22 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
 
   if (submissionResult) {
     return <ResultsView quizTitle={effectiveQuiz.title} totalScore={submissionResult.score} maxPossibleScore={submissionResult.maxScore} />;
+  }
+
+  // Pre-quiz start screen — only on a fresh attempt. Resumes set hasStarted
+  // during the autosave-restore effect so they bypass this entirely.
+  if (!isPreview && autosaveRestored && !hasStarted) {
+    return (
+      <AssessmentStartScreen
+        quiz={effectiveQuiz}
+        questionCount={questions.length}
+        totalMarks={totalMarks}
+        onStart={() => {
+          setQuizStartedAt(new Date().toISOString());
+          setHasStarted(true);
+        }}
+      />
+    );
   }
 
   if (showSummary) {

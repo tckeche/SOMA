@@ -89,6 +89,18 @@ export function clearAutosave(key: string | null): void {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
+// A restored autosave counts as an in-progress resume when the student has
+// actually made progress — an answer picked or a later question viewed.
+// An empty shell (no answers, still on question 1) is not a resume; the
+// student should see the pre-quiz start screen instead so the timer only
+// begins when they explicitly choose to start.
+export function isResumableAutosave(payload: QuizAutosavePayload | null): boolean {
+  if (!payload) return false;
+  const answerCount = payload.answers ? Object.keys(payload.answers).length : 0;
+  const currentIndex = Number.isFinite(payload.currentIndex) ? payload.currentIndex : 0;
+  return answerCount > 0 || currentIndex > 0;
+}
+
 // Formats a "Saved 12s ago" / "Saved 3m ago" label given a savedAt ISO string
 // and a reference "now" timestamp in ms.
 export function formatSavedLabel(savedAt: string | null, now: number): string {

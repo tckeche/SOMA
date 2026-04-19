@@ -5,6 +5,7 @@ import {
   writeAutosave,
   clearAutosave,
   formatSavedLabel,
+  isResumableAutosave,
   QUIZ_AUTOSAVE_VERSION,
 } from "../client/src/lib/quizAutosave";
 
@@ -101,6 +102,37 @@ describe("writeAutosave / readAutosave", () => {
     expect(readAutosave(key)).not.toBeNull();
     clearAutosave(key);
     expect(readAutosave(key)).toBeNull();
+  });
+});
+
+describe("isResumableAutosave", () => {
+  const base = {
+    version: QUIZ_AUTOSAVE_VERSION,
+    answers: {} as Record<number, string>,
+    currentIndex: 0,
+    startedAt: "2026-04-19T00:00:00.000Z",
+    savedAt: "2026-04-19T00:00:00.000Z",
+  };
+
+  it("returns false for null", () => {
+    expect(isResumableAutosave(null)).toBe(false);
+  });
+
+  it("returns false for an empty shell (no answers, on question 1)", () => {
+    expect(isResumableAutosave(base)).toBe(false);
+  });
+
+  it("returns true when at least one answer is present", () => {
+    expect(isResumableAutosave({ ...base, answers: { 1: "A" } })).toBe(true);
+  });
+
+  it("returns true when the student has moved past question 1", () => {
+    expect(isResumableAutosave({ ...base, currentIndex: 1 })).toBe(true);
+  });
+
+  it("handles a non-finite currentIndex as zero", () => {
+    expect(isResumableAutosave({ ...base, currentIndex: NaN as unknown as number }))
+      .toBe(false);
   });
 });
 
