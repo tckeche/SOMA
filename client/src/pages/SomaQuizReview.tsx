@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { authFetch } from "@/lib/supabase";
@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb,
+  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check,
 } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import ReportPdfView, { type ReportPdfData } from "@/components/student/ReportPdfView";
 
 const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-6 py-3 h-12 rounded-xl text-base font-semibold border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all cursor-pointer";
 
@@ -28,8 +29,17 @@ interface ReviewReport {
   score: number;
   status: string;
   answersJson: Record<string, string> | null;
+  aiFeedbackHtml: string | null;
+  completedAt: string | null;
   createdAt: string;
-  quiz: { id: number; title: string; topic: string | null };
+  quiz: {
+    id: number;
+    title: string;
+    topic: string | null;
+    subject?: string | null;
+    level?: string | null;
+    syllabus?: string | null;
+  };
 }
 
 interface ReviewData {
@@ -39,9 +49,12 @@ interface ReviewData {
 
 export default function SomaQuizReview() {
   const reportRef = useRef<HTMLDivElement>(null);
+  const pdfRef = useRef<HTMLDivElement>(null);
   const params = useParams<{ reportId: string }>();
   const [, setLocation] = useLocation();
   const reportId = parseInt(params.reportId || "0");
+  const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const { data, isLoading, error } = useQuery<ReviewData>({
     queryKey: ["/api/soma/reports", reportId, "review"],
@@ -119,16 +132,60 @@ export default function SomaQuizReview() {
   const { report, questions } = data;
   const percentage = totalMarks > 0 ? Math.round((report.score / totalMarks) * 100) : 0;
 
+  const pdfData: ReportPdfData = {
+    title: report.quiz.title,
+    subject: report.quiz.subject ?? null,
+    level: report.quiz.level ?? null,
+    syllabus: report.quiz.syllabus ?? null,
+    studentName: report.studentName,
+    score: report.score,
+    totalMarks,
+    completedAt: report.completedAt ?? report.createdAt,
+    aiFeedbackHtml: report.aiFeedbackHtml ?? null,
+    questions,
+    answers: studentAnswers,
+  };
+
+  const slug = (s: string) => s.replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "report";
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  const filename = `${slug(report.quiz.title)}-${slug(report.studentName)}-${dateStamp}.pdf`;
+
   const downloadPdf = async () => {
-    if (!reportRef.current) return;
-    const html2pdf = (await import("html2pdf.js")).default;
-    await html2pdf().set({
-      margin: 10,
-      filename: `${report.quiz.title.replace(/\s+/g, "-")}-report.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-    }).from(reportRef.current).save();
+    if (!pdfRef.current || downloading) return;
+    setDownloading(true);
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      await html2pdf().set({
+        margin: [12, 12, 12, 12],
+        filename,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      }).from(pdfRef.current).save();
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const copySummary = async () => {
+    const pct = totalMarks > 0 ? Math.round((report.score / totalMarks) * 100) : 0;
+    const lines: string[] = [];
+    lines.push(`soma assessment report`);
+    lines.push(`${report.quiz.title}`);
+    const metaBits = [report.quiz.subject, report.quiz.level, report.quiz.syllabus].filter(Boolean);
+    if (metaBits.length) lines.push(metaBits.join(" | "));
+    lines.push(`Student: ${report.studentName}`);
+    lines.push(`Score: ${report.score}/${totalMarks} (${pct}%) across ${questions.length} questions`);
+    const correctCount = questions.filter((q) => studentAnswers[String(q.id)] === q.correctAnswer).length;
+    const skipped = questions.filter((q) => !studentAnswers[String(q.id)]).length;
+    lines.push(`Correct: ${correctCount} | Skipped: ${skipped} | Incorrect: ${questions.length - correctCount - skipped}`);
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
   };
 
   useEffect(() => {
@@ -145,7 +202,7 @@ export default function SomaQuizReview() {
   return (
     <div className="min-h-screen bg-background px-4 py-8">
       <div className="max-w-3xl mx-auto" ref={reportRef}>
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
           <Button className={STANDARD_ACTION_BUTTON_CLASS} data-testid="button-review-back" onClick={handleBack}>
               <ArrowLeft className="w-5 h-5" />
               Back
@@ -154,10 +211,25 @@ export default function SomaQuizReview() {
             <BookOpen className="w-5 h-5" />
             Review Mode
           </span>
-          <Button className={STANDARD_ACTION_BUTTON_CLASS} onClick={downloadPdf} data-testid="button-download-report">
-            <Award className="w-5 h-5" />
-            Download Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              className={STANDARD_ACTION_BUTTON_CLASS}
+              onClick={copySummary}
+              data-testid="button-copy-summary"
+            >
+              {copied ? <Check className="w-5 h-5" /> : <ClipboardCopy className="w-5 h-5" />}
+              {copied ? "Copied" : "Copy Summary"}
+            </Button>
+            <Button
+              className={STANDARD_ACTION_BUTTON_CLASS}
+              onClick={downloadPdf}
+              disabled={downloading}
+              data-testid="button-download-report"
+            >
+              {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Award className="w-5 h-5" />}
+              {downloading ? "Preparing…" : "Download PDF"}
+            </Button>
+          </div>
         </div>
 
         <div className="glass-card p-8 mb-6">
@@ -271,7 +343,7 @@ export default function SomaQuizReview() {
                       isCorrect ? "text-blue-400" : "text-amber-400"
                     }`}>
                       <Lightbulb className="w-4 h-4" />
-                      SOMA Tutor Insights
+                      soma explanation
                     </p>
                     <div className="text-sm text-slate-200 leading-relaxed">
                       <MarkdownRenderer content={q.explanation} />
@@ -291,6 +363,20 @@ export default function SomaQuizReview() {
             </Button>
           </Link>
         </div>
+      </div>
+
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: "-10000px",
+          top: 0,
+          width: "780px",
+          pointerEvents: "none",
+        }}
+        data-testid="pdf-print-root"
+      >
+        <ReportPdfView ref={pdfRef} data={pdfData} />
       </div>
     </div>
   );
