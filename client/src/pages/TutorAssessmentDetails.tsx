@@ -7,7 +7,7 @@ import type { SomaQuiz } from "@shared/schema";
 import {
   ArrowLeft, BookOpen, Users, Trash2, Plus, FileText,
   Loader2, Check, X, MoreVertical, Archive, ArchiveX,
-  CalendarDays, Clock,
+  CalendarDays, Clock, Search, Mail,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -122,6 +122,7 @@ export default function TutorAssessmentDetails() {
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   const [newDueDate, setNewDueDate] = useState("");
   const [assignDueDate, setAssignDueDate] = useState("");
+  const [assignSearch, setAssignSearch] = useState("");
   const { toast } = useToast();
 
   const { userId } = useSupabaseSession();
@@ -581,49 +582,107 @@ export default function TutorAssessmentDetails() {
 
       {/* Add Students Modal */}
       {showAssignModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowAssignModal(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowAssignModal(false); setAssignSearch(""); }}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
               <h3 className="text-lg font-bold text-slate-200">Add Students to Assessment</h3>
-              <button onClick={() => setShowAssignModal(false)} className="text-slate-400 hover:text-slate-300 p-1">
+              <button onClick={() => { setShowAssignModal(false); setAssignSearch(""); }} aria-label="Close dialog" className="text-slate-400 hover:text-slate-300 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 mb-4">Select from your adopted students to assign this assessment:</p>
+            <p className="text-xs text-slate-400 mb-3">Search your students and select who should receive this assessment:</p>
             {availableForAssign.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">
                 {adoptedStudents.length === 0
-                  ? "You have no adopted students. Go to the Students tab to adopt students first."
-                  : "All your adopted students are already assigned to this quiz."}
+                  ? "You don't have any students yet. Go to the Students page to add students first."
+                  : "All your students are already assigned to this assessment."}
               </p>
             ) : (
               <>
-                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                  {availableForAssign.map((student) => (
-                    <button
-                      key={student.id}
-                      onClick={() => toggleStudentSelection(student.id)}
-                      className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
-                        selectedStudentIds.has(student.id)
-                          ? "bg-emerald-500/20 border border-emerald-500/40"
-                          : "bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${
-                        selectedStudentIds.has(student.id) ? "bg-emerald-500 border-emerald-500" : "border-slate-600"
-                      }`}>
-                        {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${getAvatarColor(student.id)}`}>
-                        {getInitials(student.displayName || student.email)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-200">{student.displayName || "Student"}</p>
-                        <p className="text-xs text-slate-400">{student.email}</p>
-                      </div>
-                    </button>
-                  ))}
+                <div className="relative mb-3">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={assignSearch}
+                    onChange={(e) => setAssignSearch(e.target.value)}
+                    placeholder="Search by name or email..."
+                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/40"
+                    data-testid="input-search-assign-details"
+                    autoFocus
+                  />
                 </div>
+                {(() => {
+                  const q = assignSearch.trim().toLowerCase();
+                  const filtered = q
+                    ? availableForAssign.filter((s) =>
+                        (s.displayName || "").toLowerCase().includes(q) ||
+                        (s.email || "").toLowerCase().includes(q),
+                      )
+                    : availableForAssign;
+                  const allVisibleSelected =
+                    filtered.length > 0 && filtered.every((s) => selectedStudentIds.has(s.id));
+                  const toggleAllVisible = () => {
+                    setSelectedStudentIds((prev) => {
+                      const next = new Set(prev);
+                      if (allVisibleSelected) filtered.forEach((s) => next.delete(s.id));
+                      else filtered.forEach((s) => next.add(s.id));
+                      return next;
+                    });
+                  };
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-2 text-[11px] text-slate-500 px-1">
+                        <span>
+                          {filtered.length} shown · {selectedStudentIds.size} selected
+                        </span>
+                        {filtered.length > 0 && (
+                          <button
+                            onClick={toggleAllVisible}
+                            className="text-emerald-300 hover:text-emerald-200 font-medium"
+                            data-testid="button-select-all-assign-details"
+                          >
+                            {allVisibleSelected ? "Clear selection" : "Select all visible"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-2 max-h-[45vh] overflow-y-auto">
+                        {filtered.length === 0 ? (
+                          <p className="text-xs text-slate-500 text-center py-6">No matches for "{assignSearch}"</p>
+                        ) : filtered.map((student) => (
+                          <button
+                            key={student.id}
+                            onClick={() => toggleStudentSelection(student.id)}
+                            className={`w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
+                              selectedStudentIds.has(student.id)
+                                ? "bg-emerald-500/20 border-2 border-emerald-500/60"
+                                : "bg-slate-800/40 border-2 border-slate-700/50 hover:bg-slate-800/60"
+                            }`}
+                            data-testid={`assign-student-details-${student.id}`}
+                            aria-pressed={selectedStudentIds.has(student.id)}
+                          >
+                            <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                              selectedStudentIds.has(student.id) ? "bg-emerald-500 border-emerald-500" : "border-slate-500"
+                            }`}>
+                              {selectedStudentIds.has(student.id) && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
+                            </div>
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${getAvatarColor(student.id)}`}>
+                              {getInitials(student.displayName || student.email)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-100 truncate">{student.displayName || "Student"}</p>
+                              {student.email && (
+                                <p className="flex items-center gap-1 text-[11px] text-slate-400 truncate">
+                                  <Mail className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{student.email}</span>
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="mt-4 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-slate-300 mb-2">
                     <Clock className="w-3.5 h-3.5 text-violet-400" />

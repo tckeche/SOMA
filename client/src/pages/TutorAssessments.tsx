@@ -9,7 +9,7 @@ import {
   LogOut, Users, BookOpen, Plus, X, ChevronDown, ChevronUp,
   Loader2, Check, LayoutDashboard, Clock, Award, Timer,
   FileText, Eye, UserPlus, UserMinus, Trash2, AlertTriangle,
-  ClockArrowUp, Pencil,
+  ClockArrowUp, Pencil, Search,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { useToast } from "@/hooks/use-toast";
@@ -816,19 +816,21 @@ export default function TutorAssessments() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 mb-3">Select from your adopted students to assign this assessment:</p>
+            <p className="text-xs text-slate-400 mb-3">Search your students and select who should receive this assessment:</p>
             {adoptedStudents.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">You have no adopted students. Adopt students first.</p>
+              <p className="text-sm text-slate-400 text-center py-8">You don't have any students yet. Go to the Students page to add students first.</p>
             ) : (
               <>
-                <div className="mb-3">
+                <div className="relative mb-3">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                   <input
                     type="text"
                     value={assignSearch}
                     onChange={(e) => setAssignSearch(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 px-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/40"
                     data-testid="input-search-assign"
+                    autoFocus
                   />
                 </div>
                 {(() => {
