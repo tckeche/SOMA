@@ -68,6 +68,10 @@ const port = parseInt(process.env.PORT || "5000", 10);
       initStorage();
       const { applyBootstrapMigrations } = await import("./bootstrap");
       await applyBootstrapMigrations();
+      // Syllabus intelligence seed — idempotent. Failures are logged and
+      // ignored so the server still boots if the seed dataset drifts.
+      const { runCurriculumSeed } = await import("./scripts/seedCurriculum");
+      await runCurriculumSeed({ quiet: false });
     }
 
     await registerRoutes(httpServer, app);

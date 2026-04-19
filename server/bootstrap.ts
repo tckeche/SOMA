@@ -47,6 +47,32 @@ const BOOTSTRAP_QUERIES = [
   `CREATE TABLE IF NOT EXISTS syllabus_topic_inventory (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, description TEXT, extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   // Multi-topic selection: a quiz can cover one or more curriculum topics.
   `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS topics JSONB NOT NULL DEFAULT '[]'::jsonb`,
+
+  // ── Syllabus Intelligence Layer ──────────────────────────────────────────
+  // Body-agnostic tables powering the Cambridge assessment builder and later
+  // learner diagnosis. See shared/schema.ts for schema docs.
+  `CREATE TABLE IF NOT EXISTS examining_bodies (id SERIAL PRIMARY KEY, code TEXT NOT NULL, name TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT true, sort_order INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS examining_bodies_code_idx ON examining_bodies(code)`,
+  `CREATE TABLE IF NOT EXISTS curriculum_levels (id SERIAL PRIMARY KEY, body_id INTEGER NOT NULL REFERENCES examining_bodies(id) ON DELETE CASCADE, code TEXT NOT NULL, name TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS curriculum_levels_body_code_idx ON curriculum_levels(body_id, code)`,
+  `CREATE TABLE IF NOT EXISTS curriculum_subjects (id SERIAL PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, description TEXT)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS curriculum_subjects_slug_idx ON curriculum_subjects(slug)`,
+  `CREATE TABLE IF NOT EXISTS syllabi (id SERIAL PRIMARY KEY, body_id INTEGER NOT NULL REFERENCES examining_bodies(id) ON DELETE CASCADE, subject_id INTEGER NOT NULL REFERENCES curriculum_subjects(id) ON DELETE CASCADE, code TEXT NOT NULL, title TEXT NOT NULL, years_valid TEXT, level_id INTEGER REFERENCES curriculum_levels(id) ON DELETE SET NULL, document_id INTEGER REFERENCES syllabus_documents(id) ON DELETE SET NULL, source_path TEXT, notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS syllabi_body_code_idx ON syllabi(body_id, code)`,
+  `CREATE TABLE IF NOT EXISTS papers (id SERIAL PRIMARY KEY, syllabus_id INTEGER NOT NULL REFERENCES syllabi(id) ON DELETE CASCADE, level_id INTEGER NOT NULL REFERENCES curriculum_levels(id) ON DELETE CASCADE, paper_number TEXT NOT NULL, code TEXT, title TEXT NOT NULL, duration_minutes INTEGER, marks INTEGER, description TEXT, sort_order INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS papers_syllabus_number_idx ON papers(syllabus_id, paper_number)`,
+  `CREATE TABLE IF NOT EXISTS topics (id SERIAL PRIMARY KEY, syllabus_id INTEGER NOT NULL REFERENCES syllabi(id) ON DELETE CASCADE, code TEXT, name TEXT NOT NULL, description TEXT, sort_order INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS topics_syllabus_name_idx ON topics(syllabus_id, name)`,
+  `CREATE TABLE IF NOT EXISTS subtopics (id SERIAL PRIMARY KEY, topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE, code TEXT, name TEXT NOT NULL, description TEXT, learning_requirements JSONB NOT NULL DEFAULT '[]'::jsonb, sort_order INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS subtopics_topic_name_idx ON subtopics(topic_id, name)`,
+  `CREATE TABLE IF NOT EXISTS competencies (id SERIAL PRIMARY KEY, code TEXT NOT NULL, name TEXT NOT NULL, description TEXT, sort_order INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS competencies_code_idx ON competencies(code)`,
+  `CREATE TABLE IF NOT EXISTS topic_competencies (id SERIAL PRIMARY KEY, topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE, competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE, weight INTEGER NOT NULL DEFAULT 1)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS topic_competencies_unique_idx ON topic_competencies(topic_id, competency_id)`,
+  `CREATE TABLE IF NOT EXISTS subtopic_competencies (id SERIAL PRIMARY KEY, subtopic_id INTEGER NOT NULL REFERENCES subtopics(id) ON DELETE CASCADE, competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS subtopic_competencies_unique_idx ON subtopic_competencies(subtopic_id, competency_id)`,
+  `CREATE TABLE IF NOT EXISTS paper_topics (id SERIAL PRIMARY KEY, paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE, topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS paper_topics_unique_idx ON paper_topics(paper_id, topic_id)`,
 ] as const;
 
 function logBootstrap(message: string) {

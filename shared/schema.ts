@@ -327,6 +327,165 @@ export const flaggedQuestions = pgTable("flagged_questions", {
   uniqueIndex("flagged_question_unique_idx").on(table.studentId, table.questionId),
 ]);
 
+// ────────────────────────────────────────────────────────────────────────────
+// Syllabus Intelligence Layer
+//
+// These tables power the tutor assessment builder and future learner
+// diagnosis. They are intentionally body-agnostic: Cambridge is the first
+// examining body seeded, but Edexcel/AQA/OCR/IB can be added as data changes
+// without schema work.
+//
+//   examining_bodies       – Cambridge, Edexcel, …
+//   levels                 – IGCSE / AS / A2 (per-body, because bodies differ)
+//   subjects               – canonical subject catalogue (Mathematics, …)
+//   syllabi                – one row per issued syllabus (code, years, pdf)
+//   papers                 – paper structure; each paper belongs to a LEVEL
+//                            so AS vs A2 is split here, even when they share
+//                            a syllabus code (e.g. 9709)
+//   topics                 – top-level syllabus topics (shown to tutors)
+//   subtopics              – fine-grained syllabus subtopics (hidden from UI
+//                            but retrieved by the copilot for grounding)
+//   competencies           – canonical skill tags (knowledge, application…)
+//   topic_competencies     – which competencies a topic weights (many-to-many)
+//   subtopic_competencies  – fine-grained mapping for diagnosis
+//   paper_topics           – which topics each paper examines (drives the
+//                            AS/A2 filter in the builder)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const examiningBodies = pgTable("examining_bodies", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("examining_bodies_code_idx").on(table.code),
+]);
+
+export const curriculumLevels = pgTable("curriculum_levels", {
+  id: serial("id").primaryKey(),
+  bodyId: integer("body_id").notNull().references(() => examiningBodies.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),          // IGCSE, AS, A2
+  name: text("name").notNull(),          // "IGCSE", "AS Level", "A2 Level"
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [
+  uniqueIndex("curriculum_levels_body_code_idx").on(table.bodyId, table.code),
+]);
+
+export const curriculumSubjects = pgTable("curriculum_subjects", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),               // "Mathematics"
+  slug: text("slug").notNull(),               // "mathematics"
+  description: text("description"),
+}, (table) => [
+  uniqueIndex("curriculum_subjects_slug_idx").on(table.slug),
+]);
+
+export const syllabi = pgTable("syllabi", {
+  id: serial("id").primaryKey(),
+  bodyId: integer("body_id").notNull().references(() => examiningBodies.id, { onDelete: "cascade" }),
+  subjectId: integer("subject_id").notNull().references(() => curriculumSubjects.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),               // e.g. "9709", "0580"
+  title: text("title").notNull(),             // e.g. "Cambridge International AS & A Level Mathematics"
+  yearsValid: text("years_valid"),            // e.g. "2028-2030"
+  // If the syllabus spans multiple levels (AS + A2 on one code), leave levelId
+  // null and derive the split via papers.levelId. IGCSE uses its own syllabi
+  // and sets levelId to the IGCSE level row.
+  levelId: integer("level_id").references(() => curriculumLevels.id, { onDelete: "set null" }),
+  documentId: integer("document_id").references(() => syllabusDocuments.id, { onDelete: "set null" }),
+  sourcePath: text("source_path"),            // relative path to the PDF
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("syllabi_body_code_idx").on(table.bodyId, table.code),
+]);
+
+export const papers = pgTable("papers", {
+  id: serial("id").primaryKey(),
+  syllabusId: integer("syllabus_id").notNull().references(() => syllabi.id, { onDelete: "cascade" }),
+  levelId: integer("level_id").notNull().references(() => curriculumLevels.id, { onDelete: "cascade" }),
+  paperNumber: text("paper_number").notNull(),  // "1", "3", "4", etc.
+  code: text("code"),                           // e.g. "9709/1", "0580/2"
+  title: text("title").notNull(),               // "Pure Mathematics 1"
+  durationMinutes: integer("duration_minutes"),
+  marks: integer("marks"),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [
+  uniqueIndex("papers_syllabus_number_idx").on(table.syllabusId, table.paperNumber),
+]);
+
+export const topics = pgTable("topics", {
+  id: serial("id").primaryKey(),
+  syllabusId: integer("syllabus_id").notNull().references(() => syllabi.id, { onDelete: "cascade" }),
+  code: text("code"),                      // optional, syllabus-specific (e.g. "1.1")
+  name: text("name").notNull(),            // "Quadratics"
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [
+  uniqueIndex("topics_syllabus_name_idx").on(table.syllabusId, table.name),
+]);
+
+export const subtopics = pgTable("subtopics", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  code: text("code"),
+  name: text("name").notNull(),
+  description: text("description"),
+  learningRequirements: jsonb("learning_requirements").$type<string[]>().notNull().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [
+  uniqueIndex("subtopics_topic_name_idx").on(table.topicId, table.name),
+]);
+
+export const competencies = pgTable("competencies", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),           // "knowledge", "application", …
+  name: text("name").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [
+  uniqueIndex("competencies_code_idx").on(table.code),
+]);
+
+export const topicCompetencies = pgTable("topic_competencies", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  competencyId: integer("competency_id").notNull().references(() => competencies.id, { onDelete: "cascade" }),
+  weight: integer("weight").notNull().default(1),   // 1..5, used later for diagnosis
+}, (table) => [
+  uniqueIndex("topic_competencies_unique_idx").on(table.topicId, table.competencyId),
+]);
+
+export const subtopicCompetencies = pgTable("subtopic_competencies", {
+  id: serial("id").primaryKey(),
+  subtopicId: integer("subtopic_id").notNull().references(() => subtopics.id, { onDelete: "cascade" }),
+  competencyId: integer("competency_id").notNull().references(() => competencies.id, { onDelete: "cascade" }),
+}, (table) => [
+  uniqueIndex("subtopic_competencies_unique_idx").on(table.subtopicId, table.competencyId),
+]);
+
+export const paperTopics = pgTable("paper_topics", {
+  id: serial("id").primaryKey(),
+  paperId: integer("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+}, (table) => [
+  uniqueIndex("paper_topics_unique_idx").on(table.paperId, table.topicId),
+]);
+
+export type ExaminingBody = typeof examiningBodies.$inferSelect;
+export type CurriculumLevelRow = typeof curriculumLevels.$inferSelect;
+export type CurriculumSubject = typeof curriculumSubjects.$inferSelect;
+export type Syllabus = typeof syllabi.$inferSelect;
+export type Paper = typeof papers.$inferSelect;
+export type Topic = typeof topics.$inferSelect;
+export type Subtopic = typeof subtopics.$inferSelect;
+export type Competency = typeof competencies.$inferSelect;
+export type TopicCompetency = typeof topicCompetencies.$inferSelect;
+export type SubtopicCompetency = typeof subtopicCompetencies.$inferSelect;
+export type PaperTopic = typeof paperTopics.$inferSelect;
+
 // Structured topic inventory extracted from syllabus documents via AI
 export const syllabusTopicInventory = pgTable("syllabus_topic_inventory", {
   id: serial("id").primaryKey(),

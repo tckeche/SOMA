@@ -14,7 +14,8 @@
     "test:coverage": "vitest run --config tests/vitest.config.ts --coverage",
     "db:migrate": "drizzle-kit push",
     "db:check": "drizzle-kit check",
-    "db:backfill-soma-authors": "tsx script/backfillSomaQuizAuthors.ts"
+    "db:backfill-soma-authors": "tsx script/backfillSomaQuizAuthors.ts",
+    "curriculum:seed": "tsx server/scripts/seedCurriculum.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
