@@ -3019,12 +3019,13 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
 
-      const { title, syllabus, level, subject, timeLimitMinutes } = req.body;
+      const { title, syllabus, level, subject, topic, timeLimitMinutes } = req.body;
       const updates: Record<string, string | number | null> = {};
       if (title !== undefined) updates.title = title;
       if (syllabus !== undefined) updates.syllabus = syllabus || null;
       if (level !== undefined) updates.level = level || null;
       if (subject !== undefined) updates.subject = subject || null;
+      if (topic !== undefined) updates.topic = (topic && String(topic).trim()) || (title ?? existing.title);
       if (timeLimitMinutes !== undefined) updates.timeLimitMinutes = Number(timeLimitMinutes) || 60;
 
       const updated = await storage.updateSomaQuiz(quizId, updates);
@@ -3120,6 +3121,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         board: document.board,
         level: document.level,
         syllabusCode: document.syllabusCode,
+        subject: document.subject,
         filename: document.filename,
         uploadedAt: document.uploadedAt,
       })));

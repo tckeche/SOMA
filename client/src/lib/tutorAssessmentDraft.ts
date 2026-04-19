@@ -19,6 +19,9 @@ export interface TutorAssessmentDraft {
   subject: string;
   level: string;
   syllabus: string;
+  // Optional: topic lifted from an uploaded syllabus's topic inventory. Older
+  // drafts predate this field and will deserialise with an empty string.
+  topic: string;
   timeLimitMinutes: number;
   prompt: string;
   savedAt: string;
@@ -44,6 +47,7 @@ export function readTutorDraft(key: string | null): TutorAssessmentDraft | null 
       subject: typeof parsed.subject === "string" ? parsed.subject : "",
       level: typeof parsed.level === "string" ? parsed.level : "",
       syllabus: typeof parsed.syllabus === "string" ? parsed.syllabus : "",
+      topic: typeof parsed.topic === "string" ? parsed.topic : "",
       timeLimitMinutes: Number.isFinite(parsed.timeLimitMinutes)
         ? Number(parsed.timeLimitMinutes)
         : 60,
@@ -90,6 +94,7 @@ export function isMeaningfulDraft(draft: TutorAssessmentDraft | null): boolean {
   if (draft.subject.trim()) return true;
   if (draft.level.trim()) return true;
   if (draft.syllabus.trim()) return true;
+  if (draft.topic.trim()) return true;
   if (draft.prompt.trim()) return true;
   return false;
 }

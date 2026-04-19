@@ -50,6 +50,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
       subject: "Mathematics",
       level: "IGCSE",
       syllabus: "Cambridge",
+      topic: "Quadratics",
       timeLimitMinutes: 45,
       prompt: "10 quadratic MCQs",
     });
@@ -62,6 +63,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
     expect(loaded!.subject).toBe("Mathematics");
     expect(loaded!.level).toBe("IGCSE");
     expect(loaded!.syllabus).toBe("Cambridge");
+    expect(loaded!.topic).toBe("Quadratics");
     expect(loaded!.timeLimitMinutes).toBe(45);
     expect(loaded!.prompt).toBe("10 quadratic MCQs");
     expect(typeof loaded!.savedAt).toBe("string");
@@ -99,6 +101,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
     expect(loaded!.subject).toBe("");
     expect(loaded!.level).toBe("");
     expect(loaded!.syllabus).toBe("");
+    expect(loaded!.topic).toBe("");
     expect(loaded!.timeLimitMinutes).toBe(60);
     expect(loaded!.prompt).toBe("");
   });
@@ -109,7 +112,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
       setItem: () => { const e: any = new Error("quota"); e.name = "QuotaExceededError"; throw e; },
     };
     const result = writeTutorDraft(key, {
-      title: "t", subject: "", level: "", syllabus: "", timeLimitMinutes: 60, prompt: "",
+      title: "t", subject: "", level: "", syllabus: "", topic: "", timeLimitMinutes: 60, prompt: "",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("QuotaExceededError");
@@ -117,14 +120,14 @@ describe("writeTutorDraft / readTutorDraft", () => {
 
   it("returns failure for a null key", () => {
     const result = writeTutorDraft(null, {
-      title: "t", subject: "", level: "", syllabus: "", timeLimitMinutes: 60, prompt: "",
+      title: "t", subject: "", level: "", syllabus: "", topic: "", timeLimitMinutes: 60, prompt: "",
     });
     expect(result.ok).toBe(false);
   });
 
   it("clearTutorDraft removes the entry", () => {
     writeTutorDraft(key, {
-      title: "t", subject: "", level: "", syllabus: "", timeLimitMinutes: 60, prompt: "",
+      title: "t", subject: "", level: "", syllabus: "", topic: "", timeLimitMinutes: 60, prompt: "",
     });
     expect(readTutorDraft(key)).not.toBeNull();
     clearTutorDraft(key);
@@ -139,7 +142,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
 describe("isMeaningfulDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
-    title: "", subject: "", level: "", syllabus: "",
+    title: "", subject: "", level: "", syllabus: "", topic: "",
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
@@ -160,6 +163,7 @@ describe("isMeaningfulDraft", () => {
     ["subject", "Math"],
     ["level", "IGCSE"],
     ["syllabus", "Cambridge"],
+    ["topic", "Quadratics"],
     ["prompt", "Generate 5"],
   ])("returns true when %s has content", (field, val) => {
     expect(isMeaningfulDraft({ ...base, [field]: val })).toBe(true);
@@ -169,7 +173,7 @@ describe("isMeaningfulDraft", () => {
 describe("describeDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
-    title: "", subject: "", level: "", syllabus: "",
+    title: "", subject: "", level: "", syllabus: "", topic: "",
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
