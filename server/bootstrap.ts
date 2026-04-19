@@ -45,6 +45,8 @@ const BOOTSTRAP_QUERIES = [
   // PR #53: new tables for examiner misconceptions + syllabus topic inventory (TF-IDF retrieval)
   `CREATE TABLE IF NOT EXISTS examiner_misconceptions (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, misconception TEXT NOT NULL, student_error TEXT NOT NULL, correct_approach TEXT NOT NULL, frequency TEXT NOT NULL DEFAULT 'common', extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS syllabus_topic_inventory (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, description TEXT, extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  // Multi-topic selection: a quiz can cover one or more curriculum topics.
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS topics JSONB NOT NULL DEFAULT '[]'::jsonb`,
 ] as const;
 
 function logBootstrap(message: string) {

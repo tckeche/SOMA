@@ -118,6 +118,10 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   topic: text("topic").notNull(),
+  // Ordered list of curriculum topic names the quiz is about. `topic` (above)
+  // stays populated for backwards compatibility and AI-pipeline code that
+  // expects a single string — it mirrors `topics[0]` when topics is set.
+  topics: jsonb("topics").$type<string[]>().notNull().default([]),
   syllabus: text("syllabus").default("IEB"),
   level: text("level").default("Grade 6-12"),
   subject: text("subject"),
@@ -410,7 +414,12 @@ export const STANDARDIZED_SUBJECTS = [
 ] as const;
 
 export const insertSomaUserSchema = createInsertSchema(somaUsers).omit({ createdAt: true, lastLoginAt: true });
-export const insertSomaQuizSchema = createInsertSchema(somaQuizzes).omit({ id: true, createdAt: true });
+export const insertSomaQuizSchema = createInsertSchema(somaQuizzes, {
+  // Override the zod inference for the jsonb `topics` column: drizzle-zod
+  // infers a ReadonlyArray-ish shape that clashes with downstream `string[]`
+  // assignments. Optional because the DB column has a `'[]'::jsonb` default.
+  topics: z.array(z.string()).optional(),
+}).omit({ id: true, createdAt: true });
 export const insertSomaQuestionSchema = createInsertSchema(somaQuestions).omit({ id: true });
 export const insertSyllabusDocumentSchema = createInsertSchema(syllabusDocuments).omit({ id: true, uploadedAt: true });
 export const insertSyllabusChunkSchema = createInsertSchema(syllabusChunks).omit({ id: true });
