@@ -360,7 +360,8 @@ export default function StudentAuth() {
           <h1 className="text-2xl font-bold gradient-text drop-shadow-[0_0_15px_rgba(139,92,246,0.5)]" data-testid="text-auth-title">
             SOMA
           </h1>
-          <p className="text-xs text-slate-400 mt-1 tracking-widest uppercase">Student Portal</p>
+          <p className="text-xs text-slate-400 mt-1 tracking-widest uppercase">Student &amp; Tutor Portal</p>
+          <p className="text-[11px] text-slate-500 mt-2">Same login for students and tutors — your role is set by your email.</p>
         </div>
 
         <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">

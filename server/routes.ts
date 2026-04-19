@@ -848,6 +848,14 @@ function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
   return { reply: reply || "Here are your questions.", action, questions, positions };
 }
 
+// LLMs that emit LaTeX inside JSON strings frequently forget to escape the
+// backslash (they write `\sin` instead of `\\sin`), which causes JSON.parse
+// to throw. We can recover by doubling every odd-length run of backslashes.
+// Even-length runs are already properly escaped and left untouched.
+function sanitizeLatexBackslashes(raw: string): string {
+  return raw.replace(/\\+/g, (run) => (run.length % 2 === 0 ? run : run + "\\"));
+}
+
 function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
   console.log(`[COPILOT_DEBUG] Raw AI response length: ${text.length} chars`);
   const EMPTY: ParsedCopilotResponse = { reply: "Assessment draft prepared.", action: "NONE", questions: [], positions: [] };
@@ -865,9 +873,24 @@ function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
     }
   } catch { /* fall through */ }
 
+  // Attempt 1.5: Re-try with LaTeX backslashes properly escaped. LLMs commonly
+  // emit `\sin`, `\theta`, `\frac`, etc. inside JSON strings without escaping,
+  // which breaks JSON.parse. Doubling odd-length backslash runs recovers them.
+  const sanitized = sanitizeLatexBackslashes(cleaned);
+  if (sanitized !== cleaned) {
+    try {
+      const parsed = JSON.parse(sanitized);
+      const result = parseCopilotObject(parsed);
+      if (result) {
+        console.log(`[COPILOT_DEBUG] Parsed after LaTeX backslash sanitization: action=${result.action}, questions=${result.questions.length}`);
+        return result;
+      }
+    } catch { /* fall through */ }
+  }
+
   // Attempt 2: Extract first balanced JSON object from mixed text (handles prose-wrapped JSON)
   try {
-    const obj = extractJsonObject(cleaned);
+    const obj = extractJsonObject(cleaned) ?? (sanitized !== cleaned ? extractJsonObject(sanitized) : null);
     if (obj) {
       const result = parseCopilotObject(obj);
       if (result) {
@@ -878,7 +901,7 @@ function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
   } catch { /* fall through */ }
 
   // Attempt 3: Fall back to extracting a raw questions array
-  const questions = extractJsonArray(cleaned) || [];
+  const questions = extractJsonArray(cleaned) || extractJsonArray(sanitized) || [];
   if (questions.length > 0) {
     console.log(`[COPILOT_DEBUG] Extracted raw questions array: ${questions.length} questions`);
     return { ...EMPTY, action: "ADD", questions };
