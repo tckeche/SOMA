@@ -1,10 +1,21 @@
 import { forwardRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { normalizeLatexDelimiters } from "@/components/MarkdownRenderer";
 
 // Print-friendly report view. Rendered hidden off-screen and passed to
 // html2pdf.js as the rasterisation source. Uses inline styles (not Tailwind)
 // so the PDF output is stable regardless of the app's dark theme and custom
 // CSS variables. The 700px width matches A4 usable area at 96 DPI with 12mm
 // margins, so the rasteriser does not have to scale the layout.
+//
+// Question stems, options and explanations are rendered through ReactMarkdown
+// with remark-math + rehype-katex so that LaTeX (e.g. $\frac{1}{2}$, matrices,
+// integrals) appears as real mathematical notation in the PDF, not literal
+// dollar signs. KaTeX CSS is imported globally in client/src/index.css so the
+// .katex output picks up the correct glyphs when html2canvas rasterises it.
 
 export interface ReportPdfQuestion {
   id: number;
@@ -38,15 +49,111 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
 
-function stripHtml(s: string): string {
-  return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
 const FONT_SERIF = "Georgia, 'Times New Roman', serif";
 const FONT_SANS = "Helvetica, Arial, sans-serif";
 const INK = "#1a1a1a";
 const MUTED = "#6b6b6b";
 const RULE = "#d4d4d4";
+
+// ReactMarkdown component overrides that force a light palette. Defined at
+// module scope so they are referentially stable across renders.
+const MD_COMPONENTS = {
+  p: ({ children }: any) => (
+    <p style={{ margin: "0 0 6px 0", lineHeight: 1.55 }}>{children}</p>
+  ),
+  strong: ({ children }: any) => (
+    <strong style={{ fontWeight: 700, color: INK }}>{children}</strong>
+  ),
+  em: ({ children }: any) => <em style={{ fontStyle: "italic" }}>{children}</em>,
+  code: ({ children }: any) => (
+    <code
+      style={{
+        fontFamily: "Menlo, Consolas, monospace",
+        background: "#f1f5f9",
+        color: "#334155",
+        padding: "1px 4px",
+        borderRadius: "3px",
+        fontSize: "0.9em",
+      }}
+    >
+      {children}
+    </code>
+  ),
+  pre: ({ children }: any) => (
+    <pre
+      style={{
+        fontFamily: "Menlo, Consolas, monospace",
+        background: "#f1f5f9",
+        color: "#1e293b",
+        padding: "8px 10px",
+        borderRadius: "4px",
+        fontSize: "11px",
+        overflow: "hidden",
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {children}
+    </pre>
+  ),
+  ul: ({ children }: any) => (
+    <ul style={{ margin: "4px 0 6px 18px", padding: 0 }}>{children}</ul>
+  ),
+  ol: ({ children }: any) => (
+    <ol style={{ margin: "4px 0 6px 18px", padding: 0 }}>{children}</ol>
+  ),
+  li: ({ children }: any) => <li style={{ margin: "2px 0" }}>{children}</li>,
+  blockquote: ({ children }: any) => (
+    <blockquote
+      style={{
+        borderLeft: "3px solid " + RULE,
+        margin: "6px 0",
+        padding: "2px 10px",
+        color: "#4a4a4a",
+        fontStyle: "italic",
+      }}
+    >
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }: any) => (
+    <table
+      style={{
+        borderCollapse: "collapse",
+        margin: "6px 0",
+        width: "100%",
+        fontSize: "11.5px",
+      }}
+    >
+      {children}
+    </table>
+  ),
+  th: ({ children }: any) => (
+    <th style={{ border: "1px solid " + RULE, padding: "4px 6px", textAlign: "left", background: "#f8fafc" }}>
+      {children}
+    </th>
+  ),
+  td: ({ children }: any) => (
+    <td style={{ border: "1px solid " + RULE, padding: "4px 6px" }}>{children}</td>
+  ),
+  a: ({ children, href }: any) => (
+    <a href={href} style={{ color: "#1d4ed8", textDecoration: "underline" }}>
+      {children}
+    </a>
+  ),
+};
+
+function Md({ content }: { content: string }) {
+  if (!content) return null;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={MD_COMPONENTS}
+    >
+      {normalizeLatexDelimiters(content)}
+    </ReactMarkdown>
+  );
+}
 
 const S = {
   page: {
@@ -311,7 +418,7 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
                 </span>
               </div>
 
-              <div style={S.qStem}>{stripHtml(q.stem)}</div>
+              <div style={S.qStem}><Md content={q.stem} /></div>
 
               <ul style={S.optionList}>
                 {q.options.map((option, optIdx) => {
@@ -348,10 +455,13 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
                         fontWeight: weight,
                       }}
                     >
-                      <strong>{letter}.</strong> {stripHtml(option)}
-                      {tags.length > 0 && (
-                        <span style={S.optionTag}>({tags.join(", ")})</span>
-                      )}
+                      <span style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                        <strong>{letter}.</strong>
+                        <span style={{ flex: 1 }}><Md content={option} /></span>
+                        {tags.length > 0 && (
+                          <span style={S.optionTag}>({tags.join(", ")})</span>
+                        )}
+                      </span>
                     </li>
                   );
                 })}
@@ -360,7 +470,7 @@ const ReportPdfView = forwardRef<HTMLDivElement, { data: ReportPdfData }>(
               {q.explanation && (
                 <div style={S.explanation}>
                   <div style={S.explLabel}>soma explanation</div>
-                  {stripHtml(q.explanation)}
+                  <Md content={q.explanation} />
                 </div>
               )}
             </div>
