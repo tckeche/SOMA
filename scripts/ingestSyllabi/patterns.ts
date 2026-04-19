@@ -44,6 +44,17 @@ const SIGNAL_PATTERN_C = [
   /students study topics 1\.\d+[–-]\d+\.\d+\./i,
 ];
 
+// IGCSE Pattern C signals are count-based because the structural markers
+// occur dozens of times in a real Pattern C syllabus but only a handful of
+// times (e.g. in running prose or footers) in unrelated humanities syllabi.
+// Thresholds were picked from the dry-run corpus: 0452 Accounting has 27
+// "Candidates should have an understanding of" hits, 0455 Economics has
+// 30+ `N.M.P` headings; 9696 Geography (a false positive under a boolean
+// check) has 1 of each.
+const IGCSE_PATTERN_C_BOILERPLATE = /Candidates should have an understanding of/gi;
+const IGCSE_PATTERN_C_THREE_LEVEL = /^\s{0,16}\d{1,2}\.\d{1,2}\.\d{1,2}\s+\S/gm;
+const IGCSE_PATTERN_C_MIN_HITS = 5;
+
 const SIGNAL_PATTERN_D = [
   // IGCSE Core / Extended headers + "Candidates study" content overview.
   /Core\s+(?:assessment|subject content)/i,
@@ -92,7 +103,22 @@ export function classifySyllabus(
   if (hits.D > 0) {
     return { pattern: "D", reason: `IGCSE Core/Extended signals (${hits.D} hits)` };
   }
+  const boilerplateHits = countMatches(extractedText, IGCSE_PATTERN_C_BOILERPLATE);
+  const threeLevelHits = countMatches(extractedText, IGCSE_PATTERN_C_THREE_LEVEL);
+  if (boilerplateHits >= IGCSE_PATTERN_C_MIN_HITS || threeLevelHits >= IGCSE_PATTERN_C_MIN_HITS) {
+    return {
+      pattern: "C",
+      reason: `IGCSE Pattern C signals (boilerplate=${boilerplateHits}, three-level=${threeLevelHits})`,
+    };
+  }
   // Non-science IGCSE syllabi (Literature 0475, History 0470, etc.) may not
   // expose the Core/Extended split in the same way. Flag for Phase 3c.
   return { pattern: "unclassified", reason: `no IGCSE Core/Extended signals for ${syllabusCode}` };
+}
+
+function countMatches(text: string, rx: RegExp): number {
+  // Both source regexes carry the global flag so matchAll is safe.
+  let count = 0;
+  for (const _ of text.matchAll(rx)) count++;
+  return count;
 }

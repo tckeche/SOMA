@@ -37,9 +37,12 @@ import { collapseWhitespace, isPageNoise } from "./shared";
 const SECTION_START = /^\s*3\s+Subject content\s*$/;
 const SECTION_END = /^\s*4\s+Details of the assessment\b/;
 
-// Topic header with tier suffix: "1  Basic economic ideas ... (AS Level)".
-// Allow an optional "continued" banner after the parenthetical tier.
-const TOPIC_RX = /^\s{0,16}(\d{1,2})\s+([^\n]+?)\s*\((AS Level|A Level)\)(?:\s+continued)?\s*$/;
+// Topic header with optional tier suffix. Cambridge A Level Pattern C
+// (9708/9609/9706) always includes "(AS Level)" or "(A Level)"; IGCSE
+// Pattern C (0452/0455) omits the tier entirely. When the suffix is absent
+// we fall back to the caller-provided `defaultTier`. Require the title to
+// start with a capital letter so prose like "1 However, …" isn't matched.
+const TOPIC_RX = /^\s{0,16}(\d{1,2})\s+([A-Z][^\n]*?)(?:\s*\((AS Level|A Level)\))?(?:\s+continued)?\s*$/;
 
 // Subtopic: "1.1  Scarcity, choice and opportunity cost". 9708 uses a mix of
 // tabs and spaces between number and title, so allow any whitespace run.
@@ -111,6 +114,10 @@ export function parsePatternC(syllabusCode: string, text: string): ParsedSyllabu
   const warnings: string[] = [];
   const lines = text.split(/\r?\n/);
   const contentLines = sliceSubjectContent(lines);
+  // Cambridge IGCSE codes begin with "0"; A Level codes begin with "9". IGCSE
+  // Pattern C syllabi (0452, 0455) omit the "(AS Level)"/"(A Level)" suffix
+  // on topic headers, so we default their tier to "IGCSE".
+  const defaultTier: LevelTier = syllabusCode.startsWith("0") ? "IGCSE" : "AS";
 
   const topicIndex = new Map<string, WorkingTopic>();
   const topicsOrder: WorkingTopic[] = [];
@@ -171,7 +178,7 @@ export function parsePatternC(syllabusCode: string, text: string): ParsedSyllabu
     if (topicMatch) {
       flushRequirement();
       const [, number, title, tierRaw] = topicMatch;
-      const tier: LevelTier = tierRaw === "AS Level" ? "AS" : "A2";
+      const tier: LevelTier = tierRaw === "AS Level" ? "AS" : tierRaw === "A Level" ? "A2" : defaultTier;
       if (!topicIndex.has(number)) {
         const t: WorkingTopic = {
           number,
