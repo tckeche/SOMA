@@ -845,9 +845,12 @@ export default function TutorAssessments() {
                     filtered.length > 0 && filtered.every((s) => selectedStudentIds.has(s.id));
                   const toggleAll = () => {
                     setSelectedStudentIds((prev) => {
+                      // When every visible student is already selected, "Clear selection"
+                      // clears the entire set so hidden selections from previous searches
+                      // aren't silently assigned.
+                      if (allVisibleSelected) return new Set();
                       const next = new Set(prev);
-                      if (allVisibleSelected) filtered.forEach((s) => next.delete(s.id));
-                      else filtered.forEach((s) => next.add(s.id));
+                      filtered.forEach((s) => next.add(s.id));
                       return next;
                     });
                   };
