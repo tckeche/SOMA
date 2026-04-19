@@ -41,6 +41,17 @@ export interface AuditedQuizResult {
   telemetry: PipelineTelemetry;
 }
 
+const BlindCheckerAnswerSchema = z.object({
+  questionIndex: z.number().int().min(1),
+  inferredAnswer: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+  rationale: z.string().optional(),
+});
+
+const BlindCheckerResponseSchema = z.object({
+  answers: z.array(BlindCheckerAnswerSchema),
+});
+
 const GeminiCheckerResponseSchema = z.object({
   questions: z.array(QuestionSchema).min(1),
   warnings: z
@@ -85,6 +96,176 @@ function dedupeOptions(options: string[], preferred?: string): string[] {
   if (preferred && !out.some((o) => o.trim() === preferred.trim())) out.unshift(preferred.trim());
   while (out.length < 4) out.push(`Option ${out.length + 1}`);
   return out.slice(0, 4);
+}
+
+function normalizeAnswerText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\$/g, "")
+    .replace(/[^a-z0-9.+\-/%() ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mapBlindAnswerToOption(inferredAnswer: string, options: string[]): string | null {
+  const normalizedBlind = normalizeAnswerText(inferredAnswer);
+  if (!normalizedBlind) return null;
+
+  // Direct and near-direct text matches first
+  for (const option of options) {
+    const normOpt = normalizeAnswerText(option);
+    if (!normOpt) continue;
+    if (normOpt === normalizedBlind) return option;
+  }
+  for (const option of options) {
+    const normOpt = normalizeAnswerText(option);
+    if (!normOpt) continue;
+    if (normOpt.includes(normalizedBlind) || normalizedBlind.includes(normOpt)) return option;
+  }
+
+  // Letter fallback (A/B/C/D) if checker returns only the option letter.
+  const letter = normalizedBlind.match(/^([a-d])(?:[\).:\s]|$)/i)?.[1]?.toUpperCase();
+  if (letter) {
+    const idx = letter.charCodeAt(0) - 65;
+    if (idx >= 0 && idx < options.length) return options[idx];
+  }
+  return null;
+}
+
+async function runBlindAnswerConsensusCheck(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+): Promise<{ warnings: PipelineWarning[]; questions: QuizResult["questions"] }> {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!anthropicKey || !geminiKey || process.env.NODE_ENV === "test") {
+    return { warnings: [], questions };
+  }
+
+  const solverPrompt = `You are a strict subject-matter checker for ${context.subject}.
+Solve each question BLIND from the stem only. Do NOT use options because options can be wrong.
+For each question return:
+- questionIndex (1-based)
+- inferredAnswer (the standalone best answer)
+- confidence (0..1)
+- rationale (brief)
+Return valid JSON only.`;
+
+  // Skip questions that the deterministic math validator can already verify.
+  // This avoids paying LLM blind-check cost on items where Stage 4 has final authority.
+  const candidateIndexes: number[] = [];
+  const questionPayload: Array<{ questionIndex: number; stem: string }> = [];
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const deterministic = validateMathQuestion(q.stem, q.options, q.correct_answer);
+    if (deterministic.verifiable) continue;
+    const questionIndex = i + 1;
+    candidateIndexes.push(questionIndex);
+    questionPayload.push({ questionIndex, stem: q.stem });
+  }
+  if (questionPayload.length === 0) {
+    return { warnings: [], questions };
+  }
+
+  const userPrompt = `Syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
+Questions:
+${JSON.stringify(questionPayload, null, 2)}`;
+
+  const geminiPromise = (async () => {
+    const schema = zodToJsonSchema(BlindCheckerResponseSchema, "BlindCheckerResponse");
+    const raw = await callGoogle("gemini-2.5-flash", solverPrompt, userPrompt, schema);
+    return BlindCheckerResponseSchema.parse(JSON.parse(raw));
+  })();
+
+  const claudePromise = (async () => {
+    const anthropic = new Anthropic({ apiKey: anthropicKey });
+    const wrapped: any = zodToJsonSchema(BlindCheckerResponseSchema, "BlindCheckerResponse");
+    const inner: any = wrapped?.definitions?.BlindCheckerResponse ?? zodToJsonSchema(BlindCheckerResponseSchema);
+    const inputSchema: any = { ...inner, type: inner?.type || "object" };
+    delete inputSchema.$schema;
+    delete inputSchema.$ref;
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8_192,
+      temperature: 0,
+      system: solverPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+      tools: [{
+        name: "return_blind_check",
+        description: "Return blind-check answers JSON.",
+        input_schema: inputSchema,
+      }],
+      tool_choice: { type: "tool", name: "return_blind_check" },
+    });
+    const toolBlock = response.content.find((b: any) => b.type === "tool_use");
+    if (!toolBlock || toolBlock.type !== "tool_use") throw new Error("No Claude tool output");
+    return BlindCheckerResponseSchema.parse(toolBlock.input);
+  })();
+
+  const [geminiResult, claudeResult] = await Promise.allSettled([geminiPromise, claudePromise]);
+  const geminiParsed = geminiResult.status === "fulfilled" ? geminiResult.value : null;
+  const claudeParsed = claudeResult.status === "fulfilled" ? claudeResult.value : null;
+  if (geminiResult.status === "rejected") {
+    const error: any = geminiResult.reason;
+    console.warn(`[BLIND_CHECK][Gemini] Failed: ${error?.message || "unknown"}`);
+  }
+  if (claudeResult.status === "rejected") {
+    const error: any = claudeResult.reason;
+    console.warn(`[BLIND_CHECK][Claude] Failed: ${error?.message || "unknown"}`);
+  }
+
+  if (!geminiParsed || !claudeParsed) {
+    return { warnings: [], questions };
+  }
+
+  const geminiByIndex = new Map(geminiParsed.answers.map((a) => [a.questionIndex, a]));
+  const claudeByIndex = new Map(claudeParsed.answers.map((a) => [a.questionIndex, a]));
+
+  const nextQuestions = [...questions];
+  const warnings: PipelineWarning[] = [];
+  for (const questionIndex of candidateIndexes) {
+    const i = questionIndex - 1;
+    const q = nextQuestions[i];
+    const gem = geminiByIndex.get(questionIndex);
+    const cla = claudeByIndex.get(questionIndex);
+    if (!gem || !cla) continue;
+
+    const gemMapped = mapBlindAnswerToOption(gem.inferredAnswer, q.options);
+    const claMapped = mapBlindAnswerToOption(cla.inferredAnswer, q.options);
+
+    if (!gemMapped || !claMapped) {
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: "Blind checkers could not confidently map inferred answers to options; question needs manual review.",
+        autoFixed: false,
+      });
+      continue;
+    }
+
+    if (gemMapped !== claMapped) {
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: `Blind checker disagreement (Gemini="${gemMapped}" vs Claude="${claMapped}").`,
+        autoFixed: false,
+      });
+      continue;
+    }
+
+    if (q.correct_answer !== gemMapped) {
+      const blindExplanation = `Independent blind verification solved the stem answer as "${gem.inferredAnswer}" (Gemini) and "${cla.inferredAnswer}" (Claude), which maps to option "${gemMapped}".`;
+      nextQuestions[i] = { ...q, correct_answer: gemMapped, explanation: blindExplanation };
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: `Blind consensus overrode answer "${q.correct_answer}" -> "${gemMapped}".`,
+        autoFixed: true,
+      });
+    }
+  }
+
+  return { warnings, questions: nextQuestions };
 }
 
 function applyDeterministicIntegrityGuards(questions: QuizResult["questions"]): QuizResult["questions"] {
@@ -591,6 +772,15 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
     if (polishResult.durationMs > 0) polishModel = "anthropic/claude-sonnet-4-6";
   }
 
+  // ── STAGE 3.5: BLIND DUAL-CHECK CONSENSUS (Claude + Gemini) ───────
+  // Cost gate: run only when checker raised issues, and only on non-deterministically
+  // verifiable questions (math-verifiable questions are handled by Stage 4).
+  if (checkResult.checkerOk && warnings.length > 0) {
+    const blindCheckResult = await runBlindAnswerConsensusCheck(parsed.questions, context);
+    parsed.questions = blindCheckResult.questions;
+    warnings.push(...blindCheckResult.warnings);
+  }
+
   // ── STAGE 4: DETERMINISTIC MATH VALIDATION ────────────────────────
   // For verifiable maths questions (function evaluation, arithmetic) we re-derive
   // the answer with a CAS and OVERRIDE the LLM if it disagrees. This is the last
@@ -606,8 +796,8 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
         autoFixed: true,
       });
       const newExplanation = v.workedSolution
-        ? `${v.workedSolution}\n\n${q.explanation}`
-        : q.explanation;
+        ? v.workedSolution
+        : `Deterministic math validation confirms the correct option is "${v.matchedOption}" (computed value: ${v.computedAnswer}).`;
       return { ...q, correct_answer: v.matchedOption, explanation: newExplanation };
     }
     return q;
