@@ -11,6 +11,7 @@ import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runGeminiFormattingCheck, runClaudePolish, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
+import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
@@ -1106,8 +1107,9 @@ async function runBackgroundGrading(
     const breakdown = questions.map((q, idx) => {
       const questionNumber = idx + 1;
       const studentAnswer = studentAnswers[String(q.id)] || "(no answer)";
-      const isCorrect = studentAnswer === q.correctAnswer;
-      return `Question ${questionNumber}: ${q.stem}\nStudent Answer: ${studentAnswer}\nCorrect Answer: ${q.correctAnswer}\nResult: ${isCorrect ? "CORRECT" : "INCORRECT"} (${q.marks} marks)`;
+      const correctAnswer = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
+      const isCorrect = studentAnswer === correctAnswer;
+      return `Question ${questionNumber}: ${q.stem}\nStudent Answer: ${studentAnswer}\nCorrect Answer: ${correctAnswer}\nResult: ${isCorrect ? "CORRECT" : "INCORRECT"} (${q.marks} marks)`;
     }).join("\n\n");
 
     const systemPrompt = `You are a mathematics tutor speaking directly to one student.
@@ -4468,7 +4470,8 @@ ${JSON.stringify({
 
       let totalScore = 0;
       for (const q of allQuestions) {
-        if (sanitizedAnswers[String(q.id)] === q.correctAnswer) {
+        const correct = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
+        if (sanitizedAnswers[String(q.id)] === correct) {
           totalScore += q.marks;
         }
       }

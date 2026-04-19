@@ -2,6 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { generateWithFallback, callGoogle } from "./aiOrchestrator";
 import Anthropic from "@anthropic-ai/sdk";
+import { validateMathQuestion } from "./mathValidator";
 
 export const QuestionSchema = z.object({
   stem: z.string(),
@@ -589,6 +590,28 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
     parsed.questions = polishResult.questions;
     if (polishResult.durationMs > 0) polishModel = "anthropic/claude-sonnet-4-6";
   }
+
+  // ── STAGE 4: DETERMINISTIC MATH VALIDATION ────────────────────────
+  // For verifiable maths questions (function evaluation, arithmetic) we re-derive
+  // the answer with a CAS and OVERRIDE the LLM if it disagrees. This is the last
+  // line of defence against confidently-wrong AI arithmetic like "8 - 6 + 1 = 5".
+  parsed.questions = parsed.questions.map((q, idx) => {
+    const v = validateMathQuestion(q.stem, q.options, q.correct_answer);
+    if (!v.verifiable || !v.matchedOption) return q;
+    if (v.mismatch) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "correct_answer",
+        issue: `Math validator overrode AI answer "${q.correct_answer}" with deterministic result "${v.matchedOption}" (computed = ${v.computedAnswer}).`,
+        autoFixed: true,
+      });
+      const newExplanation = v.workedSolution
+        ? `${v.workedSolution}\n\n${q.explanation}`
+        : q.explanation;
+      return { ...q, correct_answer: v.matchedOption, explanation: newExplanation };
+    }
+    return q;
+  });
 
   // Final deterministic guards (cheap, free)
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
