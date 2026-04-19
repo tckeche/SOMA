@@ -19,9 +19,10 @@ export interface TutorAssessmentDraft {
   subject: string;
   level: string;
   syllabus: string;
-  // Optional: topic lifted from an uploaded syllabus's topic inventory. Older
-  // drafts predate this field and will deserialise with an empty string.
-  topic: string;
+  // Zero-or-more curriculum topic names chosen from the canonical syllabus's
+  // topic inventory. Older drafts predate this field (or stored a singular
+  // `topic` string in a prior iteration) and are migrated on read.
+  topics: string[];
   timeLimitMinutes: number;
   prompt: string;
   savedAt: string;
@@ -41,13 +42,18 @@ export function readTutorDraft(key: string | null): TutorAssessmentDraft | null 
     if (!parsed || parsed.version !== TUTOR_DRAFT_VERSION) {
       return null;
     }
+    const rawTopics = Array.isArray(parsed.topics)
+      ? parsed.topics.filter((t: unknown) => typeof t === "string" && t.trim()) as string[]
+      : typeof parsed.topic === "string" && parsed.topic.trim()
+        ? [parsed.topic]
+        : [];
     return {
       version: TUTOR_DRAFT_VERSION,
       title: typeof parsed.title === "string" ? parsed.title : "",
       subject: typeof parsed.subject === "string" ? parsed.subject : "",
       level: typeof parsed.level === "string" ? parsed.level : "",
       syllabus: typeof parsed.syllabus === "string" ? parsed.syllabus : "",
-      topic: typeof parsed.topic === "string" ? parsed.topic : "",
+      topics: rawTopics,
       timeLimitMinutes: Number.isFinite(parsed.timeLimitMinutes)
         ? Number(parsed.timeLimitMinutes)
         : 60,
@@ -94,7 +100,7 @@ export function isMeaningfulDraft(draft: TutorAssessmentDraft | null): boolean {
   if (draft.subject.trim()) return true;
   if (draft.level.trim()) return true;
   if (draft.syllabus.trim()) return true;
-  if (draft.topic.trim()) return true;
+  if (draft.topics.length > 0) return true;
   if (draft.prompt.trim()) return true;
   return false;
 }

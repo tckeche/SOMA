@@ -2888,14 +2888,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
-      const { title, syllabus, level, subject, topic, timeLimitMinutes } = req.body;
+      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes } = req.body;
       if (!title) return res.status(400).json({ message: "title is required" });
       if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
         return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
       }
+      const cleanTopics = Array.isArray(topics)
+        ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
+        : [];
       const quiz = await storage.createSomaQuiz({
         title,
-        topic: topic || title,
+        topic: cleanTopics[0] || topic || title,
+        topics: cleanTopics,
         syllabus: syllabus ?? null,
         level: level ?? null,
         subject: subject ?? null,
@@ -3019,13 +3023,22 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
 
-      const { title, syllabus, level, subject, topic, timeLimitMinutes } = req.body;
-      const updates: Record<string, string | number | null> = {};
+      const { title, syllabus, level, subject, topics, timeLimitMinutes } = req.body;
+      const updates: Record<string, string | number | string[] | null> = {};
       if (title !== undefined) updates.title = title;
       if (syllabus !== undefined) updates.syllabus = syllabus || null;
       if (level !== undefined) updates.level = level || null;
       if (subject !== undefined) updates.subject = subject || null;
-      if (topic !== undefined) updates.topic = (topic && String(topic).trim()) || (title ?? existing.title);
+      if (topics !== undefined) {
+        const clean = Array.isArray(topics)
+          ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
+          : [];
+        updates.topics = clean;
+        // Keep the legacy `topic` text column in sync so code paths that still
+        // read `quiz.topic` as a single string see the first selected topic
+        // (or fall back to the title).
+        updates.topic = clean[0] || (title ?? existing.title);
+      }
       if (timeLimitMinutes !== undefined) updates.timeLimitMinutes = Number(timeLimitMinutes) || 60;
 
       const updated = await storage.updateSomaQuiz(quizId, updates);
@@ -3121,12 +3134,35 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         board: document.board,
         level: document.level,
         syllabusCode: document.syllabusCode,
-        subject: document.subject,
         filename: document.filename,
         uploadedAt: document.uploadedAt,
       })));
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch syllabus documents" });
+    }
+  });
+
+  // Canonical curriculum library — the board-issued syllabi ingested from
+  // curriculum-docs/. This is the source of truth for the builder's syllabus
+  // dropdown; tutor-private uploads do NOT appear here.
+  app.get("/api/tutor/curriculum/syllabi", requireTutor, async (req, res) => {
+    try {
+      const { subject, level, board } = req.query;
+      const docs = await storage.listCanonicalSyllabi({
+        subject: subject ? String(subject) : undefined,
+        level: level ? String(level) : undefined,
+        board: board ? String(board) : undefined,
+      });
+      res.json(docs.map((d) => ({
+        id: d.id,
+        board: d.board,
+        level: d.level,
+        syllabusCode: d.syllabusCode,
+        subject: d.subject,
+        filename: d.filename,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch curriculum syllabi" });
     }
   });
 
@@ -3291,7 +3327,10 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         const lines: string[] = ["=== ASSESSMENT METADATA ==="];
         if (ac.assessmentMeta) {
           const m = ac.assessmentMeta;
-          lines.push(`Title: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"}`);
+          const topicsLabel = Array.isArray(m.topics) && m.topics.length > 0
+            ? m.topics.join(", ")
+            : (m.topic || "—");
+          lines.push(`Title: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"} | Topics: ${topicsLabel}`);
         }
         if (ac.difficultySpread && typeof ac.difficultySpread === "object") {
           const ds = ac.difficultySpread as Record<string, number>;

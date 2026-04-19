@@ -182,7 +182,7 @@ export default function BuilderPage() {
   const [syllabus, setSyllabus] = useState("");
   const [level, setLevel] = useState("");
   const [subject, setSubject] = useState("");
-  const [topic, setTopic] = useState("");
+  const [topics, setTopics] = useState<string[]>([]);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
 
   const [msg, setMsg] = useState("");
@@ -295,7 +295,7 @@ export default function BuilderPage() {
     // Don't save an empty shell — just clutters storage.
     const hasContent =
       title.trim() || subject.trim() || level.trim() ||
-      syllabus.trim() || topic.trim() || msg.trim();
+      syllabus.trim() || topics.length > 0 || msg.trim();
     if (!hasContent) return;
     if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = setTimeout(() => {
@@ -304,7 +304,7 @@ export default function BuilderPage() {
         subject,
         level,
         syllabus,
-        topic,
+        topics,
         timeLimitMinutes,
         prompt: msg,
       });
@@ -312,7 +312,7 @@ export default function BuilderPage() {
     return () => {
       if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     };
-  }, [isEditMode, tutorUserId, activeQuizId, title, subject, level, syllabus, topic, timeLimitMinutes, msg]);
+  }, [isEditMode, tutorUserId, activeQuizId, title, subject, level, syllabus, topics, timeLimitMinutes, msg]);
 
   // Clear the local draft as soon as the server-side quiz row exists — the
   // server's draft API owns post-creation state.
@@ -329,7 +329,7 @@ export default function BuilderPage() {
     setSubject(recoveredDraft.subject);
     setLevel(recoveredDraft.level);
     setSyllabus(recoveredDraft.syllabus);
-    setTopic(recoveredDraft.topic || "");
+    setTopics(Array.isArray(recoveredDraft.topics) ? recoveredDraft.topics : []);
     setTimeLimitMinutes(
       Number.isFinite(recoveredDraft.timeLimitMinutes) && recoveredDraft.timeLimitMinutes > 0
         ? recoveredDraft.timeLimitMinutes
@@ -403,9 +403,9 @@ export default function BuilderPage() {
 
   const authenticated = tutorSession?.authenticated === true;
 
-  // Uploaded syllabus catalogue — powers the Syllabus dropdown. Scoped per
-  // tutor by the server. We render whatever the tutor has uploaded; an empty
-  // list surfaces a hint to upload a syllabus first.
+  // Canonical curriculum library — the board-issued syllabi ingested from
+  // /curriculum-docs. Source of truth for the Syllabus dropdown; tutor-private
+  // uploads are NOT included here.
   interface SyllabusDocSummary {
     id: number;
     board: string;
@@ -413,21 +413,29 @@ export default function BuilderPage() {
     syllabusCode: string;
     subject: string | null;
     filename: string;
-    uploadedAt: string;
   }
+  const curriculumQueryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (subject) params.set("subject", subject);
+    if (level) params.set("level", level);
+    return params.toString();
+  }, [subject, level]);
   const { data: syllabusDocs = [], isLoading: syllabusDocsLoading } = useQuery<SyllabusDocSummary[]>({
-    queryKey: ["/api/tutor/syllabus-documents"],
+    queryKey: ["/api/tutor/curriculum/syllabi", curriculumQueryParams],
     queryFn: async () => {
-      const res = await authFetch("/api/tutor/syllabus-documents");
+      const url = curriculumQueryParams
+        ? `/api/tutor/curriculum/syllabi?${curriculumQueryParams}`
+        : "/api/tutor/curriculum/syllabi";
+      const res = await authFetch(url);
       if (!res.ok) return [];
       return res.json();
     },
     enabled: authenticated,
   });
 
-  // The user picks a specific uploaded syllabus document; that choice both
+  // The user picks a specific canonical syllabus document; that choice both
   // fills the free-text `syllabus` column on the quiz and drives the topic
-  // dropdown below. Stored as the doc id so we can look up board/code/subject
+  // picker below. Stored as the doc id so we can look up board/code/subject
   // for the topics query without re-fetching.
   const [syllabusDocId, setSyllabusDocId] = useState<number | null>(null);
   const selectedSyllabusDoc = useMemo(
@@ -441,8 +449,8 @@ export default function BuilderPage() {
     return [doc.board, doc.syllabusCode].filter(Boolean).join(" · ");
   }
 
-  // Topic inventory for the selected syllabus — optional, only populated
-  // once the tutor has chosen both a subject and a syllabus document.
+  // Topic inventory for the selected syllabus — AI-extracted rows keyed on
+  // (board, syllabusCode, subject). One row per (topic, subtopic) pair.
   interface SyllabusTopic {
     id: number;
     board: string;
@@ -456,10 +464,9 @@ export default function BuilderPage() {
     const params = new URLSearchParams();
     params.set("board", selectedSyllabusDoc.board);
     params.set("syllabusCode", selectedSyllabusDoc.syllabusCode);
-    // Subject is optional on the server — send whichever one narrows the list.
-    if (subject) params.set("subject", subject);
+    if (selectedSyllabusDoc.subject) params.set("subject", selectedSyllabusDoc.subject);
     return params.toString();
-  }, [selectedSyllabusDoc, subject]);
+  }, [selectedSyllabusDoc]);
   const { data: syllabusTopics = [], isLoading: topicsLoading } = useQuery<SyllabusTopic[]>({
     queryKey: ["/api/tutor/syllabus-topics", topicsQueryParams],
     queryFn: async () => {
@@ -471,19 +478,23 @@ export default function BuilderPage() {
     enabled: authenticated && !!topicsQueryParams,
   });
 
-  // Distinct "Topic" values — the inventory has one row per (topic, subtopic),
-  // so for the top-level picker we dedupe by topic name.
-  const topicOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const out: string[] = [];
+  // Group the flat inventory into { topic → subtopics[] } for rendering. The
+  // tutor ticks at the topic level (one box per topic); selecting a topic
+  // covers all of its subtopics. Subtopics are shown as a short hint.
+  const topicGroups = useMemo(() => {
+    const groups = new Map<string, Set<string>>();
     for (const row of syllabusTopics) {
-      const name = (row.topic || "").trim();
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      out.push(name);
+      const topicName = (row.topic || "").trim();
+      if (!topicName) continue;
+      if (!groups.has(topicName)) groups.set(topicName, new Set());
+      const sub = (row.subtopic || "").trim();
+      if (sub) groups.get(topicName)!.add(sub);
     }
-    return out.sort((a, b) => a.localeCompare(b));
+    return Array.from(groups.entries())
+      .map(([topic, subs]) => ({ topic, subtopics: Array.from(subs).sort((a, b) => a.localeCompare(b)) }))
+      .sort((a, b) => a.topic.localeCompare(b.topic));
   }, [syllabusTopics]);
+
 
   const { data: quizData, isLoading: quizLoading } = useQuery<SomaQuiz & { questions: SomaQuestion[] }>({
     queryKey: ["/api/tutor/quizzes", activeQuizId],
@@ -502,12 +513,17 @@ export default function BuilderPage() {
       setSyllabus(quizData.syllabus || "");
       setLevel(quizData.level || "");
       setSubject(quizData.subject || "");
-      // Only seed topic when the saved value is a true topic selection. If the
-      // quiz stored topic == title (our default fallback in create/update),
-      // leave the topic picker empty so it can be re-chosen against the
-      // syllabus inventory.
-      const savedTopic = quizData.topic || "";
-      setTopic(savedTopic && savedTopic !== quizData.title ? savedTopic : "");
+      // Prefer the stored topics[] array. Fall back to the legacy singular
+      // `topic` column for quizzes saved before multi-topic existed — unless
+      // the tutor never picked one and we stored the title as a placeholder,
+      // in which case start empty so they re-pick against the inventory.
+      const savedTopics = Array.isArray((quizData as any).topics) ? (quizData as any).topics as string[] : [];
+      if (savedTopics.length > 0) {
+        setTopics(savedTopics);
+      } else {
+        const savedTopic = quizData.topic || "";
+        setTopics(savedTopic && savedTopic !== quizData.title ? [savedTopic] : []);
+      }
       setTimeLimitMinutes(quizData.timeLimitMinutes ?? 60);
       setPopulated(true);
     }
@@ -601,7 +617,7 @@ export default function BuilderPage() {
     if (!title.trim()) throw new Error("Please fill in a quiz title before generating questions.");
     const quizRes = await authApiRequest("POST", "/api/tutor/quizzes", {
       title: title.trim(),
-      topic: topic.trim() || title.trim(),
+      topics,
       syllabus: syllabus || null,
       level: level || null,
       subject: subject || null,
@@ -658,7 +674,7 @@ export default function BuilderPage() {
         subject && `Subject: ${subject}`,
         level && `Level: ${level}`,
         syllabus && `Syllabus: ${syllabus}`,
-        topic && `Topic: ${topic}`,
+        topics.length > 0 && `Topics: ${topics.join(" / ")}`,
       ].filter(Boolean).join(", ");
       const enrichedMessage = context ? `[${context}]\n\n${message}` : message;
       // Snapshot current draft for context
@@ -672,7 +688,7 @@ export default function BuilderPage() {
       }, { easy: 0, medium: 0, hard: 0 });
 
       const assessmentContext = {
-        assessmentMeta: { title, subject, level, syllabus },
+        assessmentMeta: { title, subject, level, syllabus, topics },
         difficultySpread,
       };
 
@@ -814,7 +830,7 @@ export default function BuilderPage() {
         syllabus: syllabus || null,
         level: level || null,
         subject: subject || null,
-        topic: topic.trim() || title.trim(),
+        topics,
         timeLimitMinutes,
       });
     },
@@ -1076,7 +1092,7 @@ export default function BuilderPage() {
                     if (!raw) {
                       setSyllabusDocId(null);
                       setSyllabus("");
-                      setTopic("");
+                      setTopics([]);
                       markMeta();
                       return;
                     }
@@ -1084,19 +1100,22 @@ export default function BuilderPage() {
                     const doc = syllabusDocs.find((d) => d.id === id) ?? null;
                     setSyllabusDocId(doc ? doc.id : null);
                     setSyllabus(doc ? formatSyllabusLabel(doc) : "");
-                    // Changing syllabus invalidates any previous topic pick.
-                    setTopic("");
+                    // Changing syllabus invalidates any previous topic picks.
+                    setTopics([]);
                     markMeta();
                   }}
                   className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
                   data-testid="select-quiz-syllabus"
+                  disabled={!subject}
                 >
                   <option value="">
-                    {syllabusDocsLoading
-                      ? "Loading syllabi…"
-                      : syllabusDocs.length === 0
-                        ? "No syllabi uploaded — add one in Syllabus Library"
-                        : "Select syllabus"}
+                    {!subject
+                      ? "Pick a subject first"
+                      : syllabusDocsLoading
+                        ? "Loading syllabi…"
+                        : syllabusDocs.length === 0
+                          ? "No syllabi for this subject in the curriculum library"
+                          : "Select syllabus"}
                   </option>
                   {/* When editing a legacy quiz whose stored syllabus string doesn't
                       match any uploaded doc, surface it as a disabled option so the
@@ -1147,42 +1166,77 @@ export default function BuilderPage() {
               </div>
             </div>
 
-            {/* Topic — optional, appears once subject + syllabus are chosen.
-                Sourced from the uploaded syllabus's topic inventory so every
-                option is a real topic the AI can ground on. */}
+            {/* Topics — optional multi-select, appears once subject + syllabus
+                are chosen. Sourced from the canonical syllabus's parsed topic
+                inventory so every option is a real curriculum topic the AI can
+                ground on. Tutors may tick one, many, or none (= whole syllabus). */}
             {subject && selectedSyllabusDoc && (
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-5 gap-4">
-                <div className="space-y-1.5 sm:col-span-3">
-                  <Label className="text-slate-400 text-xs uppercase flex items-center gap-2">
-                    Topic <span className="text-[10px] text-slate-500 normal-case tracking-normal">(optional)</span>
-                  </Label>
-                  <select
-                    value={topic}
-                    onChange={(e) => { setTopic(e.target.value); markMeta(); }}
-                    className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
-                    data-testid="select-quiz-topic"
-                    disabled={topicsLoading}
-                  >
-                    <option value="">
-                      {topicsLoading
-                        ? "Loading topics…"
-                        : topicOptions.length === 0
-                          ? "No topics found in this syllabus — leave blank"
-                          : "Any topic (use the whole syllabus)"}
-                    </option>
-                    {topic && !topicOptions.includes(topic) && (
-                      <option value={topic} disabled>{topic} (not in library)</option>
-                    )}
-                    {topicOptions.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-slate-500">
-                    {topicOptions.length > 0
-                      ? `${topicOptions.length} topic${topicOptions.length === 1 ? "" : "s"} parsed from ${selectedSyllabusDoc.board} ${selectedSyllabusDoc.syllabusCode}.`
-                      : "Topics appear here once the uploaded syllabus has been parsed."}
-                  </p>
+              <div className="mt-3">
+                <Label className="text-slate-400 text-xs uppercase flex items-center gap-2">
+                  Topics <span className="text-[10px] text-slate-500 normal-case tracking-normal">(optional — pick one or more)</span>
+                </Label>
+                <div
+                  className="mt-1.5 rounded-lg bg-black/20 border border-white/10 p-3 max-h-64 overflow-y-auto"
+                  data-testid="multiselect-quiz-topics"
+                >
+                  {topicsLoading ? (
+                    <p className="text-xs text-slate-500">Loading topics…</p>
+                  ) : topicGroups.length === 0 ? (
+                    <p className="text-xs text-slate-500">
+                      No topics have been parsed from this syllabus yet. Leave blank to target the whole syllabus.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5">
+                      {topicGroups.map(({ topic: t, subtopics }) => {
+                        const checked = topics.includes(t);
+                        return (
+                          <label
+                            key={t}
+                            className={`flex items-start gap-2 text-xs rounded-md px-2 py-1.5 cursor-pointer border ${checked ? "border-violet-500/40 bg-violet-500/10" : "border-transparent hover:bg-white/5"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setTopics((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
+                                markMeta();
+                              }}
+                              className="mt-0.5 accent-violet-500"
+                              data-testid={`topic-checkbox-${t}`}
+                            />
+                            <span className="flex-1">
+                              <span className="text-slate-200">{t}</span>
+                              {subtopics.length > 0 && (
+                                <span className="block text-[10px] text-slate-500 leading-snug">
+                                  {subtopics.slice(0, 3).join(" · ")}
+                                  {subtopics.length > 3 ? ` · +${subtopics.length - 3} more` : ""}
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {topics.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>{topics.length} selected</span>
+                      <button
+                        type="button"
+                        className="text-violet-400 hover:text-violet-300"
+                        onClick={() => { setTopics([]); markMeta(); }}
+                        data-testid="clear-topics"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
                 </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  {topicGroups.length > 0
+                    ? `${topicGroups.length} topic${topicGroups.length === 1 ? "" : "s"} parsed from ${selectedSyllabusDoc.board} ${selectedSyllabusDoc.syllabusCode}.`
+                    : "Topics appear here once the syllabus has been parsed."}
+                </p>
               </div>
             )}
 

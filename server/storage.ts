@@ -135,6 +135,7 @@ export interface IStorage {
   logPasswordResetRequest(email: string): Promise<void>;
   createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }>;
   listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]>;
+  listCanonicalSyllabi(filter?: { subject?: string; level?: string; board?: string }): Promise<SyllabusDocument[]>;
   getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined>;
   getSyllabusDocumentByHash(contentHash: string): Promise<SyllabusDocument | undefined>;
   listStudentSubjects(studentId: string): Promise<StudentSubject[]>;
@@ -266,6 +267,17 @@ class DatabaseStorage implements IStorage {
       return this.database.select().from(syllabusDocuments).where(or(eq(syllabusDocuments.tutorId, tutorId), isNull(syllabusDocuments.tutorId))).orderBy(syllabusDocuments.uploadedAt);
     }
     return this.database.select().from(syllabusDocuments).orderBy(syllabusDocuments.uploadedAt);
+  }
+
+  async listCanonicalSyllabi(filter: { subject?: string; level?: string; board?: string } = {}): Promise<SyllabusDocument[]> {
+    const conditions = [
+      isNull(syllabusDocuments.tutorId),
+      eq(syllabusDocuments.documentType, "syllabus"),
+    ];
+    if (filter.board) conditions.push(eq(syllabusDocuments.board, filter.board));
+    if (filter.level) conditions.push(eq(syllabusDocuments.level, filter.level));
+    if (filter.subject) conditions.push(eq(syllabusDocuments.subject, filter.subject));
+    return this.database.select().from(syllabusDocuments).where(and(...conditions)).orderBy(syllabusDocuments.subject, syllabusDocuments.syllabusCode);
   }
 
   async getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined> {
@@ -1139,6 +1151,7 @@ class MemoryStorage implements IStorage {
       createdAt: new Date(),
       title: quiz.title,
       topic: quiz.topic,
+      topics: Array.isArray(quiz.topics) ? [...quiz.topics] : [],
       syllabus: quiz.syllabus ?? null,
       level: quiz.level ?? null,
       subject: quiz.subject ?? null,
@@ -1426,6 +1439,16 @@ class MemoryStorage implements IStorage {
   async listSyllabusDocuments(tutorId?: string): Promise<SyllabusDocument[]> {
     if (!tutorId) return [...this.syllabusDocumentsList];
     return this.syllabusDocumentsList.filter((doc) => doc.tutorId === tutorId || doc.tutorId === null);
+  }
+
+  async listCanonicalSyllabi(filter: { subject?: string; level?: string; board?: string } = {}): Promise<SyllabusDocument[]> {
+    return this.syllabusDocumentsList.filter((doc) =>
+      doc.tutorId === null &&
+      doc.documentType === "syllabus" &&
+      (!filter.board || doc.board === filter.board) &&
+      (!filter.level || doc.level === filter.level) &&
+      (!filter.subject || doc.subject === filter.subject)
+    );
   }
 
   async getSyllabusDocumentBySelection(selection: { board: string; level: string; syllabusCode: string; tutorId?: string }): Promise<(SyllabusDocument & { chunks: SyllabusChunk[] }) | undefined> {

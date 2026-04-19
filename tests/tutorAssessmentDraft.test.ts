@@ -50,7 +50,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
       subject: "Mathematics",
       level: "IGCSE",
       syllabus: "Cambridge",
-      topic: "Quadratics",
+      topics: ["Quadratics", "Sequences"],
       timeLimitMinutes: 45,
       prompt: "10 quadratic MCQs",
     });
@@ -63,10 +63,27 @@ describe("writeTutorDraft / readTutorDraft", () => {
     expect(loaded!.subject).toBe("Mathematics");
     expect(loaded!.level).toBe("IGCSE");
     expect(loaded!.syllabus).toBe("Cambridge");
-    expect(loaded!.topic).toBe("Quadratics");
+    expect(loaded!.topics).toEqual(["Quadratics", "Sequences"]);
     expect(loaded!.timeLimitMinutes).toBe(45);
     expect(loaded!.prompt).toBe("10 quadratic MCQs");
     expect(typeof loaded!.savedAt).toBe("string");
+  });
+
+  it("migrates a v1 draft stored with a singular `topic` string", () => {
+    // Earlier iterations of the draft stored `topic: string` (single pick).
+    // The reader must turn that into a single-element `topics` array so the
+    // builder doesn't lose the tutor's in-progress work after this upgrade.
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: TUTOR_DRAFT_VERSION,
+        title: "Algebra mock",
+        topic: "Quadratics",
+      }),
+    );
+    const loaded = readTutorDraft(key);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.topics).toEqual(["Quadratics"]);
   });
 
   it("returns null when nothing is stored", () => {
@@ -101,7 +118,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
     expect(loaded!.subject).toBe("");
     expect(loaded!.level).toBe("");
     expect(loaded!.syllabus).toBe("");
-    expect(loaded!.topic).toBe("");
+    expect(loaded!.topics).toEqual([]);
     expect(loaded!.timeLimitMinutes).toBe(60);
     expect(loaded!.prompt).toBe("");
   });
@@ -112,7 +129,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
       setItem: () => { const e: any = new Error("quota"); e.name = "QuotaExceededError"; throw e; },
     };
     const result = writeTutorDraft(key, {
-      title: "t", subject: "", level: "", syllabus: "", topic: "", timeLimitMinutes: 60, prompt: "",
+      title: "t", subject: "", level: "", syllabus: "", topics: [], timeLimitMinutes: 60, prompt: "",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("QuotaExceededError");
@@ -120,14 +137,14 @@ describe("writeTutorDraft / readTutorDraft", () => {
 
   it("returns failure for a null key", () => {
     const result = writeTutorDraft(null, {
-      title: "t", subject: "", level: "", syllabus: "", topic: "", timeLimitMinutes: 60, prompt: "",
+      title: "t", subject: "", level: "", syllabus: "", topics: [], timeLimitMinutes: 60, prompt: "",
     });
     expect(result.ok).toBe(false);
   });
 
   it("clearTutorDraft removes the entry", () => {
     writeTutorDraft(key, {
-      title: "t", subject: "", level: "", syllabus: "", topic: "", timeLimitMinutes: 60, prompt: "",
+      title: "t", subject: "", level: "", syllabus: "", topics: [], timeLimitMinutes: 60, prompt: "",
     });
     expect(readTutorDraft(key)).not.toBeNull();
     clearTutorDraft(key);
@@ -142,7 +159,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
 describe("isMeaningfulDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
-    title: "", subject: "", level: "", syllabus: "", topic: "",
+    title: "", subject: "", level: "", syllabus: "", topics: [],
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
@@ -163,17 +180,20 @@ describe("isMeaningfulDraft", () => {
     ["subject", "Math"],
     ["level", "IGCSE"],
     ["syllabus", "Cambridge"],
-    ["topic", "Quadratics"],
     ["prompt", "Generate 5"],
   ])("returns true when %s has content", (field, val) => {
     expect(isMeaningfulDraft({ ...base, [field]: val })).toBe(true);
+  });
+
+  it("returns true when topics has at least one entry", () => {
+    expect(isMeaningfulDraft({ ...base, topics: ["Quadratics"] })).toBe(true);
   });
 });
 
 describe("describeDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
-    title: "", subject: "", level: "", syllabus: "", topic: "",
+    title: "", subject: "", level: "", syllabus: "", topics: [],
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
