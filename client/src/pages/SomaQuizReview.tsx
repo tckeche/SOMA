@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { authFetch } from "@/lib/supabase";
@@ -130,6 +130,17 @@ export default function SomaQuizReview() {
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     }).from(reportRef.current).save();
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "report" && reportRef.current) {
+      const t = setTimeout(() => {
+        try { window.print(); } catch { /* ignore */ }
+      }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [data]);
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">

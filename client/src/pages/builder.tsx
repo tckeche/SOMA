@@ -15,7 +15,7 @@ import {
   ArrowLeft, Send, Loader2, Sparkles, FileStack, Trash2,
   X, Pencil, BookOpen,
   Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard,
-  Save, AlertCircle, AlertTriangle
+  Save, AlertCircle, AlertTriangle, StopCircle, RefreshCw
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
 import { unescapeLatex } from '@/lib/render-latex';
@@ -139,7 +139,21 @@ function getDraftValidationError(questions: DraftQuestion[]): string | null {
   return null;
 }
 
-const LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
+const ALL_LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
+const SYLLABUS_LEVEL_MAP: Record<string, string[]> = {
+  cambridge: ["IGCSE", "AS", "A2", "Other"],
+  edexcel: ["IGCSE", "AS", "A2", "Other"],
+  aqa: ["IGCSE", "AS", "A2", "Other"],
+  ocr: ["IGCSE", "AS", "A2", "Other"],
+  ib: ["IGCSE", "Other"],
+};
+function getLevelsForSyllabus(syllabus: string): string[] {
+  const key = syllabus.trim().toLowerCase();
+  for (const [prefix, levels] of Object.entries(SYLLABUS_LEVEL_MAP)) {
+    if (key.includes(prefix)) return levels;
+  }
+  return ALL_LEVEL_OPTIONS;
+}
 
 const PIPELINE_STAGES = [
   { stage: 1, icon: "brain", label: "Drafting questions (GPT-4o)", aiName: "Maker" },
@@ -174,6 +188,11 @@ export default function BuilderPage() {
   const [pipelineActive, setPipelineActive] = useState(false);
   const [currentStage, setCurrentStage] = useState(0);
   const [completedStages, setCompletedStages] = useState<Set<number>>(new Set());
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
+  const [lastAttemptMessage, setLastAttemptMessage] = useState<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const GENERATION_TIMEOUT_MS = 90_000;
 
   const [includeGraphQuestions, setIncludeGraphQuestions] = useState(false);
 
@@ -189,13 +208,51 @@ export default function BuilderPage() {
   const supaAccessToken = supaSession?.access_token;
   const isTutorAuth = !!tutorUserId;
   const backLink = "/tutor/assessments";
+  const confirmDiscardIfDirty = useCallback(() => {
+    const hasInFlight = abortControllerRef.current !== null;
+    const hasUnsaved = isDraftDirty || metaDirty;
+    if (hasInFlight) {
+      return window.confirm(
+        "Co-Pilot is still generating questions. Leave now and lose the in-progress results?"
+      );
+    }
+    if (hasUnsaved) {
+      return window.confirm(
+        "You have unsaved changes. Leave without saving? Your draft is preserved, but unsaved metadata changes will be lost."
+      );
+    }
+    return true;
+  }, [isDraftDirty, metaDirty]);
+
   const handleBack = useCallback(() => {
+    if (!confirmDiscardIfDirty()) return;
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
     navigate(backLink);
-  }, [navigate, backLink]);
+  }, [navigate, backLink, confirmDiscardIfDirty]);
+
+  const handleExit = useCallback(
+    (e: React.MouseEvent) => {
+      if (!confirmDiscardIfDirty()) {
+        e.preventDefault();
+      }
+    },
+    [confirmDiscardIfDirty],
+  );
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasInFlight = abortControllerRef.current !== null;
+      if (hasInFlight || isDraftDirty || metaDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDraftDirty, metaDirty]);
 
   const validateMeta = useCallback(() => {
     if (!title.trim()) return "Assessment title is required.";
@@ -376,13 +433,33 @@ export default function BuilderPage() {
       for (let i = 1; i < stage; i++) next.add(i);
       return next;
     });
+    if (stage === 1) {
+      setGenerationStartedAt(Date.now());
+      setElapsedSecs(0);
+    }
   };
 
   const finishPipeline = () => {
     setCompletedStages(new Set([1, 2, 3, 4]));
     setCurrentStage(0);
+    setGenerationStartedAt(null);
     setTimeout(() => setPipelineActive(false), 1500);
   };
+
+  useEffect(() => {
+    if (!generationStartedAt) return;
+    const tick = () => setElapsedSecs(Math.floor((Date.now() - generationStartedAt) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [generationStartedAt]);
+
+  const stopGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setPipelineActive(false);
+    setGenerationStartedAt(null);
+  }, []);
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
@@ -411,14 +488,37 @@ export default function BuilderPage() {
 
       animatePipeline(2);
       setGenerationState("generation_in_progress");
-      const res = await authApiRequest("POST", "/api/tutor/copilot-chat", {
-        message: enrichedMessage,
-        chatHistory: chat,
-        includeGraphQuestions,
-        assessmentContext,
-        // Send the full current draft so the AI knows what exists
-        draftQuestions: currentDraftSnap,
-      });
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const timeoutId = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch("/api/tutor/copilot-chat", {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: enrichedMessage,
+            chatHistory: chat,
+            includeGraphQuestions,
+            assessmentContext,
+            draftQuestions: currentDraftSnap,
+          }),
+          credentials: "include",
+          signal: controller.signal,
+        });
+      } catch (err: any) {
+        if (controller.signal.aborted) {
+          throw new Error("Generation was stopped. You can retry or refine your prompt.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+        abortControllerRef.current = null;
+      }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Co-Pilot request failed (${res.status})`);
+      }
       const data = await res.json();
 
       if (data.needsClarification) {
@@ -503,8 +603,14 @@ export default function BuilderPage() {
     },
     onError: (err: Error) => {
       setPipelineActive(false);
+      setGenerationStartedAt(null);
       setGenerationState(err.message.toLowerCase().includes("draft") ? "persistence_failed" : "generation_failed");
-      toast({ title: "Copilot failed", description: err.message, variant: "destructive" });
+      const friendly = err.message.includes("stopped")
+        ? err.message
+        : err.message.includes("aborted") || err.message.toLowerCase().includes("timeout")
+          ? "Generation timed out. Please retry, or try a shorter/simpler prompt."
+          : err.message;
+      toast({ title: "Co-Pilot failed", description: friendly, variant: "destructive" });
     },
   });
 
@@ -592,7 +698,13 @@ export default function BuilderPage() {
 
   const handleSend = () => {
     if (!msg.trim() || chatMutation.isPending || !authenticated) return;
+    setLastAttemptMessage(msg);
     chatMutation.mutate(msg);
+  };
+
+  const handleRetry = () => {
+    if (!lastAttemptMessage.trim() || chatMutation.isPending) return;
+    chatMutation.mutate(lastAttemptMessage);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -704,7 +816,7 @@ export default function BuilderPage() {
               )}
               <span className="hidden md:inline">{isPublishing ? "Publishing…" : "Save & Publish"}</span>
             </Button>
-            <Link href="/tutor/assessments">
+            <Link href="/tutor/assessments" onClick={handleExit}>
               <Button className="border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all" size="default" data-testid="button-exit-builder">
                 <X className="w-4 h-4 md:mr-1" />
                 <span>Exit Assessment</span>
@@ -771,7 +883,7 @@ export default function BuilderPage() {
                   data-testid="select-quiz-level"
                 >
                   <option value="">Select level</option>
-                  {LEVEL_OPTIONS.map((l) => (
+                  {getLevelsForSyllabus(syllabus).map((l) => (
                     <option key={l} value={l}>{l}</option>
                   ))}
                 </select>
@@ -928,6 +1040,39 @@ export default function BuilderPage() {
 
             {/* Chat input */}
             <div className="p-3 md:p-4 border-t border-white/5 space-y-2">
+              {chatMutation.isPending && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-violet-500/30 bg-violet-500/[0.06] px-3 py-2">
+                  <div className="flex items-center gap-2 text-[11px] text-violet-200">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>
+                      Generating… {elapsedSecs}s elapsed
+                      {elapsedSecs > 0 && elapsedSecs < 60 ? " · typical 15–45s" : ""}
+                      {elapsedSecs >= 60 ? " · this is taking longer than usual" : ""}
+                    </span>
+                  </div>
+                  <button
+                    onClick={stopGeneration}
+                    className="flex items-center gap-1 text-[11px] text-rose-300 hover:text-rose-200"
+                    data-testid="button-copilot-stop"
+                  >
+                    <StopCircle className="w-3.5 h-3.5" />
+                    Stop
+                  </button>
+                </div>
+              )}
+              {!chatMutation.isPending && generationState === "generation_failed" && lastAttemptMessage && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-500/30 bg-rose-500/[0.06] px-3 py-2">
+                  <span className="text-[11px] text-rose-200">Last generation failed. You can retry the same prompt.</span>
+                  <button
+                    onClick={handleRetry}
+                    className="flex items-center gap-1 text-[11px] text-violet-200 hover:text-violet-100"
+                    data-testid="button-copilot-retry"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Retry
+                  </button>
+                </div>
+              )}
               <div className="flex gap-2">
                 <Textarea
                   value={msg}

@@ -5,7 +5,7 @@ import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
   Users, UserPlus, X, Loader2, Check, ChevronRight,
-  BookOpen, LogOut, LayoutDashboard, Search, RotateCcw,
+  BookOpen, LogOut, LayoutDashboard, Search, RotateCcw, Mail, AlertTriangle,
 } from "lucide-react";
 
 interface SomaUser {
@@ -29,6 +29,9 @@ export default function TutorStudents() {
   const [showAdoptModal, setShowAdoptModal] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
+  const [adoptSearchQuery, setAdoptSearchQuery] = useState("");
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [adoptFeedback, setAdoptFeedback] = useState<string | null>(null);
 
   const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -66,11 +69,19 @@ export default function TutorStudents() {
       if (!res.ok) throw new Error("Failed to adopt");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/students/available"] });
+      const count = variables.length;
+      setAdoptFeedback(`Added ${count} student${count !== 1 ? "s" : ""} to your cohort.`);
       setShowAdoptModal(false);
       setSelectedStudentIds(new Set());
+      setAdoptSearchQuery("");
+      setTimeout(() => setAdoptFeedback(null), 4000);
+    },
+    onError: () => {
+      setAdoptFeedback("Could not add students. Please try again.");
+      setTimeout(() => setAdoptFeedback(null), 5000);
     },
   });
 
@@ -85,6 +96,7 @@ export default function TutorStudents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/students/available"] });
+      setPendingRemoveId(null);
     },
   });
 
@@ -102,14 +114,45 @@ export default function TutorStudents() {
     if (!searchQuery.trim()) return sorted;
     const q = searchQuery.toLowerCase();
     return sorted.filter((s) =>
-      formatStudentName(s).toLowerCase().includes(q)
+      formatStudentName(s).toLowerCase().includes(q) ||
+      (s.email || "").toLowerCase().includes(q)
     );
   }, [adoptedStudents, searchQuery]);
+
+  const filteredAvailable = useMemo(() => {
+    const sorted = [...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b)));
+    if (!adoptSearchQuery.trim()) return sorted;
+    const q = adoptSearchQuery.toLowerCase();
+    return sorted.filter((s) =>
+      formatStudentName(s).toLowerCase().includes(q) ||
+      (s.email || "").toLowerCase().includes(q)
+    );
+  }, [availableStudents, adoptSearchQuery]);
+
+  const allVisibleSelected =
+    filteredAvailable.length > 0 &&
+    filteredAvailable.every((s) => selectedStudentIds.has(s.id));
+
+  const toggleSelectAllVisible = useCallback(() => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        filteredAvailable.forEach((s) => next.delete(s.id));
+      } else {
+        filteredAvailable.forEach((s) => next.add(s.id));
+      }
+      return next;
+    });
+  }, [filteredAvailable, allVisibleSelected]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setLocation("/login");
   };
+
+  const pendingRemoveStudent = pendingRemoveId
+    ? adoptedStudents.find((s) => s.id === pendingRemoveId) || null
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -159,6 +202,14 @@ export default function TutorStudents() {
         </div>
       </header>
 
+      {adoptFeedback && (
+        <div className="fixed top-20 right-6 z-40 max-w-sm">
+          <div className="glass-panel-elite px-4 py-3 border border-emerald-500/40 bg-emerald-500/10 text-sm text-emerald-200" role="status">
+            {adoptFeedback}
+          </div>
+        </div>
+      )}
+
       <main className="max-w-[1440px] mx-auto px-6 lg:px-10 py-7 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -166,7 +217,7 @@ export default function TutorStudents() {
             <p className="text-sm text-slate-400 mt-1">{adoptedStudents.length} student{adoptedStudents.length !== 1 ? "s" : ""} in your cohort</p>
           </div>
           <button
-            onClick={() => { setShowAdoptModal(true); setSelectedStudentIds(new Set()); }}
+            onClick={() => { setShowAdoptModal(true); setSelectedStudentIds(new Set()); setAdoptSearchQuery(""); }}
             className="flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-violet-500/20 text-violet-300 border border-violet-500/40 hover:bg-violet-500/30 transition-all"
             data-testid="button-adopt-students"
           >
@@ -182,7 +233,7 @@ export default function TutorStudents() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search students..."
+              placeholder="Search by name or email..."
               className="w-full h-12 pl-11 pr-4 rounded-xl bg-slate-900/60 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40"
               data-testid="input-search-students"
             />
@@ -224,23 +275,27 @@ export default function TutorStudents() {
                     {si}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-200">{name}</p>
+                    <p className="text-sm font-medium text-slate-200 truncate">{name}</p>
+                    {student.email && (
+                      <p className="text-xs text-slate-500 truncate">{student.email}</p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeMutation.mutate(student.id); }}
-                      className="text-red-400/40 hover:text-red-400 transition-colors p-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                      title="Remove student"
-                      data-testid={`button-remove-${student.id}`}
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-center gap-4 shrink-0">
                     <Link href={`/tutor/students/${student.id}`}>
-                      <span className="flex items-center gap-1 px-3 py-2 min-h-[44px] rounded-lg text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20 transition-all cursor-pointer" data-testid={`link-view-${student.id}`}>
+                      <span className="flex items-center gap-1 px-4 py-2 min-h-[44px] rounded-lg text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20 transition-all cursor-pointer" data-testid={`link-view-${student.id}`}>
                         View
                         <ChevronRight className="w-3 h-3" />
                       </span>
                     </Link>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPendingRemoveId(student.id); }}
+                      className="text-red-400/60 hover:text-red-400 transition-colors p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
+                      title="Remove student"
+                      aria-label={`Remove ${name}`}
+                      data-testid={`button-remove-${student.id}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               );
@@ -249,51 +304,156 @@ export default function TutorStudents() {
         )}
       </main>
 
+      {pendingRemoveStudent && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg p-4"
+          onClick={() => setPendingRemoveId(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="glass-panel-elite max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">Remove student?</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  {formatStudentName(pendingRemoveStudent)}
+                  {pendingRemoveStudent.email ? ` · ${pendingRemoveStudent.email}` : ""}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-300 mb-5">
+              They will be removed from your cohort. You can re-add them at any time from "Add Students".
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setPendingRemoveId(null)}
+                className="px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium text-slate-300 bg-slate-800/60 border border-slate-700 hover:bg-slate-800 transition-all"
+                data-testid="button-cancel-remove"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => removeMutation.mutate(pendingRemoveStudent.id)}
+                disabled={removeMutation.isPending}
+                className="px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 transition-all"
+                data-testid="button-confirm-remove"
+              >
+                {removeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAdoptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-lg p-4" onClick={() => setShowAdoptModal(false)}>
-          <div className="glass-panel-elite max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-3 mb-5">
-              <h3 className="text-base font-bold text-slate-100">Add Students</h3>
-              <button onClick={() => setShowAdoptModal(false)} className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors">
+          <div className="glass-panel-elite max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-100">Add Students</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Search by name or email, then select the accounts to add to your cohort.</p>
+              </div>
+              <button
+                onClick={() => setShowAdoptModal(false)}
+                className="text-slate-500 hover:text-slate-300 p-2 min-h-[40px] min-w-[40px] rounded-lg hover:bg-white/[0.04] transition-colors"
+                aria-label="Close dialog"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
+
             {availableStudents.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">No students available to add</p>
             ) : (
               <>
-                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                  {[...availableStudents].sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b))).map((student) => {
-                    const name = formatStudentName(student);
-                    const si = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
-                    return (
+                <div className="relative mb-3">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    value={adoptSearchQuery}
+                    onChange={(e) => setAdoptSearchQuery(e.target.value)}
+                    placeholder="Search by name or email..."
+                    className="w-full h-11 pl-11 pr-10 rounded-xl bg-slate-900/60 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40"
+                    data-testid="input-search-adopt"
+                    autoFocus
+                  />
+                  {adoptSearchQuery && (
                     <button
-                      key={student.id}
-                      onClick={() => toggleStudentSelection(student.id)}
-                      className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
-                        selectedStudentIds.has(student.id)
-                          ? "bg-violet-500/20 border border-violet-500/40"
-                          : "bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60"
-                      }`}
-                      data-testid={`adopt-student-${student.id}`}
+                      onClick={() => setAdoptSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300"
+                      aria-label="Clear search"
                     >
-                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${
-                        selectedStudentIds.has(student.id) ? "bg-violet-500 border-violet-500" : "border-slate-600"
-                      }`}>
-                        {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[10px] font-bold text-emerald-300 shrink-0">
-                        {si}
-                      </div>
-                      <p className="text-sm font-medium text-slate-200">{name}</p>
+                      <RotateCcw className="w-3.5 h-3.5" />
                     </button>
-                    );
-                  })}
+                  )}
                 </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2 px-1">
+                  <span>
+                    {filteredAvailable.length} result{filteredAvailable.length !== 1 ? "s" : ""}
+                    {selectedStudentIds.size > 0 ? ` · ${selectedStudentIds.size} selected` : ""}
+                  </span>
+                  {filteredAvailable.length > 0 && (
+                    <button
+                      onClick={toggleSelectAllVisible}
+                      className="text-violet-300 hover:text-violet-200 font-medium"
+                      data-testid="button-select-all-adopt"
+                    >
+                      {allVisibleSelected ? "Clear selection" : "Select all visible"}
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 flex-1 overflow-y-auto pr-1">
+                  {filteredAvailable.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-6">No matches for "{adoptSearchQuery}"</p>
+                  ) : (
+                    filteredAvailable.map((student) => {
+                      const name = formatStudentName(student);
+                      const si = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+                      const isSelected = selectedStudentIds.has(student.id);
+                      return (
+                        <button
+                          key={student.id}
+                          onClick={() => toggleStudentSelection(student.id)}
+                          className={`w-full min-h-[56px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
+                            isSelected
+                              ? "bg-violet-500/20 border-2 border-violet-500/60 ring-1 ring-violet-500/30"
+                              : "bg-slate-800/40 border-2 border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600"
+                          }`}
+                          data-testid={`adopt-student-${student.id}`}
+                          aria-pressed={isSelected}
+                        >
+                          <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                            isSelected ? "bg-violet-500 border-violet-500" : "border-slate-500"
+                          }`}>
+                            {isSelected && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
+                          </div>
+                          <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[11px] font-bold text-emerald-300 shrink-0">
+                            {si}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-100 truncate">{name}</p>
+                            {student.email && (
+                              <p className="flex items-center gap-1 text-[11px] text-slate-400 truncate">
+                                <Mail className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{student.email}</span>
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
                 <button
                   onClick={() => adoptMutation.mutate(Array.from(selectedStudentIds))}
                   disabled={selectedStudentIds.size === 0 || adoptMutation.isPending}
-                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full mt-4 py-3 min-h-[48px] rounded-xl text-sm font-semibold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   data-testid="button-confirm-adopt"
                 >
                   {adoptMutation.isPending ? (

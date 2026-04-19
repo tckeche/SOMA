@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { CheckCircle2, Eye, FileText, TrendingDown, TrendingUp } from "lucide-react";
+import { CheckCircle2, Eye, Printer, TrendingDown, TrendingUp } from "lucide-react";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import type { DashboardAssignmentRow } from "@/types/studentDashboard";
 
@@ -97,16 +97,20 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
                 <p className="text-[10px] text-slate-500">
                   {row.score ?? 0} / {row.maxScore || "?"} marks
                 </p>
-                <div className="flex items-center gap-2 mt-1.5 justify-end">
+                <div className="flex items-center gap-3 mt-1.5 justify-end">
                   <Link href={`/soma/review/${row.reportId ?? row.quizId}`}>
                     <button className="inline-flex items-center gap-1 text-[11px] text-cyan-300 hover:text-cyan-200" data-testid={`button-review-${row.quizId}`}>
                       <Eye className="w-3.5 h-3.5" /> Review
                     </button>
                   </Link>
                   {row.reportId && (
-                    <Link href={`/soma/review/${row.reportId}`}>
-                      <button className="inline-flex items-center gap-1 text-[11px] text-violet-300 hover:text-violet-200" data-testid={`button-report-${row.quizId}`}>
-                        <FileText className="w-3.5 h-3.5" /> Report
+                    <Link href={`/soma/review/${row.reportId}?view=report`}>
+                      <button
+                        className="inline-flex items-center gap-1 text-[11px] text-violet-300 hover:text-violet-200"
+                        title="Open a printable report of this assessment"
+                        data-testid={`button-report-${row.quizId}`}
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Report
                       </button>
                     </Link>
                   )}

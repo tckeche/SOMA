@@ -55,7 +55,12 @@ export default function StudentDashboard() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { session, userId } = useSupabaseSession();
-  const [activeTab, setActiveTab] = useState<"home" | "completed">("home");
+  const initialTab = (() => {
+    if (typeof window === "undefined") return "home" as const;
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab === "completed" ? ("completed" as const) : ("home" as const);
+  })();
+  const [activeTab, setActiveTab] = useState<"home" | "completed">(initialTab);
 
   useEffect(() => {
     return subscribeToSomaMutations(() => {
@@ -63,7 +68,7 @@ export default function StudentDashboard() {
     });
   }, [queryClient, userId]);
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery<StudentDashboardPayload>({
+  const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } = useQuery<StudentDashboardPayload>({
     queryKey: ["/api/student/dashboard", userId],
     queryFn: async () => {
       const res = await authFetch("/api/student/dashboard");
@@ -71,9 +76,21 @@ export default function StudentDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
+
+  const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
+  const formatUpdated = (d: Date | null) => {
+    if (!d) return "";
+    const diffSec = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+    if (diffSec < 5) return "just now";
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const mins = Math.round(diffSec / 60);
+    return `${mins}m ago`;
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -98,9 +115,20 @@ export default function StudentDashboard() {
           </Link>
 
           <div className="flex items-center gap-4">
-            {isFetching && !isLoading && (
-              <Loader2 className="w-4 h-4 text-slate-500 animate-spin" aria-label="Refreshing" />
-            )}
+            <button
+              onClick={() => refetch()}
+              className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-200 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/[0.04]"
+              aria-label="Refresh dashboard"
+              title={lastUpdated ? `Last updated ${formatUpdated(lastUpdated)}` : "Refresh"}
+              data-testid="button-refresh-dashboard"
+            >
+              {isFetching ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              <span>{isFetching ? "Refreshing…" : `Updated ${formatUpdated(lastUpdated)}`}</span>
+            </button>
             <div className="flex items-center gap-3">
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-violet-500/40"
