@@ -3,7 +3,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { generateWithFallback, callGoogle } from "./aiOrchestrator";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { validateMathQuestion } from "./mathValidator";
+import { validateMathQuestion, parseOptionAsNumber } from "./mathValidator";
 
 export const QuestionSchema = z.object({
   stem: z.string(),
@@ -282,6 +282,313 @@ ${JSON.stringify(questionPayload, null, 2)}`;
   }
 
   return { warnings, questions: nextQuestions };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLIND DUAL-VERIFY (the safety net that prevents wrong answers from shipping)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BlindAnswerSchema = z.object({
+  questionIndex: z.number().int().min(1),
+  answer: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+});
+
+const BlindResponseSchema = z.object({
+  answers: z.array(BlindAnswerSchema),
+});
+
+type BlindResponse = z.infer<typeof BlindResponseSchema>;
+
+export interface BlindVerificationResult {
+  questions: QuizResult["questions"];
+  warnings: PipelineWarning[];
+  droppedCount: number;
+  verificationStatus: "verified" | "partial" | "skipped" | "failed";
+}
+
+// Normalize two answer strings for case/whitespace/LaTeX-delim comparison.
+function normalizeForComparison(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\\\(|\\\)|\\\[|\\\]/g, "")
+    .replace(/\$\$/g, "")
+    .replace(/\$/g, "")
+    .replace(/\\text\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\left|\\right/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Detect an option-letter answer like "A", "B)", "(C)", "option d".
+// Returns 0-based index or null.
+function extractLetterIndex(answer: string): number | null {
+  const s = answer.trim().toLowerCase();
+  // "a", "(a)", "a)", "a.", "a:"
+  const direct = s.match(/^\(?([a-d])\)?\s*[.:)]?\s*$/);
+  if (direct) return direct[1].charCodeAt(0) - 97;
+  // "a) text", "(a) text", "a. text"
+  const prefixed = s.match(/^\(?([a-d])\)?\s*[.:)]\s+/);
+  if (prefixed) return prefixed[1].charCodeAt(0) - 97;
+  // "option a"
+  const worded = s.match(/^option\s+([a-d])\b/);
+  if (worded) return worded[1].charCodeAt(0) - 97;
+  return null;
+}
+
+// Strict equivalence matcher. Returns the index of the matching option, or null.
+// No substring matching — that was the source of "pi" ⊂ "2pi" false positives.
+function findMatchingOptionIndex(answer: string, options: string[]): number | null {
+  if (!answer || !answer.trim()) return null;
+
+  // 1. Normalized exact equality (case/whitespace/LaTeX-insensitive)
+  const normAnswer = normalizeForComparison(answer);
+  if (normAnswer) {
+    for (let i = 0; i < options.length; i++) {
+      if (normalizeForComparison(options[i]) === normAnswer) return i;
+    }
+  }
+
+  // 2. Numeric equivalence (0.5 ≡ 1/2 ≡ 50/100, tolerant to rounding)
+  const answerNum = parseOptionAsNumber(answer);
+  if (answerNum !== null) {
+    for (let i = 0; i < options.length; i++) {
+      const optNum = parseOptionAsNumber(options[i]);
+      if (optNum === null) continue;
+      const tol = Math.max(1e-6, Math.abs(optNum) * 1e-4);
+      if (Math.abs(answerNum - optNum) < tol) return i;
+    }
+  }
+
+  // 3. Letter prefix fallback ("A", "Option B")
+  const letterIdx = extractLetterIndex(answer);
+  if (letterIdx !== null && letterIdx >= 0 && letterIdx < options.length) return letterIdx;
+
+  return null;
+}
+
+async function runBlindSolverClaude(
+  stems: Array<{ questionIndex: number; stem: string }>,
+  context: SomaGenerationContext,
+  apiKey: string,
+): Promise<BlindResponse> {
+  const anthropic = new Anthropic({ apiKey });
+  const wrapped: any = zodToJsonSchema(BlindResponseSchema, "BlindResponse");
+  const inner: any = wrapped?.definitions?.BlindResponse ?? zodToJsonSchema(BlindResponseSchema);
+  const inputSchema: any = { ...inner, type: inner?.type || "object" };
+  delete inputSchema.$schema;
+  delete inputSchema.$ref;
+
+  const systemPrompt = `You are an INDEPENDENT answer verifier for ${context.subject}.
+Solve each question you are given SOLELY from its stem. No answer options are provided — do not assume any.
+Return your best answer in its most natural form (a number, an expression, or a short phrase), plus a confidence score 0..1.
+Be precise: if the question has multiple roots, return them all (e.g. "x = ±3" not just "3").`;
+
+  const userPrompt = `Subject=${context.subject}; syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
+${JSON.stringify(stems, null, 2)}`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8_192,
+    temperature: 0,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+    tools: [{
+      name: "return_blind_answers",
+      description: "Return each question's independently-derived answer.",
+      input_schema: inputSchema,
+    }],
+    tool_choice: { type: "tool", name: "return_blind_answers" },
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use");
+  if (!toolBlock || toolBlock.type !== "tool_use") throw new Error("Claude verifier returned no tool output");
+  return BlindResponseSchema.parse(toolBlock.input);
+}
+
+async function runBlindSolverGemini(
+  stems: Array<{ questionIndex: number; stem: string }>,
+  context: SomaGenerationContext,
+): Promise<BlindResponse> {
+  const systemPrompt = `You are an INDEPENDENT answer verifier for ${context.subject}.
+Solve each question SOLELY from its stem. No options are provided — do not invent any.
+Return each answer in its most natural form (a number, expression, or short phrase).
+If the answer is a set (e.g. "x = ±3"), return it fully — don't truncate.`;
+
+  const userPrompt = `Subject=${context.subject}; syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
+${JSON.stringify(stems, null, 2)}`;
+
+  const schema = zodToJsonSchema(BlindResponseSchema, "BlindResponse");
+  const raw = await callGoogle("gemini-2.5-flash", systemPrompt, userPrompt, schema);
+  return BlindResponseSchema.parse(JSON.parse(raw));
+}
+
+function dropUnverifiedWithReason(
+  questions: QuizResult["questions"],
+  reason: string,
+): BlindVerificationResult {
+  const kept: QuizResult["questions"] = [];
+  const warnings: PipelineWarning[] = [];
+  let droppedCount = 0;
+  questions.forEach((q, i) => {
+    const m = validateMathQuestion(q.stem, q.options, q.correct_answer);
+    if (m.verifiable) {
+      kept.push(q);
+      return;
+    }
+    droppedCount++;
+    warnings.push({
+      questionIndex: i + 1,
+      field: "correct_answer",
+      issue: `Dropped (unverified): ${reason}`,
+      autoFixed: true,
+    });
+  });
+  return { questions: kept, warnings, droppedCount, verificationStatus: "failed" };
+}
+
+/**
+ * SAFETY NET: ask Claude and Gemini INDEPENDENTLY to re-solve each question
+ * from the STEM ONLY (no options, no proposed answer). A question is only
+ * shipped when both verifiers agree on which option matches their independent
+ * answer. Otherwise it is DROPPED.
+ *
+ * Decision table (per question):
+ *   - Both map to SAME option as maker           → keep as-is
+ *   - Both map to SAME option ≠ maker's answer   → OVERRIDE to blind consensus
+ *   - Disagree, or either couldn't map, or APIs  → DROP (unsafe to ship)
+ *     failed
+ *
+ * Math-verifiable questions bypass this — the deterministic CAS validator
+ * owns them and is the final authority.
+ */
+export async function verifyQuestionsBlind(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+): Promise<BlindVerificationResult> {
+  if (process.env.NODE_ENV === "test") {
+    return { questions, warnings: [], droppedCount: 0, verificationStatus: "skipped" };
+  }
+
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!anthropicKey || !geminiKey) {
+    return dropUnverifiedWithReason(questions, "verifier API keys missing (need both ANTHROPIC_API_KEY and GEMINI_API_KEY).");
+  }
+
+  // Math-verifiable items pass straight through — CAS owns them at Stage 4.
+  const mathIdx = new Set<number>();
+  const toVerify: Array<{ questionIndex: number; stem: string }> = [];
+  questions.forEach((q, i) => {
+    const m = validateMathQuestion(q.stem, q.options, q.correct_answer);
+    if (m.verifiable) {
+      mathIdx.add(i);
+    } else {
+      toVerify.push({ questionIndex: i + 1, stem: q.stem });
+    }
+  });
+
+  if (toVerify.length === 0) {
+    return { questions, warnings: [], droppedCount: 0, verificationStatus: "verified" };
+  }
+
+  const [claudeRes, geminiRes] = await Promise.allSettled([
+    runBlindSolverClaude(toVerify, context, anthropicKey),
+    runBlindSolverGemini(toVerify, context),
+  ]);
+
+  if (claudeRes.status === "rejected") {
+    console.warn(`[BLIND_VERIFY][Claude] ${claudeRes.reason?.message || claudeRes.reason}`);
+  }
+  if (geminiRes.status === "rejected") {
+    console.warn(`[BLIND_VERIFY][Gemini] ${geminiRes.reason?.message || geminiRes.reason}`);
+  }
+
+  const claudeParsed = claudeRes.status === "fulfilled" ? claudeRes.value : null;
+  const geminiParsed = geminiRes.status === "fulfilled" ? geminiRes.value : null;
+
+  if (!claudeParsed || !geminiParsed) {
+    return dropUnverifiedWithReason(questions, "one or both blind verifiers failed — refusing to ship unverified non-math questions.");
+  }
+
+  const claudeByIdx = new Map(claudeParsed.answers.map((a) => [a.questionIndex, a]));
+  const geminiByIdx = new Map(geminiParsed.answers.map((a) => [a.questionIndex, a]));
+
+  const kept: QuizResult["questions"] = [];
+  const warnings: PipelineWarning[] = [];
+  let droppedCount = 0;
+
+  questions.forEach((q, i) => {
+    if (mathIdx.has(i)) {
+      kept.push(q);
+      return;
+    }
+
+    const questionIndex = i + 1;
+    const claudeAns = claudeByIdx.get(questionIndex);
+    const geminiAns = geminiByIdx.get(questionIndex);
+
+    if (!claudeAns || !geminiAns) {
+      droppedCount++;
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: "Dropped: one or both blind verifiers did not return an answer for this question.",
+        autoFixed: true,
+      });
+      return;
+    }
+
+    const claudeIdx = findMatchingOptionIndex(claudeAns.answer, q.options);
+    const geminiIdx = findMatchingOptionIndex(geminiAns.answer, q.options);
+
+    if (claudeIdx === null || geminiIdx === null) {
+      droppedCount++;
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: `Dropped: blind answers did not match any option (Claude="${claudeAns.answer}", Gemini="${geminiAns.answer}").`,
+        autoFixed: true,
+      });
+      return;
+    }
+
+    if (claudeIdx !== geminiIdx) {
+      droppedCount++;
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: `Dropped: verifiers disagreed (Claude→"${q.options[claudeIdx]}", Gemini→"${q.options[geminiIdx]}").`,
+        autoFixed: true,
+      });
+      return;
+    }
+
+    const agreedOption = q.options[claudeIdx];
+    if (q.correct_answer !== agreedOption) {
+      kept.push({
+        ...q,
+        correct_answer: agreedOption,
+        explanation: `Independent verification: Claude solved "${claudeAns.answer}", Gemini solved "${geminiAns.answer}" — both map to "${agreedOption}". Original answer "${q.correct_answer}" was overridden.`,
+      });
+      warnings.push({
+        questionIndex,
+        field: "correct_answer",
+        issue: `Overridden: Maker answer "${q.correct_answer}" replaced with blind-consensus answer "${agreedOption}".`,
+        autoFixed: true,
+      });
+      return;
+    }
+
+    kept.push(q);
+  });
+
+  const verificationStatus: BlindVerificationResult["verificationStatus"] =
+    droppedCount === 0 ? "verified" : "partial";
+
+  return { questions: kept, warnings, droppedCount, verificationStatus };
 }
 
 function applyDeterministicIntegrityGuards(questions: QuizResult["questions"]): QuizResult["questions"] {

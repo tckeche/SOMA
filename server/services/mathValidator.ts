@@ -73,7 +73,7 @@ function safeEvaluate(expr: string, scope: Record<string, number> = {}): number 
   }
 }
 
-function parseOptionAsNumber(opt: string): number | null {
+export function parseOptionAsNumber(opt: string): number | null {
   let cleaned = stripLatexAndUnicode(opt)
     .replace(/^[A-D]\s*[\.\):]\s*/i, "") // strip leading "A) ", "B." etc
     .replace(/^[a-z]\s*=\s*/i, "")        // strip leading "x = " / "y = "
