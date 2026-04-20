@@ -100,11 +100,29 @@ export interface SomaGenerationContext {
    * the legacy string fields. Legacy free-text callers can omit it.
    */
   catalogueContext?: CatalogueCopilotContext;
+  /**
+   * Phase 8: pre-rendered digest cached at the top of generateAuditedQuiz so
+   * stages don't re-serialise the catalogue on every call / rework round.
+   * Callers should leave this undefined; the pipeline populates it.
+   */
+  catalogueContextText?: string;
 }
 
 const MAX_CLAUDE_REWORK_ROUNDS = 2;
 
 const jsonSchema = zodToJsonSchema(QuizResultSchema, "QuizResult");
+
+/**
+ * Phase 8 helper: returns the precomputed catalogue text when present,
+ * otherwise lazily formats. Stages call this instead of re-running
+ * formatCopilotContextAsText. Keeps backwards compat for any caller that
+ * never went through generateAuditedQuiz.
+ */
+function getCatalogueText(context: SomaGenerationContext): string {
+  if (context.catalogueContextText !== undefined) return context.catalogueContextText;
+  if (!context.catalogueContext) return "";
+  return formatCopilotContextAsText(context.catalogueContext);
+}
 
 function extractJson(raw: string): QuizResult {
   return QuizResultSchema.parse(JSON.parse(raw));
@@ -193,9 +211,8 @@ Return valid JSON only.`;
     return { warnings: [], questions };
   }
 
-  const catalogueBlock = context.catalogueContext
-    ? `\n\nCatalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}`
-    : "";
+  const catalogueText = getCatalogueText(context);
+  const catalogueBlock = catalogueText ? `\n\nCatalogue context:\n${catalogueText}` : "";
   const userPrompt = `Syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.${catalogueBlock}
 Questions:
 ${JSON.stringify(questionPayload, null, 2)}`;
@@ -295,6 +312,67 @@ ${JSON.stringify(questionPayload, null, 2)}`;
   }
 
   return { warnings, questions: nextQuestions };
+}
+
+/**
+ * Phase 8 — stem-drift reconciliation.
+ *
+ * The Gemini formatting checker is authorised to rewrite options, fix LaTeX
+ * delimiters, replace bare-dollar currency, and re-derive correct_answer. It
+ * is NOT meant to rewrite question stems. Before Phase 8 the pipeline
+ * wholesale-replaced questions with the checker's output, so a checker that
+ * decided to paraphrase a stem could silently overwrite the Maker's wording
+ * with no signal to the tutor.
+ *
+ * This guard preserves the Maker's stem when:
+ *   - the stem's normalised form materially changed, AND
+ *   - no warning for that question flagged "stem" as the field being fixed.
+ *
+ * The checker's options / correct_answer / explanation are always kept so it
+ * can still do its formatting job. When we revert a stem we emit a warning so
+ * the tutor (and the polisher) know the checker tried to drift.
+ */
+function normaliseStemForDriftCheck(stem: string): string {
+  // Strip $ math delimiters so "x^2" and "$x^2$" compare equal — adding LaTeX
+  // wrappers is a formatter's job and must NOT count as drift. Other changes
+  // (different wording, new braces, different commands) still count.
+  return stem
+    .replace(/\$+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function reconcileCheckerStems(
+  makerQuestions: QuizResult["questions"],
+  checkerQuestions: QuizResult["questions"],
+  checkerWarnings: PipelineWarning[],
+): { questions: QuizResult["questions"]; driftWarnings: PipelineWarning[] } {
+  const driftWarnings: PipelineWarning[] = [];
+  const stemWarningByIndex = new Set<number>();
+  for (const w of checkerWarnings) {
+    if (w.field === "stem") stemWarningByIndex.add(w.questionIndex);
+  }
+  const n = Math.min(makerQuestions.length, checkerQuestions.length);
+  const out: QuizResult["questions"] = checkerQuestions.slice();
+  for (let i = 0; i < n; i++) {
+    const makerStem = makerQuestions[i].stem;
+    const checkerStem = checkerQuestions[i].stem;
+    const makerNorm = normaliseStemForDriftCheck(makerStem);
+    const checkerNorm = normaliseStemForDriftCheck(checkerStem);
+    if (makerNorm === checkerNorm) continue;
+    // The checker is allowed to rewrite if it flagged a stem-level fix.
+    if (stemWarningByIndex.has(i + 1)) continue;
+    // Silent rewrite — restore Maker stem and emit a warning.
+    out[i] = { ...checkerQuestions[i], stem: makerStem };
+    driftWarnings.push({
+      questionIndex: i + 1,
+      field: "stem",
+      issue: "Formatting checker rewrote the stem without flagging it; reverted to Maker original.",
+      autoFixed: true,
+    });
+  }
+  return { questions: out, driftWarnings };
 }
 
 function applyDeterministicIntegrityGuards(questions: QuizResult["questions"]): QuizResult["questions"] {
@@ -564,9 +642,8 @@ questionIndex is 1-based. Be concise in the issue field (one sentence).
 
 Return strict JSON matching the schema. NEVER drop or add questions — return exactly ${questions.length}.`;
 
-  const catalogueBlock = context.catalogueContext
-    ? `Catalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}\n\n`
-    : "";
+  const catalogueText = getCatalogueText(context);
+  const catalogueBlock = catalogueText ? `Catalogue context:\n${catalogueText}\n\n` : "";
   const userPrompt = `${catalogueBlock}Audit and fix these ${questions.length} questions:\n${JSON.stringify({ questions }, null, 2)}`;
 
   try {
@@ -641,9 +718,8 @@ Return strict JSON matching the schema.`;
     const inputSchema: any = { ...inner, type: inner?.type || "object" };
     delete inputSchema.$schema;
     delete inputSchema.$ref;
-    const polishCatalogueBlock = context.catalogueContext
-      ? `Catalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}\n\n`
-      : "";
+    const polishCatalogueText = getCatalogueText(context);
+    const polishCatalogueBlock = polishCatalogueText ? `Catalogue context:\n${polishCatalogueText}\n\n` : "";
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 16_384,
@@ -854,9 +930,8 @@ Critical requirements:
 5) Keep questions within provided syllabus/topic scope only.
 6) Return JSON only matching the schema.`;
 
-  const emergencyCatalogueBlock = context.catalogueContext
-    ? `\n\n${formatCopilotContextAsText(context.catalogueContext)}`
-    : "";
+  const emergencyCatalogueText = getCatalogueText(context);
+  const emergencyCatalogueBlock = emergencyCatalogueText ? `\n\n${emergencyCatalogueText}` : "";
   const { data, metadata } = await generateWithFallback(
     emergencyPrompt,
     `Curriculum context:\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}${emergencyCatalogueBlock}`,
@@ -880,6 +955,14 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const context: SomaGenerationContext = typeof input === "string"
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
     : input;
+
+  // Phase 8 — render the catalogue digest once and cache on the context so
+  // the Maker, both checkers, the polisher, the blind consensus pass, and any
+  // emergency fallback all reuse the same string instead of re-serialising on
+  // every stage (and every rework round).
+  if (context.catalogueContext && context.catalogueContextText === undefined) {
+    context.catalogueContextText = formatCopilotContextAsText(context.catalogueContext);
+  }
 
   const questionCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
 
@@ -912,12 +995,32 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
 
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
 
+  // ── STAGE 1: MAKER (generateWithFallback) ─────────────────────────
+  // Live fallback chain: openai/gpt-4o → anthropic/claude-sonnet-4-6 →
+  // google/gemini-2.5-flash → openai/o3-mini → deepseek/deepseek-chat →
+  // openai/gpt-4o-mini. Primary is GPT-4o; Claude only runs if GPT-4o is
+  // unavailable or times out. Treat Maker as GPT-4o-first in ops/docs.
+  const makerPrompt = `You are an expert ${context.subject} assessment designer.
+Generate exactly ${questionCount} MCQ questions for ${context.subject}.
+STRICT SCOPE: syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+Never drift to adjacent topics not explicitly in scope.
+Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
+Hard questions must involve reasoning/application (not recall).
+For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.
+
+CRITICAL LATEX FORMATTING RULE — MANDATORY:
+Every mathematical expression in EVERY stem, option, and explanation MUST be wrapped in LaTeX delimiters.
+- Inline math: $...$  (e.g. $\\frac{1}{2}xe^{x^2}+C$, $\\sqrt{x^2+1}$, $x^2 + 3x - 4$)
+- Display math: $$...$$ (for standalone equations)
+NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$.
+CURRENCY RULE: NEVER use a bare $ before a number for currency (e.g. $9,000). Write "9,000 dollars" or "USD 9,000".
+SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.subject}.`;
+
   let parsed: QuizResult;
   let makerModel = "unknown";
   try {
-    const makerCatalogueBlock = context.catalogueContext
-      ? `\n\nCatalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}`
-      : "";
+    const makerCatalogueText = getCatalogueText(context);
+    const makerCatalogueBlock = makerCatalogueText ? `\n\nCatalogue context:\n${makerCatalogueText}` : "";
     const { data, metadata } = await generateWithFallback(
       makerPrompt,
       `Topic: ${context.topic}${makerCatalogueBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
@@ -950,6 +1053,11 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
 
   // ── STAGE 2/3: CHATGPT + GEMINI CHECKERS (CONCURRENT) + CLAUDE REWORK LOOP ──
+  // Phase 8's stem-drift reconciliation (`reconcileCheckerStems`) is kept
+  // exported for potential reuse, but is no longer called here — the
+  // Gemini-formatting / Claude-polish split it guarded has been superseded by
+  // the dual-checker rework loop below, and `mergeCheckerCorrections` only
+  // preserves Maker wording when the two checkers disagree on the answer.
   const warnings: PipelineWarning[] = [];
   let polishModel: string | null = null;
   for (let round = 1; round <= MAX_CLAUDE_REWORK_ROUNDS; round++) {
