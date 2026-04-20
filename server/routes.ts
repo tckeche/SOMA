@@ -14,12 +14,21 @@ import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runGeminiFormattingCheck, runClaudePolish, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
+import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
+import {
+  getTopicContext,
+  listExaminingBodies,
+  listLevelsForBody,
+  listSubjectsForBodyLevel,
+  listTopics as listCatalogueTopics,
+  resolveSyllabus,
+} from "./services/syllabusCatalogue";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -2088,9 +2097,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // Get topic inventory for a syllabus
+  // DEPRECATED: replaced by /api/catalogue/topics (Phase 4). This endpoint
+  // reads the legacy Phase-1 syllabusTopicInventory table, which is kept live
+  // until the Phase 5 frontend cutover. New callers should use the catalogue
+  // endpoints; existing callers continue to work unchanged.
   app.get("/api/tutor/syllabus-topics", requireTutor, async (req, res) => {
     try {
+      res.setHeader("Deprecation", "true");
+      res.setHeader("Link", '</api/catalogue/topics>; rel="successor-version"');
       const { board, syllabusCode, subject } = req.query;
       const topics = await storage.listSyllabusTopicInventory({
         board: board ? String(board) : undefined,
@@ -2100,6 +2114,106 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(topics);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch topics" });
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Syllabus catalogue (Phase 4). Tutor-scoped reads over the normalised
+  // Cambridge syllabus tables populated by scripts/ingestSyllabi.
+  // ---------------------------------------------------------------------
+  const catalogueQuerySchemas = {
+    levels: z.object({ body: z.string().min(1, "body is required") }),
+    subjects: z.object({
+      body: z.string().min(1, "body is required"),
+      level: z.string().min(1, "level is required"),
+    }),
+    topics: z.object({
+      body: z.string().min(1, "body is required"),
+      level: z.string().min(1, "level is required"),
+      subject: z.string().min(1, "subject is required"),
+    }),
+    topicContext: z.object({
+      topicIds: z
+        .string()
+        .min(1, "topicIds is required")
+        .transform((raw, ctx) => {
+          const ids = raw
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+            .map((s) => Number(s));
+          if (ids.some((n) => !Number.isInteger(n) || n <= 0)) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "topicIds must be comma-separated positive integers" });
+            return z.NEVER;
+          }
+          return ids;
+        }),
+    }),
+  };
+
+  app.get("/api/catalogue/examining-bodies", requireTutor, async (_req, res) => {
+    try {
+      const bodies = await listExaminingBodies();
+      res.json(bodies);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list examining bodies" });
+    }
+  });
+
+  app.get("/api/catalogue/levels", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.levels.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const levels = await listLevelsForBody(parsed.data.body);
+      res.json(levels);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list levels" });
+    }
+  });
+
+  app.get("/api/catalogue/subjects", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.subjects.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const subjects = await listSubjectsForBodyLevel(parsed.data.body, parsed.data.level);
+      res.json(subjects);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list subjects" });
+    }
+  });
+
+  app.get("/api/catalogue/topics", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.topics.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const { body, level, subject } = parsed.data;
+      const syllabus = await resolveSyllabus(body, level, subject);
+      if (!syllabus) {
+        return res.status(404).json({ message: "No syllabus matches the given body/level/subject" });
+      }
+      const topics = await listCatalogueTopics(body, level, subject);
+      res.json({ syllabus, topics });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list topics" });
+    }
+  });
+
+  app.get("/api/catalogue/topic-context", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.topicContext.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const context = await getTopicContext(parsed.data.topicIds);
+      res.json(context);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch topic context" });
     }
   });
 
@@ -3324,6 +3438,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       // ── Build assessment metadata snapshot ───────────────────────────────
       let assessmentSnapshot = "";
+      let catalogueBlock = "";
       if (assessmentContext && typeof assessmentContext === "object") {
         const ac = assessmentContext as Record<string, any>;
         const lines: string[] = ["=== ASSESSMENT METADATA ==="];
@@ -3333,6 +3448,28 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             ? m.topics.join(", ")
             : (m.topic || "—");
           lines.push(`Title: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"} | Topics: ${topicsLabel}`);
+
+          // Phase 6: if catalogue-keyed fields are present, load the rich
+          // digest so the copilot has subtopics/requirements/competencies in
+          // context rather than just free-text labels.
+          if (m.examiningBodySlug && m.levelCode && m.subjectSlug) {
+            try {
+              const ctx = await loadCopilotContext({
+                bodySlug: String(m.examiningBodySlug),
+                levelCode: String(m.levelCode),
+                subjectSlug: String(m.subjectSlug),
+                selectedTopicIds: Array.isArray(m.selectedTopicIds)
+                  ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
+                  : [],
+                timeLimitMinutes: typeof m.timeLimitMinutes === "number" ? m.timeLimitMinutes : null,
+              });
+              if (ctx) {
+                catalogueBlock = `=== CATALOGUE CONTEXT ===\n${formatCopilotContextAsText(ctx)}\n=========================`;
+              }
+            } catch (err: any) {
+              console.warn(`[COPILOT_CHAT] catalogue context load failed: ${err?.message || "unknown"}`);
+            }
+          }
         }
         if (ac.difficultySpread && typeof ac.difficultySpread === "object") {
           const ds = ac.difficultySpread as Record<string, number>;
@@ -3486,6 +3623,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const userPrompt = [
         draftContextBlock || "(Draft is currently empty — no questions yet)",
         assessmentSnapshot,
+        catalogueBlock,
         `Current request from tutor:\n${text}`,
         `Conversation memory:\n${memoryTranscript || "No previous turns."}`,
         `Supporting context:\n${supportingText || "No extra context."}`,
@@ -4249,7 +4387,37 @@ ${JSON.stringify({
       medium: z.number().min(0).max(100),
       hard: z.number().min(0).max(100),
     }).optional(),
+    // Phase 6 — optional catalogue-keyed identifiers. When supplied the
+    // pipeline pulls a rich syllabus digest (subtopics / learning requirements
+    // / competencies / papers) and injects it into every LLM stage.
+    examiningBodySlug: z.string().optional(),
+    levelCode: z.string().optional(),
+    subjectSlug: z.string().optional(),
+    selectedTopicIds: z.array(z.number().int().positive()).optional(),
+    timeLimitMinutes: z.number().int().positive().optional(),
   });
+
+  async function maybeLoadCatalogueContext(params: {
+    examiningBodySlug?: string;
+    levelCode?: string;
+    subjectSlug?: string;
+    selectedTopicIds?: number[];
+    timeLimitMinutes?: number | null;
+  }) {
+    if (!params.examiningBodySlug || !params.levelCode || !params.subjectSlug) return null;
+    try {
+      return await loadCopilotContext({
+        bodySlug: params.examiningBodySlug,
+        levelCode: params.levelCode,
+        subjectSlug: params.subjectSlug,
+        selectedTopicIds: params.selectedTopicIds ?? [],
+        timeLimitMinutes: params.timeLimitMinutes ?? null,
+      });
+    } catch (err: any) {
+      console.warn(`[SOMA_CATALOGUE_CTX] Failed to load catalogue context: ${err?.message || "unknown"}`);
+      return null;
+    }
+  }
 
   function parseBoardAndSyllabusCode(raw: string): { board: string; syllabusCode: string } {
     const trimmed = raw.trim();
@@ -4337,7 +4505,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
       const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
@@ -4350,6 +4518,14 @@ ${JSON.stringify({
         subtopic,
       });
 
+      const catalogueContext = await maybeLoadCatalogueContext({
+        examiningBodySlug,
+        levelCode,
+        subjectSlug,
+        selectedTopicIds,
+        timeLimitMinutes,
+      });
+
       const result = await generateAuditedQuiz({
         topic,
         subject,
@@ -4360,6 +4536,7 @@ ${JSON.stringify({
         questionCount,
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
+        catalogueContext: catalogueContext ?? undefined,
       });
 
       const quiz = await storage.createSomaQuiz({
@@ -4413,7 +4590,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
@@ -4428,6 +4605,14 @@ ${JSON.stringify({
         tutorId,
       });
 
+      const catalogueContext = await maybeLoadCatalogueContext({
+        examiningBodySlug,
+        levelCode,
+        subjectSlug,
+        selectedTopicIds,
+        timeLimitMinutes,
+      });
+
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
@@ -4435,6 +4620,7 @@ ${JSON.stringify({
         questionCount,
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
+        catalogueContext: catalogueContext ?? undefined,
       });
 
       const adopted = await storage.getAdoptedStudents(tutorId);

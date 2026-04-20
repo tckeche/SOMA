@@ -1,0 +1,1320 @@
+{
+  "syllabusCode": "9702",
+  "pattern": "A",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Physical quantities and units",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Physical quantities",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand that all physical quantities consist of a numerical magnitude and a unit",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "make reasonable estimates of physical quantities included within the syllabus",
+              "commandWord": "make"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "SI units",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "express derived units as products or quotients of the SI base units and use the derived units for quantities listed in this syllabus as appropriate",
+              "commandWord": "express"
+            },
+            {
+              "statement": "use SI base units to check the homogeneity of physical equations",
+              "commandWord": "use"
+            },
+            {
+              "statement": "recall and use the following prefixes and their symbols to indicate decimal submultiples or multiples of both base and derived units: pico (p), nano (n), micro (μ), milli (m), centi (c), deci (d), kilo (k), mega (M), giga (G), tera (T)",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "1.3",
+          "title": "Errors and uncertainties",
+          "levelTier": "AS",
+          "requirements": []
+        },
+        {
+          "number": "1.4",
+          "title": "Scalars and vectors",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "represent a vector as two perpendicular components",
+              "commandWord": "represent"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Kinematics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Equations of motion",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "define and use distance, displacement, speed, velocity and acceleration",
+              "commandWord": "define"
+            },
+            {
+              "statement": "use graphical methods to represent distance, displacement, speed, velocity and acceleration",
+              "commandWord": "use"
+            },
+            {
+              "statement": "determine displacement from the area under a velocity–time graph",
+              "commandWord": "determine"
+            },
+            {
+              "statement": "determine velocity using the gradient of a displacement–time graph",
+              "commandWord": "determine"
+            },
+            {
+              "statement": "determine acceleration using the gradient of a velocity–time graph",
+              "commandWord": "determine"
+            },
+            {
+              "statement": "describe an experiment to determine the acceleration of free fall using a falling object",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Dynamics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Momentum and Newton’s laws of motion",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand that mass is the property of an object that resists change in motion",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "define and use linear momentum as the product of mass and velocity",
+              "commandWord": "define"
+            },
+            {
+              "statement": "define and use force as rate of change of momentum",
+              "commandWord": "define"
+            },
+            {
+              "statement": "state and apply each of Newton’s laws of motion",
+              "commandWord": "state"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Non-uniform motion",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe and explain qualitatively the motion of objects in a uniform gravitational field with air resistance",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "understand that objects moving against a resistive force may reach a terminal (constant) velocity",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Linear momentum and its conservation",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state the principle of conservation of momentum",
+              "commandWord": "state"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Forces, density and pressure",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Turning effects of forces",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "define and apply the moment of a force",
+              "commandWord": "define"
+            },
+            {
+              "statement": "understand that a couple is a pair of forces that acts to produce rotation only",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "define and apply the torque of a couple",
+              "commandWord": "define"
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "Equilibrium of forces",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state and apply the principle of moments",
+              "commandWord": "state"
+            },
+            {
+              "statement": "understand that, when there is no resultant force and no resultant torque, a system is in equilibrium",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "use a vector triangle to represent coplanar forces in equilibrium",
+              "commandWord": "use"
+            }
+          ]
+        },
+        {
+          "number": "4.3",
+          "title": "Density and pressure",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "define and use density",
+              "commandWord": "define"
+            },
+            {
+              "statement": "define and use pressure",
+              "commandWord": "define"
+            },
+            {
+              "statement": "derive, from the definitions of pressure and density, the equation for hydrostatic pressure ∆p = ρg∆ h",
+              "commandWord": "derive"
+            },
+            {
+              "statement": "use the equation ∆p = ρg∆ h",
+              "commandWord": "use"
+            },
+            {
+              "statement": "understand that the upthrust acting on an object in a fluid is due to a difference in hydrostatic pressure",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "calculate the upthrust acting on an object in a fluid using the equation F = ρgV (Archimedes’ principle)",
+              "commandWord": "calculate"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Work, energy and power",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "Energy conservation",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "recall and apply the principle of conservation of energy",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "use the concept of efficiency to solve problems",
+              "commandWord": "use"
+            },
+            {
+              "statement": "define power as work done per unit time",
+              "commandWord": "define"
+            },
+            {
+              "statement": "solve problems using P = W / t",
+              "commandWord": "solve"
+            },
+            {
+              "statement": "derive P = Fv and use it to solve problems",
+              "commandWord": "derive"
+            }
+          ]
+        },
+        {
+          "number": "5.2",
+          "title": "Gravitational potential energy and kinetic energy",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "derive, using the equations of motion, the formula for kinetic energy EK = 2 mv2",
+              "commandWord": "derive"
+            },
+            {
+              "statement": "recall and use EK = 2 mv2",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Deformation of solids",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Stress and strain",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "recall and use Hooke’s law",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "recall and use the formula for the spring constant k = F / x",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "define and use the terms stress, strain and the Young modulus",
+              "commandWord": "define"
+            },
+            {
+              "statement": "describe an experiment to determine the Young modulus of a metal in the form of a wire",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Elastic and plastic behaviour",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand and use the terms elastic deformation, plastic deformation and elastic limit",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand that the area under the force–extension graph represents the work done",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use EP = 2 Fx = 2 kx2 for a material deformed within its limit of proportionality",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Waves",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Progressive waves",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe what is meant by wave motion as illustrated by vibration in ropes, springs and ripple tanks",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "derive, using the definitions of speed, frequency and wavelength, the wave equation v = f λ",
+              "commandWord": "derive"
+            },
+            {
+              "statement": "recall and use v = f λ",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "understand that energy is transferred by a progressive wave",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use intensity = power/area and intensity ∝ (amplitude)2 for a progressive wave",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "7.2",
+          "title": "Transverse and longitudinal waves",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "compare transverse and longitudinal waves",
+              "commandWord": "compare"
+            },
+            {
+              "statement": "analyse and interpret graphical representations of transverse and longitudinal waves",
+              "commandWord": "analyse"
+            }
+          ]
+        },
+        {
+          "number": "7.3",
+          "title": "Doppler effect for sound waves",
+          "levelTier": "AS",
+          "requirements": []
+        },
+        {
+          "number": "7.4",
+          "title": "Electromagnetic spectrum",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state that all electromagnetic waves are transverse waves that travel with the same speed c in free space",
+              "commandWord": "state"
+            },
+            {
+              "statement": "recall the approximate range of wavelengths in free space of the principal regions of the electromagnetic spectrum from radio waves to γ-rays",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "recall that wavelengths in the range 400–700 nm in free space are visible to the human eye",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "7.5",
+          "title": "Polarisation",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand that polarisation is a phenomenon associated with transverse waves",
+              "commandWord": "understand"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Superposition",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "Stationary waves",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "explain and use the principle of superposition",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the formation of a stationary wave using a graphical method, and identify nodes and antinodes",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "8.2",
+          "title": "Diffraction",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "explain the meaning of the term diffraction",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "8.3",
+          "title": "Interference",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand the terms interference and coherence",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand the conditions required if two-source interference fringes are to be observed",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use λ = ax / D for double-slit interference using light",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "8.4",
+          "title": "The diffraction grating",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "recall and use d sin θ = nλ",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Electricity",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "Electric current",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand that an electric current is a flow of charge carriers",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand that the charge on charge carriers is quantised",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use Q = It",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "9.2",
+          "title": "Potential difference and power",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "define the potential difference across a component as the energy transferred per unit charge",
+              "commandWord": "define"
+            },
+            {
+              "statement": "recall and use V = W / Q",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "recall and use P = VI, P = I 2R and P = V 2 / R",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "9.3",
+          "title": "Resistance and resistivity",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "define resistance",
+              "commandWord": "define"
+            },
+            {
+              "statement": "recall and use V = IR",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "state Ohm’s law",
+              "commandWord": "state"
+            },
+            {
+              "statement": "recall and use R = ρL / A",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "understand that the resistance of a thermistor decreases as the temperature increases (it will be assumed that thermistors have a negative temperature coefficient)",
+              "commandWord": "understand"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "10",
+      "title": "D.C. circuits",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "10.1",
+          "title": "Practical circuits",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "recall and use the circuit symbols shown in section 6 of this syllabus",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "draw and interpret circuit diagrams containing the circuit symbols shown in section 6 of this syllabus",
+              "commandWord": "draw"
+            },
+            {
+              "statement": "distinguish between e.m.f. and potential difference (p.d.) in terms of energy considerations",
+              "commandWord": "distinguish"
+            },
+            {
+              "statement": "understand the effects of the internal resistance of a source of e.m.f. on the terminal potential difference",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "10.2",
+          "title": "Kirchhoff’s laws",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "recall Kirchhoff’s first law and understand that it is a consequence of conservation of charge",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "recall Kirchhoff’s second law and understand that it is a consequence of conservation of energy",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "derive, using Kirchhoff’s laws, a formula for the combined resistance of two or more resistors in series",
+              "commandWord": "derive"
+            },
+            {
+              "statement": "use the formula for the combined resistance of two or more resistors in series",
+              "commandWord": "use"
+            },
+            {
+              "statement": "derive, using Kirchhoff’s laws, a formula for the combined resistance of two or more resistors in parallel",
+              "commandWord": "derive"
+            },
+            {
+              "statement": "use the formula for the combined resistance of two or more resistors in parallel",
+              "commandWord": "use"
+            },
+            {
+              "statement": "use Kirchhoff’s laws to solve simple circuit problems",
+              "commandWord": "use"
+            }
+          ]
+        },
+        {
+          "number": "10.3",
+          "title": "Potential dividers",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "understand the principle of a potential divider circuit",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use the principle of the potentiometer as a means of comparing potential differences",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "understand the use of a galvanometer in null methods",
+              "commandWord": "understand"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "11",
+      "title": "Particle physics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "11.1",
+          "title": "Atoms, nuclei and radiation",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "infer from the results of the α-particle scattering experiment the existence and small size of the nucleus",
+              "commandWord": "infer"
+            },
+            {
+              "statement": "describe a simple model for the nuclear atom to include protons, neutrons and orbital electrons",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "distinguish between nucleon number and proton number",
+              "commandWord": "distinguish"
+            },
+            {
+              "statement": "understand and use the notation AZ X for the representation of nuclides",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand that nucleon number and charge are conserved in nuclear processes",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "11.2",
+          "title": "Fundamental particles",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the changes to quark composition that take place during β – and β+ decay",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "recall that electrons and neutrinos are fundamental particles called leptons",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "12",
+      "title": "Motion in a circle",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "12.1",
+          "title": "Kinematics of uniform circular motion",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "define the radian and express angular displacement in radians",
+              "commandWord": "define"
+            },
+            {
+              "statement": "understand and use the concept of angular speed",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use ω = 2π / T and v = rω",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "12.2",
+          "title": "Centripetal acceleration",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that centripetal acceleration causes circular motion with a constant angular speed",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use a = rω2 and a = v2 / r",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "recall and use F = mrω2 and F = mv2 / r",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "13",
+      "title": "Gravitational fields",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "13.1",
+          "title": "Gravitational field",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "represent a gravitational field by means of field lines",
+              "commandWord": "represent"
+            }
+          ]
+        },
+        {
+          "number": "13.2",
+          "title": "Gravitational force between point masses",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "recall and use Newton’s law of gravitation F = Gm1m2 / r2 for the force between two point masses",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "13.3",
+          "title": "Gravitational field of a point mass",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand why g is approximately constant for small changes in height near the Earth’s surface",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "13.4",
+          "title": "Gravitational potential",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "use ϕ = –GM / r for the gravitational potential in the field due to a point mass",
+              "commandWord": "use"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "14",
+      "title": "Temperature",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "14.1",
+          "title": "Thermal equilibrium",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that regions of equal temperature are in thermal equilibrium",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "14.2",
+          "title": "Temperature scales",
+          "levelTier": "A2",
+          "requirements": []
+        },
+        {
+          "number": "14.3",
+          "title": "Specific heat capacity and specific latent heat",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "define and use specific heat capacity",
+              "commandWord": "define"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "15",
+      "title": "Ideal gases",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "15.1",
+          "title": "The mole",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that amount of substance is an SI base quantity with the base unit mol",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "15.2",
+          "title": "Equation of state",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that a gas obeying pV ∝ T, where T is the thermodynamic temperature, is known as an ideal gas",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall that the Boltzmann constant k is given by k = R / NA",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "15.3",
+          "title": "Kinetic theory of gases",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "state the basic assumptions of the kinetic theory of gases",
+              "commandWord": "state"
+            },
+            {
+              "statement": "understand that the root-mean-square speed cr.m.s. is given by <c 2 >",
+              "commandWord": "understand"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "16",
+      "title": "Thermodynamics",
+      "strandName": null,
+      "subtopics": []
+    },
+    {
+      "number": "17",
+      "title": "Oscillations",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "17.2",
+          "title": "Energy in simple harmonic motion",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "describe the interchange between kinetic and potential energy during simple harmonic motion",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "recall and use E = 2 mω2 x02 for the total energy of a system undergoing simple harmonic motion",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "17.3",
+          "title": "Damped and forced oscillations, resonance",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that a resistive force acting on an oscillating system causes damping",
+              "commandWord": "understand"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "18",
+      "title": "Electric fields",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "18.1",
+          "title": "Electric fields and field lines",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "represent an electric field by means of field lines",
+              "commandWord": "represent"
+            }
+          ]
+        },
+        {
+          "number": "18.2",
+          "title": "Uniform electric fields",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "describe the effect of a uniform electric field on the motion of charged particles",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "18.3",
+          "title": "Electric force between point charges",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "recall and use Coulomb’s law F = Q1Q2 / (4πε 0 r 2) for the force between two point charges in free space",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "18.4",
+          "title": "Electric field of a point charge",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "recall and use E = Q / (4πε 0 r 2) for the electric field strength due to a point charge in free space",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "18.5",
+          "title": "Electric potential",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "use V = Q / (4πε 0 r) for the electric potential in the field due to a point charge",
+              "commandWord": "use"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "19",
+      "title": "Capacitance",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "19.1",
+          "title": "Capacitors and capacitance",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "define capacitance, as applied to both isolated spherical conductors and to parallel plate capacitors",
+              "commandWord": "define"
+            },
+            {
+              "statement": "recall and use C = Q / V",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "derive, using C = Q / V, formulas for the combined capacitance of capacitors in series and in parallel",
+              "commandWord": "derive"
+            },
+            {
+              "statement": "use the capacitance formulas for capacitors in series and in parallel",
+              "commandWord": "use"
+            }
+          ]
+        },
+        {
+          "number": "19.2",
+          "title": "Energy stored in a capacitor",
+          "levelTier": "A2",
+          "requirements": []
+        },
+        {
+          "number": "19.3",
+          "title": "Discharging a capacitor",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "recall and use τ = RC for the time constant for a capacitor discharging through a resistor",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "20",
+      "title": "Magnetic fields",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "20.1",
+          "title": "Concept of a magnetic field",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "represent a magnetic field by field lines",
+              "commandWord": "represent"
+            }
+          ]
+        },
+        {
+          "number": "20.2",
+          "title": "Force on a current-carrying conductor",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that a force might act on a current-carrying conductor placed in a magnetic field",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use the equation F = BIL sin θ, with directions as interpreted by Fleming’s left-hand rule",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "20.3",
+          "title": "Force on a moving charge",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "determine the direction of the force on a charge moving in a magnetic field",
+              "commandWord": "determine"
+            },
+            {
+              "statement": "recall and use F = BQv sin θ",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "understand the origin of the Hall voltage and derive and use the expression VH = BI / (ntq), where t = thickness",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand the use of a Hall probe to measure magnetic flux density",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "explain how electric and magnetic fields can be used in velocity selection",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "understand that the magnetic field due to the current in a solenoid is increased by a ferrous core",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use Φ = BA",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "understand and use the concept of magnetic flux linkage",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand and explain experiments that demonstrate: • that a changing magnetic flux can induce an e.m.f. in a circuit • that the induced e.m.f. is in such a direction as to oppose the change producing it • the factors affecting the magnitude of the induced e.m.f.",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use Faraday’s and Lenz’s laws of electromagnetic induction",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "21",
+      "title": "Alternating currents",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "21.1",
+          "title": "Characteristics of alternating currents",
+          "levelTier": "A2",
+          "requirements": []
+        },
+        {
+          "number": "21.2",
+          "title": "Rectification and smoothing",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "distinguish graphically between half-wave and full-wave rectification",
+              "commandWord": "distinguish"
+            },
+            {
+              "statement": "explain the use of a single diode for the half-wave rectification of an alternating current",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the use of four diodes (bridge rectifier) for the full-wave rectification of an alternating current",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "22",
+      "title": "Quantum physics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "22.1",
+          "title": "Energy and momentum of a photon",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that electromagnetic radiation has a particulate nature",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand that a photon is a quantum of electromagnetic energy",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use E = hf",
+              "commandWord": "recall"
+            },
+            {
+              "statement": "use the electronvolt (eV) as a unit of energy",
+              "commandWord": "use"
+            },
+            {
+              "statement": "understand that a photon has momentum and that the momentum is given by p = E / c",
+              "commandWord": "understand"
+            }
+          ]
+        },
+        {
+          "number": "22.2",
+          "title": "Photoelectric effect",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand and use the terms threshold frequency and threshold wavelength",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "explain photoelectric emission in terms of photon energy and work function energy",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "recall and use hf = Φ + 2 mvmax2",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "22.3",
+          "title": "Wave–particle duality",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand the de Broglie wavelength as the wavelength associated with a moving particle",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use λ = h / p",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "22.4",
+          "title": "Energy levels in atoms and line spectra",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that there are discrete electron energy levels in isolated atoms (e.g. atomic hydrogen)",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand the appearance and formation of emission and absorption line spectra",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use hf = E1 – E2",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "23",
+      "title": "Nuclear physics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "23.1",
+          "title": "Mass defect and nuclear binding energy",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "represent simple nuclear reactions by nuclear equations of the form 147 N + 24 He \" 178 O + 11 H",
+              "commandWord": "represent"
+            },
+            {
+              "statement": "define and use the terms mass defect and binding energy",
+              "commandWord": "define"
+            },
+            {
+              "statement": "sketch the variation of binding energy per nucleon with nucleon number",
+              "commandWord": "sketch"
+            },
+            {
+              "statement": "explain what is meant by nuclear fusion and nuclear fission",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "calculate the energy released in nuclear reactions using E = c2∆ m",
+              "commandWord": "calculate"
+            }
+          ]
+        },
+        {
+          "number": "23.2",
+          "title": "Radioactive decay",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand that fluctuations in count rate provide evidence for the random nature of radioactive decay",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand that radioactive decay is both spontaneous and random",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "define activity and decay constant, and recall and use A = λN",
+              "commandWord": "define"
+            },
+            {
+              "statement": "define half-life",
+              "commandWord": "define"
+            },
+            {
+              "statement": "use λ = 0.693 / t 1 2",
+              "commandWord": "use"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "24",
+      "title": "Medical physics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "24.1",
+          "title": "Production and use of ultrasound",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "understand how ultrasound waves are generated and detected by a piezoelectric transducer",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "recall and use I = I0e –µx for the attenuation of ultrasound in matter",
+              "commandWord": "recall"
+            }
+          ]
+        },
+        {
+          "number": "24.2",
+          "title": "Production and use of X-rays",
+          "levelTier": "A2",
+          "requirements": []
+        },
+        {
+          "number": "24.3",
+          "title": "PET scanning",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "recall that a tracer that decays by β+ decay is used in positron emission tomography (PET scanning)",
+              "commandWord": "recall"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "25",
+      "title": "Astronomy and cosmology",
+      "strandName": null,
+      "subtopics": []
+    }
+  ],
+  "warnings": []
+}

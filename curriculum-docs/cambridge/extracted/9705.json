@@ -1,0 +1,685 @@
+{
+  "syllabusCode": "9705",
+  "pattern": "A",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "The design process",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Different approaches to designing, including: iterative design intuitive design.",
+              "commandWord": "different"
+            },
+            {
+              "statement": "The key stages in design thinking: empathise: research your users’ needs define: state your users’ needs and problems ideate: challenge assumptions and create ideas refine: develop ideas through an iterative process realise: start to create solutions test: try out your solutions.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The analysis of products in terms of: function aesthetics ergonomics types and properties of materials production processes target market/customers cost safety of the user quality control (including standards such as use of non-toxic paints or electrical safety) sustainability.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The key stages in the design process: identifying an original design need or how an existing product can be improved preparing a design brief that accurately describes a design need finding, gathering and analysing information relevant to a design need completing primary and secondary research relevant to a design need, including the use of market research tools such as observations, interviews and questionnaires drawing up a design specification of requirements which are succinct, justified and measurable generating and recording possible solutions developing and refining ideas using further research and analysis and checking against the design specification evaluating possible solutions through a variety of techniques and selecting one solution for development modelling aspects of ideas and proposals to test and see how a product looks and its viability developing and formulating a detailed design proposal for a product identifying the resources required to realise a product organising the resources to realise a product planning the efficient use of materials, energy and other resources required to make a product realising a product using appropriate tools and equipment applying the health and safety procedures required in a school workshop or practical area applying appropriate tests to assess the success of a product proposing further improvements to a product.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Design principles",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "The concept of good design. A good design: always meets the needs, wants or values of the user(s) is innovative is simple (less is more) is aesthetic/visually pleasing is long lasting is environmentally friendly is safe to use makes the product useful makes the product understandable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The influence of the following design movements on the design of products: Art Deco Arts and Crafts Bauhaus Scandinavian Minimalism Modernism Postmodernism.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impact of the following on the design of new products: scale of production (individual (one-off), batch and mass production) production processes costs (material costs and production costs) changing customer requirements social and cultural changes fashion and trends the availability of materials and resources new manufacturing technologies changing legal and environmental requirements.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Communication",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "2D and 3D presentation techniques: freehand sketching, including exploded and sectional views (cut-away) drawings/sketches accurate isometric drawings, including the construction of arcs and circles estimated one- and two-point perspective drawings accurate planometric drawings (45/45).",
+              "commandWord": "2d"
+            },
+            {
+              "statement": "Enhancement techniques, including: the use of tone and colour material representation the use of shadows.",
+              "commandWord": "enhancement"
+            },
+            {
+              "statement": "Developments (nets), including glue tabs and mechanical joining methods, required to form: prisms cones cylinders pyramids.",
+              "commandWord": "developments"
+            },
+            {
+              "statement": "First and third angle orthographic working drawings, including: use of scales dimensioning symbols and conventions, e.g. BS 308 or BS 8888 part drawings sectional views.",
+              "commandWord": "first"
+            },
+            {
+              "statement": "Planning drawings, including: flowcharts Gantt charts materials or cutting lists.",
+              "commandWord": "planning"
+            },
+            {
+              "statement": "The use of digital technology to communicate, including: common software packages, e.g. Microsoft Word, Microsoft Excel, Microsoft PowerPoint, Adobe® Acrobat Pro email collaboration software, e.g. Microsoft Teams and Miro video conferencing.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Design and technology in society",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "The impact design and technology activities have on: individuals groups of people, e.g. by geographic location, religion or ethnicity society and culture.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "How products can be inclusive or exclusive in their design and can be used by a wide range of users, including: those with particular needs (such as people who are visually impaired or hearing impaired or who have physical support needs or neurodiverse requirements) those from different age groups (from children to the elderly).",
+              "commandWord": "how"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Sustainable design",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "The responsibilities of designers and manufacturers in ensuring products and packaging are made from sustainable materials and components.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Factors that are considered when designing products to have minimum impact on the environment: raw material extraction energy consumption ease of repair and maintenance disposal at the end of life.",
+              "commandWord": "factors"
+            },
+            {
+              "statement": "Ways to modify designs to make them more sustainable, including: reducing the quantity of materials used reducing the number of manufacturing processes designing products that can be easily repaired using standardised components making products easy to disassemble or separate reusing components and parts using eco-friendly alternative materials using recycled materials using locally available materials reducing the need for transport costs finding alternative manufacturing processes reducing the amount of waste products produced during manufacturing reducing the amount of energy required in manufacturing processes improving the efficiency of manufacturing processes labelling of materials to aid separation for recycling.",
+              "commandWord": "ways"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Health and safety",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Standard risk assessment procedures in product design and manufacture.",
+              "commandWord": "standard"
+            },
+            {
+              "statement": "Safe working practices, including identifying hazards and making risk assessments.",
+              "commandWord": "safe"
+            },
+            {
+              "statement": "Safe working practices in a school workshop or practical area, including: wearing appropriate personal protective equipment (PPE) for the relevant machine or process such as goggles, visor, face mask, gloves, apron or lab coat tying long hair back and rolling up sleeves using welding goggles for welding and gauntlets and spats for hot metal working keeping areas clean using the correct tool for the job stopping when needed to address hazards using the safety guards on machinery when needed applying manual handling precautions receiving safety training around material properties (e.g. corrosive or toxic materials) working under supervision receiving safety training in the use of tools, equipment and machinery.",
+              "commandWord": "safe"
+            },
+            {
+              "statement": "Action to be taken when hazards are identified or when accidents occur in a school workshop or practical area.",
+              "commandWord": "action"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Aesthetics and ergonomics",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "How aesthetics is concerned with the visual appearance of a product.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "The use of line, colour, shape, proportion and form to improve visual appearance.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The appreciation of the effects of light and shade on solid forms and of different surface finishes on visual and tactile senses.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The balance of form and function.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "How ergonomics is concerned with understanding how humans interact with environments, products and systems.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "The common anthropometric measurements, including weight, height, knee height, sitting height, body mass index (BMI), body circumference (arm, waist, hip and calf) and waist-to-hip ratio (WHR).",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The interpretation and application of anthropometric data to design development.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Materials and components",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "The working properties, stock forms and sizes, common uses and environmental impact of the following: copier paper card corrugated card bleached card mount board duplex card moulded paper pulp.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, stock forms and sizes, common uses and environmental impact of the following: extruded polystyrene foam, e.g. Styrofoam™ balsa wood polymorph plaster of Paris.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, stock forms and sizes, common uses and environmental impact of the following: softwoods ○ pine, cedar, fir, spruce or equivalent local softwood hardwoods ○ beech, oak, ash, teak or equivalent local hardwood.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, stock forms, sizes and extrusions, common uses and environmental impact of the following: ferrous metals ○ cast iron ○ mild steel ○ stainless steel ○ high speed steel ○ carbon steels non-ferrous metals and their alloys ○ aluminium ○ copper ○ lead ○ tin ○ zinc ○ titanium ○ tungsten ○ duralumin ○ brass.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, stock forms, sizes and extrusions, common uses and environmental impact of the following: thermoplastics ○ acrylic (PMMA) ○ nylon ○ polyvinyl chloride (PVC) ○ polystyrene (PS) ○ polypropylene (PP) ○ \u0007high and low density polyethylene (HDPE) (LDPE) ○ high impact polystyrene (HIPS) ○ polycarbonate (PC) ○ acrylonitrile butadiene styrene (ABS) ○ polyethylene terephthalate (PET) ○ fluted or corrugated polypropylene (Corriflute ®) thermosetting plastics ○ polyester resin ○ melamine formaldehyde (MF) ○ urea formaldehyde (UF) ○ epoxy resin",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, stock forms and sizes, common uses and environmental impact of the following: foam core/foam board foil backed and laminated card, e.g. Tetra Pak® manufactured boards ○ chipboard ○ engineered wood ○ medium density fibreboard (MDF) ○ plywood ○ blockboard fibre reinforced materials ○ glass fibre reinforced plastic (GRP) ○ carbon fibre reinforced plastic (CFRP).",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, common uses and environmental impact of the following: pigments ○ phosphorescent ○ photochromic ○ thermochromic shape memory alloys (SMA) ○ nickel-titanium ○ copper-aluminium-nickel hydrogels shape memory polymers.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, common uses and environmental impact of the following: nanomaterials ○ oleophobic coatings ○ hydrophobic materials metal foams super alloys bioplastics ○ starch-based ○ sugar-based ○ cellulose-based.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The working properties, common uses and environmental impact of the following: polylactide (PLA) polyhydroxybutyrate (PHB), e.g. BIOPOL® plastic made from corn/potato starch.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Electronic components and symbols used in control systems.",
+              "commandWord": "electronic"
+            },
+            {
+              "statement": "Electronic symbols list (Please see page 34).",
+              "commandWord": "electronic"
+            },
+            {
+              "statement": "The significance of the following material properties in terms of use as part of a product: hardness ductility toughness brittleness elasticity malleability dimensional stability electrical conductivity thermal conductivity corrosion resistance.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Stages in materials processing",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Measuring and/or marking out from working drawings and using tools and methods appropriate to the materials.",
+              "commandWord": "measuring"
+            },
+            {
+              "statement": "Cutting, shaping and forming of materials using appropriate tools and methods.",
+              "commandWord": "cutting"
+            },
+            {
+              "statement": "Joining and assembling materials using a range of temporary and permanent methods.",
+              "commandWord": "joining"
+            },
+            {
+              "statement": "Selecting and applying a finish which is appropriate for the material used and the product design.",
+              "commandWord": "selecting"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "10",
+      "title": "Materials processing",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "10.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "The use of the following processing techniques: wastage ○ cutting with hand and machine tools, including laser cutter ○ vinyl cutting machine ○ drilling, using hand, powered and press drills ○ turning, using a wood lathe and centre lathe ○ milling and routing ○ use of abrasives forming ○ vacuum forming, including the design and construction of formers ○ line bending addition ○ fabrication finishing ○ paints ○ polymer coatings ○ varnishes, including UV and spot varnishing printing ○ digital printing ○ screen printing.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "11",
+      "title": "Energy and control systems",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "11.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Main sources of energy: fossil fuels such as oil, natural gas and coal (finite) water, wind and solar (renewable).",
+              "commandWord": "main"
+            },
+            {
+              "statement": "Comparison of the main sources of energy.",
+              "commandWord": "comparison"
+            },
+            {
+              "statement": "Different forms of energy, including: kinetic potential thermal electrical chemical.",
+              "commandWord": "different"
+            },
+            {
+              "statement": "Practical and efficient methods of conversion and transmission of energy through simple mechanisms, machines, engines, turbines and electric motors.",
+              "commandWord": "practical"
+            },
+            {
+              "statement": "Basic principles of manual, semi-automatic and automatic control using input, output, feedback and amplification.",
+              "commandWord": "basic"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "12",
+      "title": "Technology",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "12.1",
+          "title": "Content",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Technological developments and how they can affect the design and manufacture of products.",
+              "commandWord": "technological"
+            },
+            {
+              "statement": "The terms invention, innovation and evolution.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The use of CAD (computer-aided design) for the storage and retrieval of data and the manipulation of images to aid design, production and management.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The principal features of CAM (computer-aided manufacture), particularly in the control/operation of machines.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impact of the following emerging technologies on designing and making: rapid prototyping, including 3D printing rapid manufacture robotics artificial intelligence (AI) virtual reality (VR).",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "13",
+      "title": "Industrial practices",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "13.1",
+          "title": "Content",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "The range of service sectors in design and manufacturing industries, including: extraction of raw materials design and development manufacturing marketing and sales repair and maintenance.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The roles of a designer, manufacturer and consumer.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The roles of different workers within a manufacturing industry.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The production processes used in a manufacturing industry.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages/disadvantages of hand and automated production systems used in manufacturing products.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "How technology-based systems are used by designers, manufacturers, retailers and consumers.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "How digital technology is used in the design and development, manufacturing, marketing and sale of products.",
+              "commandWord": "how"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "14",
+      "title": "Business and commercial practices",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "14.1",
+          "title": "Content",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "The importance of identifying and satisfying consumer needs, to provide a product that customers will buy.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The stages in a product’s life cycle: research and development introduction growth maturity decline.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The use of a product extension strategy when a product enters its decline stage.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages and disadvantages of product extension strategies, such as: discounting updating packaging adding more features.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The types of market research methods, such as: surveys/questionnaires interviews focus groups customer observation.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The purpose of market research relating to: demand competition target market.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "How and why businesses target customers by: demographics socio-economic background.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "The elements of the marketing mix (4Ps): price product promotion place.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The relationship between the scale of production and unit cost.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "15",
+      "title": "Quantity production",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "15.1",
+          "title": "Content",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "The differences between a: model prototype marketable product.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The preparation of a design brief for a marketable product.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The preparation of a manufacturing specification used to make a product in quantity.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The differences between individual (one-off), batch and mass production systems and how each impact on the: product people involved resources and costs.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Commercial manufacturing systems, including: concurrent engineering computer-integrated manufacturing (CIM) and computer-integrated engineering (CIE) cell production in-line assembly just in time (JIT) logistics.",
+              "commandWord": "commercial"
+            },
+            {
+              "statement": "The design of a manufacturing system, including jigs and formers, to be used to make a product in quantity.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Strategies to evaluate how well a manufacturing system has worked.",
+              "commandWord": "strategies"
+            },
+            {
+              "statement": "Improvements to a manufacturing system, including the use of templates to mark out shapes repeatedly and jigs and formers used to make a product.",
+              "commandWord": "improvements"
+            },
+            {
+              "statement": "Continuous improvement processes, such as Kaizen™.",
+              "commandWord": "continuous"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "16",
+      "title": "Materials processing in industry",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "16.1",
+          "title": "Content",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "Shaping die cutting, creasing and folding turning (wood and metal lathes) calendering plasma cutting.",
+              "commandWord": "shaping"
+            },
+            {
+              "statement": "Forming blow moulding (from a pre-form and extrusion) steam bending laminating press forming spinning.",
+              "commandWord": "forming"
+            },
+            {
+              "statement": "Redistribution methods sand, resin and die casting injection moulding extrusion rotational moulding compression moulding 3D printing.",
+              "commandWord": "redistribution"
+            },
+            {
+              "statement": "Wasting CNC milling stamping.",
+              "commandWord": "wasting"
+            },
+            {
+              "statement": "Fabrication.",
+              "commandWord": "fabrication"
+            },
+            {
+              "statement": "How similar and dissimilar materials are joined: permanently ○ with nails and pins ○ by heat (soldering, brazing and welding) ○ with adhesives spray mount hot melt glue polystyrene cement PVA (polyvinyl acetate) all-purpose glue two-part epoxy resin solvent cement (Tensol 12®)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "How materials are enhanced through processes and additives, including: metal enhancement ○ work hardening ○ annealing ○ case hardening ○ hardening and tempering polymer additives ○ plasticisers ○ pigment ○ fillers ○ anti-static ○ flame retardants ○ stabilisers ○ bio-batch.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "The different methods of printing and common applications for these methods, including: offset lithography flexography gravure sublimation printing pad printing.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The CYMK colour separation method.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages and disadvantages of the colour separation method during printing.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages/disadvantages of applying finishes to a material to improve: performance aesthetics.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Types of finish and methods of application, including: embossing/debossing paper and card UV varnishing/spot varnishing on paper and card hot foil blocking on paper and card paints sealants varnishes anodising plating coating.",
+              "commandWord": "types"
+            },
+            {
+              "statement": "Physical tests to determine the suitability of materials and components for the application of a finish.",
+              "commandWord": "physical"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "17",
+      "title": "Quality systems",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "17.1",
+          "title": "Content",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "Quality assurance (QA) checks to be used in the production of a product. (Quality assurance checks are made at every stage of the production process to meet the quality standards set.)",
+              "commandWord": "quality"
+            },
+            {
+              "statement": "Quality control (QC) checks to be used on a made product. (Quality control checks are made to a finished product to see if it meets the quality standards set.)",
+              "commandWord": "quality"
+            },
+            {
+              "statement": "The benefits of introducing Total Quality Management (TQM) to a production process. (Total Quality Management involves applying quality assurance procedures at every stage of the production process.)",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The benefits of quality systems to the manufacturer and the consumer.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Product testing methods that can be used before or during the manufacturing of products, such as: material testing dimensional checks joining/assembly checks visual checks.",
+              "commandWord": "product"
+            },
+            {
+              "statement": "The organisations that are responsible for quality standards within the candidate’s country such as the International Organization for Standardization (ISO).",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The quality standards concerned with testing products, components and materials against external quality standards, e.g. ISO 9013 (thermal cutting) or ISO 34257 (wood adhesives).",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "18",
+      "title": "Digital technology",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "18.1",
+          "title": "Content",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "The different software programs that are available to designers and manufacturers to design and develop products, including: desktop publishing software photo manipulation software technical drawing software 3D modelling software.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages and disadvantages to a designer or manufacturer of using these types of software programs and the appropriateness of their use.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The different methods of CAM which can be used when constructing products and the common uses for such methods, including: digital printing vinyl cutting laser cutting 3D printing (stereolithography and fused deposition).",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages and disadvantages of different methods of CAM production.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The advantages and disadvantages to a designer or manufacturer when using a range of digital communication methods to design and manufacture products, including: email web conferencing collaborative working through technology radio frequency identification (RFID) systems augmented reality (AR).",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

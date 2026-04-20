@@ -4,6 +4,10 @@ import { generateWithFallback, callGoogle } from "./aiOrchestrator";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { validateMathQuestion } from "./mathValidator";
+import {
+  formatCopilotContextAsText,
+  type CatalogueCopilotContext,
+} from "./copilotContext";
 
 export const QuestionSchema = z.object({
   stem: z.string(),
@@ -90,6 +94,12 @@ export interface SomaGenerationContext {
   questionCount?: number;
   subtopic?: string;
   difficultyDistribution?: { easy: number; medium: number; hard: number };
+  /**
+   * Rich catalogue-driven context (Phase 6). When present, its serialised text
+   * digest is injected into the Maker/Checker/Polisher user prompts on top of
+   * the legacy string fields. Legacy free-text callers can omit it.
+   */
+  catalogueContext?: CatalogueCopilotContext;
 }
 
 const MAX_CLAUDE_REWORK_ROUNDS = 2;
@@ -183,7 +193,10 @@ Return valid JSON only.`;
     return { warnings: [], questions };
   }
 
-  const userPrompt = `Syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
+  const catalogueBlock = context.catalogueContext
+    ? `\n\nCatalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}`
+    : "";
+  const userPrompt = `Syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.${catalogueBlock}
 Questions:
 ${JSON.stringify(questionPayload, null, 2)}`;
 
@@ -551,7 +564,10 @@ questionIndex is 1-based. Be concise in the issue field (one sentence).
 
 Return strict JSON matching the schema. NEVER drop or add questions — return exactly ${questions.length}.`;
 
-  const userPrompt = `Audit and fix these ${questions.length} questions:\n${JSON.stringify({ questions }, null, 2)}`;
+  const catalogueBlock = context.catalogueContext
+    ? `Catalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}\n\n`
+    : "";
+  const userPrompt = `${catalogueBlock}Audit and fix these ${questions.length} questions:\n${JSON.stringify({ questions }, null, 2)}`;
 
   try {
     const checkerSchema = zodToJsonSchema(GeminiCheckerResponseSchema, "GeminiCheckerResponse");
@@ -625,12 +641,15 @@ Return strict JSON matching the schema.`;
     const inputSchema: any = { ...inner, type: inner?.type || "object" };
     delete inputSchema.$schema;
     delete inputSchema.$ref;
+    const polishCatalogueBlock = context.catalogueContext
+      ? `Catalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}\n\n`
+      : "";
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 16_384,
       temperature: 0,
       system: systemPrompt,
-      messages: [{ role: "user", content: `Polish these questions:\n${JSON.stringify({ questions })}` }],
+      messages: [{ role: "user", content: `${polishCatalogueBlock}Polish these questions:\n${JSON.stringify({ questions })}` }],
       tools: [{
         name: "return_polished_quiz",
         description: "Return polished quiz JSON.",
@@ -835,9 +854,12 @@ Critical requirements:
 5) Keep questions within provided syllabus/topic scope only.
 6) Return JSON only matching the schema.`;
 
+  const emergencyCatalogueBlock = context.catalogueContext
+    ? `\n\n${formatCopilotContextAsText(context.catalogueContext)}`
+    : "";
   const { data, metadata } = await generateWithFallback(
     emergencyPrompt,
-    `Curriculum context:\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
+    `Curriculum context:\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}${emergencyCatalogueBlock}`,
     jsonSchema,
   );
   return { result: extractJson(data), model: `${metadata.provider}/${metadata.model}` };
@@ -893,9 +915,16 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   let parsed: QuizResult;
   let makerModel = "unknown";
   try {
-    const makerResult = await runClaudeMaker(context, questionCount, distribution);
-    parsed = makerResult.result;
-    makerModel = makerResult.model;
+    const makerCatalogueBlock = context.catalogueContext
+      ? `\n\nCatalogue context:\n${formatCopilotContextAsText(context.catalogueContext)}`
+      : "";
+    const { data, metadata } = await generateWithFallback(
+      makerPrompt,
+      `Topic: ${context.topic}${makerCatalogueBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`,
+      jsonSchema,
+    );
+    parsed = extractJson(data);
+    makerModel = `${metadata.provider}/${metadata.model}`;
   } catch (error: any) {
     if (process.env.NODE_ENV === "test") throw error;
     console.warn(`[SOMA_PIPELINE] Claude maker failed, attempting emergency fallback. Reason: ${error?.message || "unknown"}`);

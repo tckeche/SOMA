@@ -1,0 +1,916 @@
+{
+  "syllabusCode": "0610",
+  "pattern": "D",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Characteristics and classification of living organisms",
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Characteristics of living organisms",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Characteristics of living organisms",
+              "commandWord": "characteristics"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "Concept and uses of classification systems",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Concept and uses of classification systems",
+              "commandWord": "concept"
+            }
+          ]
+        },
+        {
+          "number": "1.3",
+          "title": "Features of organisms",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "1 \u0007State the main features used to place animals and plants into the appropriate kingdoms 2 \u0007State the main features used to place organisms into groups within the animal kingdom, limited to: (a) \u0007the main groups of vertebrates: mammals, birds, reptiles, amphibians, fish (b) \u0007the main groups of arthropods: myriapods, insects, arachnids, crustaceans 3 \u0007Classify organisms using the features identified in 1.3.1 and 1.3.2",
+              "commandWord": "1"
+            },
+            {
+              "statement": "4 \u0007State the main features used to place all organisms into one of the five kingdoms: animal, plant, fungus, prokaryote, protoctist 5 \u0007State the main features used to place organisms into groups within the plant kingdom, limited to ferns and flowering plants (dicotyledons and monocotyledons) 6 \u0007Classify organisms using the features identified in 1.3.4 and 1.3.5 7 \u0007State the features of viruses, limited to a protein coat and genetic material",
+              "commandWord": "4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Describe a species as a group of organisms",
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Cell structure",
+          "levelTier": "IGCSE",
+          "coreOrExtended": "core",
+          "requirements": [
+            {
+              "statement": "1 \u0007Describe and compare the structure of a plant cell with an animal cell, limited to: cell wall, cell membrane, nucleus, cytoplasm, chloroplasts, ribosomes, mitochondria, vacuoles 2 \u0007Describe the structure of a bacterial cell, limited to: cell wall, cell membrane, cytoplasm, ribosomes, circular DNA, plasmids 3 \u0007Identify the cell structures listed in 2.1.1 and 2.1.2 in diagrams and images of plant, animal and bacterial cells 4 \u0007Describe the functions of the structures listed in 2.1.1 and 2.1.2 in plant, animal and bacterial cells 5 \u0007State that new cells are produced by division of existing cells 6 \u0007State that specialised cells have specific functions, limited to: (a) \u0007ciliated cells – movement of mucus in the trachea and bronchi (b) root hair cells – absorption (c) palisade mesophyll cells – photosynthesis (d) \u0007neurones – conduction of electrical impulses (e) red blood cells – transport of oxygen (f) \u0007sperm and egg cells (gametes) – reproduction 7 \u0007Describe the meaning of the terms: cell, tissue, organ, organ system and organism as illustrated by examples given in the syllabus",
+              "commandWord": "1"
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "Size of specimens",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Size of specimens",
+              "commandWord": "size"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Describe the binomial system of naming",
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Diffusion",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Diffusion",
+              "commandWord": "diffusion"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Osmosis",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Osmosis",
+              "commandWord": "osmosis"
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Active transport",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Active transport",
+              "commandWord": "active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Construct and use dichotomous keys based on",
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Biological molecules",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Biological molecules",
+              "commandWord": "biological"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Investigate the factors that influence diffusion,",
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "Enzymes",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Enzymes",
+              "commandWord": "enzymes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "State that plants are supported by the pressure",
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Photosynthesis",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Photosynthesis",
+              "commandWord": "photosynthesis"
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Leaf structure",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Leaf structure",
+              "commandWord": "leaf"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Investigate the need for chlorophyll, light and",
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Diet",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Diet",
+              "commandWord": "diet"
+            }
+          ]
+        },
+        {
+          "number": "7.2",
+          "title": "Digestive system",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Digestive system",
+              "commandWord": "digestive"
+            }
+          ]
+        },
+        {
+          "number": "7.3",
+          "title": "Physical digestion",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Physical digestion",
+              "commandWord": "physical"
+            }
+          ]
+        },
+        {
+          "number": "7.4",
+          "title": "Chemical digestion",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Chemical digestion",
+              "commandWord": "chemical"
+            }
+          ]
+        },
+        {
+          "number": "7.5",
+          "title": "Absorption",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Absorption",
+              "commandWord": "absorption"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Investigate and describe the effects of varying",
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "Xylem and phloem",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Xylem and phloem",
+              "commandWord": "xylem"
+            }
+          ]
+        },
+        {
+          "number": "8.2",
+          "title": "Water uptake",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Water uptake",
+              "commandWord": "water"
+            }
+          ]
+        },
+        {
+          "number": "8.3",
+          "title": "Transpiration",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Transpiration",
+              "commandWord": "transpiration"
+            }
+          ]
+        },
+        {
+          "number": "8.4",
+          "title": "Translocation",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "1 2 3",
+              "commandWord": "1"
+            },
+            {
+              "statement": "Describe translocation as the movement of sucrose and amino acids in phloem from sources to sinks Describe: (a) \u0007sources as the parts of plants that release sucrose or amino acids (b) \u0007sinks as the parts of plants that use or store sucrose or amino acids Explain why some parts of a plant may act as a source and a sink at different times",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Investigate and describe the effect of light and",
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "Circulatory systems",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Circulatory systems",
+              "commandWord": "circulatory"
+            }
+          ]
+        },
+        {
+          "number": "9.2",
+          "title": "Heart",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Heart",
+              "commandWord": "heart"
+            }
+          ]
+        },
+        {
+          "number": "9.3",
+          "title": "Blood vessels",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Blood vessels",
+              "commandWord": "blood"
+            }
+          ]
+        },
+        {
+          "number": "9.4",
+          "title": "Blood",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Blood",
+              "commandWord": "blood"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "10",
+      "title": "10",
+      "subtopics": [
+        {
+          "number": "10.1",
+          "title": "Diseases and immunity",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Diseases and immunity",
+              "commandWord": "diseases"
+            },
+            {
+              "statement": "Gas exchange in humans",
+              "commandWord": "gas"
+            },
+            {
+              "statement": "Describe cholera as a disease caused by a bacterium which is transmitted in contaminated water",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "Explain that the cholera bacterium produces a toxin that causes secretion of chloride ions into the small intestine, causing osmotic movement of water into the gut, causing diarrhoea, dehydration and loss of ions from the blood",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "11",
+      "title": "11",
+      "subtopics": [
+        {
+          "number": "11.1",
+          "title": "Gas exchange in humans",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Gas exchange in humans",
+              "commandWord": "gas"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "12",
+      "title": "12",
+      "subtopics": [
+        {
+          "number": "12.1",
+          "title": "Respiration",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Respiration",
+              "commandWord": "respiration"
+            }
+          ]
+        },
+        {
+          "number": "12.2",
+          "title": "Aerobic respiration",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Aerobic respiration",
+              "commandWord": "aerobic"
+            }
+          ]
+        },
+        {
+          "number": "12.3",
+          "title": "Anaerobic respiration",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Anaerobic respiration",
+              "commandWord": "anaerobic"
+            },
+            {
+              "statement": "Excretion in humans",
+              "commandWord": "excretion"
+            },
+            {
+              "statement": "Outline how the oxygen debt is removed after exercise, limited to: (a) \u0007continuation of fast heart rate to transport lactic acid in the blood from the muscles to the liver (b) \u0007continuation of deeper and faster breathing to supply oxygen for aerobic respiration of lactic acid (c) aerobic respiration of lactic acid in the liver",
+              "commandWord": "outline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "13",
+      "title": "13",
+      "subtopics": [
+        {
+          "number": "13.1",
+          "title": "Excretion in humans",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Excretion in humans",
+              "commandWord": "excretion"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "14",
+      "title": "14",
+      "subtopics": [
+        {
+          "number": "14.1",
+          "title": "Coordination and response",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Coordination and response",
+              "commandWord": "coordination"
+            }
+          ]
+        },
+        {
+          "number": "14.2",
+          "title": "Sense organs",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Sense organs",
+              "commandWord": "sense"
+            }
+          ]
+        },
+        {
+          "number": "14.3",
+          "title": "Hormones",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Hormones",
+              "commandWord": "hormones"
+            }
+          ]
+        },
+        {
+          "number": "14.4",
+          "title": "Homeostasis",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Homeostasis",
+              "commandWord": "homeostasis"
+            }
+          ]
+        },
+        {
+          "number": "14.5",
+          "title": "Tropic responses",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Tropic responses",
+              "commandWord": "tropic"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "15",
+      "title": "15",
+      "subtopics": [
+        {
+          "number": "15.1",
+          "title": "Drugs",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Drugs",
+              "commandWord": "drugs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "16",
+      "title": "16",
+      "subtopics": [
+        {
+          "number": "16.1",
+          "title": "Asexual reproduction",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Asexual reproduction",
+              "commandWord": "asexual"
+            }
+          ]
+        },
+        {
+          "number": "16.2",
+          "title": "Sexual reproduction",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Sexual reproduction",
+              "commandWord": "sexual"
+            }
+          ]
+        },
+        {
+          "number": "16.3",
+          "title": "Sexual reproduction in plants",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Sexual reproduction in plants",
+              "commandWord": "sexual"
+            }
+          ]
+        },
+        {
+          "number": "16.4",
+          "title": "Sexual reproduction in humans",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Sexual reproduction in humans",
+              "commandWord": "sexual"
+            }
+          ]
+        },
+        {
+          "number": "16.5",
+          "title": "Sex hormones in humans",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Sex hormones in humans",
+              "commandWord": "sex"
+            }
+          ]
+        },
+        {
+          "number": "16.6",
+          "title": "Sexually transmitted infections",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Sexually transmitted infections",
+              "commandWord": "sexually"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "17",
+      "title": "17",
+      "subtopics": [
+        {
+          "number": "17.1",
+          "title": "Chromosomes, genes and proteins",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Chromosomes, genes and proteins",
+              "commandWord": "chromosomes"
+            },
+            {
+              "statement": "7 8 • • • • • 9",
+              "commandWord": "7"
+            },
+            {
+              "statement": "Describe a haploid nucleus as a nucleus containing a single set of chromosomes",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "Describe a diploid nucleus as a nucleus containing two sets of chromosomes",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "State that in a diploid cell, there is a pair of each type of chromosome and in a human diploid cell there are 23 pairs",
+              "commandWord": "state"
+            }
+          ]
+        },
+        {
+          "number": "17.2",
+          "title": "Mitosis",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "1 2 3 4 5",
+              "commandWord": "1"
+            },
+            {
+              "statement": "Describe mitosis as nuclear division giving rise to genetically identical cells (details of the stages of mitosis are not required) State the role of mitosis in growth, repair of damaged tissues, replacement of cells and asexual reproduction State that the exact replication of chromosomes occurs before mitosis State that during mitosis, the copies of chromosomes separate, maintaining the chromosome number in each daughter cell Describe stem cells as unspecialised cells that divide by mitosis to produce daughter cells that can become specialised for specific functions",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "17.3",
+          "title": "Meiosis",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "1 2",
+              "commandWord": "1"
+            },
+            {
+              "statement": "State that meiosis is involved in the production of gametes Describe meiosis as a reduction division in which the chromosome number is halved from diploid to haploid resulting in genetically different cells (details of the stages of meiosis are not required)",
+              "commandWord": "state"
+            }
+          ]
+        },
+        {
+          "number": "17.4",
+          "title": "Monohybrid inheritance",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Monohybrid inheritance",
+              "commandWord": "monohybrid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "18",
+      "title": "18",
+      "subtopics": [
+        {
+          "number": "18.1",
+          "title": "Variation",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Variation",
+              "commandWord": "variation"
+            }
+          ]
+        },
+        {
+          "number": "18.2",
+          "title": "Adaptive features",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Adaptive features",
+              "commandWord": "adaptive"
+            }
+          ]
+        },
+        {
+          "number": "18.3",
+          "title": "Selection",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Selection",
+              "commandWord": "selection"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "19",
+      "title": "19",
+      "subtopics": [
+        {
+          "number": "19.1",
+          "title": "Energy flow",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Energy flow",
+              "commandWord": "energy"
+            }
+          ]
+        },
+        {
+          "number": "19.2",
+          "title": "Food chains and food webs",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Food chains and food webs",
+              "commandWord": "food"
+            }
+          ]
+        },
+        {
+          "number": "19.3",
+          "title": "Nutrient cycles",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Nutrient cycles",
+              "commandWord": "nutrient"
+            }
+          ]
+        },
+        {
+          "number": "19.4",
+          "title": "Populations",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Populations",
+              "commandWord": "populations"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "20",
+      "title": "20",
+      "subtopics": [
+        {
+          "number": "20.1",
+          "title": "Food supply",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Food supply",
+              "commandWord": "food"
+            }
+          ]
+        },
+        {
+          "number": "20.2",
+          "title": "Habitat destruction",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Habitat destruction",
+              "commandWord": "habitat"
+            }
+          ]
+        },
+        {
+          "number": "20.3",
+          "title": "Pollution",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Pollution",
+              "commandWord": "pollution"
+            }
+          ]
+        },
+        {
+          "number": "20.4",
+          "title": "Conservation",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Conservation",
+              "commandWord": "conservation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "21",
+      "title": "21",
+      "subtopics": [
+        {
+          "number": "21.1",
+          "title": "Biotechnology and genetic modification",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Biotechnology and genetic modification",
+              "commandWord": "biotechnology"
+            }
+          ]
+        },
+        {
+          "number": "21.2",
+          "title": "Biotechnology",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Biotechnology",
+              "commandWord": "biotechnology"
+            }
+          ]
+        },
+        {
+          "number": "21.3",
+          "title": "Genetic modification",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Genetic modification",
+              "commandWord": "genetic"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "Pattern D: subtopic 1.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 1.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 2.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 3.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 3.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 3.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 4.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 5.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 6.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 6.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 7.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 7.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 7.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 7.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 7.5 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 8.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 8.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 8.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 9.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 9.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 9.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 9.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 10.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 11.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 12.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 12.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 12.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 13.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 14.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 14.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 14.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 14.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 14.5 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 15.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 16.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 16.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 16.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 16.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 16.5 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 16.6 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 17.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 17.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 18.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 18.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 18.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 19.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 19.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 19.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 19.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 20.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 20.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 20.3 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 20.4 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 21.1 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 21.2 produced no column bullets — used title as requirement",
+    "Pattern D: subtopic 21.3 produced no column bullets — used title as requirement"
+  ]
+}

@@ -1,0 +1,1009 @@
+{
+  "syllabusCode": "9706",
+  "pattern": "C",
+  "strands": [],
+  "papers": [
+    {
+      "number": 1,
+      "title": "Paper 1 — AS Level Multiple Choice",
+      "levelTier": "AS"
+    },
+    {
+      "number": 2,
+      "title": "Paper 2 — AS Level Structured Questions",
+      "levelTier": "AS"
+    },
+    {
+      "number": 3,
+      "title": "Paper 3 — A Level Structured Questions",
+      "levelTier": "A2"
+    },
+    {
+      "number": 4,
+      "title": "Paper 4 — A Level Problem Solving",
+      "levelTier": "A2"
+    }
+  ],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Financial accounting",
+      "paperNumbers": [
+        1,
+        2
+      ],
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Types of business entity",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Types of business entity",
+              "commandWord": "types"
+            },
+            {
+              "statement": "the different types of business entity: sole trader partnership limited company (including public limited company (plc))",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages of these types of business entity",
+              "commandWord": "the"
+            },
+            {
+              "statement": "sources of finance and methods of funding for these types of business entity including: loans (secured and unsecured) bank overdrafts payment by instalments rental/leasing as an alternative to purchase trade credit sources of finance for limited companies as in 1.5.4",
+              "commandWord": "sources"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "The accounting system",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "The accounting system",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the principles of the double entry system to record business transactions",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the accounting equation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the role of books of prime entry in the recording of business transactions sales journal sales returns journal purchases journal purchases returns journal cash book general journal",
+              "commandWord": "the"
+            },
+            {
+              "statement": "preparation of ledger accounts",
+              "commandWord": "preparation"
+            },
+            {
+              "statement": "the purpose of a trial balance",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages of maintaining full accounting records",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the accounting concepts underpinning the preparation of accounts: business entity, historic cost, money measurement, going concern, consistency, prudence, realisation, duality, materiality, objectivity, matching /accruals and substance over form",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the use of computerised accounting systems in recording financial transactions",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages of introducing a computerised accounting system",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the ways in which the security of data can be ensured within a computerised accounting system",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "1.3",
+          "title": "Accounting for non-current assets",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Capital and revenue income and expenditure",
+              "commandWord": "capital"
+            },
+            {
+              "statement": "the difference between the treatment of capital and revenue income and capital and revenue expenditure",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the effect on profit/loss and asset value of the incorrect treatment of capital and revenue expenditure",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Changing asset values",
+              "commandWord": "changing"
+            },
+            {
+              "statement": "factors that cause the value of non-current assets to depreciate",
+              "commandWord": "factors"
+            },
+            {
+              "statement": "the purpose of accounting for depreciation of non-current assets and the associated application of relevant accounting concepts",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to calculate depreciation using the reducing balance and straight-line methods",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the most appropriate method of calculating depreciation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to measure the value of non-current assets by the cost model or the revaluation model",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare ledger accounts and journal entries for: non-current assets (acquisition and revaluation) depreciation and disposal (including entries for part exchange)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate profit or loss on disposal of a non-current asset",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to record the effect of a charge for depreciation in the statement of profit or loss and statement of financial position",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "1.4",
+          "title": "Reconciliation and verification",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Reconciliation and verification",
+              "commandWord": "reconciliation"
+            },
+            {
+              "statement": "the need to reconcile and verify ledger accounts using documentation from internal and external sources",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the benefits and limitations of reconciliation and verification procedures",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Trial balance",
+              "commandWord": "trial"
+            },
+            {
+              "statement": "errors which affect the trial balance",
+              "commandWord": "errors"
+            },
+            {
+              "statement": "errors which do not affect the trial balance: omission commission principle original entry reversal compensating",
+              "commandWord": "errors"
+            },
+            {
+              "statement": "how to prepare ledger accounts and journal entries to correct errors using a suspense account",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the effect on the financial statements of the correction of errors",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the benefits and limitations of a trial balance",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Bank reconciliation statements",
+              "commandWord": "bank"
+            },
+            {
+              "statement": "updating of cash books",
+              "commandWord": "updating"
+            },
+            {
+              "statement": "how to prepare bank reconciliation statements",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the benefits and limitations of preparing a bank reconciliation statement",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Control accounts",
+              "commandWord": "control"
+            },
+            {
+              "statement": "entries in control accounts",
+              "commandWord": "entries"
+            },
+            {
+              "statement": "sales ledger control accounts and purchases ledger control accounts",
+              "commandWord": "sales"
+            },
+            {
+              "statement": "reconciliation statements between control account balances and ledger balances",
+              "commandWord": "reconciliation"
+            },
+            {
+              "statement": "the effects on financial statements of the correction of errors",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the benefits and limitations of control accounts",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "1.5",
+          "title": "Preparation of financial statements",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Adjustments to draft financial statements",
+              "commandWord": "adjustments"
+            },
+            {
+              "statement": "how to calculate and record the adjustments needed and the effect on financial statements in respect of: accruals and prepayments of income and expenses irrecoverable debts, irrecoverable debts recovered and allowance for irrecoverable debts depreciation inventory valuation correction of errors",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Sole traders",
+              "commandWord": "sole"
+            },
+            {
+              "statement": "how to prepare a statement of profit or loss and statement of financial position for a sole trader from full or incomplete accounting records. The business may be a trading or a service business",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Partnerships",
+              "commandWord": "partnerships"
+            },
+            {
+              "statement": "how to prepare a statement of profit or loss, appropriation account and statement of financial position for a partnership from full or incomplete accounting records. The business may be a trading or a service business",
+              "commandWord": "how"
+            },
+            {
+              "statement": "why partners may maintain separate capital accounts and current accounts",
+              "commandWord": "why"
+            },
+            {
+              "statement": "how to prepare partners’ capital and current accounts",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the contents of a partnership agreement",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages to partners of maintaining a partnership agreement",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the provisions of the Partnership Act 1890 in respect of partners’ salaries, division of profit or loss, interest on partners’ loans, interest on capital and interest on drawings",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Limited companies",
+              "commandWord": "limited"
+            },
+            {
+              "statement": "the features and accounting treatment of ordinary shares, bonus issues, rights issues, debentures, dividends and reserves Note: Questions will not be set on preference shares.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages to the company and to the shareholders of a company making a bonus issue of shares and a rights issue of shares",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages to the company and to the shareholders of a company issuing shares and issuing debentures",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the distinction between capital reserves (share premium and revaluation reserve) and revenue reserves (retained earnings and general reserve)",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare ledger accounts to record: an issue of ordinary shares at par or at a premium a rights issue of shares at par or at a premium a bonus issue of shares Note: For the purpose of a bonus issue of shares, the revaluation reserve is not to be used.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare a statement of profit or loss, statement of financial position and statement of changes in equity for a limited company. The business may be a trading or a service business",
+              "commandWord": "how"
+            },
+            {
+              "statement": "sources of finance for specified purposes",
+              "commandWord": "sources"
+            }
+          ]
+        },
+        {
+          "number": "1.6",
+          "title": "Analysis and communication of accounting information",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Users of accounting information",
+              "commandWord": "users"
+            },
+            {
+              "statement": "the differing requirements for information of stakeholders including: owners managers employees investors lenders suppliers customers government public and environmental bodies",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to communicate and analyse the information required by these different stakeholders",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Calculation and evaluation of ratios",
+              "commandWord": "calculation"
+            },
+            {
+              "statement": "how to calculate key accounting ratios to measure profitability, liquidity and efficiency: profitability ratios: gross profit margin, mark-up, profit margin, return on capital employed, expenses to revenue ratio (operating expenses to revenue ratio) liquidity ratios: current ratio, acid test ratio efficiency ratios: non-current asset turnover, trade receivables turnover (days), trade payables turnover (days), inventory turnover (days), rate of inventory turnover (times) Note: Candidates must use the formulae given in the appendix to section 3. These are the only formulae accepted in candidate responses.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to evaluate the profitability, liquidity and efficiency of an organisation by interpreting ratios",
+              "commandWord": "how"
+            },
+            {
+              "statement": "possible measures to improve the profitability, liquidity and efficiency of an organisation",
+              "commandWord": "possible"
+            },
+            {
+              "statement": "the limitations of accounting information",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Cost and management accounting",
+      "paperNumbers": [
+        1,
+        2
+      ],
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Costs and cost behaviour",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Materials and labour",
+              "commandWord": "materials"
+            },
+            {
+              "statement": "accounting for material and labour costs",
+              "commandWord": "accounting"
+            },
+            {
+              "statement": "how to identify and calculate fixed costs, variable costs, semi-variable costs and stepped costs",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to identify and calculate the elements of direct and indirect costs",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate the value of closing inventory using the first in first out (FIFO) and weighted average cost (AVCO) methods (perpetual and periodic)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the principles of just in time (JIT) management of inventory",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "Traditional costing methods",
+          "levelTier": "AS",
+          "paperNumbers": [
+            1,
+            2
+          ],
+          "requirements": [
+            {
+              "statement": "Costing applications",
+              "commandWord": "costing"
+            },
+            {
+              "statement": "how to apply traditional costing methods to prepare costing statements using unit, job and batch costing principles in both manufacturing and service businesses as applicable",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Absorption costing",
+              "commandWord": "absorption"
+            },
+            {
+              "statement": "the difference between a cost centre and a cost unit",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to allocate and apportion overhead expenditure between production and service departments",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate overhead absorption rates using an appropriate basis",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the causes and the calculation of under absorption and over absorption of overheads",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare costing and profit statements using absorption costing",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the uses and limitations of absorption costing",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the usefulness of absorption cost data as a support for management decision-making",
+              "commandWord": "the"
+            },
+            {
+              "statement": "non-financial factors and their significance",
+              "commandWord": "non-financial"
+            },
+            {
+              "statement": "Marginal costing",
+              "commandWord": "marginal"
+            },
+            {
+              "statement": "how to calculate the contribution of a product",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to interpret a break-even chart Note: Candidates will not be asked to prepare a break-even chart.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate the break-even point, contribution to sales ratio, level of output or sales to achieve a target profit, and margin of safety",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the use and limitations of break-even analysis",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare costing and profit statements using marginal costing",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare a statement reconciling the reported profits using marginal costing and absorption costing",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the uses and limitations of marginal costing",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the usefulness of marginal costing data as a support for management decision-making, including make- or-buy, special orders, closure of business unit, limiting factors, target profit",
+              "commandWord": "the"
+            },
+            {
+              "statement": "non-financial factors and their significance",
+              "commandWord": "non-financial"
+            },
+            {
+              "statement": "Cost–volume–profit analysis",
+              "commandWord": "cost–volume–profit"
+            },
+            {
+              "statement": "the advantages and limitations of cost–volume–profit analysis",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the usefulness of cost–volume–profit data as a support for management decision-making",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to apply costing concepts to make business decisions and recommendations using supporting data",
+              "commandWord": "how"
+            },
+            {
+              "statement": "non-financial factors and their significance",
+              "commandWord": "non-financial"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Financial accounting",
+      "paperNumbers": [
+        3,
+        4
+      ],
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Preparation of financial statements",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Financial statements",
+              "commandWord": "financial"
+            },
+            {
+              "statement": "the need for and purpose of financial statements for specific types of business",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Partnerships",
+              "commandWord": "partnerships"
+            },
+            {
+              "statement": "goodwill and the difference between purchased goodwill and inherent goodwill",
+              "commandWord": "goodwill"
+            },
+            {
+              "statement": "how to prepare partners’ capital and current accounts to record changes required in respect of goodwill and revaluation of assets on: a change in the partners’ profit-sharing ratio the introduction of a new partner the retirement of an existing partner the dissolution of a partnership",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare the partnership appropriation account, statement of profit or loss and statement of financial position including changes in a partnership occurring part-way through an accounting year",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare a realisation account and a revaluation account",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Clubs and societies",
+              "commandWord": "clubs"
+            },
+            {
+              "statement": "the distinction between a receipts and payments account and an income and expenditure account",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to define and calculate the accumulated fund",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare, from full or incomplete accounting records: a receipts and payments account accounts for trading and revenue-generating activities a subscriptions account an income and expenditure account a statement of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to account for other receipts, including life memberships and donations",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make adjustments to financial statements (as detailed in 1.5.1)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to evaluate possible sources of finance and methods of fundraising",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Manufacturing businesses",
+              "commandWord": "manufacturing"
+            },
+            {
+              "statement": "how to prepare a manufacturing account, to differentiate between direct and indirect expenses and to include factory profit",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare, for a manufacturing business, a statement of profit or loss and a statement of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to account for manufacturing profit and the elimination of unrealised profit from unsold inventory",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the reasons why a business may account for manufacturing profit",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Limited companies",
+              "commandWord": "limited"
+            },
+            {
+              "statement": "how to prepare for a limited company in line with the relevant international accounting standards and legal requirements: statement of profit or loss statement of financial position statement of cash flows statement of changes in equity schedule of non-current assets",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Regulatory and ethical considerations",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "International Accounting Standards",
+              "commandWord": "international"
+            },
+            {
+              "statement": "the main provisions of each of the following International Accounting Standards (IAS): IAS 1 Presentation of financial statements IAS 2 Inventories IAS 7 Statement of cash flows IAS 8 Accounting policies, changes in accounting estimates and errors IAS 10 Events after the reporting period IAS 16 Property, plant and equipment IAS 36 Impairment of assets IAS 37 Provisions, contingent liabilities and contingent assets IAS 38 Intangible assets",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Ethical considerations",
+              "commandWord": "ethical"
+            },
+            {
+              "statement": "the need for an ethical framework in accounting",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the fundamental principles of: integrity objectivity professional competence and due care confidentiality professional behaviour",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how the ethical behaviour of accountants and auditors impacts the business and other stakeholders",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the social implications of decision-making",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Auditing and stewardship of limited companies",
+              "commandWord": "auditing"
+            },
+            {
+              "statement": "the role and responsibilities of the auditor",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the differences between an external audit and an internal audit",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the difference between a qualified and unqualified audit report",
+              "commandWord": "the"
+            },
+            {
+              "statement": "stewardship and the role of directors and their responsibilities to shareholders",
+              "commandWord": "stewardship"
+            },
+            {
+              "statement": "the importance of a true and fair view in respect of financial statements",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Business acquisition and merger",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Business acquisition and merger",
+              "commandWord": "business"
+            },
+            {
+              "statement": "the nature and purpose of the merger of different types of businesses to form a new business entity",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare journal entries and make entries in the relevant ledger accounts to record the: merger of two or more sole trader businesses to form a partnership or a limited company merger of a sole trader’s business with an existing partnership to form a new partnership acquisition of a sole trader’s business or partnership by a limited company",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate the value of goodwill on the acquisition of a business by another entity",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare statements of profit or loss and statements of financial position for the newly formed business entity following the acquisition or merger, for example the limited company acquiring the partnership",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the advantages and disadvantages of the acquisition or merger",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.4",
+          "title": "Computerised accounting systems",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Computerised accounting systems",
+              "commandWord": "computerised"
+            },
+            {
+              "statement": "the process of transferring the business accounts to a computerised accounting system",
+              "commandWord": "the"
+            },
+            {
+              "statement": "ways in which the integrity of the accounting data can be ensured during the transfer to a computerised accounting system",
+              "commandWord": "ways"
+            }
+          ]
+        },
+        {
+          "number": "3.5",
+          "title": "Analysis and communication of accounting information",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Analysis and communication of accounting information",
+              "commandWord": "analysis"
+            },
+            {
+              "statement": "how to calculate the following ratios: working capital cycle (in days) net working assets to revenue (sales) interest cover gearing ratio earnings per share price/earnings ratio dividend per share dividend yield dividend cover Note: Candidates must use the formula given in the appendix to section 3. These are the only formulae accepted in candidate responses.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to analyse and evaluate the results of the ratios and draw conclusions",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make appropriate recommendations to stakeholders on the basis of the analysis undertaken",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the interrelationships between ratios",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Cost and management accounting",
+      "paperNumbers": [
+        3,
+        4
+      ],
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Activity based costing (ABC)",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Activity based costing",
+              "commandWord": "activity"
+            },
+            {
+              "statement": "the application of activity based costing (ABC)",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the uses and limitations of ABC",
+              "commandWord": "the"
+            },
+            {
+              "statement": "what is meant by a cost driver",
+              "commandWord": "what"
+            },
+            {
+              "statement": "how to use ABC to: identify the appropriate cost driver apportion and allocate overheads calculate the total cost and selling price of a unit",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the effect of different methods of overhead absorption on cost and profit",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to apply ABC costing techniques to make business decisions and recommendations using supporting data",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "Standard costing",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Standard costing",
+              "commandWord": "standard"
+            },
+            {
+              "statement": "the meaning of a system of standard costing in an organisation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages of a standard costing system",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how standard costing can be used as an aid to improve the performance of a business",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to calculate the following variances: direct material price and usage direct labour rate and efficiency fixed overhead expenditure and volume fixed overhead capacity and efficiency sub-variances sales price and volume",
+              "commandWord": "how"
+            },
+            {
+              "statement": "possible causes of favourable or adverse variances and their relationship to each other",
+              "commandWord": "possible"
+            },
+            {
+              "statement": "how to make business decisions and recommendations using supporting data",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the significance of non-financial factors",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "4.3",
+          "title": "Budgeting and budgetary control",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Budgeting and budgetary control",
+              "commandWord": "budgeting"
+            },
+            {
+              "statement": "the advantages and disadvantages of a budgetary control system to an organisation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the advantages and disadvantages of preparing budgets using spreadsheets",
+              "commandWord": "the"
+            },
+            {
+              "statement": "what is meant by a master budget",
+              "commandWord": "what"
+            },
+            {
+              "statement": "how to prepare the following budgets: sales production purchases labour trade receivables trade payables cash budgeted statement of profit or loss budgeted statement of financial position",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the effect of limiting factors on the preparation of budgets",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the benefits of flexible budgeting over fixed budgeting",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to prepare a flexible budget statement",
+              "commandWord": "how"
+            },
+            {
+              "statement": "possible causes of differences between actual and flexible budgeted data",
+              "commandWord": "possible"
+            },
+            {
+              "statement": "how to prepare a statement reconciling the flexible budgeted cost of production with the actual cost of production",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to prepare a statement reconciling the flexible budgeted profit with the actual profit",
+              "commandWord": "how"
+            },
+            {
+              "statement": "how to make business decisions and recommendations using supporting data",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the behavioural aspects of budgeting, including targets, incentives and motivation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the significance of non-financial factors",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "4.4",
+          "title": "Investment appraisal",
+          "levelTier": "A2",
+          "paperNumbers": [
+            3,
+            4
+          ],
+          "requirements": [
+            {
+              "statement": "Investment appraisal",
+              "commandWord": "investment"
+            },
+            {
+              "statement": "future net cash inflows and outflows arising from the project",
+              "commandWord": "future"
+            },
+            {
+              "statement": "how to apply the following capital investment appraisal techniques: payback accounting rate of return (ARR = (average profit / average investment) × 100) net present value (NPV) internal rate of return (IRR)",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the advantages and disadvantages of these capital investment appraisal techniques",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how to make investment decisions and recommendations using supporting data",
+              "commandWord": "how"
+            },
+            {
+              "statement": "the significance of non-financial factors",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

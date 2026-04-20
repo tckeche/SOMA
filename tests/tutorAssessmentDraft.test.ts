@@ -44,13 +44,14 @@ describe("buildTutorDraftKey", () => {
 describe("writeTutorDraft / readTutorDraft", () => {
   const key = "soma_tutor_new_assessment_draft_t1";
 
-  it("round-trips a payload", () => {
+  it("round-trips a v2 catalogue-keyed payload", () => {
     const result = writeTutorDraft(key, {
       title: "Algebra mock",
-      subject: "Mathematics",
-      level: "IGCSE",
-      syllabus: "Cambridge",
-      topics: ["Quadratics", "Sequences"],
+      examiningBodySlug: "cambridge",
+      levelCode: "IGCSE",
+      subjectSlug: "mathematics",
+      syllabusCode: "0580",
+      selectedTopicIds: [101, 102],
       timeLimitMinutes: 45,
       prompt: "10 quadratic MCQs",
     });
@@ -60,30 +61,44 @@ describe("writeTutorDraft / readTutorDraft", () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe(TUTOR_DRAFT_VERSION);
     expect(loaded!.title).toBe("Algebra mock");
-    expect(loaded!.subject).toBe("Mathematics");
-    expect(loaded!.level).toBe("IGCSE");
-    expect(loaded!.syllabus).toBe("Cambridge");
-    expect(loaded!.topics).toEqual(["Quadratics", "Sequences"]);
+    expect(loaded!.examiningBodySlug).toBe("cambridge");
+    expect(loaded!.levelCode).toBe("IGCSE");
+    expect(loaded!.subjectSlug).toBe("mathematics");
+    expect(loaded!.syllabusCode).toBe("0580");
+    expect(loaded!.selectedTopicIds).toEqual([101, 102]);
     expect(loaded!.timeLimitMinutes).toBe(45);
     expect(loaded!.prompt).toBe("10 quadratic MCQs");
     expect(typeof loaded!.savedAt).toBe("string");
   });
 
-  it("migrates a v1 draft stored with a singular `topic` string", () => {
-    // Earlier iterations of the draft stored `topic: string` (single pick).
-    // The reader must turn that into a single-element `topics` array so the
-    // builder doesn't lose the tutor's in-progress work after this upgrade.
+  it("migrates a v1 draft by preserving prompt/title/timeLimit and clearing curriculum fields", () => {
+    // v1 stored free-text subject/level/syllabus strings that can't map cleanly
+    // to catalogue slugs. The reader keeps what still makes sense so the tutor
+    // doesn't lose wording, but forces them to repick the catalogue fields.
     localStorage.setItem(
       key,
       JSON.stringify({
-        version: TUTOR_DRAFT_VERSION,
+        version: 1,
         title: "Algebra mock",
+        subject: "Mathematics",
+        level: "IGCSE",
+        syllabus: "Cambridge 0580",
         topic: "Quadratics",
+        timeLimitMinutes: 30,
+        prompt: "Make it tricky",
       }),
     );
     const loaded = readTutorDraft(key);
     expect(loaded).not.toBeNull();
-    expect(loaded!.topics).toEqual(["Quadratics"]);
+    expect(loaded!.version).toBe(TUTOR_DRAFT_VERSION);
+    expect(loaded!.title).toBe("Algebra mock");
+    expect(loaded!.prompt).toBe("Make it tricky");
+    expect(loaded!.timeLimitMinutes).toBe(30);
+    expect(loaded!.examiningBodySlug).toBe("cambridge");
+    expect(loaded!.levelCode).toBe("");
+    expect(loaded!.subjectSlug).toBe("");
+    expect(loaded!.syllabusCode).toBe("");
+    expect(loaded!.selectedTopicIds).toEqual([]);
   });
 
   it("returns null when nothing is stored", () => {
@@ -96,7 +111,7 @@ describe("writeTutorDraft / readTutorDraft", () => {
     expect(localStorage.getItem(key)).toBeNull();
   });
 
-  it("returns null for a payload from a different version", () => {
+  it("returns null for an unrecognised future version", () => {
     localStorage.setItem(
       key,
       JSON.stringify({ version: 999, title: "old" }),
@@ -115,12 +130,27 @@ describe("writeTutorDraft / readTutorDraft", () => {
     const loaded = readTutorDraft(key);
     expect(loaded).not.toBeNull();
     expect(loaded!.title).toBe("only title");
-    expect(loaded!.subject).toBe("");
-    expect(loaded!.level).toBe("");
-    expect(loaded!.syllabus).toBe("");
-    expect(loaded!.topics).toEqual([]);
+    expect(loaded!.examiningBodySlug).toBe("cambridge");
+    expect(loaded!.levelCode).toBe("");
+    expect(loaded!.subjectSlug).toBe("");
+    expect(loaded!.syllabusCode).toBe("");
+    expect(loaded!.selectedTopicIds).toEqual([]);
     expect(loaded!.timeLimitMinutes).toBe(60);
     expect(loaded!.prompt).toBe("");
+  });
+
+  it("drops non-integer or non-positive topic ids", () => {
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: TUTOR_DRAFT_VERSION,
+        selectedTopicIds: [1, "2", 0, -3, 4.5, 7],
+      }),
+    );
+    const loaded = readTutorDraft(key);
+    expect(loaded).not.toBeNull();
+    // "2" coerces to 2; 0/-3/4.5 dropped; 7 kept.
+    expect(loaded!.selectedTopicIds).toEqual([1, 2, 7]);
   });
 
   it("reports failure when localStorage throws", () => {
@@ -129,7 +159,8 @@ describe("writeTutorDraft / readTutorDraft", () => {
       setItem: () => { const e: any = new Error("quota"); e.name = "QuotaExceededError"; throw e; },
     };
     const result = writeTutorDraft(key, {
-      title: "t", subject: "", level: "", syllabus: "", topics: [], timeLimitMinutes: 60, prompt: "",
+      title: "t", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
+      syllabusCode: "", selectedTopicIds: [], timeLimitMinutes: 60, prompt: "",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("QuotaExceededError");
@@ -137,14 +168,16 @@ describe("writeTutorDraft / readTutorDraft", () => {
 
   it("returns failure for a null key", () => {
     const result = writeTutorDraft(null, {
-      title: "t", subject: "", level: "", syllabus: "", topics: [], timeLimitMinutes: 60, prompt: "",
+      title: "t", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
+      syllabusCode: "", selectedTopicIds: [], timeLimitMinutes: 60, prompt: "",
     });
     expect(result.ok).toBe(false);
   });
 
   it("clearTutorDraft removes the entry", () => {
     writeTutorDraft(key, {
-      title: "t", subject: "", level: "", syllabus: "", topics: [], timeLimitMinutes: 60, prompt: "",
+      title: "t", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
+      syllabusCode: "", selectedTopicIds: [], timeLimitMinutes: 60, prompt: "",
     });
     expect(readTutorDraft(key)).not.toBeNull();
     clearTutorDraft(key);
@@ -159,7 +192,8 @@ describe("writeTutorDraft / readTutorDraft", () => {
 describe("isMeaningfulDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
-    title: "", subject: "", level: "", syllabus: "", topics: [],
+    title: "", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
+    syllabusCode: "", selectedTopicIds: [],
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
@@ -177,39 +211,40 @@ describe("isMeaningfulDraft", () => {
 
   it.each<[keyof TutorAssessmentDraft, string]>([
     ["title", "Mock"],
-    ["subject", "Math"],
-    ["level", "IGCSE"],
-    ["syllabus", "Cambridge"],
+    ["levelCode", "IGCSE"],
+    ["subjectSlug", "mathematics"],
+    ["syllabusCode", "0580"],
     ["prompt", "Generate 5"],
   ])("returns true when %s has content", (field, val) => {
     expect(isMeaningfulDraft({ ...base, [field]: val })).toBe(true);
   });
 
-  it("returns true when topics has at least one entry", () => {
-    expect(isMeaningfulDraft({ ...base, topics: ["Quadratics"] })).toBe(true);
+  it("returns true when selectedTopicIds has at least one entry", () => {
+    expect(isMeaningfulDraft({ ...base, selectedTopicIds: [42] })).toBe(true);
   });
 });
 
 describe("describeDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
-    title: "", subject: "", level: "", syllabus: "", topics: [],
+    title: "", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
+    syllabusCode: "", selectedTopicIds: [],
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
   it("prefers the title when set", () => {
-    expect(describeDraft({ ...base, title: "Algebra mock", subject: "Math" }))
+    expect(describeDraft({ ...base, title: "Algebra mock", subjectSlug: "mathematics" }))
       .toBe("Algebra mock");
   });
 
-  it("falls back to subject · level", () => {
-    expect(describeDraft({ ...base, subject: "Mathematics", level: "IGCSE" }))
-      .toBe("Mathematics · IGCSE");
+  it("falls back to subject · level · syllabus joined by dot", () => {
+    expect(describeDraft({ ...base, subjectSlug: "mathematics", levelCode: "IGCSE", syllabusCode: "0580" }))
+      .toBe("mathematics · IGCSE · 0580");
   });
 
   it("falls back to just subject if level missing", () => {
-    expect(describeDraft({ ...base, subject: "Mathematics" }))
-      .toBe("Mathematics");
+    expect(describeDraft({ ...base, subjectSlug: "mathematics" }))
+      .toBe("mathematics");
   });
 
   it("falls back to a truncated prompt", () => {

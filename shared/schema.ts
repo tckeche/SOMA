@@ -340,6 +340,365 @@ export const syllabusTopicInventory = pgTable("syllabus_topic_inventory", {
   extractedAt: timestamp("extracted_at").defaultNow().notNull(),
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Syllabus intelligence layer (Phase 2 of the Cambridge assessment feature)
+//
+// Models the hierarchy:
+//   examining_bodies → subjects → syllabi → { papers, strands, topics }
+//   topics → subtopics → learning_requirements
+//   learning_requirements ↔ competencies (many-to-many via join table)
+//   papers ↔ topics (many-to-many) and papers ↔ subtopics (many-to-many)
+//
+// levelTier ("IGCSE" | "AS" | "A2") is authoritative on subtopics and papers;
+// topic-level tier visibility is derived from subtopic tiers and cached in
+// topics.levelTiers by the ingestion pipeline (Phase 3).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const examiningBodies = pgTable("examining_bodies", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull(),
+  displayName: text("display_name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("examining_bodies_slug_idx").on(t.slug)]);
+
+// Levels are the tutor-facing picker values: "IGCSE", "AS", "A2". `topBand`
+// groups AS and A2 under the same A_Level syllabus row, so a tutor picking AS
+// or A2 resolves to the same syllabus and we filter topics by levelTier.
+export const levels = pgTable("levels", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  displayName: text("display_name").notNull(),
+  topBand: text("top_band").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => [uniqueIndex("levels_code_idx").on(t.code)]);
+
+export const subjects = pgTable("subjects", {
+  id: serial("id").primaryKey(),
+  examiningBodyId: integer("examining_body_id").notNull().references(() => examiningBodies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("subjects_body_slug_idx").on(t.examiningBodyId, t.slug)]);
+
+// One row per official syllabus (e.g. Cambridge 9702 Physics). For A Level,
+// a single row carries both AS and A2 content; tier is resolved via papers
+// and subtopics.
+export const syllabi = pgTable("syllabi", {
+  id: serial("id").primaryKey(),
+  examiningBodyId: integer("examining_body_id").notNull().references(() => examiningBodies.id, { onDelete: "cascade" }),
+  subjectId: integer("subject_id").notNull().references(() => subjects.id, { onDelete: "cascade" }),
+  topBand: text("top_band").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  title: text("title").notNull(),
+  yearsValidFrom: integer("years_valid_from"),
+  yearsValidTo: integer("years_valid_to"),
+  sourceFile: text("source_file"),
+  contentHash: text("content_hash"),
+  successorSyllabusCode: text("successor_syllabus_code"),
+  commandWordGlossary: jsonb("command_word_glossary").$type<Array<{ word: string; meaning: string }>>(),
+  notes: jsonb("notes").$type<string[]>(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("syllabi_body_code_idx").on(t.examiningBodyId, t.syllabusCode)]);
+
+export const papers = pgTable("papers", {
+  id: serial("id").primaryKey(),
+  syllabusId: integer("syllabus_id").notNull().references(() => syllabi.id, { onDelete: "cascade" }),
+  paperNumber: integer("paper_number").notNull(),
+  code: text("code"),
+  title: text("title").notNull(),
+  levelTier: text("level_tier").notNull(),
+  coreOrExtended: text("core_or_extended"),
+  durationMinutes: integer("duration_minutes"),
+  rawMarks: integer("raw_marks"),
+  style: text("style"),
+  weightingPct: jsonb("weighting_pct").$type<{ AS?: number; ALevel?: number; IGCSE?: number }>(),
+  assumesPriorContentFromPaperNumbers: jsonb("assumes_prior_content_from_paper_numbers").$type<number[]>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("papers_syllabus_number_idx").on(t.syllabusId, t.paperNumber)]);
+
+// Optional topic grouping inside a syllabus (Physical/Inorganic/Organic for
+// Chemistry 9701; Pure Mathematics/Mechanics/P&S for Mathematics 9709).
+export const syllabusStrands = pgTable("syllabus_strands", {
+  id: serial("id").primaryKey(),
+  syllabusId: integer("syllabus_id").notNull().references(() => syllabi.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => [uniqueIndex("syllabus_strands_syllabus_name_idx").on(t.syllabusId, t.name)]);
+
+export const topics = pgTable("topics", {
+  id: serial("id").primaryKey(),
+  syllabusId: integer("syllabus_id").notNull().references(() => syllabi.id, { onDelete: "cascade" }),
+  strandId: integer("strand_id").references(() => syllabusStrands.id, { onDelete: "set null" }),
+  topicNumber: text("topic_number").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  // Derived union of subtopics' levelTiers ("IGCSE" | "AS" | "A2"); kept in
+  // sync by the ingestion pipeline so the topic-list API can filter in SQL
+  // without a subtopic join.
+  levelTiers: jsonb("level_tiers").$type<string[]>().notNull().default([]),
+  // Phase 7 enrichment: retrieval + UX metadata. All optional; populated by
+  // the ingestion pipeline where available, empty defaults otherwise.
+  keywords: jsonb("keywords").$type<string[]>().notNull().default([]),
+  sourcePages: jsonb("source_pages").$type<number[]>().notNull().default([]),
+  prerequisiteTopicIds: jsonb("prerequisite_topic_ids").$type<number[]>().notNull().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("topics_syllabus_number_idx").on(t.syllabusId, t.topicNumber)]);
+
+export const subtopics = pgTable("subtopics", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  subtopicNumber: text("subtopic_number").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  levelTier: text("level_tier").notNull(),
+  coreOrExtended: text("core_or_extended"),
+  // Phase 7 enrichment: keywords for lexical matching, sourcePages for
+  // provenance display in the tutor UI.
+  keywords: jsonb("keywords").$type<string[]>().notNull().default([]),
+  sourcePages: jsonb("source_pages").$type<number[]>().notNull().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("subtopics_topic_number_idx").on(t.topicId, t.subtopicNumber)]);
+
+// One "Candidates should be able to …" bullet per row.
+export const learningRequirements = pgTable("learning_requirements", {
+  id: serial("id").primaryKey(),
+  subtopicId: integer("subtopic_id").notNull().references(() => subtopics.id, { onDelete: "cascade" }),
+  statement: text("statement").notNull(),
+  commandWord: text("command_word"),
+  notesAndExamples: text("notes_and_examples"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+// Reference table of competency tags. Seeded once; rarely mutated.
+export const competencies = pgTable("competencies", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => [uniqueIndex("competencies_code_idx").on(t.code)]);
+
+// Finest-grained tagging: each learning requirement can exercise multiple
+// competencies (e.g. "Calculate …" hits both calculation and application).
+export const learningRequirementCompetencies = pgTable("learning_requirement_competencies", {
+  id: serial("id").primaryKey(),
+  learningRequirementId: integer("learning_requirement_id").notNull().references(() => learningRequirements.id, { onDelete: "cascade" }),
+  competencyId: integer("competency_id").notNull().references(() => competencies.id, { onDelete: "cascade" }),
+}, (t) => [uniqueIndex("lr_comp_unique_idx").on(t.learningRequirementId, t.competencyId)]);
+
+// Rollups written by Phase 3 ingestion so the copilot-context endpoint does
+// not need to traverse learning_requirements for every call.
+export const subtopicCompetencies = pgTable("subtopic_competencies", {
+  id: serial("id").primaryKey(),
+  subtopicId: integer("subtopic_id").notNull().references(() => subtopics.id, { onDelete: "cascade" }),
+  competencyId: integer("competency_id").notNull().references(() => competencies.id, { onDelete: "cascade" }),
+  weight: integer("weight").notNull().default(1),
+}, (t) => [uniqueIndex("subtopic_comp_unique_idx").on(t.subtopicId, t.competencyId)]);
+
+export const topicCompetencies = pgTable("topic_competencies", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  competencyId: integer("competency_id").notNull().references(() => competencies.id, { onDelete: "cascade" }),
+  weight: integer("weight").notNull().default(1),
+}, (t) => [uniqueIndex("topic_comp_unique_idx").on(t.topicId, t.competencyId)]);
+
+// Paper ↔ topic cross-reference. `weight` is a qualitative tag that lets the
+// copilot know whether a paper primarily assesses a topic, covers it, or just
+// assumes its content (used for Mathematics 9709 Paper 4 assuming Paper 1).
+export const paperTopicMappings = pgTable("paper_topic_mappings", {
+  id: serial("id").primaryKey(),
+  paperId: integer("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  weight: text("weight").notNull().default("covered"),
+}, (t) => [uniqueIndex("paper_topic_unique_idx").on(t.paperId, t.topicId)]);
+
+// Pattern C (Economics 9708) needs per-subtopic paper coverage because a
+// single topic theme carries both AS and A2 subtopics assessed on different
+// papers.
+export const subtopicPaperMappings = pgTable("subtopic_paper_mappings", {
+  id: serial("id").primaryKey(),
+  subtopicId: integer("subtopic_id").notNull().references(() => subtopics.id, { onDelete: "cascade" }),
+  paperId: integer("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
+}, (t) => [uniqueIndex("subtopic_paper_unique_idx").on(t.subtopicId, t.paperId)]);
+
+// Phase 7 — Reference-text + embeddings layer. One row per (topic, levelTier)
+// so AS / A2 cuts of the same topic get their own vectors (a topic's AS
+// subset teaches different material from its A2 subset). `contentHash` gates
+// regeneration: if the cleaned chunk text hasn't changed, the embedding is
+// reused.
+export const topicEmbeddings = pgTable("topic_embeddings", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  levelTier: text("level_tier").notNull(),
+  chunkText: text("chunk_text").notNull(),
+  contentHash: text("content_hash").notNull(),
+  embeddingModel: text("embedding_model").notNull(),
+  dimensions: integer("dimensions").notNull(),
+  // Stored as jsonb number[] — at ~300 topics × 3 tiers × 1536 dims this is
+  // tiny (<20 MB) and avoids needing pgvector for the current scale.
+  embedding: jsonb("embedding").$type<number[]>().notNull(),
+  embeddedAt: timestamp("embedded_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("topic_embeddings_topic_tier_idx").on(t.topicId, t.levelTier)]);
+
+export const assessmentObjectives = pgTable("assessment_objectives", {
+  id: serial("id").primaryKey(),
+  syllabusId: integer("syllabus_id").notNull().references(() => syllabi.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  weightingPct: jsonb("weighting_pct").$type<{ AS?: number; ALevel?: number; IGCSE?: number }>(),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => [uniqueIndex("assessment_objectives_syllabus_code_idx").on(t.syllabusId, t.code)]);
+
+export const assessmentObjectiveCompetencies = pgTable("assessment_objective_competencies", {
+  id: serial("id").primaryKey(),
+  assessmentObjectiveId: integer("assessment_objective_id").notNull().references(() => assessmentObjectives.id, { onDelete: "cascade" }),
+  competencyId: integer("competency_id").notNull().references(() => competencies.id, { onDelete: "cascade" }),
+}, (t) => [uniqueIndex("ao_comp_unique_idx").on(t.assessmentObjectiveId, t.competencyId)]);
+
+// Canonical list of competency codes the ingestion pipeline and UI can rely
+// on. Keep in sync with the `competencies` table seed.
+export const COMPETENCY_CODES = [
+  "knowledge",
+  "understanding",
+  "application",
+  "calculation",
+  "interpretation",
+  "analysis",
+  "evaluation",
+  "problem_solving",
+  "practical_skills",
+  "communication",
+] as const;
+export type CompetencyCode = (typeof COMPETENCY_CODES)[number];
+
+export const LEVEL_TIER_VALUES = ["IGCSE", "AS", "A2"] as const;
+export type LevelTier = (typeof LEVEL_TIER_VALUES)[number];
+
+export const CORE_OR_EXTENDED_VALUES = ["core", "extended", "practical"] as const;
+export type CoreOrExtended = (typeof CORE_OR_EXTENDED_VALUES)[number];
+
+// ── Relations ───────────────────────────────────────────────────────────────
+
+export const examiningBodiesRelations = relations(examiningBodies, ({ many }) => ({
+  subjects: many(subjects),
+  syllabi: many(syllabi),
+}));
+
+export const subjectsRelations = relations(subjects, ({ one, many }) => ({
+  examiningBody: one(examiningBodies, {
+    fields: [subjects.examiningBodyId],
+    references: [examiningBodies.id],
+  }),
+  syllabi: many(syllabi),
+}));
+
+export const syllabiRelations = relations(syllabi, ({ one, many }) => ({
+  examiningBody: one(examiningBodies, {
+    fields: [syllabi.examiningBodyId],
+    references: [examiningBodies.id],
+  }),
+  subject: one(subjects, {
+    fields: [syllabi.subjectId],
+    references: [subjects.id],
+  }),
+  papers: many(papers),
+  strands: many(syllabusStrands),
+  topics: many(topics),
+  assessmentObjectives: many(assessmentObjectives),
+}));
+
+export const papersRelations = relations(papers, ({ one, many }) => ({
+  syllabus: one(syllabi, {
+    fields: [papers.syllabusId],
+    references: [syllabi.id],
+  }),
+  topicMappings: many(paperTopicMappings),
+  subtopicMappings: many(subtopicPaperMappings),
+}));
+
+export const syllabusStrandsRelations = relations(syllabusStrands, ({ one, many }) => ({
+  syllabus: one(syllabi, {
+    fields: [syllabusStrands.syllabusId],
+    references: [syllabi.id],
+  }),
+  topics: many(topics),
+}));
+
+export const topicsRelations = relations(topics, ({ one, many }) => ({
+  syllabus: one(syllabi, {
+    fields: [topics.syllabusId],
+    references: [syllabi.id],
+  }),
+  strand: one(syllabusStrands, {
+    fields: [topics.strandId],
+    references: [syllabusStrands.id],
+  }),
+  subtopics: many(subtopics),
+  paperMappings: many(paperTopicMappings),
+  competencies: many(topicCompetencies),
+}));
+
+export const subtopicsRelations = relations(subtopics, ({ one, many }) => ({
+  topic: one(topics, {
+    fields: [subtopics.topicId],
+    references: [topics.id],
+  }),
+  learningRequirements: many(learningRequirements),
+  paperMappings: many(subtopicPaperMappings),
+  competencies: many(subtopicCompetencies),
+}));
+
+export const learningRequirementsRelations = relations(learningRequirements, ({ one, many }) => ({
+  subtopic: one(subtopics, {
+    fields: [learningRequirements.subtopicId],
+    references: [subtopics.id],
+  }),
+  competencies: many(learningRequirementCompetencies),
+}));
+
+export const competenciesRelations = relations(competencies, ({ many }) => ({
+  learningRequirements: many(learningRequirementCompetencies),
+  subtopics: many(subtopicCompetencies),
+  topics: many(topicCompetencies),
+  assessmentObjectives: many(assessmentObjectiveCompetencies),
+}));
+
+export const paperTopicMappingsRelations = relations(paperTopicMappings, ({ one }) => ({
+  paper: one(papers, {
+    fields: [paperTopicMappings.paperId],
+    references: [papers.id],
+  }),
+  topic: one(topics, {
+    fields: [paperTopicMappings.topicId],
+    references: [topics.id],
+  }),
+}));
+
+export const subtopicPaperMappingsRelations = relations(subtopicPaperMappings, ({ one }) => ({
+  paper: one(papers, {
+    fields: [subtopicPaperMappings.paperId],
+    references: [papers.id],
+  }),
+  subtopic: one(subtopics, {
+    fields: [subtopicPaperMappings.subtopicId],
+    references: [subtopics.id],
+  }),
+}));
+
+export const assessmentObjectivesRelations = relations(assessmentObjectives, ({ one, many }) => ({
+  syllabus: one(syllabi, {
+    fields: [assessmentObjectives.syllabusId],
+    references: [syllabi.id],
+  }),
+  competencies: many(assessmentObjectiveCompetencies),
+}));
+
 export const somaQuizzesRelations = relations(somaQuizzes, ({ one, many }) => ({
   questions: many(somaQuestions),
   reports: many(somaReports),
@@ -481,6 +840,89 @@ export type InsertStudentNotification = z.infer<typeof insertStudentNotification
 export const insertFlaggedQuestionSchema = createInsertSchema(flaggedQuestions).omit({ id: true, createdAt: true, resolvedAt: true, tutorViewedAt: true });
 export type FlaggedQuestion = typeof flaggedQuestions.$inferSelect;
 export type InsertFlaggedQuestion = z.infer<typeof insertFlaggedQuestionSchema>;
+
+// ── Syllabus intelligence: insert schemas & select types ────────────────────
+
+export const insertExaminingBodySchema = createInsertSchema(examiningBodies).omit({ id: true, createdAt: true });
+export type ExaminingBody = typeof examiningBodies.$inferSelect;
+export type InsertExaminingBody = z.infer<typeof insertExaminingBodySchema>;
+
+export const insertLevelSchema = createInsertSchema(levels).omit({ id: true });
+export type Level = typeof levels.$inferSelect;
+export type InsertLevel = z.infer<typeof insertLevelSchema>;
+
+export const insertSubjectSchema = createInsertSchema(subjects).omit({ id: true, createdAt: true });
+export type Subject = typeof subjects.$inferSelect;
+export type InsertSubject = z.infer<typeof insertSubjectSchema>;
+
+export const insertSyllabusSchema = createInsertSchema(syllabi, {
+  notes: z.array(z.string()).optional(),
+  commandWordGlossary: z.array(z.object({ word: z.string(), meaning: z.string() })).optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+export type Syllabus = typeof syllabi.$inferSelect;
+export type InsertSyllabus = z.infer<typeof insertSyllabusSchema>;
+
+export const insertPaperSchema = createInsertSchema(papers, {
+  assumesPriorContentFromPaperNumbers: z.array(z.number().int().nonnegative()).optional(),
+}).omit({ id: true, createdAt: true });
+export type Paper = typeof papers.$inferSelect;
+export type InsertPaper = z.infer<typeof insertPaperSchema>;
+
+export const insertSyllabusStrandSchema = createInsertSchema(syllabusStrands).omit({ id: true });
+export type SyllabusStrand = typeof syllabusStrands.$inferSelect;
+export type InsertSyllabusStrand = z.infer<typeof insertSyllabusStrandSchema>;
+
+export const insertTopicSchema = createInsertSchema(topics, {
+  levelTiers: z.array(z.string()).optional(),
+}).omit({ id: true, createdAt: true });
+export type Topic = typeof topics.$inferSelect;
+export type InsertTopic = z.infer<typeof insertTopicSchema>;
+
+export const insertSubtopicSchema = createInsertSchema(subtopics).omit({ id: true, createdAt: true });
+export type Subtopic = typeof subtopics.$inferSelect;
+export type InsertSubtopic = z.infer<typeof insertSubtopicSchema>;
+
+export const insertLearningRequirementSchema = createInsertSchema(learningRequirements).omit({ id: true });
+export type LearningRequirement = typeof learningRequirements.$inferSelect;
+export type InsertLearningRequirement = z.infer<typeof insertLearningRequirementSchema>;
+
+export const insertCompetencySchema = createInsertSchema(competencies).omit({ id: true });
+export type Competency = typeof competencies.$inferSelect;
+export type InsertCompetency = z.infer<typeof insertCompetencySchema>;
+
+export const insertLearningRequirementCompetencySchema = createInsertSchema(learningRequirementCompetencies).omit({ id: true });
+export type LearningRequirementCompetency = typeof learningRequirementCompetencies.$inferSelect;
+export type InsertLearningRequirementCompetency = z.infer<typeof insertLearningRequirementCompetencySchema>;
+
+export const insertSubtopicCompetencySchema = createInsertSchema(subtopicCompetencies).omit({ id: true });
+export type SubtopicCompetency = typeof subtopicCompetencies.$inferSelect;
+export type InsertSubtopicCompetency = z.infer<typeof insertSubtopicCompetencySchema>;
+
+export const insertTopicCompetencySchema = createInsertSchema(topicCompetencies).omit({ id: true });
+export type TopicCompetency = typeof topicCompetencies.$inferSelect;
+export type InsertTopicCompetency = z.infer<typeof insertTopicCompetencySchema>;
+
+export const insertPaperTopicMappingSchema = createInsertSchema(paperTopicMappings).omit({ id: true });
+export type PaperTopicMapping = typeof paperTopicMappings.$inferSelect;
+export type InsertPaperTopicMapping = z.infer<typeof insertPaperTopicMappingSchema>;
+
+export const insertSubtopicPaperMappingSchema = createInsertSchema(subtopicPaperMappings).omit({ id: true });
+export type SubtopicPaperMapping = typeof subtopicPaperMappings.$inferSelect;
+export type InsertSubtopicPaperMapping = z.infer<typeof insertSubtopicPaperMappingSchema>;
+
+export const insertTopicEmbeddingSchema = createInsertSchema(topicEmbeddings, {
+  embedding: z.array(z.number()),
+}).omit({ id: true, embeddedAt: true });
+export type TopicEmbedding = typeof topicEmbeddings.$inferSelect;
+export type InsertTopicEmbedding = z.infer<typeof insertTopicEmbeddingSchema>;
+
+export const insertAssessmentObjectiveSchema = createInsertSchema(assessmentObjectives).omit({ id: true });
+export type AssessmentObjective = typeof assessmentObjectives.$inferSelect;
+export type InsertAssessmentObjective = z.infer<typeof insertAssessmentObjectiveSchema>;
+
+export const insertAssessmentObjectiveCompetencySchema = createInsertSchema(assessmentObjectiveCompetencies).omit({ id: true });
+export type AssessmentObjectiveCompetency = typeof assessmentObjectiveCompetencies.$inferSelect;
+export type InsertAssessmentObjectiveCompetency = z.infer<typeof insertAssessmentObjectiveCompetencySchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables, but these schemas are

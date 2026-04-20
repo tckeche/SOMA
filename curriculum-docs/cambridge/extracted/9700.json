@@ -1,0 +1,1418 @@
+{
+  "syllabusCode": "9700",
+  "pattern": "A",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Cell structure",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "The microscope in cell Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "make temporary preparations of cellular material suitable for viewing with a light microscope",
+              "commandWord": "make"
+            },
+            {
+              "statement": "draw cells from microscope slides and photomicrographs",
+              "commandWord": "draw"
+            },
+            {
+              "statement": "calculate magnifications of images and actual sizes of specimens from drawings, photomicrographs and electron micrographs (scanning and transmission)",
+              "commandWord": "calculate"
+            },
+            {
+              "statement": "use an eyepiece graticule and stage micrometer scale to make measurements and use the appropriate units, millimetre (mm), micrometre (µm) and nanometre (nm)",
+              "commandWord": "use"
+            },
+            {
+              "statement": "define resolution and magnification and explain the differences between these terms, with reference to light microscopy and electron microscopy",
+              "commandWord": "define"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "Cells as the basic units of Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "recognise organelles and other cell structures found in eukaryotic cells and outline their structures and functions, limited to: • cell surface membrane • nucleus, nuclear envelope and nucleolus • rough endoplasmic reticulum • smooth endoplasmic reticulum • Golgi body (Golgi apparatus or Golgi complex) • mitochondria (including the presence of small circular DNA) • ribosomes (80S in the cytoplasm and 70S in chloroplasts and mitochondria) • lysosomes • centrioles and microtubules • cilia • microvilli • chloroplasts (including the presence of small circular DNA) • cell wall • plasmodesmata • large permanent vacuole and tonoplast of plant cells",
+              "commandWord": "recognise"
+            },
+            {
+              "statement": "describe and interpret photomicrographs, electron micrographs and drawings of typical plant and animal cells",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "compare the structure of typical plant and animal cells",
+              "commandWord": "compare"
+            },
+            {
+              "statement": "state that cells use ATP from respiration for energy-requiring processes",
+              "commandWord": "state"
+            },
+            {
+              "statement": "outline key structural features of a prokaryotic cell as found in a typical bacterium, including: • unicellular • generally 1–5 µm diameter • peptidoglycan cell walls • circular DNA • 70S ribosomes • absence of organelles surrounded by double membranes",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "compare the structure of a prokaryotic cell as found in a typical bacterium with the structures of typical eukaryotic cells in plants and animals",
+              "commandWord": "compare"
+            },
+            {
+              "statement": "state that all viruses are non-cellular structures with a nucleic acid core (either DNA or RNA) and a capsid made of protein, and that some viruses have an outer envelope made of phospholipids",
+              "commandWord": "state"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Biological molecules",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Testing for biological Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe and carry out the Benedict’s test for reducing sugars, the iodine test for starch, the emulsion test for lipids and the biuret test for proteins",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and carry out a semi-quantitative Benedict’s test on a reducing sugar solution by standardising the test and using the results (time to first colour change or comparison to colour standards) to estimate the concentration",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and carry out a test to identify the presence of non-reducing sugars, using acid hydrolysis and Benedict’s solution",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "Carbohydrates and lipids Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe and draw the ring forms of α-glucose and β-glucose",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "define the terms monomer, polymer, macromolecule, monosaccharide, disaccharide and polysaccharide",
+              "commandWord": "define"
+            },
+            {
+              "statement": "state the role of covalent bonds in joining smaller molecules together to form polymers",
+              "commandWord": "state"
+            },
+            {
+              "statement": "state that glucose, fructose and maltose are reducing sugars and that sucrose is a non-reducing sugar",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the formation of a glycosidic bond by condensation, with reference to disaccharides, including sucrose, and polysaccharides",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the breakage of a glycosidic bond in polysaccharides and disaccharides by hydrolysis, with reference to the non-reducing sugar test",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the molecular structure of the polysaccharides starch (amylose and amylopectin) and glycogen and relate their structures to their functions in living organisms",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the molecular structure of the polysaccharide cellulose and outline how the arrangement of cellulose molecules contributes to the function of plant cell walls",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that triglycerides are non-polar hydrophobic molecules and describe the molecular structure of triglycerides with reference to fatty acids (saturated and unsaturated), glycerol and the formation of ester bonds 10 relate the molecular structure of triglycerides to their functions in living organisms 11 describe the molecular structure of phospholipids with reference to their hydrophilic (polar) phosphate heads and hydrophobic (non-polar) fatty acid tails",
+              "commandWord": "state"
+            }
+          ]
+        },
+        {
+          "number": "2.3",
+          "title": "Proteins Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe and draw the general structure of an amino acid and the formation and breakage of a peptide bond",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the meaning of the terms primary structure, secondary structure, tertiary structure and quaternary structure of proteins",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the types of interaction that hold protein molecules in shape: • hydrophobic interactions • hydrogen bonding • ionic bonding • covalent bonding, including disulfide bonds",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that globular proteins are generally soluble and have physiological roles and fibrous proteins are generally insoluble and have structural roles",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the structure of a molecule of haemoglobin as an example of a globular protein, including the formation of its quaternary structure from two alpha (α) chains (α–globin), two beta (β) chains (β–globin) and a haem group",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "relate the structure of haemoglobin to its function, including the importance of iron in the haem group",
+              "commandWord": "relate"
+            },
+            {
+              "statement": "describe the structure of a molecule of collagen as an example of a fibrous protein, and the arrangement of collagen molecules to form collagen fibres",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "relate the structures of collagen molecules and collagen fibres to their function",
+              "commandWord": "relate"
+            }
+          ]
+        },
+        {
+          "number": "2.4",
+          "title": "Water Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "explain how hydrogen bonding occurs between water molecules and relate the properties of water to its roles in living organisms, limited to solvent action, high specific heat capacity and latent heat of vaporisation",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Enzymes",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Mode of action of enzymes Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state that enzymes are globular proteins that catalyse reactions inside cells (intracellular enzymes) or are secreted to catalyse reactions outside cells (extracellular enzymes)",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain the mode of action of enzymes in terms of an active site, enzyme–substrate complex, lowering of activation energy and enzyme specificity, including the lock-and-key hypothesis and the induced-fit hypothesis",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "investigate the progress of enzyme-catalysed reactions by measuring rates of formation of products using catalase and rates of disappearance of substrate using amylase",
+              "commandWord": "investigate"
+            },
+            {
+              "statement": "outline the use of a colorimeter for measuring the progress of enzyme-catalysed reactions that involve colour changes",
+              "commandWord": "outline"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Factors that affect enzyme Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "investigate and explain the effects of the following factors on the rate of enzyme-catalysed reactions: • temperature • pH (using buffer solutions) • enzyme concentration • substrate concentration • inhibitor concentration",
+              "commandWord": "investigate"
+            },
+            {
+              "statement": "explain that the maximum rate of reaction (Vmax) is used to derive the Michaelis–Menten constant (Km), which is used to compare the affinity of different enzymes for their substrates",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the effects of reversible inhibitors, both competitive and non-competitive, on enzyme activity",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "investigate the difference in activity between an enzyme immobilised in alginate and the same enzyme free in solution, and state the advantages of using immobilised enzymes",
+              "commandWord": "investigate"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Cell membranes and transport",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Fluid mosaic membranes Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the fluid mosaic model of membrane structure with reference to the hydrophobic and hydrophilic interactions that account for the formation of the phospholipid bilayer and the arrangement of proteins",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the arrangement of cholesterol, glycolipids and glycoproteins in cell surface membranes",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the roles of phospholipids, cholesterol, glycolipids, proteins and glycoproteins in cell surface membranes, with reference to stability, fluidity, permeability, transport (carrier proteins and channel proteins), cell signalling (cell surface receptors) and cell recognition (cell surface antigens – see 11.1.2)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "outline the main stages in the process of cell signalling leading to specific responses: • secretion of specific chemicals (ligands) from cells • transport of ligands to target cells • binding of ligands to cell surface receptors on target cells",
+              "commandWord": "outline"
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "Movement into and out of Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe and explain the processes of simple diffusion, facilitated diffusion, osmosis, active transport, endocytosis and exocytosis",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "investigate simple diffusion and osmosis using plant tissue and non-living materials, including dialysis (Visking) tubing and agar",
+              "commandWord": "investigate"
+            },
+            {
+              "statement": "illustrate the principle that surface area to volume ratios decrease with increasing size by calculating surface areas and volumes of simple 3-D shapes (as shown in the Mathematical requirements)",
+              "commandWord": "illustrate"
+            },
+            {
+              "statement": "investigate the effect of changing surface area to volume ratio on diffusion using agar blocks of different sizes",
+              "commandWord": "investigate"
+            },
+            {
+              "statement": "investigate the effects of immersing plant tissues in solutions of different water potentials, using the results to estimate the water potential of the tissues",
+              "commandWord": "investigate"
+            },
+            {
+              "statement": "explain the movement of water between cells and solutions in terms of water potential and explain the different effects of the movement of water on plant cells and animal cells (knowledge of solute potential and pressure potential is not expected)",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "The mitotic cell cycle",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "Replication and division of Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the structure of a chromosome, limited to: • DNA • histone proteins • sister chromatids • centromere • telomeres",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the importance of mitosis in the production of genetically identical daughter cells during: • growth of multicellular organisms • replacement of damaged or dead cells • repair of tissues by cell replacement • asexual reproduction",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "outline the mitotic cell cycle, including: • interphase (growth in G1 and G2 phases and DNA replication in S phase) • mitosis • cytokinesis",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "outline the role of telomeres in preventing the loss of genes from the ends of chromosomes during DNA replication",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "outline the role of stem cells in cell replacement and tissue repair by mitosis",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "explain how uncontrolled cell division can result in the formation of a tumour",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "5.2",
+          "title": "Chromosome behaviour in Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the behaviour of chromosomes in plant and animal cells during the mitotic cell cycle and the associated behaviour of the nuclear envelope, the cell surface membrane and the spindle (names of the main stages of mitosis are expected: prophase, metaphase, anaphase and telophase)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "interpret photomicrographs, diagrams and microscope slides of cells in different stages of the mitotic cell cycle and identify the main stages of mitosis",
+              "commandWord": "interpret"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Nucleic acids and protein synthesis",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Structure of nucleic acids Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the structure of nucleotides, including the phosphorylated nucleotide ATP (structural formulae are not expected)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that the bases adenine and guanine are purines with a double ring structure, and that the bases cytosine, thymine and uracil are pyrimidines with a single ring structure (structural formulae for bases are not expected)",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the structure of a DNA molecule as a double helix, including: • the importance of complementary base pairing between the 5′ to 3′ strand and the 3′ to 5′ strand (antiparallel strands) • differences in hydrogen bonding between C–G and A–T base pairs • linking of nucleotides by phosphodiester bonds",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the semi-conservative replication of DNA during the S phase of the cell cycle, including: • the roles of DNA polymerase and DNA ligase (knowledge of other enzymes in DNA replication in cells and different types of DNA polymerase is not expected) • the differences between leading strand and lagging strand replication as a consequence of DNA polymerase adding nucleotides only in a 5′ to 3′ direction",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the structure of an RNA molecule, using the example of messenger RNA (mRNA)",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Protein synthesis Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state that a polypeptide is coded for by a gene and that a gene is a sequence of nucleotides that forms part of a DNA molecule",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the principle of the universal genetic code in which different triplets of DNA bases either code for specific amino acids or correspond to start and stop codons",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe how the information in DNA is used during transcription and translation to construct polypeptides, including the roles of: • RNA polymerase • messenger RNA (mRNA) • codons • transfer RNA (tRNA) • anticodons • ribosomes",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that the strand of a DNA molecule that is used in transcription is called the transcribed or template strand and that the other strand is called the non-transcribed strand",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain that, in eukaryotes, the RNA molecule formed following transcription (primary transcript) is modified by the removal of non-coding sequences (introns) and the joining together of coding sequences (exons) to form mRNA",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "state that a gene mutation is a change in the sequence of base pairs in a DNA molecule that may result in an altered polypeptide",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain that a gene mutation is a result of substitution or deletion or insertion of nucleotides in DNA and outline how each of these types of mutation may affect the polypeptide produced",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Transport in plants",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Structure of transport tissues Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "draw plan diagrams of transverse sections of stems, roots and leaves of herbaceous dicotyledonous plants from microscope slides and photomicrographs",
+              "commandWord": "draw"
+            },
+            {
+              "statement": "describe the distribution of xylem and phloem in transverse sections of stems, roots and leaves of herbaceous dicotyledonous plants",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "draw and label xylem vessel elements, phloem sieve tube elements and companion cells from microscope slides, photomicrographs and electron micrographs",
+              "commandWord": "draw"
+            },
+            {
+              "statement": "relate the structure of xylem vessel elements, phloem sieve tube elements and companion cells to their functions",
+              "commandWord": "relate"
+            }
+          ]
+        },
+        {
+          "number": "7.2",
+          "title": "Transport mechanisms Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state that some mineral ions and organic compounds can be transported within plants dissolved in water",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the transport of water from the soil to the xylem through the: • apoplast pathway, including reference to lignin and cellulose • symplast pathway, including reference to the endodermis, Casparian strip and suberin",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain that transpiration involves the evaporation of water from the internal surfaces of leaves followed by diffusion of water vapour to the atmosphere",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain how hydrogen bonding of water molecules is involved with movement of water in the xylem by cohesion-tension in transpiration pull and by adhesion to cellulose in cell walls",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "make annotated drawings of transverse sections of leaves from xerophytic plants to explain how they are adapted to reduce water loss by transpiration",
+              "commandWord": "make"
+            },
+            {
+              "statement": "state that assimilates dissolved in water, such as sucrose and amino acids, move from sources to sinks in phloem sieve tubes",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain how companion cells transfer assimilates to phloem sieve tubes, with reference to proton pumps and cotransporter proteins",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain mass flow in phloem sieve tubes down a hydrostatic pressure gradient from source to sink",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Transport in mammals",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "The circulatory system Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state that the mammalian circulatory system is a closed double circulation consisting of a heart, blood and blood vessels including arteries, arterioles, capillaries, venules and veins",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the functions of the main blood vessels of the pulmonary and systemic circulations, limited to pulmonary artery, pulmonary vein, aorta and vena cava",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "recognise arteries, veins and capillaries from microscope slides, photomicrographs and electron micrographs and make plan diagrams showing the structure of arteries and veins in transverse section (TS) and longitudinal section (LS)",
+              "commandWord": "recognise"
+            },
+            {
+              "statement": "explain how the structure of muscular arteries, elastic arteries, veins and capillaries are each related to their functions",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "recognise and draw red blood cells, monocytes, neutrophils and lymphocytes from microscope slides, photomicrographs and electron micrographs",
+              "commandWord": "recognise"
+            },
+            {
+              "statement": "state that water is the main component of blood and tissue fluid and relate the properties of water to its role in transport in mammals, limited to solvent action and high specific heat capacity",
+              "commandWord": "state"
+            },
+            {
+              "statement": "state the functions of tissue fluid and describe the formation of tissue fluid in a capillary network",
+              "commandWord": "state"
+            }
+          ]
+        },
+        {
+          "number": "8.2",
+          "title": "Transport of oxygen and Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the role of red blood cells in transporting oxygen and carbon dioxide with reference to the roles of: • haemoglobin • carbonic anhydrase • the formation of haemoglobinic acid • the formation of carbaminohaemoglobin",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the chloride shift and explain the importance of the chloride shift",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the role of plasma in the transport of carbon dioxide",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and explain the oxygen dissociation curve of adult haemoglobin",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the importance of the oxygen dissociation curve at partial pressures of oxygen in the lungs and in respiring tissues",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the Bohr shift and explain the importance of the Bohr shift",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "8.3",
+          "title": "The heart Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the external and internal structure of the mammalian heart",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the differences in the thickness of the walls of the: • atria and ventricles • left ventricle and right ventricle",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the cardiac cycle, with reference to the relationship between blood pressure changes during systole and diastole and the opening and closing of valves",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the roles of the sinoatrial node, the atrioventricular node and the Purkyne tissue in the cardiac cycle (knowledge of nervous and hormonal control is not expected)",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Gas exchange",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "The gas exchange system Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the structure of the human gas exchange system, limited to: • lungs • trachea • bronchi • bronchioles • alveoli • capillary network",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the distribution in the gas exchange system of cartilage, ciliated epithelium, goblet cells, squamous epithelium of alveoli, smooth muscle and capillaries",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "recognise cartilage, ciliated epithelium, goblet cells, squamous epithelium of alveoli, smooth muscle and capillaries in microscope slides, photomicrographs and electron micrographs",
+              "commandWord": "recognise"
+            },
+            {
+              "statement": "recognise trachea, bronchi, bronchioles and alveoli in microscope slides, photomicrographs and electron micrographs and make plan diagrams of transverse sections of the walls of the trachea and bronchus",
+              "commandWord": "recognise"
+            },
+            {
+              "statement": "describe the functions of ciliated epithelial cells, goblet cells and mucous glands in maintaining the health of the gas exchange system",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the functions in the gas exchange system of cartilage, smooth muscle, elastic fibres and squamous epithelium",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe gas exchange between air in the alveoli and blood in the capillaries",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "10",
+      "title": "Infectious diseases",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "10.1",
+          "title": "Infectious diseases Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "state that infectious diseases are caused by pathogens and are transmissible",
+              "commandWord": "state"
+            },
+            {
+              "statement": "state the name and type of pathogen that causes each of the following diseases: • cholera – caused by the bacterium Vibrio cholerae • malaria – caused by the protoctists Plasmodium falciparum, Plasmodium malariae, Plasmodium ovale and Plasmodium vivax • tuberculosis (TB) – caused by the bacteria Mycobacterium tuberculosis and Mycobacterium bovis • HIV/AIDS – caused by the human immunodeficiency virus (HIV)",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain how cholera, malaria, TB and HIV are transmitted",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "discuss the biological, social and economic factors that need to be considered in the prevention and control of cholera, malaria, TB and HIV (details of the life cycle of the malarial parasite are not expected)",
+              "commandWord": "discuss"
+            }
+          ]
+        },
+        {
+          "number": "10.2",
+          "title": "Antibiotics Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "outline how penicillin acts on bacteria and why antibiotics do not affect viruses",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "discuss the consequences of antibiotic resistance and the steps that can be taken to reduce its impact",
+              "commandWord": "discuss"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "11",
+      "title": "Immunity",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "11.1",
+          "title": "The immune system Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "describe the mode of action of phagocytes (macrophages and neutrophils)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain what is meant by an antigen (see 4.1.3) and state the difference between self antigens and non-self antigens",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the sequence of events that occurs during a primary immune response with reference to the roles of: • macrophages • B-lymphocytes, including plasma cells • T-lymphocytes, limited to T-helper cells and T-killer cells",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the role of memory cells in the secondary immune response and in long-term immunity",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "11.2",
+          "title": "Antibodies and vaccination Learning outcomes",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "relate the molecular structure of antibodies to their functions",
+              "commandWord": "relate"
+            },
+            {
+              "statement": "outline the hybridoma method for the production of monoclonal antibodies",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "outline the principles of using monoclonal antibodies in the diagnosis of disease and in the treatment of disease",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "describe the differences between active immunity and passive immunity and between natural immunity and artificial immunity",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain that vaccines contain antigens that stimulate immune responses to provide long-term immunity",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain how vaccination programmes can help to control the spread of infectious diseases",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "12",
+      "title": "Energy and respiration",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "12.1",
+          "title": "Energy Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "outline the need for energy in living organisms, as illustrated by active transport, movement and anabolic reactions, such as those occurring in DNA replication and protein synthesis",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "describe the features of ATP that make it suitable as the universal energy currency",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that ATP is synthesised by: • transfer of phosphate in substrate-linked reactions • chemiosmosis in membranes of mitochondria and chloroplasts",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain the relative energy values of carbohydrates, lipids and proteins as respiratory substrates",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "state that the respiratory quotient (RQ) is the ratio of the number of molecules of carbon dioxide produced to the number of molecules of oxygen taken in, as a result of respiration",
+              "commandWord": "state"
+            },
+            {
+              "statement": "calculate RQ values of different respiratory substrates from equations for respiration",
+              "commandWord": "calculate"
+            },
+            {
+              "statement": "describe and carry out investigations, using simple respirometers, to determine the RQ of germinating seeds or small invertebrates (e.g. blowfly larvae)",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "12.2",
+          "title": "Respiration Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "State where each of the four stages in aerobic respiration occurs in eukaryotic cells: • glycolysis in the cytoplasm • link reaction in the mitochondrial matrix • Krebs cycle in the mitochondrial matrix • oxidative phosphorylation on the inner membrane of mitochondria",
+              "commandWord": "state"
+            },
+            {
+              "statement": "outline glycolysis as phosphorylation of glucose and the subsequent splitting of fructose 1,6-bisphosphate (6C) into two triose phosphate molecules (3C), which are then further oxidised to pyruvate (3C), with the production of ATP and reduced NAD",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "explain that, when oxygen is available, pyruvate enters mitochondria to take part in the link reaction",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the link reaction, including the role of coenzyme A in the transfer of acetyl (2C) groups",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "outline the Krebs cycle, explaining that oxaloacetate (4C) acts as an acceptor of the 2C fragment from acetyl coenzyme A to form citrate (6C), which is converted back to oxaloacetate in a series of small steps",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "explain that reactions in the Krebs cycle involve decarboxylation and dehydrogenation and the reduction of the coenzymes NAD and FAD",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the role of NAD and FAD in transferring hydrogen to carriers in the inner mitochondrial membrane",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain that during oxidative phosphorylation: • hydrogen atoms split into protons and energetic electrons • energetic electrons release energy as they pass through the electron transport chain (details of carriers are not expected) • the released energy is used to transfer protons across the inner mitochondrial membrane • protons return to the mitochondrial matrix by facilitated diffusion through ATP synthase, providing energy for ATP synthesis (details of ATP synthase are not expected) • oxygen acts as the final electron acceptor to form water",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the relationship between the structure and function of mitochondria using diagrams and electron micrographs 10 outline respiration in anaerobic conditions in mammals (lactate fermentation) and in yeast cells (ethanol fermentation)",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "13",
+      "title": "Photosynthesis",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "13.1",
+          "title": "Photosynthesis as an Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "describe the relationship between the structure of chloroplasts, as shown in diagrams and electron micrographs, and their function",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain that energy transferred as ATP and reduced NADP from the light-dependent stage is used during the light- independent stage (Calvin cycle) of photosynthesis to produce complex organic molecules",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "state that within a chloroplast, the thylakoids (thylakoid membranes and thylakoid spaces), which occur in stacks called grana, are the site of the light-dependent stage and the stroma is the site of the light-independent stage",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the role of chloroplast pigments (chlorophyll a, chlorophyll b, carotene and xanthophyll) in light absorption in thylakoids",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "interpret absorption spectra of chloroplast pigments and action spectra for photosynthesis",
+              "commandWord": "interpret"
+            },
+            {
+              "statement": "describe and use chromatography to separate and identify chloroplast pigments (reference should be made to Rf values in identification of chloroplast pigments)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that cyclic photophosphorylation and non-cyclic photophosphorylation occur during the light-dependent stage of photosynthesis",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain that in cyclic photophosphorylation: • only photosystem I (PSI) is involved • photoactivation of chlorophyll occurs • ATP is synthesised",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain that in non-cyclic photophosphorylation: • photosystem I (PSI) and photosystem II (PSII) are both involved • photoactivation of chlorophyll occurs • the oxygen-evolving complex catalyses the photolysis of water • ATP and reduced NADP are synthesised",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "13.2",
+          "title": "Investigation of limiting Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "state that light intensity, carbon dioxide concentration and temperature are examples of limiting factors of photosynthesis",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain the effects of changes in light intensity, carbon dioxide concentration and temperature on the rate of photosynthesis",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe and carry out investigations using redox indicators, including DCPIP and methylene blue, and a suspension of chloroplasts to determine the effects of light intensity and light wavelength on the rate of photosynthesis",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and carry out investigations using whole plants, including aquatic plants, to determine the effects of light intensity, carbon dioxide concentration and temperature on the rate of photosynthesis",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "14",
+      "title": "Homeostasis",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "14.1",
+          "title": "Homeostasis in mammals Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain what is meant by homeostasis and the importance of homeostasis in mammals",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the principles of homeostasis in terms of internal and external stimuli, receptors, coordination systems (nervous system and endocrine system), effectors (muscles and glands) and negative feedback",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "state that urea is produced in the liver from the deamination of excess amino acids",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the structure of the human kidney, limited to: • fibrous capsule • cortex • medulla • renal pelvis • ureter • branches of the renal artery and renal vein",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "Identify, in diagrams, photomicrographs and electron micrographs, the parts of a nephron and its associated blood vessels and structures, limited to: • glomerulus • Bowman’s capsule • proximal convoluted tubule • loop of Henle • distal convoluted tubule • collecting duct",
+              "commandWord": "identify"
+            },
+            {
+              "statement": "describe and explain the formation of urine in the nephron, limited to: • the formation of glomerular filtrate by ultrafiltration in the Bowman’s capsule • selective reabsorption in the proximal convoluted tubule",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "relate the detailed structure of the Bowman’s capsule and proximal convoluted tubule to their functions in the formation of urine",
+              "commandWord": "relate"
+            },
+            {
+              "statement": "describe the roles of the hypothalamus, posterior pituitary gland, antidiuretic hormone (ADH), aquaporins and collecting ducts in osmoregulation",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the principles of cell signalling using the example of the control of blood glucose concentration by glucagon, limited to: • binding of hormone to cell surface receptor causing conformational change • activation of G-protein leading to stimulation of adenylyl cyclase • formation of the second messenger, cyclic AMP (cAMP) • activation of protein kinase A by cAMP leading to initiation of an enzyme cascade • amplification of the signal through the enzyme cascade as a result of activation of more and more enzymes by phosphorylation • cellular response in which the final enzyme in the pathway is activated, catalysing the breakdown of glycogen 10 explain how negative feedback control mechanisms regulate blood glucose concentration, with reference to the effects of insulin on muscle cells and liver cells and the effect of glucagon on liver cells 11 explain the principles of operation of test strips and biosensors for measuring the concentration of glucose in blood and urine, with reference to glucose oxidase and peroxidase enzymes",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "14.2",
+          "title": "Homeostasis in plants Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain that stomata respond to changes in environmental conditions by opening and closing and that regulation of stomatal aperture balances the need for carbon dioxide uptake by diffusion with the need to minimise water loss by transpiration",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain that stomata have daily rhythms of opening and closing",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the structure and function of guard cells and explain the mechanism by which they open and close stomata",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe the role of abscisic acid in the closure of stomata during times of water stress, including the role of calcium ions as a second messenger",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "15",
+      "title": "Control and coordination",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "15.1",
+          "title": "Control and coordination in Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "describe the features of the endocrine system with reference to the hormones ADH, glucagon and insulin (see 14.1.8, 14.1.9 and 14.1.10)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "compare the features of the nervous system and the endocrine system",
+              "commandWord": "compare"
+            },
+            {
+              "statement": "describe the structure and function of a sensory neurone and a motor neurone and state that intermediate neurones connect sensory neurones and motor neurones",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "outline the role of sensory receptor cells in detecting stimuli and stimulating the transmission of impulses in sensory neurones",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "describe the sequence of events that results in an action potential in a sensory neurone, using a chemoreceptor cell in a human taste bud as an example",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and explain changes to the membrane potential of neurones, including: • how the resting potential is maintained • the events that occur during an action potential • how the resting potential is restored during the refractory period",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and explain the rapid transmission of an impulse in a myelinated neurone with reference to saltatory conduction",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the importance of the refractory period in determining the frequency of impulses",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the structure of a cholinergic synapse and explain how it functions, including the role of calcium ions 10 describe the roles of neuromuscular junctions, the T-tubule system and sarcoplasmic reticulum in stimulating contraction in striated muscle 11 describe the ultrastructure of striated muscle with reference to sarcomere structure using electron micrographs and diagrams 12 explain the sliding filament model of muscular contraction including the roles of troponin, tropomyosin, calcium ions and ATP",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "15.2",
+          "title": "Control and coordination in Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "describe the rapid response of the Venus fly trap to stimulation of hairs on the lobes of modified leaves and explain how the closure of the trap is achieved",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain the role of auxin in elongation growth by stimulating proton pumping to acidify cell walls",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the role of gibberellin in the germination of barley (see 16.3.4)",
+              "commandWord": "describe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "16",
+      "title": "Inheritance",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "16.1",
+          "title": "Passage of information Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain the meanings of the terms haploid (n) and diploid (2n)",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain what is meant by homologous pairs of chromosomes",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the need for a reduction division during meiosis in the production of gametes",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe the behaviour of chromosomes in plant and animal cells during meiosis and the associated behaviour of the nuclear envelope, the cell surface membrane and the spindle (names of the main stages of meiosis, but not the sub-divisions of prophase I, are expected: prophase I, metaphase I, anaphase I, telophase I, prophase II, metaphase II, anaphase II and telophase II)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "interpret photomicrographs and diagrams of cells in different stages of meiosis and identify the main stages of meiosis",
+              "commandWord": "interpret"
+            },
+            {
+              "statement": "explain that crossing over and random orientation (independent assortment) of pairs of homologous chromosomes and sister chromatids during meiosis produces genetically different gametes",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain that the random fusion of gametes at fertilisation produces genetically different individuals",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "16.2",
+          "title": "The roles of genes in Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain the terms gene, locus, allele, dominant, recessive, codominant, linkage, test cross, F1, F2, phenotype, genotype, homozygous and heterozygous",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "interpret and construct genetic diagrams, including Punnett squares, to explain and predict the results of monohybrid crosses and dihybrid crosses that involve dominance, codominance, multiple alleles and sex linkage",
+              "commandWord": "interpret"
+            },
+            {
+              "statement": "interpret and construct genetic diagrams, including Punnett squares, to explain and predict the results of dihybrid crosses that involve autosomal linkage and epistasis (knowledge of the expected ratios for different types of epistasis is not expected)",
+              "commandWord": "interpret"
+            },
+            {
+              "statement": "interpret and construct genetic diagrams, including Punnett squares, to explain and predict the results of test crosses",
+              "commandWord": "interpret"
+            },
+            {
+              "statement": "use the chi-squared test to test the significance of differences between observed and expected results (the formula for the chi-squared test will be provided, as shown in the Mathematical requirements)",
+              "commandWord": "use"
+            },
+            {
+              "statement": "explain the relationship between genes, proteins and phenotype with respect to the: • TYR gene, tyrosinase and albinism • HBB gene, haemoglobin and sickle cell anaemia • F8 gene, factor VIII and haemophilia • HTT gene, huntingtin and Huntington’s disease",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the role of gibberellin in stem elongation including the role of the dominant allele, Le, that codes for a functional enzyme in the gibberellin synthesis pathway, and the recessive allele, le, that codes for a non-functional enzyme",
+              "commandWord": "explain"
+            }
+          ]
+        },
+        {
+          "number": "16.3",
+          "title": "Gene control Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "describe the differences between structural genes and regulatory genes and the differences between repressible enzymes and inducible enzymes",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain genetic control of protein production in a prokaryote using the lac operon (knowledge of the role of cAMP is not expected)",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "state that transcription factors are proteins that bind to DNA and are involved in the control of gene expression in eukaryotes by decreasing or increasing the rate of transcription",
+              "commandWord": "state"
+            },
+            {
+              "statement": "explain how gibberellin activates genes by causing the breakdown of DELLA protein repressors, which normally inhibit factors that promote transcription",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "17",
+      "title": "Selection and evolution",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "17.1",
+          "title": "Variation Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain, with examples, that phenotypic variation is due to genetic factors or environmental factors or a combination of genetic and environmental factors",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain what is meant by discontinuous variation and continuous variation",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the genetic basis of discontinuous variation and continuous variation",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "use the t-test to compare the means of two different samples (the formula for the t-test will be provided, as shown in the Mathematical requirements)",
+              "commandWord": "use"
+            }
+          ]
+        },
+        {
+          "number": "17.2",
+          "title": "Natural and artificial Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain that natural selection occurs because populations have the capacity to produce many offspring that compete for resources; in the ‘struggle for existence’, individuals that are best adapted are most likely to survive to reproduce and pass on their alleles to the next generation",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain how environmental factors can act as stabilising, disruptive and directional forces of natural selection",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain how selection, the founder effect and genetic drift, including the bottleneck effect, may affect allele frequencies in populations",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "outline how bacteria become resistant to antibiotics as an example of natural selection",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "use the Hardy–Weinberg principle to calculate allele and genotype frequencies in populations and state the conditions when this principle can be applied (the two equations for the Hardy–Weinberg principle will be provided, as shown in the Mathematical requirements)",
+              "commandWord": "use"
+            },
+            {
+              "statement": "describe the principles of selective breeding (artificial selection)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "outline the following examples of selective breeding: • the introduction of disease resistance to varieties of wheat and rice • inbreeding and hybridisation to produce vigorous, uniform varieties of maize • improving the milk yield of dairy cattle",
+              "commandWord": "outline"
+            }
+          ]
+        },
+        {
+          "number": "17.3",
+          "title": "Evolution Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "outline the theory of evolution as a process leading to the formation of new species from pre-existing species over time, as a result of changes to gene pools from generation to generation",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "discuss how DNA sequence data can show evolutionary relationships between species",
+              "commandWord": "discuss"
+            },
+            {
+              "statement": "explain how speciation may occur as a result of genetic isolation by: • geographical separation (allopatric speciation) • ecological and behavioural separation (sympatric speciation)",
+              "commandWord": "explain"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "18",
+      "title": "Classification, biodiversity and conservation",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "18.1",
+          "title": "Classification Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "discuss the meaning of the term species, limited to the biological species concept, morphological species concept and ecological species concept",
+              "commandWord": "discuss"
+            },
+            {
+              "statement": "describe the classification of organisms into three domains: Archaea, Bacteria and Eukarya",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "state that Archaea and Bacteria are prokaryotes and that there are differences between them, limited to differences in membrane lipids, ribosomal RNA and composition of cell walls",
+              "commandWord": "state"
+            },
+            {
+              "statement": "describe the classification of organisms in the Eukarya domain into the taxonomic hierarchy of kingdom, phylum, class, order, family, genus and species",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "outline the characteristic features of the kingdoms Protoctista, Fungi, Plantae and Animalia",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "outline how viruses are classified, limited to the type of nucleic acid (RNA or DNA) and whether this is single stranded or double stranded",
+              "commandWord": "outline"
+            }
+          ]
+        },
+        {
+          "number": "18.2",
+          "title": "Biodiversity Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "define the terms ecosystem and niche",
+              "commandWord": "define"
+            },
+            {
+              "statement": "explain that biodiversity can be assessed at different levels, including: • the number and range of different ecosystems and habitats • the number of species and their relative abundance • the genetic variation within each species",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the importance of random sampling in determining the biodiversity of an area",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe and use suitable methods to assess the distribution and abundance of organisms in an area, limited to frame quadrats, line transects, belt transects and mark-release- recapture using the Lincoln index (the formula for the Lincoln index will be provided, as shown in the Mathematical requirements)",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "use Spearman’s rank correlation and Pearson’s linear correlation to analyse the relationships between two variables, including how biotic and abiotic factors affect the distribution and abundance of species (the formulae for these correlations will be provided, as shown in the Mathematical requirements)",
+              "commandWord": "use"
+            },
+            {
+              "statement": "use Simpson’s index of diversity (D) to calculate the biodiversity of an area, and state the significance of different values of D (the formula for Simpson’s index of diversity will be provided, as shown in the Mathematical requirements)",
+              "commandWord": "use"
+            }
+          ]
+        },
+        {
+          "number": "18.3",
+          "title": "Conservation Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain why populations and species can become extinct as a result of: • climate change • competition • hunting by humans • degradation and loss of habitats",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "outline reasons for the need to maintain biodiversity",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "outline the roles of zoos, botanic gardens, conserved areas (including national parks and marine parks), ‘frozen zoos’ and seed banks, in the conservation of endangered species",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "describe methods of assisted reproduction used in the conservation of endangered mammals, limited to IVF, embryo transfer and surrogacy",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "explain reasons for controlling invasive alien species",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "outline the role in conservation of the International Union for Conservation of Nature (IUCN) and the Convention on International Trade in Endangered Species of Wild Fauna and Flora (CITES)",
+              "commandWord": "outline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "19",
+      "title": "Genetic technology",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "19.1",
+          "title": "Principles of genetic Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "define the term recombinant DNA",
+              "commandWord": "define"
+            },
+            {
+              "statement": "explain that genetic engineering is the deliberate manipulation of genetic material to modify specific characteristics of an organism and that this may involve transferring a gene into an organism so that the gene is expressed",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain that genes to be transferred into an organism may be: • extracted from the DNA of a donor organism • synthesised from the mRNA of a donor organism • synthesised chemically from nucleotides",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain the roles of restriction endonucleases, DNA ligase, plasmids, DNA polymerase and reverse transcriptase in the transfer of a gene into an organism",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain why a promoter may have to be transferred into an organism as well as the desired gene",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain how gene expression may be confirmed by the use of marker genes coding for fluorescent products",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "explain that gene editing is a form of genetic engineering involving the insertion, deletion or replacement of DNA at specific sites in the genome",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "describe and explain the steps involved in the polymerase chain reaction (PCR) to clone and amplify DNA, including the role of Taq polymerase",
+              "commandWord": "describe"
+            },
+            {
+              "statement": "describe and explain how gel electrophoresis is used to separate DNA fragments of different lengths 10 outline how microarrays are used in the analysis of genomes and in detecting mRNA in studies of gene expression 11 outline the benefits of using databases that provide information about nucleotide sequences of genes and genomes, and amino acid sequences of proteins and protein structures",
+              "commandWord": "describe"
+            }
+          ]
+        },
+        {
+          "number": "19.2",
+          "title": "Genetic technology applied Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain the advantages of using recombinant human proteins to treat disease, using the examples insulin, factor VIII and adenosine deaminase",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "outline the advantages of genetic screening, using the examples of breast cancer (BRCA1 and BRCA2), Huntington’s disease and cystic fibrosis",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "outline how genetic diseases can be treated with gene therapy, using the examples severe combined immunodeficiency (SCID) and inherited eye diseases",
+              "commandWord": "outline"
+            },
+            {
+              "statement": "discuss the social and ethical considerations of using genetic screening and gene therapy in medicine",
+              "commandWord": "discuss"
+            }
+          ]
+        },
+        {
+          "number": "19.3",
+          "title": "Genetically modified Learning outcomes",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "explain that genetic engineering may help to solve the global demand for food by improving the quality and productivity of farmed animals and crop plants, using the examples of GM salmon, herbicide resistance in soybean and insect resistance in cotton",
+              "commandWord": "explain"
+            },
+            {
+              "statement": "discuss the ethical and social implications of using genetically modified organisms (GMOs) in food production",
+              "commandWord": "discuss"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

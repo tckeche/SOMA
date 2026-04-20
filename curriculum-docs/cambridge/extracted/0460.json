@@ -1,0 +1,1451 @@
+{
+  "syllabusCode": "0460",
+  "pattern": "C",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Changing river environments",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "The main hydrological characteristics and processes which operate in rivers and drainage",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Characteristics of rivers and drainage basins: the long profile, width, depth, speed of flow/velocity, discharge, wetted perimeter, channel, watershed, tributary, confluence, source, mouth.",
+              "commandWord": "characteristics"
+            },
+            {
+              "statement": "The Bradshaw model.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "How the drainage basin operates within the water cycle.",
+              "commandWord": "how"
+            },
+            {
+              "statement": "Processes which operate in a drainage basin: precipitation, interception, infiltration, percolation, overland flow, channel flow, throughflow, groundwater flow, transpiration, evaporation, evapotranspiration.",
+              "commandWord": "processes"
+            },
+            {
+              "statement": "Processes which operate within a river:",
+              "commandWord": "processes"
+            },
+            {
+              "statement": "erosion; hydraulic action, abrasion, attrition, solution",
+              "commandWord": "erosion"
+            },
+            {
+              "statement": "transportation; traction, suspension, saltation, solution",
+              "commandWord": "transportation"
+            },
+            {
+              "statement": "deposition.",
+              "commandWord": "deposition"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "The main landforms associated with these processes",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The characteristics and formation of landforms: waterfalls, rapids, gorges, V-shaped valleys, meanders, oxbow lakes, levées, floodplains, deltas, interlocking spurs, potholes.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "1.3",
+          "title": "Rivers present opportunities and hazards for people",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The opportunities and hazards of living near a river.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The human and natural causes of river flooding.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of river flooding.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage river flooding; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "The human causes of river pollution.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of river pollution.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage river pollution; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the causes and impacts of a flood for a named river",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to manage the flooding of the river; including sustainable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "One detailed specific example to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the causes and impacts of pollution in a named river",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to manage pollution levels in the river; including sustainable.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Changing coastal environments",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Physical processes that shape the coast",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Coastal erosion: hydraulic action, corrosion, corrasion, attrition; transportation; deposition; longshore drift.",
+              "commandWord": "coastal"
+            },
+            {
+              "statement": "Types of waves: constructive and destructive and wave refraction.",
+              "commandWord": "types"
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "The main landforms associated with these processes",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The characteristics and formation of landforms: headlands, bays, cliffs, wave-cut platforms, caves, arches, stacks, stumps, beaches, spits, bars, sand dunes.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The formation and characteristics of discordant and concordant coastlines.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "2.3",
+          "title": "Coasts present opportunities and hazards for people",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The opportunities of living near the coast.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The hazards of living near the coast.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of hard and soft engineering strategies and techniques used to manage coastal erosion and flooding; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "The distribution and impacts of tropical storms: cyclones, hurricanes, and typhoons.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage the impacts of tropical storms: preparation, planning, protection, prediction.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "The global distribution, importance of, threats to, and strategies and techniques used to protect and manage coral reefs and mangroves; including sustainable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "One detailed specific example of a named country or coastal area to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the causes and impacts of coastal erosion",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to protect the coast from tropical storms and manage erosion; including sustainable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "One detailed specific example of a named country or coastal area to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "why the coral reef is important",
+              "commandWord": "why"
+            },
+            {
+              "statement": "threats to the coral reef",
+              "commandWord": "threats"
+            },
+            {
+              "statement": "the strategies and techniques used to protect and manage and the coral reef; including sustainable.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Changing ecosystems",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Characteristics of the Antarctic ecosystem",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The location of the Antarctic ecosystem.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The characteristics of the Antarctic climate: high pressure, the influence of latitude, angle of the sun, temperature, precipitation.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The features of the Antarctic ecosystem.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The interrelationships between abiotic and biotic factors in the Antarctic ecosystem and how flora and fauna adapt to survive.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Threats to the Antarctic ecosystem and how they can be managed",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The threats posed to Antarctica, for example, resource exploitation, climate change, fishing, tourism.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of the destruction of the Antarctic ecosystem.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage the Antarctic ecosystem; including sustainable. For example, international agreements and environmental impact surveys. For the Antarctic ecosystem, a detailed specific example is not listed, this is because the topic content is only based upon Antarctica.",
+              "commandWord": "an"
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Characteristics of the tropical rainforest ecosystem",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The global distribution of tropical rainforests.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The characteristics of the equatorial climate: overhead sun, low pressure, convectional rainfall, temperature, latitude.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The characteristics and structure of the tropical rainforest ecosystem.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The interrelationships between abiotic and biotic factors in the tropical rainforest ecosystem and how flora and fauna adapt to survive.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "3.4",
+          "title": "Threats to tropical rainforest ecosystems and how they can be managed",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The threats to tropical rainforest ecosystems, for example, deforestation, resource exploitation, logging, road and railway building, cattle ranching, hydroelectric power, farming, settlements.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of the destruction and deforestation of tropical rainforest ecosystems.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage the tropical rainforest ecosystem; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country or tropical rainforest area to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "threats to the tropical rainforest ecosystem",
+              "commandWord": "threats"
+            },
+            {
+              "statement": "impacts of the destruction and deforestation of the tropical rainforest ecosystem",
+              "commandWord": "impacts"
+            },
+            {
+              "statement": "the strategies and techniques used to manage the tropical rainforest ecosystem; including sustainable.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Tectonic hazards",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "The structure of the Earth and distribution of earthquakes and volcanoes",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The characteristics of the layers of the Earth: inner core, outer core, mantle, crust, lithosphere.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The names and location of the main tectonic plates and how tectonic plates move.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Types of plate boundary: divergent/constructive, convergent/destructive, convergent/collision, conservative/transform and the location of earthquakes and volcanoes.",
+              "commandWord": "types"
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "The processes and features associated with earthquakes and volcanoes",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The processes experienced at each type of plate boundary which cause earthquakes and volcanic eruptions.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The main characteristics of earthquakes: focus, epicentre, seismic waves.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Types of volcano: strato-volcano (composite cone), shield, cinder cone.",
+              "commandWord": "types"
+            },
+            {
+              "statement": "The classification of volcanoes as active, dormant, or extinct.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The main features of volcanoes: crater, vent, magma, magma chamber, secondary cone.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Volcanic hazards: lava flows, ash falls, lahars, pyroclastic flows, tephra, volcanic rocks, toxic gases; the significance of speed, size, frequency, and spread.",
+              "commandWord": "volcanic"
+            }
+          ]
+        },
+        {
+          "number": "4.3",
+          "title": "The impacts of tectonic hazards",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Reasons why people live in areas at risk from earthquakes and volcanic eruptions.",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "The impacts of earthquakes.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of volcanic eruptions.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "How the magnitude of a tectonic event is measured: moment magnitude scale, Richter scale, Mercalli scale, the volcanic explosivity index (VEI).",
+              "commandWord": "how"
+            }
+          ]
+        },
+        {
+          "number": "4.4",
+          "title": "Managing the impacts of tectonic hazards",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Primary and secondary responses.",
+              "commandWord": "primary"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage the impacts of earthquakes and volcanic eruptions: monitoring, prediction, protection, planning and technology.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the causes and impacts of an earthquake on a named country/area",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the responses to the earthquake",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to manage the impacts of earthquakes.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "One detailed specific example to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the causes and impacts of an eruption of a named volcano",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the responses to the volcanic eruption",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to manage the impacts of volcanic eruptions.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Climate change",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "The natural and human causes of climate change",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Evidence of climate change: global temperature data, ice cores, sea ice positions, historic writing and paintings.",
+              "commandWord": "evidence"
+            },
+            {
+              "statement": "Factors influencing natural climate change: orbital changes (Milankovitch cycles), sunspots, volcanic activity.",
+              "commandWord": "factors"
+            },
+            {
+              "statement": "The human influence on the atmosphere causing the enhanced greenhouse effect. For example, the use of fossil fuels, deforestation, agriculture.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "5.2",
+          "title": "The impacts of climate change at a range of geographic scales",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The present day and predicted future impacts of climate change. For example, rising sea levels, and changes to global temperature, weather patterns, and food production.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "5.3",
+          "title": "Responses to climate change",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The strategies (including national and international agreements) and techniques used to manage the impacts of climate change.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of mitigation (including international agreements) and adaptation strategies and techniques used to manage the impacts of climate change.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country or region to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the impacts of climate change",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the responses to climate change",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques being used to manage climate change; including sustainable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Changing populations",
+              "commandWord": "changing"
+            },
+            {
+              "statement": "Changing towns and cities",
+              "commandWord": "changing"
+            },
+            {
+              "statement": "Development",
+              "commandWord": "development"
+            },
+            {
+              "statement": "Changing economies",
+              "commandWord": "changing"
+            },
+            {
+              "statement": "Resource provision.",
+              "commandWord": "resource"
+            },
+            {
+              "statement": "positive and/or negative",
+              "commandWord": "positive"
+            },
+            {
+              "statement": "social, economic and environmental",
+              "commandWord": "social"
+            },
+            {
+              "statement": "at a range of scales (local, regional, national, global).",
+              "commandWord": "at"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Changing populations",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Populations grow and decline",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Patterns and trends in global population growth.",
+              "commandWord": "patterns"
+            },
+            {
+              "statement": "Reasons for the growth and decline of a country’s population: fertility rate, birth rate, death rate, natural increase, migration.",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "An evaluation of the impacts of pro-natalist and anti-natalist policies on birth rates.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "The demographic transition model (DTM) and its strengths and limitations.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Population structures change over time",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Factors influencing population structures: natural increase and net migration.",
+              "commandWord": "factors"
+            },
+            {
+              "statement": "The causes and impacts of youthful and ageing population structures, and an evaluation of their impacts.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "One detailed specific example of a named country to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "reasons for population growth or decline",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "the impacts of a population policy (pro or anti-natalist).",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "6.3",
+          "title": "The causes and impacts of international migration",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Types of migrant: economic migrant, asylum seeker and refugee.",
+              "commandWord": "types"
+            },
+            {
+              "statement": "Causes of migration, to include push and pull factors.",
+              "commandWord": "causes"
+            },
+            {
+              "statement": "The impacts of migration on the migrant, their country of origin and the destination country.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage international migration.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "push and pull factors of a named international migration (named to include the country of origin and destination country)",
+              "commandWord": "push"
+            },
+            {
+              "statement": "the impacts of the migration (on the migrants, their country of origin and the destination country)",
+              "commandWord": "the"
+            },
+            {
+              "statement": "how the migration is managed; including sustainable.",
+              "commandWord": "how"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Changing towns and cities",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Where people live",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Reasons for variations in global urban growth rates.",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "Causes of rapid urban growth in LICs: rural to urban migration, social, economic, environmental, and political factors, natural increase.",
+              "commandWord": "causes"
+            }
+          ]
+        },
+        {
+          "number": "7.2",
+          "title": "Opportunities and challenges of urbanisation",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Opportunities of urban living, for example, culture, housing, services, leisure, consumption, economic development.",
+              "commandWord": "opportunities"
+            },
+            {
+              "statement": "The opportunities and challenges of rapid urban growth: inequality, service provision, housing, employment, transport, waste management, unplanned settlements.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impact of urban sprawl on the rural-urban fringe/surrounding areas.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "7.3",
+          "title": "The management of urban growth",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage urban growth; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named urban area to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "causes of urban growth",
+              "commandWord": "causes"
+            },
+            {
+              "statement": "challenges and opportunities brought about by urban growth",
+              "commandWord": "challenges"
+            },
+            {
+              "statement": "the strategies and techniques used to manage urban growth; including sustainable.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Development",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "Measuring development",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Social and economic indicators of development. For example, gross national product (GNP), gross domestic product (GDP), gross national income (GNI), literacy rate, life expectancy, Human Development Index (HDI), infant mortality rate, calorie intake, doctors per person.",
+              "commandWord": "social"
+            },
+            {
+              "statement": "The use of indicators of development to compare countries at different levels of development and an evaluation of their usefulness.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Factors affecting quality of life and standard of living.",
+              "commandWord": "factors"
+            }
+          ]
+        },
+        {
+          "number": "8.2",
+          "title": "The world is developing unevenly",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Reasons for differences in levels of development and the development gap, to include social, economic, and environmental factors.",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "The current global pattern of low-income countries (LICs), middle-income countries (MICs) and high‑income countries (HICs).",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "8.3",
+          "title": "Achieving sustainable development",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Definition(s) of sustainable development.",
+              "commandWord": "definition(s"
+            },
+            {
+              "statement": "Social, economic, and environmental strategies and techniques used to try to achieve sustainable development.",
+              "commandWord": "social"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to try to reduce uneven development, for example, trade, international aid, and debt relief.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country classified as an MIC or LIC, to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the reasons for its current level of development",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to try to raise its level of economic development, quality of life and standard of living.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Changing economies",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "Changing employment structures",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Classification of different industries: primary, secondary, tertiary, and quaternary.",
+              "commandWord": "classification"
+            },
+            {
+              "statement": "The changing employment structure of low-income countries (LICs), middle-income countries (MICs) and high-income countries (HICs).",
+              "commandWord": "the"
+            },
+            {
+              "statement": "Factors influencing the location and distribution of different types of industries: land, labour, raw materials, energy, transportation, markets, political policies, technology, communications, containerisation.",
+              "commandWord": "factors"
+            }
+          ]
+        },
+        {
+          "number": "9.2",
+          "title": "The impact of globalisation and the role of transnational corporations",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "What is meant by globalisation.",
+              "commandWord": "what"
+            },
+            {
+              "statement": "The key features of globalisation.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of globalisation on trade, transport, culture, communications, and technology.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The role and global organisation of transnational corporations (TNCs).",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the impacts of TNCs on the countries in which they are located.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country or area, to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the impacts of globalisation",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the impacts of a named TNC which is located in the country or area.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "9.3",
+          "title": "Tourism is a growing industry",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The factors that have led to the growth of tourism as an industry.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The Butler model and its strengths and limitations.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The benefits and problems caused by tourism, at a range of scales.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to sustainably manage tourism, at a range of scales.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country or area to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "reasons for the growth of tourism",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "the benefits and problems caused by tourism",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to sustainably manage tourism in the named country or area.",
+              "commandWord": "the"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "10",
+      "title": "Resource provision",
+      "paperNumbers": [],
+      "subtopics": [
+        {
+          "number": "10.1",
+          "title": "How food is produced",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Farming types: subsistence, commercial, arable, pastoral, mixed, aeroponics, aquaponics, hydroponics.",
+              "commandWord": "farming"
+            },
+            {
+              "statement": "Farming systems: inputs, processes, outputs.",
+              "commandWord": "farming"
+            }
+          ]
+        },
+        {
+          "number": "10.2",
+          "title": "The global patterns of food supply and demand",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Global patterns of calorie intake and reasons for variations.",
+              "commandWord": "global"
+            },
+            {
+              "statement": "The reasons for the changing global production and consumption of food.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The strategies used to increase food supply.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The reasons for the globalisation of food supplies.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The impacts of the globalisation of food supplies.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "10.3",
+          "title": "The challenges of food supply",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The human and natural factors negatively affecting food supply.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The problems caused by food insecurity in countries at different levels of development.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The strategies and techniques used to increase food supply.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the role of food aid in improving food security.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage desertification and soil erosion; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country or area to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "factors affecting food supply",
+              "commandWord": "factors"
+            },
+            {
+              "statement": "causes of food insecurity",
+              "commandWord": "causes"
+            },
+            {
+              "statement": "problems caused by food insecurity",
+              "commandWord": "problems"
+            },
+            {
+              "statement": "strategies and techniques used to increase food supply.",
+              "commandWord": "strategies"
+            }
+          ]
+        },
+        {
+          "number": "10.4",
+          "title": "How our energy is produced",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Types of energy:",
+              "commandWord": "types"
+            },
+            {
+              "statement": "renewable: biomass, geothermal, hydroelectric power (HEP), solar, tidal, wave, wind",
+              "commandWord": "renewable"
+            },
+            {
+              "statement": "non-renewable: fossil fuels (coal, gas, oil), nuclear",
+              "commandWord": "non-renewable"
+            },
+            {
+              "statement": "fuelwood, which can be either renewable or non-renewable.",
+              "commandWord": "fuelwood"
+            }
+          ]
+        },
+        {
+          "number": "10.5",
+          "title": "The global patterns of energy supply and demand",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "Reasons for the increasing global production and consumption of energy.",
+              "commandWord": "reasons"
+            },
+            {
+              "statement": "The global patterns of energy surplus and deficit and the importance of energy security.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The reasons for variations in types of energy used within a country and between countries at different levels of development.",
+              "commandWord": "the"
+            }
+          ]
+        },
+        {
+          "number": "10.6",
+          "title": "The impacts of energy production",
+          "levelTier": "IGCSE",
+          "paperNumbers": [],
+          "requirements": [
+            {
+              "statement": "The advantages and disadvantages of different energy sources, including renewable and non‑renewable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "The strategies and techniques used to increase energy supplies.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "An evaluation of the strategies and techniques used to manage energy supplies; including sustainable.",
+              "commandWord": "an"
+            },
+            {
+              "statement": "One detailed specific example of a named country to include:",
+              "commandWord": "one"
+            },
+            {
+              "statement": "the energy mix",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the impacts of the different types of energy being used",
+              "commandWord": "the"
+            },
+            {
+              "statement": "the strategies and techniques used to manage energy supplies; including sustainable.",
+              "commandWord": "the"
+            },
+            {
+              "statement": "select, construct and interpret maps using direction, scale, symbols, a key, and other information",
+              "commandWord": "select"
+            },
+            {
+              "statement": "extract, interpret, analyse and evaluate information presented on maps",
+              "commandWord": "extract"
+            },
+            {
+              "statement": "use co-ordinates, latitude and longitude, 4 and 6 figure grid references",
+              "commandWord": "use"
+            },
+            {
+              "statement": "give directions using the 16-point compass and bearings from grid north",
+              "commandWord": "give"
+            },
+            {
+              "statement": "measure and estimate distances and area",
+              "commandWord": "measure"
+            },
+            {
+              "statement": "use and interpret gradient, contour lines and spot heights; calculate differences in height",
+              "commandWord": "use"
+            },
+            {
+              "statement": "interpret cross-sections and transects.",
+              "commandWord": "interpret"
+            },
+            {
+              "statement": "atlas maps",
+              "commandWord": "atlas"
+            },
+            {
+              "statement": "base maps",
+              "commandWord": "base"
+            },
+            {
+              "statement": "choropleth maps",
+              "commandWord": "choropleth"
+            },
+            {
+              "statement": "desire line maps",
+              "commandWord": "desire"
+            },
+            {
+              "statement": "distribution maps",
+              "commandWord": "distribution"
+            },
+            {
+              "statement": "flow line maps",
+              "commandWord": "flow"
+            },
+            {
+              "statement": "isoline maps",
+              "commandWord": "isoline"
+            },
+            {
+              "statement": "maps of different scales, including 1 : 50 000 and 1 : 25 000",
+              "commandWord": "maps"
+            },
+            {
+              "statement": "route maps",
+              "commandWord": "route"
+            },
+            {
+              "statement": "sphere of influence maps",
+              "commandWord": "sphere"
+            },
+            {
+              "statement": "sketch maps",
+              "commandWord": "sketch"
+            },
+            {
+              "statement": "thematic maps",
+              "commandWord": "thematic"
+            },
+            {
+              "statement": "topographical maps.",
+              "commandWord": "topographical"
+            },
+            {
+              "statement": "select, present, construct and communicate data through appropriate graphs, charts and diagrams using relevant scales and annotations to present information",
+              "commandWord": "select"
+            },
+            {
+              "statement": "extract, interpret, analyse and evaluate information presented on graphs, charts and diagrams",
+              "commandWord": "extract"
+            },
+            {
+              "statement": "identify and evaluate variations, trends and patterns from data provided.",
+              "commandWord": "identify"
+            },
+            {
+              "statement": "bar graphs: horizontal, vertical, and divided",
+              "commandWord": "bar"
+            },
+            {
+              "statement": "climate graphs",
+              "commandWord": "climate"
+            },
+            {
+              "statement": "cross-sections",
+              "commandWord": "cross-sections"
+            },
+            {
+              "statement": "dispersion graphs",
+              "commandWord": "dispersion"
+            },
+            {
+              "statement": "doughnut graphs",
+              "commandWord": "doughnut"
+            },
+            {
+              "statement": "flow diagrams",
+              "commandWord": "flow"
+            },
+            {
+              "statement": "histograms (with equal class interval)",
+              "commandWord": "histograms"
+            },
+            {
+              "statement": "kite graphs",
+              "commandWord": "kite"
+            },
+            {
+              "statement": "line graphs",
+              "commandWord": "line"
+            },
+            {
+              "statement": "pictograms",
+              "commandWord": "pictograms"
+            },
+            {
+              "statement": "pie charts",
+              "commandWord": "pie"
+            },
+            {
+              "statement": "population pyramids",
+              "commandWord": "population"
+            },
+            {
+              "statement": "proportional symbols",
+              "commandWord": "proportional"
+            },
+            {
+              "statement": "radial graphs",
+              "commandWord": "radial"
+            },
+            {
+              "statement": "rose charts",
+              "commandWord": "rose"
+            },
+            {
+              "statement": "scatter graphs (including best fit line)",
+              "commandWord": "scatter"
+            },
+            {
+              "statement": "systems diagrams",
+              "commandWord": "systems"
+            },
+            {
+              "statement": "triangular graphs",
+              "commandWord": "triangular"
+            },
+            {
+              "statement": "venn diagrams",
+              "commandWord": "venn"
+            },
+            {
+              "statement": "flood hydrographs.",
+              "commandWord": "flood"
+            },
+            {
+              "statement": "deconstruct, interpret, analyse and evaluate visual images including photographs (aerial: vertical and oblique and ground level), cartoons, pictures, diagrams, satellite images",
+              "commandWord": "deconstruct"
+            },
+            {
+              "statement": "analyse written text from a variety of sources for understanding, interpretation and to recognise bias",
+              "commandWord": "analyse"
+            },
+            {
+              "statement": "suggest improvements to, issues with, or reasons for using maps, graphs, statistical techniques and visual sources including photographs (aerial: vertical and oblique and ground level) and diagrams",
+              "commandWord": "suggest"
+            },
+            {
+              "statement": "use GIS to identify trends, patterns, issues and solve problems",
+              "commandWord": "use"
+            },
+            {
+              "statement": "recognise the benefits and limitations of using GIS.",
+              "commandWord": "recognise"
+            },
+            {
+              "statement": "demonstrate an understanding of number (add, subtract, multiply and divide), area and scale",
+              "commandWord": "demonstrate"
+            },
+            {
+              "statement": "use standard notation, including positive and negative indices",
+              "commandWord": "use"
+            },
+            {
+              "statement": "understand and use significant figures",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand and use proportion, ratio, magnitude and frequency",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "understand and use mean, mode and median, range, decimals, fractions, percentages, and ratios",
+              "commandWord": "understand"
+            },
+            {
+              "statement": "design fieldwork data collection sheets and collect data with an understanding of accuracy, sample size and procedures, control groups and reliability",
+              "commandWord": "design"
+            },
+            {
+              "statement": "complete, interpret and evaluate tables of data",
+              "commandWord": "complete"
+            },
+            {
+              "statement": "identify and describe relationships between two or more sets of data",
+              "commandWord": "identify"
+            },
+            {
+              "statement": "identify and interpret trends or relationships over time and draw line of best fit",
+              "commandWord": "identify"
+            },
+            {
+              "statement": "make predictions, interpolate and extrapolate trends from data",
+              "commandWord": "make"
+            },
+            {
+              "statement": "identify weaknesses and limitations in statistical presentations of data",
+              "commandWord": "identify"
+            },
+            {
+              "statement": "draw and justify conclusions from numerical and statistical data.",
+              "commandWord": "draw"
+            },
+            {
+              "statement": "follow the route to geographical enquiry",
+              "commandWord": "follow"
+            },
+            {
+              "statement": "select and use appropriate fieldwork equipment",
+              "commandWord": "select"
+            },
+            {
+              "statement": "select and conduct appropriate fieldwork techniques",
+              "commandWord": "select"
+            },
+            {
+              "statement": "devise and use appropriate fieldwork data collection sheets",
+              "commandWord": "devise"
+            },
+            {
+              "statement": "devise and use risk assessments and be able to work safely whilst out in the field.",
+              "commandWord": "devise"
+            },
+            {
+              "statement": "ranging poles",
+              "commandWord": "ranging"
+            },
+            {
+              "statement": "flow meters",
+              "commandWord": "flow"
+            },
+            {
+              "statement": "stopwatch/timer",
+              "commandWord": "stopwatch/timer"
+            },
+            {
+              "statement": "quadrats",
+              "commandWord": "quadrats"
+            },
+            {
+              "statement": "noise meters",
+              "commandWord": "noise"
+            },
+            {
+              "statement": "tape measure or other distance measuring device",
+              "commandWord": "tape"
+            },
+            {
+              "statement": "clinometer.",
+              "commandWord": "clinometer"
+            },
+            {
+              "statement": "environmental quality surveys",
+              "commandWord": "environmental"
+            },
+            {
+              "statement": "bi-polar surveys",
+              "commandWord": "bi-polar"
+            },
+            {
+              "statement": "questionnaires",
+              "commandWord": "questionnaires"
+            },
+            {
+              "statement": "interviews",
+              "commandWord": "interviews"
+            },
+            {
+              "statement": "observations",
+              "commandWord": "observations"
+            },
+            {
+              "statement": "field sketches",
+              "commandWord": "field"
+            },
+            {
+              "statement": "photographs",
+              "commandWord": "photographs"
+            },
+            {
+              "statement": "traffic counts",
+              "commandWord": "traffic"
+            },
+            {
+              "statement": "pedestrian counts",
+              "commandWord": "pedestrian"
+            },
+            {
+              "statement": "land use surveys",
+              "commandWord": "land"
+            },
+            {
+              "statement": "transects",
+              "commandWord": "transects"
+            },
+            {
+              "statement": "delimiting the sphere of influence/CBD",
+              "commandWord": "delimiting"
+            },
+            {
+              "statement": "roundness index/other indices.",
+              "commandWord": "roundness"
+            },
+            {
+              "statement": "a pencil, eraser, ruler, protractor and calculator",
+              "commandWord": "a"
+            },
+            {
+              "statement": "access to a sheet of plain paper to measure distance, or assist with cross-sections etc.",
+              "commandWord": "access"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,725 @@
+{
+  "syllabusCode": "9898",
+  "pattern": "E",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "S-Reading",
+      "title": "Reading",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Reading.B2",
+          "title": "Reading (B2)",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Understand factual information and abstract ideas in texts on general topics.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify and select relevant information and details in one or more longer texts.",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify emotions, opinions and attitudes which are stated or strongly implied in texts.",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand ideas, arguments and conclusions in discursive texts and distinguish between fact and opinion.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand a variety of texts using formal and informal language.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Deduce the meaning of unknown words from the context in texts on a range of topics.",
+              "commandWord": "deduce",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Demonstrate a good understanding of a wide range of vocabulary on general topics.",
+              "commandWord": "demonstrate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Demonstrate a good understanding of a range of language structures, including some complex sentence forms.",
+              "commandWord": "demonstrate",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "S-Reading.C1",
+          "title": "Reading (C1)",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "Understand in detail lengthy, complex texts and abstract ideas in texts on general and more specific topics.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify and select relevant information and details in longer texts in a variety of text types.",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify finer points of details including attitudes and stated or implied opinions.",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand ideas, arguments and conclusions in discursive texts and distinguish between fact and opinion.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand a wide variety of longer texts written in different styles and for a wide range of purposes.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Deduce the meaning of unknown words and expressions from the context in texts on a wide range of topics.",
+              "commandWord": "deduce",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Demonstrate a strong understanding of a wide range of vocabulary on general and more specific topics.",
+              "commandWord": "demonstrate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Demonstrate a strong understanding of a wide range of complex language structures. Subject content",
+              "commandWord": "demonstrate",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "S-Writing",
+      "title": "Writing",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Writing.B2",
+          "title": "Writing (B2)",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Communicate factual information, ideas, opinions and arguments on general topics.",
+              "commandWord": "communicate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Develop an argument, expanding the main points with relevant supporting detail and examples.",
+              "commandWord": "develop",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Develop detailed descriptions and narrations of real or imaginary events and experiences.",
+              "commandWord": "develop",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Select and organise ideas into coherent paragraphs and longer texts, using a range of cohesive devices.",
+              "commandWord": "select",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use appropriate register and style, following conventions of the genre, for the purpose of the text.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use a wide range of vocabulary related to general topics, with a good level of accuracy.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use a wide range of grammatical structures, including some more complex structures, with a good level of accuracy.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Produce texts that show good control of spelling and punctuation.",
+              "commandWord": "produce",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "S-Writing.C1",
+          "title": "Writing (C1)",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "Communicate factual information, ideas, opinions and arguments on complex topics.",
+              "commandWord": "communicate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Develop an argument, emphasising important issues, evaluating, expanding and supporting viewpoints with reasons and relevant examples.",
+              "commandWord": "develop",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Develop detailed descriptions and narrations of real or imaginary events and experiences in an assured, personal, natural style.",
+              "commandWord": "develop",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Organise ideas clearly into coherent and linked paragraphs using a wide range of cohesive devices to create a fluent argument, description and narration.",
+              "commandWord": "organise",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use appropriate register and style, following conventions of the genre, for the purpose of the text.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use a wide range of vocabulary, including idiom, related to both general and more specific topics, with a high level of accuracy.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use a wide range of grammatical structures, including complex structures, with a high level of accuracy.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Produce texts with a high level of accuracy of spelling and punctuation. Subject content",
+              "commandWord": "produce",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "S-Literature",
+      "title": "Literature",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Literature.B2",
+          "title": "Literature (B2)",
+          "levelTier": "AS",
+          "requirements": [
+            {
+              "statement": "Read a range of literary texts with a large degree of independence.",
+              "commandWord": "read",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Write about themes, characters, ideas and details from the texts, recognising the conventions of the genre.",
+              "commandWord": "write",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Develop an argument, expanding the main points with relevant supporting detail and examples from the text.",
+              "commandWord": "develop",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Give a personal response to the text explaining what they appreciate and why.",
+              "commandWord": "give",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Select and organise ideas into coherent paragraphs and longer texts.",
+              "commandWord": "select",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Show understanding of the choice of language and describe elements of the text which evoke a response from the reader.",
+              "commandWord": "show",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "S-Literature.C1",
+          "title": "Literature (C1)",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "Read a range of literary texts with little difficulty and with appreciation of implicit meanings and ideas.",
+              "commandWord": "read",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Critically evaluate themes, characters, ideas and details from the texts, appreciating the conventions of the genre.",
+              "commandWord": "critically",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Develop an argument, emphasising important ideas/themes, evaluating and supporting viewpoints with justifications and detailed examples from the texts.",
+              "commandWord": "develop",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Give a clear personal response to the text, providing interpretation of the themes/ characters and explaining their reaction to the text.",
+              "commandWord": "give",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Select and organise ideas clearly into coherent paragraphs using appropriate literary terminology.",
+              "commandWord": "select",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Analyse the choice of language and evaluate how the language is used to engage the reader. Subject content",
+              "commandWord": "analyse",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "1",
+      "title": "Culture",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Entertainment",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "types of popular entertainment: cinema, TV/streaming, gaming, internet",
+              "commandWord": "types",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "the role of entertainment in our lives",
+              "commandWord": "the",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "celebrity culture: role models, idols, responsibilities",
+              "commandWord": "celebrity",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "Identity and culture",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "expressing identity through style and appearance, language, association with particular groups, fashion",
+              "commandWord": "expressing",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "preserving/respecting cultural heritage, sites/monuments, festivals, traditions",
+              "commandWord": "preserving/respecting",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "1.3",
+          "title": "The arts",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "theatre, music, visual arts, dance, literature, film",
+              "commandWord": "theatre",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "access to the arts, funding (commercial/governmental), awards/prizes, representation/diversity",
+              "commandWord": "access",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Health and well‑being",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Health and fitness",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "the role of sport in society, fair play, individual versus team sports, national sports events",
+              "commandWord": "the",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "physical health, the importance of exercise/diet",
+              "commandWord": "physical",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "mental health and happiness, sleep, mental health awareness, self-esteem",
+              "commandWord": "mental",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "healthcare provision",
+              "commandWord": "healthcare",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "Nutrition",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "different types of diet/eating habits",
+              "commandWord": "different",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "environmental impact of food production, organic foods, food waste and shortage",
+              "commandWord": "environmental",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "ethics of food production, fair trade, food labelling, government intervention",
+              "commandWord": "ethics",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "2.3",
+          "title": "Managing well-being",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "work–life balance",
+              "commandWord": "work–life",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "importance of leisure activities",
+              "commandWord": "importance",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "relaxation",
+              "commandWord": "relaxation",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Education and future plans",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Life at school",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "different education systems",
+              "commandWord": "different",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "student issues: discipline, workload, time management, organisation of the school day/year",
+              "commandWord": "student",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "school as preparation for future life",
+              "commandWord": "school",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Further/higher education",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "access and barriers to further/higher education",
+              "commandWord": "access",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "costs versus benefits of further/higher education",
+              "commandWord": "costs",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "alternatives to further/higher education: vocational education, apprenticeships, gap years",
+              "commandWord": "alternatives",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Career/work choices",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "different career options",
+              "commandWord": "different",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "the world of work, different workplaces and working practices, employment and unemployment",
+              "commandWord": "the",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "money versus job satisfaction, volunteering, working for charities",
+              "commandWord": "money",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Community and society",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Equality and diversity",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "inclusivity, diversity, gender equality, social mobility",
+              "commandWord": "inclusivity",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "prejudices within society: ageism, racism, classism",
+              "commandWord": "prejudices",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "immigration, refugees, integration",
+              "commandWord": "immigration",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "Lifestyle",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "friends, family and relationships, generation gap, changing patterns of family life",
+              "commandWord": "friends",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "quality of life: where we live, differences between urban/rural/coastal life, changing patterns in where people live, overcrowding and its consequences, social isolation",
+              "commandWord": "quality",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "lifestyle choices: relationships, diet, fashion, self-expression, values, goals",
+              "commandWord": "lifestyle",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "4.3",
+          "title": "Society",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "social organisation, law and order, local and national governance, communities",
+              "commandWord": "social",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "national and global citizenship",
+              "commandWord": "national",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "rights and responsibilities of individuals, governments",
+              "commandWord": "rights",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Our responsibility for the planet",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "The environment",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "global warming, climate change and pollution, possible solutions, governmental intervention, impact on the economy",
+              "commandWord": "global",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "preserving biodiversity/ecosystems, treatment of animals",
+              "commandWord": "preserving",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "impact of growing population",
+              "commandWord": "impact",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "5.2",
+          "title": "Sustainable living",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "use of natural resources and recycling, waste disposal, consumerism/ overconsumption",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "sources and use of energy: fossil fuels, renewable energy, energy and geopolitics, impact of energy production on local environment and landscape",
+              "commandWord": "sources",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "reducing environmental impact, individual choices in housing, food, travel",
+              "commandWord": "reducing",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "5.3",
+          "title": "Protecting our world",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "travel and tourism: sustainable tourism, benefits of travel",
+              "commandWord": "travel",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "global cooperation versus national agendas",
+              "commandWord": "global",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "the role of individuals versus the role of industry/governments, environmental movements",
+              "commandWord": "the",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Science and technology",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Scientific and technological innovation",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "medical advances, ethics of research",
+              "commandWord": "medical",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "smart technology, privacy and security",
+              "commandWord": "smart",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "artificial intelligence",
+              "commandWord": "artificial",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Social media",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "digital media, benefits and dangers",
+              "commandWord": "digital",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "communication technology",
+              "commandWord": "communication",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "online communities",
+              "commandWord": "online",
+              "notesAndExamples": null
+            }
+          ]
+        },
+        {
+          "number": "6.3",
+          "title": "Technology",
+          "levelTier": "A2",
+          "requirements": [
+            {
+              "statement": "access to technology",
+              "commandWord": "access",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "technology in education",
+              "commandWord": "technology",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "technology in the workplace",
+              "commandWord": "technology",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
