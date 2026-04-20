@@ -2,6 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { generateWithFallback, callGoogle } from "./aiOrchestrator";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { validateMathQuestion } from "./mathValidator";
 import {
   formatCopilotContextAsText,
@@ -70,6 +71,19 @@ const GeminiCheckerResponseSchema = z.object({
     .default([]),
 });
 
+const DualCheckerIssueSchema = z.object({
+  questionIndex: z.number().int().min(1),
+  field: z.enum(["stem", "options", "explanation", "correct_answer", "overall"]),
+  issue: z.string().min(1),
+  severity: z.enum(["critical", "warning"]).default("warning"),
+  autoFixed: z.boolean().default(false),
+});
+
+const DualCheckerResponseSchema = z.object({
+  questions: z.array(QuestionSchema).min(1),
+  issues: z.array(DualCheckerIssueSchema).default([]),
+});
+
 export interface SomaGenerationContext {
   topic: string;
   subject: string;
@@ -87,6 +101,8 @@ export interface SomaGenerationContext {
    */
   catalogueContext?: CatalogueCopilotContext;
 }
+
+const MAX_CLAUDE_REWORK_ROUNDS = 2;
 
 const jsonSchema = zodToJsonSchema(QuizResultSchema, "QuizResult");
 
@@ -652,6 +668,176 @@ Return strict JSON matching the schema.`;
   }
 }
 
+async function runClaudeMaker(
+  context: SomaGenerationContext,
+  questionCount: number,
+  distribution: { easy: number; medium: number; hard: number },
+): Promise<{ result: QuizResult; model: string }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not configured");
+  }
+
+  const anthropic = new Anthropic({ apiKey });
+  const wrapped: any = zodToJsonSchema(QuizResultSchema, "QuizResult");
+  const inner: any = wrapped?.definitions?.QuizResult ?? zodToJsonSchema(QuizResultSchema);
+  const inputSchema: any = { ...inner, type: inner?.type || "object" };
+  delete inputSchema.$schema;
+  delete inputSchema.$ref;
+
+  const systemPrompt = `You are Claude, the sole question MAKER for SOMA.
+Generate exactly ${questionCount} MCQ questions and strong distractors.
+STRICT SCOPE: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
+
+Distractor rules (mandatory):
+- 4 distinct options exactly.
+- Distractors must be plausible but clearly wrong under syllabus rules.
+- Avoid duplicate/near-duplicate options.
+- Avoid “all of the above” / “none of the above” unless explicitly requested.
+
+Formatting rules (mandatory):
+- Wrap all mathematical notation in LaTeX delimiters ($...$ or $$...$$).
+- Never use a bare $ before currency values; write "USD 9,000" or "9,000 dollars".
+- explanation must justify the correct answer and briefly reject key distractors.
+- correct_answer must exactly match one option.`;
+
+  const userPrompt = `Generate the quiz with this grounding context:\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 16_384,
+    temperature: 0,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+    tools: [{
+      name: "return_quiz",
+      description: "Return quiz JSON matching schema.",
+      input_schema: inputSchema,
+    }],
+    tool_choice: { type: "tool", name: "return_quiz" },
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === "tool_use");
+  if (!toolBlock || toolBlock.type !== "tool_use") {
+    throw new Error("Claude maker returned no tool output");
+  }
+  return { result: QuizResultSchema.parse(toolBlock.input), model: "anthropic/claude-sonnet-4-6" };
+}
+
+async function runOpenAIChecker(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+): Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[]; checkerOk: boolean }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || process.env.NODE_ENV === "test") {
+    return { questions, warnings: [], checkerOk: false };
+  }
+
+  const client = new OpenAI({ apiKey });
+  const schema = zodToJsonSchema(DualCheckerResponseSchema, "DualCheckerResponse");
+  const schemaString = JSON.stringify(schema);
+  const systemPrompt = `You are ChatGPT checker for SOMA.
+Validate each question for: answer correctness, whether the question is solvable, scope fit to subject/syllabus/level/topic, option uniqueness, and answer-explanation consistency.
+Auto-fix safe issues directly in returned questions.
+For uncertain or unresolved correctness, emit a CRITICAL issue with autoFixed=false.
+Never change the number of questions.`;
+  const userPrompt = `Context: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+Questions:\n${JSON.stringify({ questions }, null, 2)}\n\nReturn JSON matching this schema only:\n${schemaString}`;
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content || "";
+    const parsed = DualCheckerResponseSchema.parse(JSON.parse(raw));
+    const warnings: PipelineWarning[] = parsed.issues.map((issue) => ({
+      questionIndex: issue.questionIndex,
+      field: issue.field,
+      issue: `[ChatGPT:${issue.severity}] ${issue.issue}`,
+      autoFixed: issue.autoFixed,
+    }));
+    return { questions: parsed.questions, warnings, checkerOk: true };
+  } catch (error: any) {
+    console.warn(`[OPENAI_CHECKER] Failed: ${error?.message || "unknown"}`);
+    return {
+      questions,
+      warnings: [{
+        questionIndex: 0,
+        field: "overall",
+        issue: `ChatGPT checker unavailable (${error?.message || "unknown error"}).`,
+        autoFixed: false,
+      }],
+      checkerOk: false,
+    };
+  }
+}
+
+async function runGeminiAccuracyChecker(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+): Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[]; checkerOk: boolean }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || process.env.NODE_ENV === "test") {
+    return { questions, warnings: [], checkerOk: false };
+  }
+
+  const systemPrompt = `You are Gemini checker for SOMA.
+Validate each question for: answer correctness, solvability, syllabus/level scope adherence, duplicate options, and explanation correctness.
+Auto-fix safe issues directly in returned questions.
+For unresolved or uncertain correctness, emit severity=critical and autoFixed=false.
+Never change question count.`;
+  const userPrompt = `Context: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
+Questions:\n${JSON.stringify({ questions }, null, 2)}`;
+
+  try {
+    const schema = zodToJsonSchema(DualCheckerResponseSchema, "DualCheckerResponse");
+    const raw = await callGoogle("gemini-2.5-flash", systemPrompt, userPrompt, schema);
+    const parsed = DualCheckerResponseSchema.parse(JSON.parse(raw));
+    const warnings: PipelineWarning[] = parsed.issues.map((issue) => ({
+      questionIndex: issue.questionIndex,
+      field: issue.field,
+      issue: `[Gemini:${issue.severity}] ${issue.issue}`,
+      autoFixed: issue.autoFixed,
+    }));
+    return { questions: parsed.questions, warnings, checkerOk: true };
+  } catch (error: any) {
+    console.warn(`[GEMINI_ACCURACY_CHECKER] Failed: ${error?.message || "unknown"}`);
+    return {
+      questions,
+      warnings: [{
+        questionIndex: 0,
+        field: "overall",
+        issue: `Gemini checker unavailable (${error?.message || "unknown error"}).`,
+        autoFixed: false,
+      }],
+      checkerOk: false,
+    };
+  }
+}
+
+function mergeCheckerCorrections(
+  original: QuizResult["questions"],
+  chatgptQuestions: QuizResult["questions"],
+  geminiQuestions: QuizResult["questions"],
+): QuizResult["questions"] {
+  return original.map((question, idx) => {
+    const cg = chatgptQuestions[idx] || question;
+    const gm = geminiQuestions[idx] || question;
+    const preferred = cg.correct_answer === gm.correct_answer ? cg : question;
+    return {
+      ...preferred,
+      options: dedupeOptions(preferred.options, preferred.correct_answer),
+    };
+  });
+}
+
 async function runEmergencySingleStageGeneration(
   context: SomaGenerationContext,
   questionCount: number,
@@ -680,11 +866,12 @@ Critical requirements:
 }
 
 /**
- * Pipeline (Option C):
- *   1. MAKER         — GPT-4o (with fallback chain) creates questions
- *   2. GEMINI CHECK  — Gemini 2.5 Flash audits formatting + auto-fixes (cheap, ~50× cheaper than GPT-4o)
- *   3. CLAUDE POLISH — Only runs if checker surfaced warnings (skipped on clean output)
- *   4. Deterministic guards (free) — dedupe options, align answers
+ * Pipeline (simplified):
+ *   1. MAKER         — Claude creates all questions + distractors
+ *   2. DUAL CHECK    — ChatGPT + Gemini check correctness concurrently
+ *   3. REWORK LOOP   — If either checker flags issues, Claude rewrites and both check again
+ *                      (hard stop after MAX_CLAUDE_REWORK_ROUNDS to prevent token loops)
+ *   4. Deterministic guards + math validator
  *
  * Returns questions + warnings (for Co-Pilot UI) + telemetry (for cost tracking).
  */
@@ -725,23 +912,6 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
 
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
 
-  // ── STAGE 1: MAKER (GPT-4o → fallback chain) ──────────────────────
-  const makerPrompt = `You are an expert ${context.subject} assessment designer.
-Generate exactly ${questionCount} MCQ questions for ${context.subject}.
-STRICT SCOPE: syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
-Never drift to adjacent topics not explicitly in scope.
-Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
-Hard questions must involve reasoning/application (not recall).
-For each question explanation, use 1–2 sentences: why the correct answer is right and why key distractors are wrong.
-
-CRITICAL LATEX FORMATTING RULE — MANDATORY:
-Every mathematical expression in EVERY stem, option, and explanation MUST be wrapped in LaTeX delimiters.
-- Inline math: $...$  (e.g. $\\frac{1}{2}xe^{x^2}+C$, $\\sqrt{x^2+1}$, $x^2 + 3x - 4$)
-- Display math: $$...$$ (for standalone equations)
-NEVER output raw LaTeX commands without delimiters. NEVER write \\frac, \\sqrt, \\int, ^{, _{ outside of $...$ or $$...$$.
-CURRENCY RULE: NEVER use a bare $ before a number for currency (e.g. $9,000). Write "9,000 dollars" or "USD 9,000".
-SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.subject}.`;
-
   let parsed: QuizResult;
   let makerModel = "unknown";
   try {
@@ -757,7 +927,7 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
     makerModel = `${metadata.provider}/${metadata.model}`;
   } catch (error: any) {
     if (process.env.NODE_ENV === "test") throw error;
-    console.warn(`[SOMA_PIPELINE] Maker failed, attempting emergency fallback. Reason: ${error?.message || "unknown"}`);
+    console.warn(`[SOMA_PIPELINE] Claude maker failed, attempting emergency fallback. Reason: ${error?.message || "unknown"}`);
     const emergency = await runEmergencySingleStageGeneration(context, questionCount);
     parsed = emergency.result;
     makerModel = `emergency:${emergency.model}`;
@@ -779,28 +949,45 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
 
-  // ── STAGE 2: GEMINI FORMATTING CHECK ──────────────────────────────
-  const checkResult = await runGeminiFormattingCheck(parsed.questions, context);
-  parsed.questions = checkResult.questions;
-  const warnings = checkResult.warnings;
-
-  // ── STAGE 3: CONDITIONAL CLAUDE POLISH ────────────────────────────
-  // Cost gate: ONLY run Claude when the checker actually ran AND surfaced real
-  // question-level issues. If the checker itself failed (checkerOk=false) the
-  // warnings are availability noise, not content issues — polishing them wastes
-  // ~$0.05/quiz.
+  // ── STAGE 2/3: CHATGPT + GEMINI CHECKERS (CONCURRENT) + CLAUDE REWORK LOOP ──
+  const warnings: PipelineWarning[] = [];
   let polishModel: string | null = null;
-  const polishWorthyWarnings = checkResult.checkerOk ? warnings : [];
-  if (polishWorthyWarnings.length > 0) {
-    const polishResult = await runClaudePolish(parsed.questions, polishWorthyWarnings, context);
+  for (let round = 1; round <= MAX_CLAUDE_REWORK_ROUNDS; round++) {
+    const [chatgptCheck, geminiCheck] = await Promise.all([
+      runOpenAIChecker(parsed.questions, context),
+      runGeminiAccuracyChecker(parsed.questions, context),
+    ]);
+
+    parsed.questions = mergeCheckerCorrections(parsed.questions, chatgptCheck.questions, geminiCheck.questions);
+
+    const roundWarnings = [...chatgptCheck.warnings, ...geminiCheck.warnings].map((w) => ({
+      ...w,
+      issue: `[Round ${round}] ${w.issue}`,
+    }));
+    warnings.push(...roundWarnings);
+
+    const unresolved = roundWarnings.filter((w) => !w.autoFixed && w.questionIndex > 0);
+    if (unresolved.length === 0) {
+      break;
+    }
+
+    if (round >= MAX_CLAUDE_REWORK_ROUNDS) {
+      warnings.push({
+        questionIndex: 0,
+        field: "overall",
+        issue: `Reached rework cap (${MAX_CLAUDE_REWORK_ROUNDS} rounds). Remaining issues require tutor review.`,
+        autoFixed: false,
+      });
+      break;
+    }
+
+    const polishResult = await runClaudePolish(parsed.questions, unresolved, context);
     parsed.questions = polishResult.questions;
     if (polishResult.durationMs > 0) polishModel = "anthropic/claude-sonnet-4-6";
   }
 
-  // ── STAGE 3.5: BLIND DUAL-CHECK CONSENSUS (Claude + Gemini) ───────
-  // Cost gate: run only when checker raised issues, and only on non-deterministically
-  // verifiable questions (math-verifiable questions are handled by Stage 4).
-  if (checkResult.checkerOk && warnings.length > 0) {
+  // Extra blind consensus pass for non-deterministic items.
+  if (warnings.some((w) => !w.autoFixed && w.questionIndex > 0)) {
     const blindCheckResult = await runBlindAnswerConsensusCheck(parsed.questions, context);
     parsed.questions = blindCheckResult.questions;
     warnings.push(...blindCheckResult.warnings);
@@ -837,7 +1024,7 @@ SUBJECT ACCURACY RULE: Every question must be verifiably correct for ${context.s
     warnings,
     telemetry: {
       makerModel,
-      checkerModel: "google/gemini-2.5-flash",
+      checkerModel: "openai/gpt-4o + google/gemini-2.5-flash",
       polishModel,
       totalDurationMs: Date.now() - overallStart,
     },
