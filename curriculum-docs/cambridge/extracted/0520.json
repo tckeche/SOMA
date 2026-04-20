@@ -1,0 +1,360 @@
+{
+  "syllabusCode": "0520",
+  "pattern": "E",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "S-Listening",
+      "title": "Listening",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Listening.1",
+          "title": "Listening",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand short recordings dealing with everyday needs (e.g. simple transactions in shops, simple directions or instructions).",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand factual information and ideas from a range of sources (e.g. announcements, phone messages, news items, interviews, dialogues) on familiar topics.",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand descriptions of events, opinions, emotions, hopes and ambitions in simple texts (e.g. in radio broadcasts, interviews, dialogues).",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify main points, specific information and details on everyday topics (e.g. personal and family information, shopping, local area, employment, school, leisure activities).",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify main points, themes, opinions, ideas, emotions and attitudes in predictable texts (e.g. news reports, conversations, interviews, simple monologues).",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Deduce the meaning of occasional unknown words and expressions from the context.",
+              "commandWord": "deduce",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "S-Reading",
+      "title": "Reading",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Reading.1",
+          "title": "Reading",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand short, simple texts (e.g. signs and notices in public places, such as streets, restaurants and bus/railway stations and airports).",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand authentic texts on familiar topics and situations (e.g. newspaper/magazine articles, email messages, blogs and letters).",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand descriptions of events, opinions, emotions, hopes and ambitions in simple texts (e.g. in articles, interviews or personal messages).",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify main points, specific information and details in predictable texts (e.g. advertisements, brochures, menus, timetables, instructions, messages).",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify main points, themes, opinions, ideas, emotions and attitudes in predictable texts (e.g. newspaper/magazine articles, simple plots of films or books).",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Deduce the meaning of occasional unknown words and expressions from the context.",
+              "commandWord": "deduce",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "S-Speaking",
+      "title": "Speaking",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Speaking.1",
+          "title": "Speaking",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Participate in short social exchanges (e.g. greet people, make and respond to invitations, apologies) and communicate on familiar topics to meet simple needs (e.g. order food and drink, simple transactions in shops, use public transport, ask and give directions, request information).",
+              "commandWord": "participate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Participate in unprepared conversations on familiar topics of personal interest or relevant to everyday life (e.g. family, friends, home environment, hobbies and interests, education, work, travel).",
+              "commandWord": "participate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Describe past events and experiences, hopes and ambitions and give brief reasons for opinions and plans.",
+              "commandWord": "describe",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Communicate with reasonable accuracy, using a range of structures, tenses and vocabulary relevant to the given situation.",
+              "commandWord": "communicate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use simple connectors (e.g. and, but, because, then) to link a series of shorter discrete elements into a connected sequence of points.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use appropriate strategies to maintain interaction.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use features of pronunciation and intonation to convey meaning and attitude.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "S-Writing",
+      "title": "Writing",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "S-Writing.1",
+          "title": "Writing",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Fill in forms providing simple details.",
+              "commandWord": "fill",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Communicate simple factual information in writing using everyday vocabulary and expressions.",
+              "commandWord": "communicate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Write a series of simple phrases and sentences linked with simple connectors, relating to personal life, immediate environment and everyday topics (e.g. writing about a holiday).",
+              "commandWord": "write",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Write simple connected texts (e.g. email messages, articles) on familiar topics (e.g. plans and arrangements, likes and dislikes, family, home environment, hobbies and interests, education, work and travel).",
+              "commandWord": "write",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Describe past events and experiences, opinions, hopes and ambitions and give brief reasons for opinions and plans.",
+              "commandWord": "describe",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Communicate with reasonable accuracy, using a range of structures, tenses, time frames and vocabulary relevant to the given situation.",
+              "commandWord": "communicate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use simple connectors (e.g. and, but, because, then) to link a series of shorter discrete elements into a connected sequence of points.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "A",
+      "title": "Everyday activities",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "A.1",
+          "title": "Everyday activities",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Time expressions (e.g. telling the time, days, months, seasons)",
+              "commandWord": "time",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Food and drink (e.g. meals, fruit and vegetables, meat, fish and seafood, snacks, drinks, cutlery and utensils)",
+              "commandWord": "food",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "The human body and health (e.g. parts of the body, health and illness)",
+              "commandWord": "the",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Travel and transport",
+              "commandWord": "travel",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "B",
+      "title": "Personal and social life",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "B.1",
+          "title": "Personal and social life",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Self, family and friends",
+              "commandWord": "self",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "In the home (e.g. rooms, living room, kitchen, bedroom, bathroom, furniture and furnishings, garden, household appliances)",
+              "commandWord": "in",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Colours",
+              "commandWord": "colours",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Clothes and accessories",
+              "commandWord": "clothes",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Leisure time (e.g. things to do, hobbies, sport, holidays)",
+              "commandWord": "leisure",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "C",
+      "title": "The world around us",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "C.1",
+          "title": "The world around us",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "People and places (e.g. continents, countries and nationalities, compass points)",
+              "commandWord": "people",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "The natural world, the environment, the climate and the weather",
+              "commandWord": "the",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Communications and technology (e.g. the digital world, documents and texts)",
+              "commandWord": "communications",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "The built environment (e.g. buildings and services, urban areas, shopping)",
+              "commandWord": "the",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Measurements (e.g. size, shape)",
+              "commandWord": "measurements",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Materials",
+              "commandWord": "materials",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "D",
+      "title": "The world of work",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "D.1",
+          "title": "The world of work",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Education (e.g. learning institutions, education and training, the classroom, learning tools, subjects, studying)",
+              "commandWord": "education",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Work (e.g. jobs and careers, the workplace)",
+              "commandWord": "work",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "E",
+      "title": "The international world",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "E.1",
+          "title": "The international world",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Countries, nationalities and languages",
+              "commandWord": "countries",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Culture, customs, faiths and celebrations Faculty feedback: ‘Understanding how and why our climate is changing and providing the knowledge and skills to explore the challenges plays a key role in every student’s education.’ Feedback from: Dr Amy Munro-Faure, Head of Education and Student Engagement of Cambridge Zero",
+              "commandWord": "culture",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

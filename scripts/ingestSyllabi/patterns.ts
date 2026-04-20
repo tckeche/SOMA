@@ -79,6 +79,16 @@ export function classifySyllabus(
   topBand: "IGCSE" | "A_Level",
   syllabusCode: string,
 ): ClassificationResult {
+  // Pattern E4: humanities syllabi (themes / options / depth studies / skills
+  // bands) that would otherwise fall through to "unclassified". There is no
+  // reliable textual anchor that separates them from deferred Literature /
+  // English Language syllabi, so the classifier uses an explicit code
+  // whitelist. Each entry has a bespoke parser in parsers/patternE4.ts.
+  const PATTERN_E4_CODES = new Set(["0470", "9489", "9696", "0520", "9898"]);
+  if (PATTERN_E4_CODES.has(syllabusCode)) {
+    return { pattern: "E", reason: `Pattern E4 syllabus code (${syllabusCode})` };
+  }
+
   const hits: Record<SyllabusPattern, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, unclassified: 0 };
   for (const rx of SIGNAL_PATTERN_A) if (rx.test(extractedText)) hits.A++;
   for (const rx of SIGNAL_PATTERN_B) if (rx.test(extractedText)) hits.B++;

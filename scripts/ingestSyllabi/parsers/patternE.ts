@@ -31,6 +31,12 @@ import type {
   ParsedRequirement,
 } from "./types";
 import { collapseWhitespace, isPageNoise, splitColumns } from "./shared";
+import { parsePatternE4 } from "./patternE4";
+
+// E4 = humanities/themes syllabi. They do not expose "Candidates should be
+// able to:" LR tables, so the E1 walker below would silently emit zero
+// topics. Dispatch them to their dedicated parser instead.
+const E4_CODES = new Set(["0470", "9489", "9696", "0520", "9898"]);
 
 const SECTION_START = /^\s*3\s+Subject content\s*$/;
 const SECTION_END = /^\s*4\s+Details of the assessment\b/;
@@ -99,6 +105,9 @@ interface WorkingTopic {
 }
 
 export function parsePatternE(syllabusCode: string, text: string): ParsedSyllabus {
+  if (E4_CODES.has(syllabusCode)) {
+    return parsePatternE4(syllabusCode, text);
+  }
   const warnings: string[] = [];
   const lines = text.split(/\r?\n/);
   const contentLines = sliceSubjectContent(lines);
