@@ -60,7 +60,7 @@ export interface ParsedTopic {
 
 export interface ParsedSyllabus {
   syllabusCode: string;
-  pattern: "A" | "B" | "C" | "D";
+  pattern: "A" | "B" | "C" | "D" | "E";
   strands: ParsedStrand[];
   papers: ParsedPaper[];
   topics: ParsedTopic[];

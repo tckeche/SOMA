@@ -13,7 +13,7 @@
  * text and returns the pattern. Pattern parsers live in Phase 3b.
  */
 
-export type SyllabusPattern = "A" | "B" | "C" | "D" | "unclassified";
+export type SyllabusPattern = "A" | "B" | "C" | "D" | "E" | "unclassified";
 
 export interface ClassificationResult {
   pattern: SyllabusPattern;
@@ -61,6 +61,14 @@ const SIGNAL_PATTERN_D = [
   /Extended\s+(?:assessment|subject content)/i,
 ];
 
+// Pattern E signal: "Candidates should be able to:" appears many times as
+// the header of each two-column LR table (E1 — 0606, 0478, 9618). Non-E
+// unclassified syllabi have at most a handful of occurrences. A threshold
+// of 10 cleanly separates the two groups in the dry-run corpus:
+// 0606=16, 0478=35, 9618=45 vs. every other unclassified ≤ 4.
+const PATTERN_E1_ANCHOR = /Candidates should be able to:/g;
+const PATTERN_E1_MIN_HITS = 10;
+
 /**
  * Classify the syllabus. `topBand` is used only as a weak prior — when the
  * textual signals disagree with the prior we trust the signals but flag the
@@ -71,7 +79,7 @@ export function classifySyllabus(
   topBand: "IGCSE" | "A_Level",
   syllabusCode: string,
 ): ClassificationResult {
-  const hits: Record<SyllabusPattern, number> = { A: 0, B: 0, C: 0, D: 0, unclassified: 0 };
+  const hits: Record<SyllabusPattern, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, unclassified: 0 };
   for (const rx of SIGNAL_PATTERN_A) if (rx.test(extractedText)) hits.A++;
   for (const rx of SIGNAL_PATTERN_B) if (rx.test(extractedText)) hits.B++;
   for (const rx of SIGNAL_PATTERN_C) if (rx.test(extractedText)) hits.C++;
@@ -92,11 +100,18 @@ export function classifySyllabus(
     if (hits.A > 0) {
       return { pattern: "A", reason: `Pattern A signals (${hits.A} hits)` };
     }
+    // Pattern E1: A Level Computer Science (9618) has dozens of
+    // "Candidates should be able to:" table headers but no AS/A2 subject-
+    // content anchors and no three-level numbering.
+    const e1Hits = countMatches(extractedText, PATTERN_E1_ANCHOR);
+    if (e1Hits >= PATTERN_E1_MIN_HITS) {
+      return { pattern: "E", reason: `Pattern E anchor hits (${e1Hits})` };
+    }
     // Fallback — non-science A-level syllabi (English Literature 9695,
     // History 9489, etc.) may not match either. Leave as unclassified; the
     // orchestrator will log and skip them at Phase 3c rather than silently
     // mis-ingesting.
-    return { pattern: "unclassified", reason: `no A/B/C signals for ${syllabusCode}` };
+    return { pattern: "unclassified", reason: `no A/B/C/E signals for ${syllabusCode}` };
   }
 
   // IGCSE
@@ -111,9 +126,16 @@ export function classifySyllabus(
       reason: `IGCSE Pattern C signals (boilerplate=${boilerplateHits}, three-level=${threeLevelHits})`,
     };
   }
+  // Pattern E1: IGCSE Additional Maths (0606) and IGCSE Computer Science
+  // (0478) use the same "Candidates should be able to:" two-column table
+  // layout as A-level E1 syllabi but lack the Pattern D Core/Extended split.
+  const e1Hits = countMatches(extractedText, PATTERN_E1_ANCHOR);
+  if (e1Hits >= PATTERN_E1_MIN_HITS) {
+    return { pattern: "E", reason: `Pattern E anchor hits (${e1Hits})` };
+  }
   // Non-science IGCSE syllabi (Literature 0475, History 0470, etc.) may not
   // expose the Core/Extended split in the same way. Flag for Phase 3c.
-  return { pattern: "unclassified", reason: `no IGCSE Core/Extended signals for ${syllabusCode}` };
+  return { pattern: "unclassified", reason: `no IGCSE Core/Extended/E signals for ${syllabusCode}` };
 }
 
 function countMatches(text: string, rx: RegExp): number {

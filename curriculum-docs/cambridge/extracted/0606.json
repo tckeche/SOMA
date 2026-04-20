@@ -1,0 +1,550 @@
+{
+  "syllabusCode": "0606",
+  "pattern": "E",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Functions",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Functions",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the terms: function, domain, range (image set), one–one function, many–one function, inverse function and composition of functions.",
+              "commandWord": "understand",
+              "notesAndExamples": "Includes explaining in words why a given function is a function."
+            },
+            {
+              "statement": "Find the domain and range of functions.",
+              "commandWord": "find",
+              "notesAndExamples": "Includes inverse functions and composite functions. The domain of f may need to be restricted for f –1 and/or gf to exist. Domain gf ⊆ Domain f Range gf ⊆ Range g continued"
+            },
+            {
+              "statement": "Recognise and use function notation.",
+              "commandWord": "recognise",
+              "notesAndExamples": "Examples include: • f(x) = 2ex • f : x ↦ lg x, for x > 0 • f –1(x) • fg(x) [= f(g(x))] • f 2(x) [= f(f(x))] The notation f 2(x) will not be used with trigonometric functions."
+            },
+            {
+              "statement": "Understand the relationship between y = f(x) and y = |f(x)|, where f(x) may be linear, • quadratic, cubic or trigonometric.",
+              "commandWord": "understand",
+              "notesAndExamples": "If f(x) is trigonometric it will be one of the following: y = a sin bx + c • y = a cos bx + c • y = a tan bx + c where a is a positive integer, b is a simple fraction or integer, and c is an integer. Fractions will have a denominator of 2, 3, 4, 6 or 8 only."
+            },
+            {
+              "statement": "Explain in words why a given function does not have an inverse.",
+              "commandWord": "explain",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Find the inverse of a one–one function. • •",
+              "commandWord": "find",
+              "notesAndExamples": "Correct notation must be used. For example: f(x) = e2x 1 f –1(x) = ln x 2"
+            },
+            {
+              "statement": "Form and use composite functions.",
+              "commandWord": "form",
+              "notesAndExamples": "Understand that order of functions is important, i.e. fg may not be the same as gf ."
+            },
+            {
+              "statement": "Use sketch graphs to show the relationship between a function and its inverse.",
+              "commandWord": "use",
+              "notesAndExamples": "Understand that each function is the reflection of the other in the line y = x."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Quadratic functions",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Quadratic functions",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Find the maximum or minimum value of the quadratic function f : x ↦ ax2 + bx + c by completing the square or by differentiation.",
+              "commandWord": "find",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use the maximum or minimum value of f(x) to sketch the graph of y = f(x) or determine the range for a given domain.",
+              "commandWord": "use",
+              "notesAndExamples": "Candidates should use correct notation to write a domain or range."
+            },
+            {
+              "statement": "Know the conditions for f(x) = 0 to have: (i). (ii). (iii). . (i). (ii). (iii).",
+              "commandWord": "know",
+              "notesAndExamples": "Understand how the discriminant relates to the roots two real roots of the equation. two equal roots no real roots and the related conditions for a given line to: intersect a given curve be a tangent to a given curve not intersect a given curve. continued"
+            },
+            {
+              "statement": "Solve quadratic equations for real roots.",
+              "commandWord": "solve",
+              "notesAndExamples": "Formula is given in the List of formulas. Students are expected to be able to use factorisation, the quadratic formula and completing the square. On the calculator paper, correct answers are acceptable without working."
+            },
+            {
+              "statement": "Find the solution set for quadratic inequalities either graphically or algebraically. • •",
+              "commandWord": "find",
+              "notesAndExamples": "Solutions should be written in the correct form. For example: –3 < x < 4 x < 1 or x > 6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Factors of polynomials",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Factors of polynomials",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Know and use the remainder and factor theorems.",
+              "commandWord": "know",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Find factors of polynomials.",
+              "commandWord": "find",
+              "notesAndExamples": "For a cubic polynomial, students are first expected to obtain a product of a linear factor and a quadratic factor, for example by observation or by algebraic long division."
+            },
+            {
+              "statement": "Solve cubic equations.",
+              "commandWord": "solve",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Equations, inequalities and graphs",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Equations, inequalities and graphs",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Solve equations of the type • • • • .",
+              "commandWord": "solve",
+              "notesAndExamples": "For graphical solutions, an accurate graph is |ax + b| = c (c ⩾ 0) expected. |ax + b| = cx + d For algebraic methods, any valid method is acceptable. |ax + b| = |cx + d| |ax2 + bx + c| = d using algebraic or graphical methods."
+            },
+            {
+              "statement": "Solve graphically or algebraically inequalities of the type k|ax + b| > c (c ⩾ 0) • • k|ax + b| ⩽ c (c > 0) • k|ax + b| ⩽ |cx + d| .where k > 0 • |ax + b| ⩽ cx + d • |ax2 + bx + c| > d • |ax2 + bx + c| ⩽ d",
+              "commandWord": "solve",
+              "notesAndExamples": "For graphical solutions, an accurate graph is expected. For algebraic methods, any valid method is acceptable. continued"
+            },
+            {
+              "statement": "Use substitution to form and solve a quadratic equation in order to solve a related equation. • •",
+              "commandWord": "use",
+              "notesAndExamples": "For example: 4 2 x 3 + x 3 - 12 = 0 2(1n 5x)2 + 1n 5x – 6 = 0 3ex = 12 – 5e –x"
+            },
+            {
+              "statement": "Sketch the graphs of cubic polynomials and their moduli, when given as a product of three linear factors.",
+              "commandWord": "sketch",
+              "notesAndExamples": "The points of intersection of the graph with the coordinate axes should be clearly labelled."
+            },
+            {
+              "statement": "Solve graphically cubic inequalities of the form f(x) ⩾ d • • f(x) > d • f(x) ⩽ d • f(x) < d .where f(x) is a product of three linear factors and d is a constant.",
+              "commandWord": "solve",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "Simultaneous equations",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "Simultaneous equations",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Solve simultaneous equations in two unknowns by elimination or substitution. • •",
+              "commandWord": "solve",
+              "notesAndExamples": "For example: y – x + 3 = 0 and x2 – 3xy + y2 + 19 = 0 xy2 = 4 and xy = 3 x 2y • x = 4 and y = x – 2 + y"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Logarithmic and exponential functions",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Logarithmic and exponential functions",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Know and use simple properties and graphs of the logarithmic and exponential functions, including ln x and ex.",
+              "commandWord": "know",
+              "notesAndExamples": "Logarithms may be given to any base. Understand that f(x) = ex and g(x) = 1n x are each the inverse of the other. Understand the asymptotic nature of the graphs of logarithmic and exponential functions. State the equations of any asymptotes. Graphs are limited to y = kenx + a and y = k ln(ax + b) where n, k, a and b are integers. Series expansions are not required. continued"
+            },
+            {
+              "statement": "Know and use the laws of logarithms, including change of base of logarithms. • •",
+              "commandWord": "know",
+              "notesAndExamples": "For example: Write 3 + 21g p – 1g q as a single base 10 logarithm. 1 Write as a natural logarithm. log5 e"
+            },
+            {
+              "statement": "Solve equations of the form ax = b.",
+              "commandWord": "solve",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Straight-line graphs",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Straight-line graphs",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Use the equation of a straight line.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Know and use the condition for two lines to be parallel or perpendicular.",
+              "commandWord": "know",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Solve problems involving midpoint and length of a line, including finding and using the equation of a perpendicular bisector.",
+              "commandWord": "solve",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Transform given relationships to and from straight-line form, including determining • unknown constants by calculating the gradient or intercept of the transformed graph. •",
+              "commandWord": "transform",
+              "notesAndExamples": "For example: To straight-line form y = Axn y = Abx From straight-line form to an equation of the form . y2 = Ax3 + B e2y = Ax2 + B y3 = A1n x + B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Coordinate geometry of the circle",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "Coordinate geometry of the circle",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Know and use the equation of a circle with radius r and centre (a, b). • •",
+              "commandWord": "know",
+              "notesAndExamples": "Identify the centre and radius of a circle using a circle equation in any form. For example: (x – a)2 + (y – b)2 = r2 x2 + y2 + 2gx + 2fy + c = 0 Formula is given in the List of formulas."
+            },
+            {
+              "statement": "Solve problems involving the intersection of a circle and a straight line. • • •",
+              "commandWord": "solve",
+              "notesAndExamples": "Includes finding points of intersection. Includes determining whether a straight line: is a tangent is a chord does not intersect the circle. continued"
+            },
+            {
+              "statement": "Solve problems involving tangents to a circle.",
+              "commandWord": "solve",
+              "notesAndExamples": "Includes finding equations of tangents. No use of calculus is expected."
+            },
+            {
+              "statement": "Solve problems involving the intersection of two circles. • • •",
+              "commandWord": "solve",
+              "notesAndExamples": "Includes finding points of intersection, finding the equation of a common chord or determining whether two circles: intersect touch do not intersect."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Circular measure",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "Circular measure",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Solve problems involving the arc length and sector area of a circle, including knowledge and use of radian measure.",
+              "commandWord": "solve",
+              "notesAndExamples": "Use of radian measure is expected in the solution of problems which may involve compound shapes. Formulas are not given."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "10",
+      "title": "Trigonometry",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "10.1",
+          "title": "Trigonometry",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Know and use the six trigonometric functions of angles of any magnitude.",
+              "commandWord": "know",
+              "notesAndExamples": "sine, cosine, tangent, secant, cosecant, cotangent"
+            },
+            {
+              "statement": "Understand and use the amplitude and period of a trigonometric function, including the relationship between graphs of related trigonometric functions.",
+              "commandWord": "understand",
+              "notesAndExamples": "For example: y = sin x and y = 3sin 2x The period may be in either degrees or radians."
+            },
+            {
+              "statement": "Draw and use the graphs of . y = a sin bx + c . y = a cos bx + c . y = a tan bx + c .where a is a positive integer, b is a simple fraction or integer, and c is an integer.",
+              "commandWord": "draw",
+              "notesAndExamples": "Graphs will be drawn over a given domain which may be in either degrees or radians. For a graph of y = a tan bx + c, the x-coordinate of any asymptote should be clearly labelled. Fractions will have a denominator of 2, 3, 4, 6 or 8 only."
+            },
+            {
+              "statement": "Use the relationships: 2 • • •",
+              "commandWord": "use",
+              "notesAndExamples": "Trigonometric identities are given in the List of 2 formulas. sin A + cos A = 1 sec2 A = 1 + tan2 A cosec2 A = 1 + cot2 A continued"
+            },
+            {
+              "statement": "Solve, for a given domain, trigonometric equations involving the six trigonometric functions. • • i • 3",
+              "commandWord": "solve",
+              "notesAndExamples": "Includes the use of the relationships in 10.4. For example: 4 cot θ = tan θ 2 sec2 θ + tan θ – 3 = 0 i 5 sin + 2 cos =0 3"
+            },
+            {
+              "statement": "3 cosec d2i -",
+              "commandWord": "3",
+              "notesAndExamples": "n=4 r • 12"
+            },
+            {
+              "statement": "Prove trigonometric relationships involving the six trigonometric functions. • sin i • 1 + cos i",
+              "commandWord": "prove",
+              "notesAndExamples": "Includes the use of the relationships in 10.4. For example: sin x tan x + cos x = sec x 1 + cos i + = 2 cosec θ sin i"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "11",
+      "title": "Permutations and combinations",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "11.1",
+          "title": "Permutations and combinations",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Recognise the difference between permutations and combinations and know when each should be used.",
+              "commandWord": "recognise",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Know and use the notation n! and the expressions for permutations and combinations of n items taken r at a time.",
+              "commandWord": "know",
+              "notesAndExamples": "Includes 0! = 1."
+            },
+            {
+              "statement": "Solve problems on arrangement and selection using permutations or combinations. • • •",
+              "commandWord": "solve",
+              "notesAndExamples": "Problems will be either in an everyday context or based on an algebraic problem. Problems involving: repetition of objects objects arranged in a circle both permutations and combinations, are not included."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "12",
+      "title": "Series",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "12.1",
+          "title": "Series",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Use the binomial theorem for expansion of (a + b)n for positive integer n.",
+              "commandWord": "use",
+              "notesAndExamples": "Includes simplification of coefficients. Formula is given in the List of formulas."
+            },
+            {
+              "statement": "Use the general term JN . KrO LP",
+              "commandWord": "use",
+              "notesAndExamples": "For example: Find the term independent of x in the expansion of KnO an–rbr, 0 ⩽ r ⩽ n . d2x + 1 n . 10 x Knowledge of the greatest term and properties of the coefficients is not required."
+            },
+            {
+              "statement": "Recognise arithmetic and geometric progressions and understand the difference between them.",
+              "commandWord": "recognise",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use the formulas for the nth term and for the sum of the first n terms to solve problems involving arithmetic or geometric progressions.",
+              "commandWord": "use",
+              "notesAndExamples": "Problems may be in context. Formulas are given in the List of formulas."
+            },
+            {
+              "statement": "Use the condition for the convergence of a geometric progression, and the formula for the sum to infinity of a convergent geometric progression.",
+              "commandWord": "use",
+              "notesAndExamples": "Includes explaining why a particular geometric progression has or does not have a sum to infinity. Formula is given in the List of formulas."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "13",
+      "title": "Vectors in two dimensions",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "13.1",
+          "title": "Vectors in two dimensions",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand and use vector notation.",
+              "commandWord": "understand",
+              "notesAndExamples": "Vectors will be given in any form including: JaN KK OO , AB , p, ai – bj LbP Candidates are expected to use correct vector notation."
+            },
+            {
+              "statement": "Know and use position vectors and unit vectors. The unit vector in the same direction as a is",
+              "commandWord": "know",
+              "notesAndExamples": "For example: a . a"
+            },
+            {
+              "statement": "Find the magnitude of a vector; add and subtract vectors and multiply vectors by • scalars. •",
+              "commandWord": "find",
+              "notesAndExamples": "Includes: equating like vectors solving problems using vector geometry, with a diagram given in more complex cases."
+            },
+            {
+              "statement": "Compose and resolve velocities.",
+              "commandWord": "compose",
+              "notesAndExamples": "Determine a resultant vector by adding two or more vectors together. Includes the use of a velocity vector to determine position and solve problems in context such as particles colliding."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "14",
+      "title": "Calculus",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "14.1",
+          "title": "Calculus",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the idea of a derived function.",
+              "commandWord": "understand",
+              "notesAndExamples": "Only an informal understanding of the idea of a limit is expected, and the technique of differentiation from first principles is not required."
+            },
+            {
+              "statement": "Use the notations R dy d2 y S d JKdyNOW . dx dx2 SS dx KdxOWW = T dy . dx",
+              "commandWord": "use",
+              "notesAndExamples": "V f′(x), f″(x), , L PX δx, δx → 0, ."
+            },
+            {
+              "statement": "Know and use the derivatives of the standard functions xn (for any rational n), sin x, cos x, tan x, ex, ln x.",
+              "commandWord": "know",
+              "notesAndExamples": "Includes constant multiples, sums and composite functions (use of chain rule). For example, differentiate `3x 2 + 4j . 1 3"
+            },
+            {
+              "statement": "Differentiate products and quotients of functions.",
+              "commandWord": "differentiate",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use differentiation to find gradients, tangents and normals.",
+              "commandWord": "use",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use differentiation to find stationary points.",
+              "commandWord": "use",
+              "notesAndExamples": "Points of inflexion are not included."
+            },
+            {
+              "statement": "Apply differentiation to connected rates of change, small increments and approximations.",
+              "commandWord": "apply",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Apply differentiation to practical problems involving maxima and minima.",
+              "commandWord": "apply",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Use the first and second derivative tests to discriminate between maxima and minima.",
+              "commandWord": "use",
+              "notesAndExamples": "Points of inflexion are not included. Full justification of conclusions is expected. An explanation of how to distinguish between a maximum point and a minimum point may be required. Unless specified otherwise, any valid method is allowed."
+            },
+            {
+              "statement": "Understand integration as the reverse process of differentiation.",
+              "commandWord": "understand",
+              "notesAndExamples": "Solutions for indefinite integrals should include an arbitrary constant."
+            },
+            {
+              "statement": "Integrate sums of terms in powers of x, 1 .including and x",
+              "commandWord": "integrate",
+              "notesAndExamples": "Solutions for indefinite integrals should include an 1 arbitrary constant. . ax + b continued"
+            },
+            {
+              "statement": "Integrate functions of the form: n • • • • •",
+              "commandWord": "integrate",
+              "notesAndExamples": "Includes the case where n = –1. (ax + b) for any rational n For trigonometric functions angles will always be in sin (ax + b) radians. cos (ax + b) Solutions for indefinite integrals should include an arbitrary constant. sec2 (ax + b) eax+b"
+            },
+            {
+              "statement": "Evaluate definite integrals and apply integration to the evaluation of plane areas. • • •",
+              "commandWord": "evaluate",
+              "notesAndExamples": "Plane areas include: between a line and a curve between two curves a sum of two areas."
+            },
+            {
+              "statement": "Apply differentiation and integration to kinematics problems that involve displacement, velocity and acceleration of a particle moving in a straight line with variable or constant acceleration.",
+              "commandWord": "apply",
+              "notesAndExamples": "For example: Given the velocity of a particle is v = 3t2 – 30t + 72 find its acceleration when t = 2."
+            },
+            {
+              "statement": "Make use of the relationships in 14.14 to draw and use the following graphs: • • • • •",
+              "commandWord": "make",
+              "notesAndExamples": "For example: A particle moves in a straight line. Its displacement s, displacement–time from a fixed point at time, t, is given by s = 3t3 – 10t2 distance–time + 4t + 8 for 0 ⩽ t ⩽ 3. Sketch its displacement–time graph, its speed–time graph, its acceleration–time velocity–time graph. speed–time acceleration–time."
+            },
+            {
+              "statement": "Faculty feedback: ‘Understanding how and why our climate is changing and providing the knowledge and skills to explore the challenges plays a key role in every student’s education.’ Feedback from: Dr Amy Munro-Faure, Head of Education and Student Engagement of Cambridge Zero",
+              "commandWord": "faculty",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

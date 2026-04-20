@@ -1,0 +1,748 @@
+{
+  "syllabusCode": "0478",
+  "pattern": "E",
+  "strands": [],
+  "papers": [],
+  "topics": [
+    {
+      "number": "1",
+      "title": "Data representation",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "1.1",
+          "title": "Number systems",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand how and why computers use binary to represent all forms of data •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Any form of data needs to be converted to binary to be processed by a computer Data is processed using logic gates and stored in registers"
+            },
+            {
+              "statement": "(a) \u0007Understand the denary, binary and hexadecimal number systems • (b) Convert between (i) (ii) \u0007positive denary and positive hexadecimal (iii) \u0007positive hexadecimal and positive binary",
+              "commandWord": "(a",
+              "notesAndExamples": "• Denary is a base 10 system • Binary is a base 2 system Hexadecimal is a base 16 system • Values used will be integers only positive denary and positive binary • Conversions in both directions, e.g. denary to binary or binary to denary • Maximum binary number length of 16-bit"
+            },
+            {
+              "statement": "Understand how and why hexadecimal is used as a beneficial method of data representation •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Areas within computer science that hexadecimal is used should be identified Hexadecimal is easier for humans to understand than binary, as it is a shorter representation of binary"
+            },
+            {
+              "statement": "(a) Add two positive 8-bit binary integers (b) \u0007Understand the concept of overflow and why it occurs in binary addition • •",
+              "commandWord": "(a",
+              "notesAndExamples": "• An overflow error will occur if the value is greater than 255 in an 8-bit register A computer or a device has a predefined limit that it can represent or store, for example 16-bit An overflow error occurs when a value outside this limit should be returned"
+            },
+            {
+              "statement": "Perform a logical binary shift on a positive 8-bit binary integer and understand the effect this has on the positive binary integer • • • •",
+              "commandWord": "perform",
+              "notesAndExamples": "• Perform logical left shifts • Perform logical right shifts Perform multiple shifts Bits shifted from the end of the register are lost and zeros are shifted in at the opposite end of the register The positive binary integer is multiplied or divided according to the shift performed The most significant bit(s) or least significant bit(s) are lost"
+            },
+            {
+              "statement": "Use the two’s complement number system to represent positive and negative 8-bit binary integers",
+              "commandWord": "use",
+              "notesAndExamples": "• Convert a positive binary or denary integer to a two’s complement 8-bit integer and vice versa • Convert a negative binary or denary integer to a two’s complement 8-bit integer and vice versa"
+            }
+          ]
+        },
+        {
+          "number": "1.2",
+          "title": "Text, sound and images",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand how and why a computer represents text and the use of character sets, including American standard code for information interchange (ASCII) and Unicode •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Text is converted to binary to be processed by a computer • Unicode allows for a greater range of characters and symbols than ASCII, including different languages and emojis Unicode requires more bits per character than ASCII"
+            },
+            {
+              "statement": "Understand how and why a computer represents sound, including the effects of the sample rate and sample resolution • • •",
+              "commandWord": "understand",
+              "notesAndExamples": "• A sound wave is sampled for sound to be converted to binary, which is processed by a computer The sample rate is the number of samples taken in a second The sample resolution is the number of bits per sample The accuracy of the recording and the file size increases as the sample rate and resolution increase"
+            },
+            {
+              "statement": "Understand how and why a computer represents an image, including the effects of the resolution and colour depth • •",
+              "commandWord": "understand",
+              "notesAndExamples": "• An image is a series of pixels that are converted to binary, which is processed by a computer • The resolution is the number of pixels in the image The colour depth is the number of bits used to represent each colour The file size and quality of the image increase as the resolution and colour depth increase"
+            }
+          ]
+        },
+        {
+          "number": "1.3",
+          "title": "Data storage and compression",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand how data storage is measured – – – – – – – – – • – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including: bit nibble byte kibibyte (KiB) mebibyte (MiB) gibibyte (GiB) tebibyte (TiB) pebibyte (PiB) exbibyte (EiB) The amount of the previous denomination present in the data storage size, e.g.: 8 bits in a byte 1024 mebibytes in a gibibyte"
+            },
+            {
+              "statement": "Calculate the file size of an image file and a sound file, using information given • – –",
+              "commandWord": "calculate",
+              "notesAndExamples": "• Answers must be given in the units specified in the question. Calculations must use the measurement of 1024 and not 1000 Information given may include: image resolution and colour depth sound sample rate, resolution and length of track"
+            },
+            {
+              "statement": "Understand the purpose of and need for data compression – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Compression exists to reduce the size of the file • What the impact of this is, e.g.: less bandwidth required less storage space required shorter transmission time"
+            },
+            {
+              "statement": "Understand how files are compressed using lossy and lossless compression methods •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Lossy compression reduces the file size by permanently removing data, e.g. reducing resolution or colour depth, reducing sample rate or resolution Lossless compression reduces the file size without permanent loss of data, e.g. run length encoding (RLE)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "title": "Data transmission",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "2.1",
+          "title": "Types and methods of data transmission",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "(a) \u0007Understand that data is broken down into packets to be transmitted (b) Describe the structure of a packet – – – • – – – (c) Describe the process of packet switching • • • •",
+              "commandWord": "(a",
+              "notesAndExamples": "• A packet of data contains a: packet header payload trailer The packet header includes the: destination address packet number originator’s address • Data is broken down into packets Each packet could take a different route A router controls the route a packet takes Packets may arrive out of order Once the last packet has arrived, packets are reordered"
+            },
+            {
+              "statement": "(a) \u0007Describe how data is transmitted from one device to another using different methods of data transmission – – – – (b) \u0007Explain the suitability of each method of data transmission, for a given scenario",
+              "commandWord": "(a",
+              "notesAndExamples": "• Including: – serial parallel simplex half-duplex full-duplex • Including the advantages and disadvantages of each method"
+            },
+            {
+              "statement": "Understand the universal serial bus (USB) interface and explain how it is used to transmit data",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including the benefits and drawbacks of the interface"
+            }
+          ]
+        },
+        {
+          "number": "2.2",
+          "title": "Methods of error detection",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the need to check for errors after data transmission and how these errors can occur",
+              "commandWord": "understand",
+              "notesAndExamples": "• Errors can occur during data transmission due to interference, e.g. data loss, data gain and data change"
+            },
+            {
+              "statement": "Describe the processes involved in each of the following error detection methods for detecting errors in data after transmission: parity check (odd and even), checksum and echo check",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including parity byte and parity block check"
+            },
+            {
+              "statement": "Describe how a check digit is used to detect errors in data entry and identify examples of when a check digit is used, including international standard book numbers (ISBN) and bar codes",
+              "commandWord": "describe",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Describe how an automatic repeat query (ARQ) can be used to establish that data is received without error –",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including the use of: – positive/negative acknowledgements timeout"
+            }
+          ]
+        },
+        {
+          "number": "2.3",
+          "title": "Encryption",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the need for and purpose of encryption when transmitting data",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand how data is encrypted using symmetric and asymmetric encryption",
+              "commandWord": "understand",
+              "notesAndExamples": "• Asymmetric encryption includes the use of public and private keys"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3",
+      "title": "Hardware",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "3.1",
+          "title": "Computer architecture",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "(a) \u0007Understand the role of the central processing unit (CPU) in a computer (b) \u0007Understand what is meant by a microprocessor",
+              "commandWord": "(a",
+              "notesAndExamples": "• The CPU processes instructions and data that are input into the computer so that the result can be output • A microprocessor is a type of integrated circuit on a single chip"
+            },
+            {
+              "statement": "(a) \u0007Understand the purpose of the components in a CPU, in a computer that has a Von Neumann architecture – – (b) \u0007Describe the process of the fetch–decode–execute (FDE) cycle, including the role of each component in the process • • •",
+              "commandWord": "(a",
+              "notesAndExamples": "• Including: – units: arithmetic logic unit (ALU) and control unit (CU) registers: program counter (PC), memory address register (MAR), memory data register (MDR), current instruction register (CIR) and accumulator (ACC) buses: address bus, data bus and control bus • How instructions and data are fetched from random access memory (RAM) into the CPU, how they are processed using each component and how they are then executed Storing data and addresses into specific registers Using buses to transmit data, addresses and signals Using units to fetch, decode and execute data and instructions"
+            },
+            {
+              "statement": "Understand what is meant by a core, cache and clock in a CPU and explain how they can affect the performance of a CPU",
+              "commandWord": "understand",
+              "notesAndExamples": "• The number of cores, size of the cache and speed of the clock can affect the performance of a CPU"
+            },
+            {
+              "statement": "Understand the purpose and use of an instruction set for a CPU",
+              "commandWord": "understand",
+              "notesAndExamples": "• An instruction set is a list of all the commands that can be processed by a CPU, and the commands are machine code"
+            },
+            {
+              "statement": "Describe the purpose and characteristics of an embedded system and identify devices in which they are commonly used",
+              "commandWord": "describe",
+              "notesAndExamples": "• An embedded system is used to perform a dedicated functions. For example in, domestic appliances, cars, security systems, lighting systems or vending machines. This is different to a general purpose computer that is used to perform many different functions. For example in, a personal computer (PC) or a laptop"
+            }
+          ]
+        },
+        {
+          "number": "3.2",
+          "title": "Input and output devices",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand what is meant by an input device and why it is required – – – – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including: – barcode scanner digital camera keyboard microphone optical mouse QR code scanner touch screen (resistive, capacitive and infra-red) two-dimensional (2D) and three-dimensional (3D) scanners"
+            },
+            {
+              "statement": "Understand what is meant by an output device and why it is required – – – – – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including: – actuator digital light processing (DLP) projector inkjet printer laser printer light emitting diode (LED) screen liquid crystal display (LCD) projector liquid crystal display (LCD) screen speaker 3D printer"
+            },
+            {
+              "statement": "(a) \u0007Understand what is meant by a sensor and the purposes of sensors – – – – – – – – – – – – – (b) \u0007Identify the type of data captured by each sensor and understand when each sensor would be used, including selecting the most suitable sensor for a given context",
+              "commandWord": "(a",
+              "notesAndExamples": "• Limited to: – acoustic accelerometer flow gas humidity infra-red level light magnetic field moisture pH pressure proximity temperature"
+            }
+          ]
+        },
+        {
+          "number": "3.3",
+          "title": "Data storage",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand what is meant by primary storage • – – •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Primary storage is directly accessed by the CPU Including the role of: random access memory (RAM) read only memory (ROM) Including why a computer needs both RAM and ROM, and the difference between them"
+            },
+            {
+              "statement": "Understand what is meant by secondary storage",
+              "commandWord": "understand",
+              "notesAndExamples": "• Secondary storage is not directly accessed by the CPU and is necessary for more permanent storage of data"
+            },
+            {
+              "statement": "Describe the operation of magnetic, optical and solid-state (flash memory) storage and give examples of each • •",
+              "commandWord": "describe",
+              "notesAndExamples": "• Magnetic storage uses platters which are divided into tracks and sectors. Data is read and written using electromagnets. Including hard disk drive (HDD) Optical storage uses lasers to create and read pits and lands. Including: CD, DVD and Blu-ray Solid-state (flash memory) uses NAND or NOR technology. Transistors are used as control gates and floating gates. Including: solid-state drive (SSD), SD card and USB drive"
+            },
+            {
+              "statement": "Describe what is meant by virtual memory, how it is created and used and why it is necessary",
+              "commandWord": "describe",
+              "notesAndExamples": "• Pages of data are transferred between RAM and virtual memory when needed"
+            },
+            {
+              "statement": "Understand what is meant by cloud storage",
+              "commandWord": "understand",
+              "notesAndExamples": "• Cloud storage can be accessed remotely in comparison to storing data locally"
+            },
+            {
+              "statement": "Explain the advantages and disadvantages of storing data on the cloud in comparison to storing it locally",
+              "commandWord": "explain",
+              "notesAndExamples": "• Physical servers and storage are needed to store data in cloud storage"
+            }
+          ]
+        },
+        {
+          "number": "3.4",
+          "title": "Network hardware",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand that a computer needs a network interface card (NIC) to access a network",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand what is meant by, and the purpose of, a media access control (MAC) address, including its structure •",
+              "commandWord": "understand",
+              "notesAndExamples": "• A network interface card is given a MAC address at the point of manufacture • MAC addresses are usually written as hexadecimal MAC addresses are created using the manufacturer code and the serial code"
+            },
+            {
+              "statement": "(a) \u0007Understand what is meant by, and the purpose of, an internet protocol (IP) address (b) \u0007Understand that there are different types of IP address",
+              "commandWord": "(a",
+              "notesAndExamples": "• An IP address is allocated by the network and it can be static or dynamic • Including the characteristics of, and differences between, IPv4 and IPv6"
+            },
+            {
+              "statement": "Describe the role of a router in a network • •",
+              "commandWord": "describe",
+              "notesAndExamples": "• A router sends data to a specific destination on a network A router can assign IP addresses A router can connect a local network to the internet"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "4",
+      "title": "Software",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "4.1",
+          "title": "Types of software and interrupts",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Describe the difference between system software and application software and provide examples of each •",
+              "commandWord": "describe",
+              "notesAndExamples": "• System software provides the services that the computer requires, including operating system and utility software Application software provides the services that the user requires"
+            },
+            {
+              "statement": "Describe the role and basic functions of an operating system – – – – – – – –",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including: – managing files handling interrupts providing an interface managing peripherals and drivers managing memory managing multitasking providing a platform for running applications providing system security managing user accounts"
+            },
+            {
+              "statement": "Understand how hardware, firmware and an operating system are required to run applications software •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Applications are run on the operating system • The operating system is run on the firmware The bootloader (firmware) is run on the hardware"
+            },
+            {
+              "statement": "Describe the role and operation of interrupts – – – • •",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including: how an interrupt is generated how it is handled using an interrupt service routine what happens as a result of the interrupts Software interrupts include division by zero and two processes trying to access the same memory location Hardware interrupts include pressing a key on the keyboard and moving the mouse"
+            }
+          ]
+        },
+        {
+          "number": "4.2",
+          "title": "Types of programming language, translators and integrated development environments",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Explain what is meant by a high-level language and a low-level language, including the advantages and disadvantages of each – – –",
+              "commandWord": "explain",
+              "notesAndExamples": "• Advantages and disadvantages include: – ease of reading and writing code, e.g. low-level is hard to read ease of debugging code machine independence direct manipulation of hardware"
+            },
+            {
+              "statement": "Understand that assembly language is a form of low-level language that uses mnemonics, and that an assembler is needed to translate an assembly language program into machine code",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Describe the operation of a compiler and an interpreter, including how high-level language is translated by each and how errors are reported • •",
+              "commandWord": "describe",
+              "notesAndExamples": "• A compiler translates the whole code at once before executing it, producing an executable file • An interpreter translates and executes the code line-by-line A compiler provides an error report for the whole code if errors are detected An interpreter stops execution when an error is found"
+            },
+            {
+              "statement": "Explain the advantages and disadvantages of a compiler and an interpreter",
+              "commandWord": "explain",
+              "notesAndExamples": "• Including an understanding that an interpreter is mostly used when developing a program and a compiler is used to translate the final program"
+            },
+            {
+              "statement": "Explain the role of an IDE in writing program code and the common functions IDEs provide – – – – – –",
+              "commandWord": "explain",
+              "notesAndExamples": "• Including: – code editors run-time environment translators error diagnostics auto-completion auto-correction prettyprint"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5",
+      "title": "The internet and its uses",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "5.1",
+          "title": "The internet and the world wide web",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the difference between the internet and the world wide web",
+              "commandWord": "understand",
+              "notesAndExamples": "• The internet is the infrastructure • The world wide web is the collection of websites and web pages accessed using the internet"
+            },
+            {
+              "statement": "Understand what is meant by a uniform resource locator (URL)",
+              "commandWord": "understand",
+              "notesAndExamples": "• A URL is a text-based address for a web page; it can contain the protocol, the domain name and the web page/file name"
+            },
+            {
+              "statement": "Describe the purpose and operation of hypertext transfer protocol (HTTP) and hypertext transfer protocol secure (HTTPS)",
+              "commandWord": "describe",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Explain the purpose and functions of a web browser • – – – – – –",
+              "commandWord": "explain",
+              "notesAndExamples": "• The main purpose of a web browser is to render hypertext markup language (HTML) and display web pages Functions include: storing bookmarks and favourites recording user history allowing use of multiple tabs storing cookies providing navigation tools providing an address bar"
+            },
+            {
+              "statement": "Describe how web pages are located, retrieved and displayed on a device when a user enters a URL – – – –",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including the role of: – the web browser IP addresses the domain name server (DNS) the web server HTML"
+            },
+            {
+              "statement": "Explain what is meant by cookies and how they are used, including session cookies and persistent cookies – – –",
+              "commandWord": "explain",
+              "notesAndExamples": "• Cookies are used for functions, including: – saving personal details tracking user preferences holding items in an online shopping cart storing login details"
+            }
+          ]
+        },
+        {
+          "number": "5.2",
+          "title": "Digital currency",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the concept of a digital currency and how digital currencies are used",
+              "commandWord": "understand",
+              "notesAndExamples": "• A digital currency is one that only exists electronically"
+            },
+            {
+              "statement": "Understand the process of blockchain and how it is used to track digital currency transactions",
+              "commandWord": "understand",
+              "notesAndExamples": "• Blockchain, in its basic form, is a digital ledger, that is a time-stamped series of records that cannot be altered"
+            }
+          ]
+        },
+        {
+          "number": "5.3",
+          "title": "Cyber security",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Describe the processes involved in, and the aim of carrying out, a range of cyber security threats – – – – – – –",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including: – brute-force attack data interception distributed denial of service (DDoS) attack hacking malware (virus, worm, Trojan horse, spyware, adware, ransomware) pharming phishing social engineering"
+            },
+            {
+              "statement": "Explain how a range of solutions are used to help keep data safe from security threats – – – – – – – – –",
+              "commandWord": "explain",
+              "notesAndExamples": "• Including: – access levels anti-malware, including anti-virus and anti-spyware authentication (username and password, biometrics, two-step verification) automating software updates checking the spelling and tone of communications checking the URL attached to a link firewalls privacy settings proxy-servers secure socket layer (SSL) security protocol"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6",
+      "title": "Automated and emerging technologies",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "6.1",
+          "title": "Automated systems",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Describe how sensors, microprocessors and actuators can be used in collaboration to create automated systems",
+              "commandWord": "describe",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Describe the advantages and disadvantages of an automated system used for a given scenario – – – – – –",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including scenarios from: – industry transport agriculture weather gaming lighting science"
+            }
+          ]
+        },
+        {
+          "number": "6.2",
+          "title": "Robotics",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand what is meant by robotics •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Robotics is a branch of computer science that incorporates the design, construction and operation of robots Examples include factory equipment, domestic robots and drones"
+            },
+            {
+              "statement": "Describe the characteristics of a robot – – –",
+              "commandWord": "describe",
+              "notesAndExamples": "• Including: a mechanical structure or framework electrical components, such as sensors, microprocessors and actuators programmable"
+            },
+            {
+              "statement": "Understand the roles that robots can perform and describe the advantages and disadvantages of their use – – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Robots can be used in areas including: – industry transport agriculture medicine domestic settings entertainment"
+            }
+          ]
+        },
+        {
+          "number": "6.3",
+          "title": "Artificial intelligence",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand what is meant by artificial intelligence (AI)",
+              "commandWord": "understand",
+              "notesAndExamples": "• AI is a branch of computer science dealing with the simulation of intelligent behaviours by computers"
+            },
+            {
+              "statement": "Describe the main characteristics of AI as the collection of data and the rules for using that data, the ability to reason, and it can include the ability to learn and adapt",
+              "commandWord": "describe",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Explain the basic operation and components of AI systems to simulate intelligent behaviour – • •",
+              "commandWord": "explain",
+              "notesAndExamples": "• Limited to: – expert systems machine learning Expert systems have a knowledge base, a rule base, an inference engine and an interface Machine learning is when a program has the ability to automatically adapt its own processes and/or data"
+            },
+            {
+              "statement": "Algorithms, programming and logic See section 4 for the: • • •",
+              "commandWord": "algorithms",
+              "notesAndExamples": "standard flowchart symbols that must be used by students when drawing flowcharts logic gate symbols that must be used by students when drawing logic circuits format in which pseudocode will appear in examinations."
+            },
+            {
+              "statement": "In Paper 2, candidates are expected to write solutions to given problems using the methods and concepts listed in topics 7 to 10.",
+              "commandWord": "in",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Where the solution to a problem involves coding, candidates are required to write solutions in pseudocode. Solutions written in programming code will not be awarded marks. The exception is the 15-mark scenario question.",
+              "commandWord": "where",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "In the 15-mark scenario question, candidates are required to write solutions to the given problem using pseudocode or their choice of one of the following programming languages: Python, Visual Basic or Java. Solutions written in other programming languages will not be awarded marks.",
+              "commandWord": "in",
+              "notesAndExamples": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7",
+      "title": "Algorithm design and problem-solving",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "7.1",
+          "title": "Algorithm design and problem-solving",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the program development life cycle, limited to: analysis, design, coding and testing – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including identifying each stage and performing these tasks for each stage: – analysis: abstraction, decomposition of the problem, identification of the problem and requirements design: decomposition, structure diagrams, flowcharts, pseudocode coding: writing program code and iterative testing testing: testing program code with the use of test data"
+            },
+            {
+              "statement": "(a) \u0007Understand that every computer system is made up of sub-systems, which are made up of further sub-systems (b) \u0007Understand how a problem can be decomposed into its component parts – – – (c) \u0007Use different methods to design and construct a solution to a problem – –",
+              "commandWord": "(a",
+              "notesAndExamples": "• Including: – inputs processes outputs storage • Including: – structure diagrams flowcharts pseudocode"
+            },
+            {
+              "statement": "Explain the purpose of a given algorithm – –",
+              "commandWord": "explain",
+              "notesAndExamples": "• Including: stating the purpose of an algorithm describing the processes involved in an algorithm"
+            },
+            {
+              "statement": "Understand standard methods of solution – – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Limited to: linear search bubble sort totalling counting finding maximum, minimum and average values"
+            },
+            {
+              "statement": "(a) \u0007Understand the need for validation checks to be made on input data and the different types of validation check – – – – – (b) \u0007Understand the need for verification checks to be made on input data and the different types of verification check –",
+              "commandWord": "(a",
+              "notesAndExamples": "• Including: – range check length check type check presence check format check check digit • Including: – visual check double entry check"
+            },
+            {
+              "statement": "Suggest and apply suitable test data – – – – • •",
+              "commandWord": "suggest",
+              "notesAndExamples": "• Limited to: normal abnormal extreme boundary Extreme data is the largest/smallest acceptable value Boundary data is the largest/smallest acceptable value and the corresponding smallest/largest rejected value"
+            },
+            {
+              "statement": "Complete a trace table to document a dry-run of an algorithm – –",
+              "commandWord": "complete",
+              "notesAndExamples": "• Including, at each step in an algorithm: – variables outputs user prompts"
+            },
+            {
+              "statement": "Identify errors in given algorithms and suggest ways of correcting these errors",
+              "commandWord": "identify",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Write and amend algorithms for given problems or scenarios, using: pseudocode, program code and flowcharts • •",
+              "commandWord": "write",
+              "notesAndExamples": "• Precision is required when writing algorithms, e.g. x > y is acceptable but x is greater than y is not acceptable See section 4 for flowchart symbols See section 4 for pseudocode"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "8",
+      "title": "Programming",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "8.1",
+          "title": "Programming concepts",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Declare and use variables and constants",
+              "commandWord": "declare",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand and use basic data types – – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including: integer real char string Boolean"
+            },
+            {
+              "statement": "Understand and use input and output",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "(a) \u0007Understand and use the concept of sequence (b) \u0007Understand and use the concept of selection – (c) \u0007Understand and use the concept of iteration – – (d)\u0007 \u0007Understand and use the concepts of totalling and counting (e) \u0007Understand and use the concept of string handling – – – •",
+              "commandWord": "(a",
+              "notesAndExamples": "• Including: – IF statements CASE statements • Including: – count-controlled loops pre-condition loops post-condition loops • Including: – length substring upper lower The first character of the string can be position zero or one"
+            },
+            {
+              "statement": "(f) \u0007Understand and use arithmetic, relational and logical operators – – – – – – • – – – – – – • – – –",
+              "commandWord": "(f",
+              "notesAndExamples": "• Arithmetic, limited to: – + – / * ^ (raised to power of) MOD DIV Relational, limited to: = < <= > >= <> (not equal to) Logical, limited to: AND OR NOT"
+            },
+            {
+              "statement": "Understand and use nested statements •",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including nested selection and iteration Candidates will not be required to write more than three levels of nested statements"
+            },
+            {
+              "statement": "(a) \u0007Understand what is meant by procedures, functions and parameters (b) \u0007Define and use procedures and functions, with or without parameters (c) \u0007Understand and use local and global variables",
+              "commandWord": "(a",
+              "notesAndExamples": "• Procedures and functions may have up to three parameters"
+            },
+            {
+              "statement": "Understand and use library routines – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including: MOD DIV ROUND RANDOM"
+            },
+            {
+              "statement": "Understand how to create a maintainable program – – – • – – – –",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including appropriate use of: – meaningful identifiers the commenting feature provided by the programming language procedures and functions relevant and appropriate commenting of syntax Use meaningful identifiers for: variables constants arrays procedures and functions"
+            }
+          ]
+        },
+        {
+          "number": "8.2",
+          "title": "Arrays",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Declare and use one-dimensional (1D) and two-dimensional (2D) arrays",
+              "commandWord": "declare",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Understand the use of arrays",
+              "commandWord": "understand",
+              "notesAndExamples": "• Including the use of variables as indexes in arrays"
+            },
+            {
+              "statement": "Write values into, and read values from, an array using iteration",
+              "commandWord": "write",
+              "notesAndExamples": "• The first index can be zero or one • Including nested iteration"
+            }
+          ]
+        },
+        {
+          "number": "8.3",
+          "title": "File handling",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Understand the purpose of storing data in a file to be used by a program",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Open, close and use a file for reading and writing –",
+              "commandWord": "open",
+              "notesAndExamples": "• Including: – read and write single items of data read and write a line of text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "9",
+      "title": "Databases",
+      "strandName": null,
+      "subtopics": [
+        {
+          "number": "9.1",
+          "title": "Databases",
+          "levelTier": "IGCSE",
+          "requirements": [
+            {
+              "statement": "Define a single-table database from given data storage requirements – –",
+              "commandWord": "define",
+              "notesAndExamples": "• Including: – fields records validation"
+            },
+            {
+              "statement": "Suggest suitable basic data types – – – – – –",
+              "commandWord": "suggest",
+              "notesAndExamples": "• Including: text/alphanumeric character Boolean integer real date/time"
+            },
+            {
+              "statement": "Understand the purpose of a primary key and identify a suitable primary key for a given database table",
+              "commandWord": "understand",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Read, understand and complete structured query language (SQL) scripts to query data stored in a single database table – – – – – – – – •",
+              "commandWord": "read",
+              "notesAndExamples": "• Limited to: – SELECT FROM WHERE ORDER BY DESCENDING ORDER BY ASCENDING SUM COUNT AND OR Identifying the output given by an SQL statement that will query the given contents of a database table"
+            },
+            {
+              "statement": "10 Boolean logic",
+              "commandWord": "10",
+              "notesAndExamples": null
+            },
+            {
+              "statement": "Identify and use the standard symbols for logic gates",
+              "commandWord": "identify",
+              "notesAndExamples": "• See section 4 for logic gate symbols"
+            },
+            {
+              "statement": "Define and understand the functions of logic gates – – – – – – • •",
+              "commandWord": "define",
+              "notesAndExamples": "• Including: – NOT AND OR NAND NOR XOR (EOR) the binary output produced from all the possible binary inputs NOT is a single input gate All other gates are limited to two inputs"
+            },
+            {
+              "statement": "(a) \u0007Use logic gates to create given logic circuits from a: (i) (ii) logic expression (iii) truth table (b) Complete a truth table from a: (i) (ii) logic expression (iii) logic circuit 0 0 0 1 1 1 1",
+              "commandWord": "(a",
+              "notesAndExamples": "• Circuits must be drawn for the statement given, without simplification problem statement • Logic circuits will be limited to a maximum of three inputs and one output • An example truth table with three inputs, for problem statement completion: A B C Output 0 0 0 0 1 1 0 1 1 0 0 0 1 1 0 1 1"
+            },
+            {
+              "statement": "(c) Write a logic expression from a: (i) (ii) logic circuit (iii) truth table",
+              "commandWord": "(c",
+              "notesAndExamples": "problem statement"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
