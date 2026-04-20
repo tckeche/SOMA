@@ -439,6 +439,11 @@ export const topics = pgTable("topics", {
   // sync by the ingestion pipeline so the topic-list API can filter in SQL
   // without a subtopic join.
   levelTiers: jsonb("level_tiers").$type<string[]>().notNull().default([]),
+  // Phase 7 enrichment: retrieval + UX metadata. All optional; populated by
+  // the ingestion pipeline where available, empty defaults otherwise.
+  keywords: jsonb("keywords").$type<string[]>().notNull().default([]),
+  sourcePages: jsonb("source_pages").$type<number[]>().notNull().default([]),
+  prerequisiteTopicIds: jsonb("prerequisite_topic_ids").$type<number[]>().notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [uniqueIndex("topics_syllabus_number_idx").on(t.syllabusId, t.topicNumber)]);
@@ -451,6 +456,10 @@ export const subtopics = pgTable("subtopics", {
   description: text("description"),
   levelTier: text("level_tier").notNull(),
   coreOrExtended: text("core_or_extended"),
+  // Phase 7 enrichment: keywords for lexical matching, sourcePages for
+  // provenance display in the tutor UI.
+  keywords: jsonb("keywords").$type<string[]>().notNull().default([]),
+  sourcePages: jsonb("source_pages").$type<number[]>().notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [uniqueIndex("subtopics_topic_number_idx").on(t.topicId, t.subtopicNumber)]);
@@ -516,6 +525,25 @@ export const subtopicPaperMappings = pgTable("subtopic_paper_mappings", {
   subtopicId: integer("subtopic_id").notNull().references(() => subtopics.id, { onDelete: "cascade" }),
   paperId: integer("paper_id").notNull().references(() => papers.id, { onDelete: "cascade" }),
 }, (t) => [uniqueIndex("subtopic_paper_unique_idx").on(t.subtopicId, t.paperId)]);
+
+// Phase 7 — Reference-text + embeddings layer. One row per (topic, levelTier)
+// so AS / A2 cuts of the same topic get their own vectors (a topic's AS
+// subset teaches different material from its A2 subset). `contentHash` gates
+// regeneration: if the cleaned chunk text hasn't changed, the embedding is
+// reused.
+export const topicEmbeddings = pgTable("topic_embeddings", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  levelTier: text("level_tier").notNull(),
+  chunkText: text("chunk_text").notNull(),
+  contentHash: text("content_hash").notNull(),
+  embeddingModel: text("embedding_model").notNull(),
+  dimensions: integer("dimensions").notNull(),
+  // Stored as jsonb number[] — at ~300 topics × 3 tiers × 1536 dims this is
+  // tiny (<20 MB) and avoids needing pgvector for the current scale.
+  embedding: jsonb("embedding").$type<number[]>().notNull(),
+  embeddedAt: timestamp("embedded_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("topic_embeddings_topic_tier_idx").on(t.topicId, t.levelTier)]);
 
 export const assessmentObjectives = pgTable("assessment_objectives", {
   id: serial("id").primaryKey(),
@@ -881,6 +909,12 @@ export type InsertPaperTopicMapping = z.infer<typeof insertPaperTopicMappingSche
 export const insertSubtopicPaperMappingSchema = createInsertSchema(subtopicPaperMappings).omit({ id: true });
 export type SubtopicPaperMapping = typeof subtopicPaperMappings.$inferSelect;
 export type InsertSubtopicPaperMapping = z.infer<typeof insertSubtopicPaperMappingSchema>;
+
+export const insertTopicEmbeddingSchema = createInsertSchema(topicEmbeddings, {
+  embedding: z.array(z.number()),
+}).omit({ id: true, embeddedAt: true });
+export type TopicEmbedding = typeof topicEmbeddings.$inferSelect;
+export type InsertTopicEmbedding = z.infer<typeof insertTopicEmbeddingSchema>;
 
 export const insertAssessmentObjectiveSchema = createInsertSchema(assessmentObjectives).omit({ id: true });
 export type AssessmentObjective = typeof assessmentObjectives.$inferSelect;
