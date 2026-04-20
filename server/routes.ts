@@ -3378,6 +3378,19 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       let supportingText = "";
       let syllabusContextLabel = "";
+      // Phase 10 — the primary context source is the catalogue (loadCopilotContext
+      // below, driven by assessmentContext.assessmentMeta). The legacy
+      // `syllabus_documents` PDF lookup is now optional back-compat: if a tutor
+      // still relies on an uploaded PDF for a niche syllabus that isn't in the
+      // catalogue yet, we attach the relevant chunks as supporting text. Missing
+      // PDFs are no longer fatal — the catalogue path takes over.
+      const hasCatalogueKeys = assessmentContext
+        && typeof assessmentContext === "object"
+        && (assessmentContext as any).assessmentMeta
+        && (assessmentContext as any).assessmentMeta.examiningBodySlug
+        && (assessmentContext as any).assessmentMeta.levelCode
+        && (assessmentContext as any).assessmentMeta.subjectSlug;
+
       if (syllabusSelection?.board && syllabusSelection?.level && syllabusSelection?.syllabusCode) {
         const syllabusDocument = await storage.getSyllabusDocumentBySelection({
           board: String(syllabusSelection.board),
@@ -3385,12 +3398,17 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           syllabusCode: String(syllabusSelection.syllabusCode),
           tutorId: (req as any).tutorId,
         });
-        if (!syllabusDocument) {
+        if (syllabusDocument) {
+          syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
+          const relevantChunks = scoreSyllabusChunks(syllabusDocument.chunks, text);
+          supportingText += `\nSelected syllabus (uploaded PDF): ${syllabusContextLabel}\n${relevantChunks.join("\n---\n") || syllabusDocument.extractedText.slice(0, 2000)}`;
+        } else if (!hasCatalogueKeys) {
+          // No PDF *and* no catalogue selection → the tutor really has nothing
+          // for us to ground on; keep the old 404 so they're nudged to upload
+          // the syllabus or pick catalogue keys from the builder.
           return res.status(404).json({ message: "Selected syllabus could not be found" });
         }
-        syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
-        const relevantChunks = scoreSyllabusChunks(syllabusDocument.chunks, text);
-        supportingText += `\nSelected syllabus: ${syllabusContextLabel}\n${relevantChunks.join("\n---\n") || syllabusDocument.extractedText.slice(0, 2000)}`;
+        // else: PDF missing but catalogue keys present → silently continue.
       }
 
       const paperCode = text.match(/\b\d{4}\/v\d\/\d{4}\b/i)?.[0];
