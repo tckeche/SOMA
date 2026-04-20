@@ -2,7 +2,6 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { generateWithFallback, callGoogle } from "./aiOrchestrator";
 import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
 import { validateMathQuestion, parseOptionAsNumber } from "./mathValidator";
 
 export const QuestionSchema = z.object({
@@ -42,17 +41,6 @@ export interface AuditedQuizResult {
   telemetry: PipelineTelemetry;
 }
 
-const BlindCheckerAnswerSchema = z.object({
-  questionIndex: z.number().int().min(1),
-  inferredAnswer: z.string().min(1),
-  confidence: z.number().min(0).max(1).optional(),
-  rationale: z.string().optional(),
-});
-
-const BlindCheckerResponseSchema = z.object({
-  answers: z.array(BlindCheckerAnswerSchema),
-});
-
 const GeminiCheckerResponseSchema = z.object({
   questions: z.array(QuestionSchema).min(1),
   warnings: z
@@ -67,19 +55,6 @@ const GeminiCheckerResponseSchema = z.object({
     .default([]),
 });
 
-const DualCheckerIssueSchema = z.object({
-  questionIndex: z.number().int().min(1),
-  field: z.enum(["stem", "options", "explanation", "correct_answer", "overall"]),
-  issue: z.string().min(1),
-  severity: z.enum(["critical", "warning"]).default("warning"),
-  autoFixed: z.boolean().default(false),
-});
-
-const DualCheckerResponseSchema = z.object({
-  questions: z.array(QuestionSchema).min(1),
-  issues: z.array(DualCheckerIssueSchema).default([]),
-});
-
 export interface SomaGenerationContext {
   topic: string;
   subject: string;
@@ -91,8 +66,6 @@ export interface SomaGenerationContext {
   subtopic?: string;
   difficultyDistribution?: { easy: number; medium: number; hard: number };
 }
-
-const MAX_CLAUDE_REWORK_ROUNDS = 2;
 
 const jsonSchema = zodToJsonSchema(QuizResultSchema, "QuizResult");
 
@@ -112,176 +85,6 @@ function dedupeOptions(options: string[], preferred?: string): string[] {
   if (preferred && !out.some((o) => o.trim() === preferred.trim())) out.unshift(preferred.trim());
   while (out.length < 4) out.push(`Option ${out.length + 1}`);
   return out.slice(0, 4);
-}
-
-function normalizeAnswerText(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\$/g, "")
-    .replace(/[^a-z0-9.+\-/%() ]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function mapBlindAnswerToOption(inferredAnswer: string, options: string[]): string | null {
-  const normalizedBlind = normalizeAnswerText(inferredAnswer);
-  if (!normalizedBlind) return null;
-
-  // Direct and near-direct text matches first
-  for (const option of options) {
-    const normOpt = normalizeAnswerText(option);
-    if (!normOpt) continue;
-    if (normOpt === normalizedBlind) return option;
-  }
-  for (const option of options) {
-    const normOpt = normalizeAnswerText(option);
-    if (!normOpt) continue;
-    if (normOpt.includes(normalizedBlind) || normalizedBlind.includes(normOpt)) return option;
-  }
-
-  // Letter fallback (A/B/C/D) if checker returns only the option letter.
-  const letter = normalizedBlind.match(/^([a-d])(?:[\).:\s]|$)/i)?.[1]?.toUpperCase();
-  if (letter) {
-    const idx = letter.charCodeAt(0) - 65;
-    if (idx >= 0 && idx < options.length) return options[idx];
-  }
-  return null;
-}
-
-async function runBlindAnswerConsensusCheck(
-  questions: QuizResult["questions"],
-  context: SomaGenerationContext,
-): Promise<{ warnings: PipelineWarning[]; questions: QuizResult["questions"] }> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!anthropicKey || !geminiKey || process.env.NODE_ENV === "test") {
-    return { warnings: [], questions };
-  }
-
-  const solverPrompt = `You are a strict subject-matter checker for ${context.subject}.
-Solve each question BLIND from the stem only. Do NOT use options because options can be wrong.
-For each question return:
-- questionIndex (1-based)
-- inferredAnswer (the standalone best answer)
-- confidence (0..1)
-- rationale (brief)
-Return valid JSON only.`;
-
-  // Skip questions that the deterministic math validator can already verify.
-  // This avoids paying LLM blind-check cost on items where Stage 4 has final authority.
-  const candidateIndexes: number[] = [];
-  const questionPayload: Array<{ questionIndex: number; stem: string }> = [];
-  for (let i = 0; i < questions.length; i++) {
-    const q = questions[i];
-    const deterministic = validateMathQuestion(q.stem, q.options, q.correct_answer);
-    if (deterministic.verifiable) continue;
-    const questionIndex = i + 1;
-    candidateIndexes.push(questionIndex);
-    questionPayload.push({ questionIndex, stem: q.stem });
-  }
-  if (questionPayload.length === 0) {
-    return { warnings: [], questions };
-  }
-
-  const userPrompt = `Syllabus=${context.syllabus}; level=${context.level}; topic=${context.topic}${context.subtopic ? `; subtopic=${context.subtopic}` : ""}.
-Questions:
-${JSON.stringify(questionPayload, null, 2)}`;
-
-  const geminiPromise = (async () => {
-    const schema = zodToJsonSchema(BlindCheckerResponseSchema, "BlindCheckerResponse");
-    const raw = await callGoogle("gemini-2.5-flash", solverPrompt, userPrompt, schema);
-    return BlindCheckerResponseSchema.parse(JSON.parse(raw));
-  })();
-
-  const claudePromise = (async () => {
-    const anthropic = new Anthropic({ apiKey: anthropicKey });
-    const wrapped: any = zodToJsonSchema(BlindCheckerResponseSchema, "BlindCheckerResponse");
-    const inner: any = wrapped?.definitions?.BlindCheckerResponse ?? zodToJsonSchema(BlindCheckerResponseSchema);
-    const inputSchema: any = { ...inner, type: inner?.type || "object" };
-    delete inputSchema.$schema;
-    delete inputSchema.$ref;
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8_192,
-      temperature: 0,
-      system: solverPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-      tools: [{
-        name: "return_blind_check",
-        description: "Return blind-check answers JSON.",
-        input_schema: inputSchema,
-      }],
-      tool_choice: { type: "tool", name: "return_blind_check" },
-    });
-    const toolBlock = response.content.find((b: any) => b.type === "tool_use");
-    if (!toolBlock || toolBlock.type !== "tool_use") throw new Error("No Claude tool output");
-    return BlindCheckerResponseSchema.parse(toolBlock.input);
-  })();
-
-  const [geminiResult, claudeResult] = await Promise.allSettled([geminiPromise, claudePromise]);
-  const geminiParsed = geminiResult.status === "fulfilled" ? geminiResult.value : null;
-  const claudeParsed = claudeResult.status === "fulfilled" ? claudeResult.value : null;
-  if (geminiResult.status === "rejected") {
-    const error: any = geminiResult.reason;
-    console.warn(`[BLIND_CHECK][Gemini] Failed: ${error?.message || "unknown"}`);
-  }
-  if (claudeResult.status === "rejected") {
-    const error: any = claudeResult.reason;
-    console.warn(`[BLIND_CHECK][Claude] Failed: ${error?.message || "unknown"}`);
-  }
-
-  if (!geminiParsed || !claudeParsed) {
-    return { warnings: [], questions };
-  }
-
-  const geminiByIndex = new Map(geminiParsed.answers.map((a) => [a.questionIndex, a]));
-  const claudeByIndex = new Map(claudeParsed.answers.map((a) => [a.questionIndex, a]));
-
-  const nextQuestions = [...questions];
-  const warnings: PipelineWarning[] = [];
-  for (const questionIndex of candidateIndexes) {
-    const i = questionIndex - 1;
-    const q = nextQuestions[i];
-    const gem = geminiByIndex.get(questionIndex);
-    const cla = claudeByIndex.get(questionIndex);
-    if (!gem || !cla) continue;
-
-    const gemMapped = mapBlindAnswerToOption(gem.inferredAnswer, q.options);
-    const claMapped = mapBlindAnswerToOption(cla.inferredAnswer, q.options);
-
-    if (!gemMapped || !claMapped) {
-      warnings.push({
-        questionIndex,
-        field: "correct_answer",
-        issue: "Blind checkers could not confidently map inferred answers to options; question needs manual review.",
-        autoFixed: false,
-      });
-      continue;
-    }
-
-    if (gemMapped !== claMapped) {
-      warnings.push({
-        questionIndex,
-        field: "correct_answer",
-        issue: `Blind checker disagreement (Gemini="${gemMapped}" vs Claude="${claMapped}").`,
-        autoFixed: false,
-      });
-      continue;
-    }
-
-    if (q.correct_answer !== gemMapped) {
-      const blindExplanation = `Independent blind verification solved the stem answer as "${gem.inferredAnswer}" (Gemini) and "${cla.inferredAnswer}" (Claude), which maps to option "${gemMapped}".`;
-      nextQuestions[i] = { ...q, correct_answer: gemMapped, explanation: blindExplanation };
-      warnings.push({
-        questionIndex,
-        field: "correct_answer",
-        issue: `Blind consensus overrode answer "${q.correct_answer}" -> "${gemMapped}".`,
-        autoFixed: true,
-      });
-    }
-  }
-
-  return { warnings, questions: nextQuestions };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1013,119 +816,6 @@ Formatting rules (mandatory):
   return { result: QuizResultSchema.parse(toolBlock.input), model: "anthropic/claude-sonnet-4-6" };
 }
 
-async function runOpenAIChecker(
-  questions: QuizResult["questions"],
-  context: SomaGenerationContext,
-): Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[]; checkerOk: boolean }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || process.env.NODE_ENV === "test") {
-    return { questions, warnings: [], checkerOk: false };
-  }
-
-  const client = new OpenAI({ apiKey });
-  const schema = zodToJsonSchema(DualCheckerResponseSchema, "DualCheckerResponse");
-  const schemaString = JSON.stringify(schema);
-  const systemPrompt = `You are ChatGPT checker for SOMA.
-Validate each question for: answer correctness, whether the question is solvable, scope fit to subject/syllabus/level/topic, option uniqueness, and answer-explanation consistency.
-Auto-fix safe issues directly in returned questions.
-For uncertain or unresolved correctness, emit a CRITICAL issue with autoFixed=false.
-Never change the number of questions.`;
-  const userPrompt = `Context: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
-Questions:\n${JSON.stringify({ questions }, null, 2)}\n\nReturn JSON matching this schema only:\n${schemaString}`;
-
-  try {
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    });
-    const raw = completion.choices[0]?.message?.content || "";
-    const parsed = DualCheckerResponseSchema.parse(JSON.parse(raw));
-    const warnings: PipelineWarning[] = parsed.issues.map((issue) => ({
-      questionIndex: issue.questionIndex,
-      field: issue.field,
-      issue: `[ChatGPT:${issue.severity}] ${issue.issue}`,
-      autoFixed: issue.autoFixed,
-    }));
-    return { questions: parsed.questions, warnings, checkerOk: true };
-  } catch (error: any) {
-    console.warn(`[OPENAI_CHECKER] Failed: ${error?.message || "unknown"}`);
-    return {
-      questions,
-      warnings: [{
-        questionIndex: 0,
-        field: "overall",
-        issue: `ChatGPT checker unavailable (${error?.message || "unknown error"}).`,
-        autoFixed: false,
-      }],
-      checkerOk: false,
-    };
-  }
-}
-
-async function runGeminiAccuracyChecker(
-  questions: QuizResult["questions"],
-  context: SomaGenerationContext,
-): Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[]; checkerOk: boolean }> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || process.env.NODE_ENV === "test") {
-    return { questions, warnings: [], checkerOk: false };
-  }
-
-  const systemPrompt = `You are Gemini checker for SOMA.
-Validate each question for: answer correctness, solvability, syllabus/level scope adherence, duplicate options, and explanation correctness.
-Auto-fix safe issues directly in returned questions.
-For unresolved or uncertain correctness, emit severity=critical and autoFixed=false.
-Never change question count.`;
-  const userPrompt = `Context: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
-Questions:\n${JSON.stringify({ questions }, null, 2)}`;
-
-  try {
-    const schema = zodToJsonSchema(DualCheckerResponseSchema, "DualCheckerResponse");
-    const raw = await callGoogle("gemini-2.5-flash", systemPrompt, userPrompt, schema);
-    const parsed = DualCheckerResponseSchema.parse(JSON.parse(raw));
-    const warnings: PipelineWarning[] = parsed.issues.map((issue) => ({
-      questionIndex: issue.questionIndex,
-      field: issue.field,
-      issue: `[Gemini:${issue.severity}] ${issue.issue}`,
-      autoFixed: issue.autoFixed,
-    }));
-    return { questions: parsed.questions, warnings, checkerOk: true };
-  } catch (error: any) {
-    console.warn(`[GEMINI_ACCURACY_CHECKER] Failed: ${error?.message || "unknown"}`);
-    return {
-      questions,
-      warnings: [{
-        questionIndex: 0,
-        field: "overall",
-        issue: `Gemini checker unavailable (${error?.message || "unknown error"}).`,
-        autoFixed: false,
-      }],
-      checkerOk: false,
-    };
-  }
-}
-
-function mergeCheckerCorrections(
-  original: QuizResult["questions"],
-  chatgptQuestions: QuizResult["questions"],
-  geminiQuestions: QuizResult["questions"],
-): QuizResult["questions"] {
-  return original.map((question, idx) => {
-    const cg = chatgptQuestions[idx] || question;
-    const gm = geminiQuestions[idx] || question;
-    const preferred = cg.correct_answer === gm.correct_answer ? cg : question;
-    return {
-      ...preferred,
-      options: dedupeOptions(preferred.options, preferred.correct_answer),
-    };
-  });
-}
-
 async function runEmergencySingleStageGeneration(
   context: SomaGenerationContext,
   questionCount: number,
@@ -1151,12 +841,16 @@ Critical requirements:
 }
 
 /**
- * Pipeline (simplified):
- *   1. MAKER         — Claude creates all questions + distractors
- *   2. DUAL CHECK    — ChatGPT + Gemini check correctness concurrently
- *   3. REWORK LOOP   — If either checker flags issues, Claude rewrites and both check again
- *                      (hard stop after MAX_CLAUDE_REWORK_ROUNDS to prevent token loops)
- *   4. Deterministic guards + math validator
+ * Pipeline (strict blind dual-verify):
+ *   1. MAKER           — Claude drafts questions + distractors
+ *   2. SCOPE + GUARDS  — filter to topic; run deterministic integrity guards
+ *   3. BLIND VERIFY    — Claude + Gemini solve from stem only (no options shown);
+ *                        questions where both verifiers agree on the maker's answer
+ *                        are kept; where both agree on a DIFFERENT option, we
+ *                        override; anything else is DROPPED, not shipped.
+ *   4. CAS VALIDATOR   — Deterministic math validator can still override LLMs
+ *                        on verifiable arithmetic questions.
+ *   5. FINAL GUARDS    — integrity guards + MCQ repair, then hard-gate (throw if empty).
  *
  * Returns questions + warnings (for Co-Pilot UI) + telemetry (for cost tracking).
  */
@@ -1174,7 +868,10 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     const merged: QuizResult["questions"] = [];
     const allWarnings: PipelineWarning[] = [];
     let lastTelemetry: PipelineTelemetry = {
-      makerModel: "unknown", checkerModel: "google/gemini-2.5-flash", polishModel: null, totalDurationMs: 0,
+      makerModel: "unknown",
+      checkerModel: "anthropic/claude-sonnet-4-6 + google/gemini-2.5-flash (blind)",
+      polishModel: null,
+      totalDurationMs: 0,
     };
     let remaining = questionCount;
     while (remaining > 0) {
@@ -1227,54 +924,27 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
 
-  // ── STAGE 2/3: CHATGPT + GEMINI CHECKERS (CONCURRENT) + CLAUDE REWORK LOOP ──
+  // ── BLIND DUAL-VERIFY ────────────────────────────────────────────
+  // Claude and Gemini each solve the stem (no options visible). Questions
+  // survive only if both verifiers agree on a single option; we override
+  // the maker when both land on a different option; anything else is
+  // DROPPED so we never ship an unverified answer.
   const warnings: PipelineWarning[] = [];
-  let polishModel: string | null = null;
-  for (let round = 1; round <= MAX_CLAUDE_REWORK_ROUNDS; round++) {
-    const [chatgptCheck, geminiCheck] = await Promise.all([
-      runOpenAIChecker(parsed.questions, context),
-      runGeminiAccuracyChecker(parsed.questions, context),
-    ]);
-
-    parsed.questions = mergeCheckerCorrections(parsed.questions, chatgptCheck.questions, geminiCheck.questions);
-
-    const roundWarnings = [...chatgptCheck.warnings, ...geminiCheck.warnings].map((w) => ({
-      ...w,
-      issue: `[Round ${round}] ${w.issue}`,
-    }));
-    warnings.push(...roundWarnings);
-
-    const unresolved = roundWarnings.filter((w) => !w.autoFixed && w.questionIndex > 0);
-    if (unresolved.length === 0) {
-      break;
-    }
-
-    if (round >= MAX_CLAUDE_REWORK_ROUNDS) {
-      warnings.push({
-        questionIndex: 0,
-        field: "overall",
-        issue: `Reached rework cap (${MAX_CLAUDE_REWORK_ROUNDS} rounds). Remaining issues require tutor review.`,
-        autoFixed: false,
-      });
-      break;
-    }
-
-    const polishResult = await runClaudePolish(parsed.questions, unresolved, context);
-    parsed.questions = polishResult.questions;
-    if (polishResult.durationMs > 0) polishModel = "anthropic/claude-sonnet-4-6";
+  const verify = await verifyQuestionsBlind(parsed.questions, context);
+  parsed.questions = verify.questions;
+  warnings.push(...verify.warnings);
+  if (verify.verificationStatus === "failed") {
+    warnings.push({
+      questionIndex: 0,
+      field: "overall",
+      issue: "Blind verification could not run — all non-math questions were dropped to protect answer integrity.",
+      autoFixed: false,
+    });
   }
 
-  // Extra blind consensus pass for non-deterministic items.
-  if (warnings.some((w) => !w.autoFixed && w.questionIndex > 0)) {
-    const blindCheckResult = await runBlindAnswerConsensusCheck(parsed.questions, context);
-    parsed.questions = blindCheckResult.questions;
-    warnings.push(...blindCheckResult.warnings);
-  }
-
-  // ── STAGE 4: DETERMINISTIC MATH VALIDATION ────────────────────────
+  // ── DETERMINISTIC MATH VALIDATION ────────────────────────────────
   // For verifiable maths questions (function evaluation, arithmetic) we re-derive
-  // the answer with a CAS and OVERRIDE the LLM if it disagrees. This is the last
-  // line of defence against confidently-wrong AI arithmetic like "8 - 6 + 1 = 5".
+  // the answer with a CAS and OVERRIDE the LLM if it disagrees.
   parsed.questions = parsed.questions.map((q, idx) => {
     const v = validateMathQuestion(q.stem, q.options, q.correct_answer);
     if (!v.verifiable || !v.matchedOption) return q;
@@ -1297,13 +967,18 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   parsed.questions = applyDeterministicIntegrityGuards(parsed.questions);
   parsed.questions = validateAndCorrectMcqAnswers(parsed.questions);
 
+  // Hard gate — never return an empty quiz silently.
+  if (parsed.questions.length === 0) {
+    throw new Error("Quiz generation failed: no questions survived blind dual-verification. Try again or adjust the topic.");
+  }
+
   return {
     questions: parsed.questions,
     warnings,
     telemetry: {
       makerModel,
-      checkerModel: "openai/gpt-4o + google/gemini-2.5-flash",
-      polishModel,
+      checkerModel: "anthropic/claude-sonnet-4-6 + google/gemini-2.5-flash (blind)",
+      polishModel: null,
       totalDurationMs: Date.now() - overallStart,
     },
   };
