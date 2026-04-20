@@ -313,4 +313,26 @@ describe("formatCopilotContextAsText — snapshot of payload shape", () => {
     expect(text).toContain("• 2 Algebra and graphs");
     expect(text).toContain("P2 (0580/2) [IGCSE]");
   });
+
+  it("renders the auto-select note when topics came from a semantic query", () => {
+    // Phase 9: when topics were auto-picked by semantic search over the tutor's
+    // prompt, the serialised text tells the LLM (and tutor) which topics we
+    // matched so they can redirect if we got it wrong.
+    const ctx = assembleCopilotContext({
+      body: cambridge,
+      level: asLevel,
+      subject: mathSubject,
+      syllabus: syllabus9709,
+      topicContexts: [pureMathsTopicMixedTiers],
+    });
+    ctx.autoSelectedFromQuery = {
+      queryText: "functions and their inverses",
+      hits: [{ topicId: 3001, score: 0.834 }],
+    };
+    const text = formatCopilotContextAsText(ctx);
+    expect(text).toContain(
+      'Note: topics auto-selected from tutor prompt "functions and their inverses" → #3001 (score=0.834)',
+    );
+    expect(text).toContain("Selected topics (1):");
+  });
 });

@@ -3454,14 +3454,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           // context rather than just free-text labels.
           if (m.examiningBodySlug && m.levelCode && m.subjectSlug) {
             try {
+              const selectedIds = Array.isArray(m.selectedTopicIds)
+                ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
+                : [];
               const ctx = await loadCopilotContext({
                 bodySlug: String(m.examiningBodySlug),
                 levelCode: String(m.levelCode),
                 subjectSlug: String(m.subjectSlug),
-                selectedTopicIds: Array.isArray(m.selectedTopicIds)
-                  ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
-                  : [],
+                selectedTopicIds: selectedIds,
                 timeLimitMinutes: typeof m.timeLimitMinutes === "number" ? m.timeLimitMinutes : null,
+                // Phase 9 — when no explicit topics are picked, use the tutor's
+                // message as a semantic query to auto-select relevant topics.
+                queryText: selectedIds.length === 0 ? text : undefined,
               });
               if (ctx) {
                 catalogueBlock = `=== CATALOGUE CONTEXT ===\n${formatCopilotContextAsText(ctx)}\n=========================`;
@@ -4403,6 +4407,7 @@ ${JSON.stringify({
     subjectSlug?: string;
     selectedTopicIds?: number[];
     timeLimitMinutes?: number | null;
+    queryText?: string;
   }) {
     if (!params.examiningBodySlug || !params.levelCode || !params.subjectSlug) return null;
     try {
@@ -4412,6 +4417,7 @@ ${JSON.stringify({
         subjectSlug: params.subjectSlug,
         selectedTopicIds: params.selectedTopicIds ?? [],
         timeLimitMinutes: params.timeLimitMinutes ?? null,
+        queryText: params.queryText,
       });
     } catch (err: any) {
       console.warn(`[SOMA_CATALOGUE_CTX] Failed to load catalogue context: ${err?.message || "unknown"}`);
@@ -4524,6 +4530,12 @@ ${JSON.stringify({
         subjectSlug,
         selectedTopicIds,
         timeLimitMinutes,
+        // Phase 9 — if the tutor didn't pick topics, let semantic search match
+        // the free-text prompt against the catalogue (topic + subtopic +
+        // curriculumContext all concatenated gives the search something solid).
+        queryText: (selectedTopicIds && selectedTopicIds.length > 0)
+          ? undefined
+          : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
       const result = await generateAuditedQuiz({
@@ -4611,6 +4623,12 @@ ${JSON.stringify({
         subjectSlug,
         selectedTopicIds,
         timeLimitMinutes,
+        // Phase 9 — if the tutor didn't pick topics, let semantic search match
+        // the free-text prompt against the catalogue (topic + subtopic +
+        // curriculumContext all concatenated gives the search something solid).
+        queryText: (selectedTopicIds && selectedTopicIds.length > 0)
+          ? undefined
+          : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
       const result = await generateAuditedQuiz({
