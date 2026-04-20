@@ -20,6 +20,14 @@ import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGrap
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
+import {
+  getTopicContext,
+  listExaminingBodies,
+  listLevelsForBody,
+  listSubjectsForBodyLevel,
+  listTopics as listCatalogueTopics,
+  resolveSyllabus,
+} from "./services/syllabusCatalogue";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -2088,9 +2096,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // Get topic inventory for a syllabus
+  // DEPRECATED: replaced by /api/catalogue/topics (Phase 4). This endpoint
+  // reads the legacy Phase-1 syllabusTopicInventory table, which is kept live
+  // until the Phase 5 frontend cutover. New callers should use the catalogue
+  // endpoints; existing callers continue to work unchanged.
   app.get("/api/tutor/syllabus-topics", requireTutor, async (req, res) => {
     try {
+      res.setHeader("Deprecation", "true");
+      res.setHeader("Link", '</api/catalogue/topics>; rel="successor-version"');
       const { board, syllabusCode, subject } = req.query;
       const topics = await storage.listSyllabusTopicInventory({
         board: board ? String(board) : undefined,
@@ -2100,6 +2113,106 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(topics);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch topics" });
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Syllabus catalogue (Phase 4). Tutor-scoped reads over the normalised
+  // Cambridge syllabus tables populated by scripts/ingestSyllabi.
+  // ---------------------------------------------------------------------
+  const catalogueQuerySchemas = {
+    levels: z.object({ body: z.string().min(1, "body is required") }),
+    subjects: z.object({
+      body: z.string().min(1, "body is required"),
+      level: z.string().min(1, "level is required"),
+    }),
+    topics: z.object({
+      body: z.string().min(1, "body is required"),
+      level: z.string().min(1, "level is required"),
+      subject: z.string().min(1, "subject is required"),
+    }),
+    topicContext: z.object({
+      topicIds: z
+        .string()
+        .min(1, "topicIds is required")
+        .transform((raw, ctx) => {
+          const ids = raw
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+            .map((s) => Number(s));
+          if (ids.some((n) => !Number.isInteger(n) || n <= 0)) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "topicIds must be comma-separated positive integers" });
+            return z.NEVER;
+          }
+          return ids;
+        }),
+    }),
+  };
+
+  app.get("/api/catalogue/examining-bodies", requireTutor, async (_req, res) => {
+    try {
+      const bodies = await listExaminingBodies();
+      res.json(bodies);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list examining bodies" });
+    }
+  });
+
+  app.get("/api/catalogue/levels", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.levels.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const levels = await listLevelsForBody(parsed.data.body);
+      res.json(levels);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list levels" });
+    }
+  });
+
+  app.get("/api/catalogue/subjects", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.subjects.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const subjects = await listSubjectsForBodyLevel(parsed.data.body, parsed.data.level);
+      res.json(subjects);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list subjects" });
+    }
+  });
+
+  app.get("/api/catalogue/topics", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.topics.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const { body, level, subject } = parsed.data;
+      const syllabus = await resolveSyllabus(body, level, subject);
+      if (!syllabus) {
+        return res.status(404).json({ message: "No syllabus matches the given body/level/subject" });
+      }
+      const topics = await listCatalogueTopics(body, level, subject);
+      res.json({ syllabus, topics });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list topics" });
+    }
+  });
+
+  app.get("/api/catalogue/topic-context", requireTutor, async (req, res) => {
+    const parsed = catalogueQuerySchemas.topicContext.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
+    }
+    try {
+      const context = await getTopicContext(parsed.data.topicIds);
+      res.json(context);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch topic context" });
     }
   });
 
