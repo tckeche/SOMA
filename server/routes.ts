@@ -14,6 +14,7 @@ import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runGeminiFormattingCheck, runClaudePolish, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
+import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
@@ -3437,6 +3438,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       // ── Build assessment metadata snapshot ───────────────────────────────
       let assessmentSnapshot = "";
+      let catalogueBlock = "";
       if (assessmentContext && typeof assessmentContext === "object") {
         const ac = assessmentContext as Record<string, any>;
         const lines: string[] = ["=== ASSESSMENT METADATA ==="];
@@ -3446,6 +3448,28 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             ? m.topics.join(", ")
             : (m.topic || "—");
           lines.push(`Title: "${m.title || "Untitled"}" | Subject: ${m.subject || "—"} | Level: ${m.level || "—"} | Syllabus: ${m.syllabus || "—"} | Topics: ${topicsLabel}`);
+
+          // Phase 6: if catalogue-keyed fields are present, load the rich
+          // digest so the copilot has subtopics/requirements/competencies in
+          // context rather than just free-text labels.
+          if (m.examiningBodySlug && m.levelCode && m.subjectSlug) {
+            try {
+              const ctx = await loadCopilotContext({
+                bodySlug: String(m.examiningBodySlug),
+                levelCode: String(m.levelCode),
+                subjectSlug: String(m.subjectSlug),
+                selectedTopicIds: Array.isArray(m.selectedTopicIds)
+                  ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
+                  : [],
+                timeLimitMinutes: typeof m.timeLimitMinutes === "number" ? m.timeLimitMinutes : null,
+              });
+              if (ctx) {
+                catalogueBlock = `=== CATALOGUE CONTEXT ===\n${formatCopilotContextAsText(ctx)}\n=========================`;
+              }
+            } catch (err: any) {
+              console.warn(`[COPILOT_CHAT] catalogue context load failed: ${err?.message || "unknown"}`);
+            }
+          }
         }
         if (ac.difficultySpread && typeof ac.difficultySpread === "object") {
           const ds = ac.difficultySpread as Record<string, number>;
@@ -3599,6 +3623,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const userPrompt = [
         draftContextBlock || "(Draft is currently empty — no questions yet)",
         assessmentSnapshot,
+        catalogueBlock,
         `Current request from tutor:\n${text}`,
         `Conversation memory:\n${memoryTranscript || "No previous turns."}`,
         `Supporting context:\n${supportingText || "No extra context."}`,
@@ -4362,7 +4387,37 @@ ${JSON.stringify({
       medium: z.number().min(0).max(100),
       hard: z.number().min(0).max(100),
     }).optional(),
+    // Phase 6 — optional catalogue-keyed identifiers. When supplied the
+    // pipeline pulls a rich syllabus digest (subtopics / learning requirements
+    // / competencies / papers) and injects it into every LLM stage.
+    examiningBodySlug: z.string().optional(),
+    levelCode: z.string().optional(),
+    subjectSlug: z.string().optional(),
+    selectedTopicIds: z.array(z.number().int().positive()).optional(),
+    timeLimitMinutes: z.number().int().positive().optional(),
   });
+
+  async function maybeLoadCatalogueContext(params: {
+    examiningBodySlug?: string;
+    levelCode?: string;
+    subjectSlug?: string;
+    selectedTopicIds?: number[];
+    timeLimitMinutes?: number | null;
+  }) {
+    if (!params.examiningBodySlug || !params.levelCode || !params.subjectSlug) return null;
+    try {
+      return await loadCopilotContext({
+        bodySlug: params.examiningBodySlug,
+        levelCode: params.levelCode,
+        subjectSlug: params.subjectSlug,
+        selectedTopicIds: params.selectedTopicIds ?? [],
+        timeLimitMinutes: params.timeLimitMinutes ?? null,
+      });
+    } catch (err: any) {
+      console.warn(`[SOMA_CATALOGUE_CTX] Failed to load catalogue context: ${err?.message || "unknown"}`);
+      return null;
+    }
+  }
 
   function parseBoardAndSyllabusCode(raw: string): { board: string; syllabusCode: string } {
     const trimmed = raw.trim();
@@ -4429,7 +4484,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
       const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
@@ -4442,6 +4497,14 @@ ${JSON.stringify({
         subtopic,
       });
 
+      const catalogueContext = await maybeLoadCatalogueContext({
+        examiningBodySlug,
+        levelCode,
+        subjectSlug,
+        selectedTopicIds,
+        timeLimitMinutes,
+      });
+
       const result = await generateAuditedQuiz({
         topic,
         subject,
@@ -4452,6 +4515,7 @@ ${JSON.stringify({
         questionCount,
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
+        catalogueContext: catalogueContext ?? undefined,
       });
 
       const quiz = await storage.createSomaQuiz({
@@ -4505,7 +4569,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
@@ -4520,6 +4584,14 @@ ${JSON.stringify({
         tutorId,
       });
 
+      const catalogueContext = await maybeLoadCatalogueContext({
+        examiningBodySlug,
+        levelCode,
+        subjectSlug,
+        selectedTopicIds,
+        timeLimitMinutes,
+      });
+
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
@@ -4527,6 +4599,7 @@ ${JSON.stringify({
         questionCount,
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
+        catalogueContext: catalogueContext ?? undefined,
       });
 
       const adopted = await storage.getAdoptedStudents(tutorId);
