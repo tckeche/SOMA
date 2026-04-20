@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import type { SomaQuiz, SomaQuestion } from "@shared/schema";
-import { STANDARDIZED_SUBJECTS } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation, useParams } from "wouter";
 import {
   ArrowLeft, Send, Loader2, Sparkles, FileStack, Trash2,
-  X, Pencil, BookOpen,
+  X, Pencil,
   Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard,
   Save, AlertCircle, AlertTriangle, StopCircle, RefreshCw
 } from "lucide-react";
@@ -33,6 +32,7 @@ import {
   type TutorAssessmentDraft,
 } from "@/lib/tutorAssessmentDraft";
 import DraftRecoveryBanner from "@/components/tutor/DraftRecoveryBanner";
+import AssessmentWizard from "@/components/tutor/AssessmentWizard";
 
 // ── Draft question type (mirrors server DraftQuestion) ───────────────────────
 export interface DraftQuestion {
@@ -148,22 +148,6 @@ function getDraftValidationError(questions: DraftQuestion[]): string | null {
   return null;
 }
 
-const ALL_LEVEL_OPTIONS = ["University", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "IGCSE", "AS", "A2", "Other"];
-const SYLLABUS_LEVEL_MAP: Record<string, string[]> = {
-  cambridge: ["IGCSE", "AS", "A2", "Other"],
-  edexcel: ["IGCSE", "AS", "A2", "Other"],
-  aqa: ["IGCSE", "AS", "A2", "Other"],
-  ocr: ["IGCSE", "AS", "A2", "Other"],
-  ib: ["IGCSE", "Other"],
-};
-function getLevelsForSyllabus(syllabus: string): string[] {
-  const key = syllabus.trim().toLowerCase();
-  for (const [prefix, levels] of Object.entries(SYLLABUS_LEVEL_MAP)) {
-    if (key.includes(prefix)) return levels;
-  }
-  return ALL_LEVEL_OPTIONS;
-}
-
 const PIPELINE_STAGES = [
   { stage: 1, icon: "brain", label: "Drafting questions (GPT-4o)", aiName: "Maker" },
   { stage: 2, icon: "scan", label: "Auditing formatting & accuracy (Gemini Flash)", aiName: "Checker" },
@@ -179,11 +163,21 @@ export default function BuilderPage() {
   const isEditMode = editId !== null;
 
   const [title, setTitle] = useState("");
-  const [syllabus, setSyllabus] = useState("");
-  const [level, setLevel] = useState("");
-  const [subject, setSubject] = useState("");
-  const [topics, setTopics] = useState<string[]>([]);
+  // Catalogue selections (Phase 5). The old free-text subject/level/syllabus
+  // strings are derived from these on the fly when we POST to the quiz API.
+  const [examiningBodySlug, setExaminingBodySlug] = useState<string>("cambridge");
+  const [levelCode, setLevelCode] = useState<string>("");
+  const [subjectSlug, setSubjectSlug] = useState<string>("");
+  const [selectedTopicIds, setSelectedTopicIds] = useState<number[]>([]);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
+  // Wizard step: 0=Body, 1=Level, 2=Subject, 3=Topics, 4=Time limit.
+  // In edit mode we jump straight to the end (everything already filled).
+  const [wizardStep, setWizardStep] = useState<0 | 1 | 2 | 3 | 4>(0);
+  // Resolved Cambridge syllabus code, synced from the /api/catalogue/topics
+  // response. Declared here (rather than inline with the query hook below) so
+  // that the debounced-draft-write effect can reference it without a
+  // temporal-dead-zone error.
+  const [resolvedSyllabusCode, setResolvedSyllabusCode] = useState<string>("");
 
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState<{ role: "user" | "ai"; text: string; metadata?: { provider: string; model: string; durationMs: number }; warnings?: { questionIndex: number; field: string; issue: string; autoFixed: boolean }[] }[]>([]);
@@ -294,17 +288,18 @@ export default function BuilderPage() {
     if (!key) return;
     // Don't save an empty shell — just clutters storage.
     const hasContent =
-      title.trim() || subject.trim() || level.trim() ||
-      syllabus.trim() || topics.length > 0 || msg.trim();
+      title.trim() || levelCode.trim() || subjectSlug.trim() ||
+      selectedTopicIds.length > 0 || msg.trim();
     if (!hasContent) return;
     if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = setTimeout(() => {
       writeTutorDraft(key, {
         title,
-        subject,
-        level,
-        syllabus,
-        topics,
+        examiningBodySlug,
+        levelCode,
+        subjectSlug,
+        syllabusCode: resolvedSyllabusCode,
+        selectedTopicIds,
         timeLimitMinutes,
         prompt: msg,
       });
@@ -312,7 +307,7 @@ export default function BuilderPage() {
     return () => {
       if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     };
-  }, [isEditMode, tutorUserId, activeQuizId, title, subject, level, syllabus, topics, timeLimitMinutes, msg]);
+  }, [isEditMode, tutorUserId, activeQuizId, title, examiningBodySlug, levelCode, subjectSlug, resolvedSyllabusCode, selectedTopicIds, timeLimitMinutes, msg]);
 
   // Clear the local draft as soon as the server-side quiz row exists — the
   // server's draft API owns post-creation state.
@@ -326,16 +321,23 @@ export default function BuilderPage() {
   const applyRecoveredDraft = useCallback(() => {
     if (!recoveredDraft) return;
     setTitle(recoveredDraft.title);
-    setSubject(recoveredDraft.subject);
-    setLevel(recoveredDraft.level);
-    setSyllabus(recoveredDraft.syllabus);
-    setTopics(Array.isArray(recoveredDraft.topics) ? recoveredDraft.topics : []);
+    setExaminingBodySlug(recoveredDraft.examiningBodySlug || "cambridge");
+    setLevelCode(recoveredDraft.levelCode);
+    setSubjectSlug(recoveredDraft.subjectSlug);
+    setResolvedSyllabusCode(recoveredDraft.syllabusCode);
+    setSelectedTopicIds(Array.isArray(recoveredDraft.selectedTopicIds) ? recoveredDraft.selectedTopicIds : []);
     setTimeLimitMinutes(
       Number.isFinite(recoveredDraft.timeLimitMinutes) && recoveredDraft.timeLimitMinutes > 0
         ? recoveredDraft.timeLimitMinutes
         : 60,
     );
     setMsg(recoveredDraft.prompt);
+    // Jump to the furthest-filled step so the tutor isn't forced to re-click
+    // through choices they've already made.
+    if (recoveredDraft.subjectSlug) setWizardStep(3);
+    else if (recoveredDraft.levelCode) setWizardStep(2);
+    else if (recoveredDraft.examiningBodySlug) setWizardStep(1);
+    else setWizardStep(0);
     setRecoveredDraft(null);
     setDraftBannerDismissed(true);
   }, [recoveredDraft]);
@@ -349,13 +351,14 @@ export default function BuilderPage() {
 
   const validateMeta = useCallback(() => {
     if (!title.trim()) return "Assessment title is required.";
-    if (!subject.trim()) return "Please select a subject.";
-    if (!level.trim()) return "Please select a level.";
+    if (!examiningBodySlug.trim()) return "Please select an examining body.";
+    if (!levelCode.trim()) return "Please select a level.";
+    if (!subjectSlug.trim()) return "Please select a subject.";
     if (!Number.isFinite(timeLimitMinutes) || timeLimitMinutes < 1 || timeLimitMinutes > 300) {
       return "Time limit must be between 1 and 300 minutes.";
     }
     return null;
-  }, [title, subject, level, timeLimitMinutes]);
+  }, [title, examiningBodySlug, levelCode, subjectSlug, timeLimitMinutes]);
 
   const authHeaders = useCallback((): Record<string, string> => {
     return createIdentityHeaders(
@@ -403,97 +406,108 @@ export default function BuilderPage() {
 
   const authenticated = tutorSession?.authenticated === true;
 
-  // Canonical curriculum library — the board-issued syllabi ingested from
-  // /curriculum-docs. Source of truth for the Syllabus dropdown; tutor-private
-  // uploads are NOT included here.
-  interface SyllabusDocSummary {
-    id: number;
-    board: string;
-    level: string | null;
-    syllabusCode: string;
-    subject: string | null;
-    filename: string;
+  // ── Catalogue (Phase 5) ────────────────────────────────────────────────────
+  // Step-by-step drill-down: examining bodies → levels → subjects → topics.
+  // Each layer depends on the previous selections, so we gate each query on
+  // its prerequisites being filled.
+  interface ExaminingBodyDto { id: number; slug: string; displayName: string; }
+  interface LevelDto { id: number; code: string; displayName: string; topBand: string; sortOrder: number; }
+  interface SubjectDto { id: number; slug: string; name: string; }
+  interface SyllabusDto {
+    id: number; examiningBodyId: number; subjectId: number;
+    topBand: string; syllabusCode: string; title: string;
+    yearsValidFrom: number | null; yearsValidTo: number | null;
   }
-  const curriculumQueryParams = useMemo(() => {
-    const params = new URLSearchParams();
-    if (subject) params.set("subject", subject);
-    if (level) params.set("level", level);
-    return params.toString();
-  }, [subject, level]);
-  const { data: syllabusDocs = [], isLoading: syllabusDocsLoading } = useQuery<SyllabusDocSummary[]>({
-    queryKey: ["/api/tutor/curriculum/syllabi", curriculumQueryParams],
+  interface PaperSummaryDto {
+    id: number; paperNumber: number; code: string | null; title: string;
+    levelTier: string | null; marks: number | null; durationMinutes: number | null;
+  }
+  interface TopicListItemDto {
+    id: number; topicNumber: string; title: string; description: string | null;
+    levelTiers: string[]; sortOrder: number;
+    strandName: string | null; papers: PaperSummaryDto[];
+  }
+
+  const { data: examiningBodies = [], isLoading: bodiesLoading } = useQuery<ExaminingBodyDto[]>({
+    queryKey: ["/api/catalogue/examining-bodies"],
     queryFn: async () => {
-      const url = curriculumQueryParams
-        ? `/api/tutor/curriculum/syllabi?${curriculumQueryParams}`
-        : "/api/tutor/curriculum/syllabi";
-      const res = await authFetch(url);
+      const res = await authFetch("/api/catalogue/examining-bodies");
       if (!res.ok) return [];
       return res.json();
     },
     enabled: authenticated,
   });
 
-  // The user picks a specific canonical syllabus document; that choice both
-  // fills the free-text `syllabus` column on the quiz and drives the topic
-  // picker below. Stored as the doc id so we can look up board/code/subject
-  // for the topics query without re-fetching.
-  const [syllabusDocId, setSyllabusDocId] = useState<number | null>(null);
-  const selectedSyllabusDoc = useMemo(
-    () => syllabusDocs.find((d) => d.id === syllabusDocId) ?? null,
-    [syllabusDocs, syllabusDocId],
-  );
-
-  // Human-readable syllabus string we store on the quiz row. Used by the
-  // existing level-map heuristic and shown on the student dashboard.
-  function formatSyllabusLabel(doc: SyllabusDocSummary): string {
-    return [doc.board, doc.syllabusCode].filter(Boolean).join(" · ");
-  }
-
-  // Topic inventory for the selected syllabus — AI-extracted rows keyed on
-  // (board, syllabusCode, subject). One row per (topic, subtopic) pair.
-  interface SyllabusTopic {
-    id: number;
-    board: string;
-    syllabusCode: string;
-    subject: string | null;
-    topic: string;
-    subtopic: string | null;
-  }
-  const topicsQueryParams = useMemo(() => {
-    if (!selectedSyllabusDoc) return null;
-    const params = new URLSearchParams();
-    params.set("board", selectedSyllabusDoc.board);
-    params.set("syllabusCode", selectedSyllabusDoc.syllabusCode);
-    if (selectedSyllabusDoc.subject) params.set("subject", selectedSyllabusDoc.subject);
-    return params.toString();
-  }, [selectedSyllabusDoc]);
-  const { data: syllabusTopics = [], isLoading: topicsLoading } = useQuery<SyllabusTopic[]>({
-    queryKey: ["/api/tutor/syllabus-topics", topicsQueryParams],
+  const { data: catalogueLevels = [], isLoading: levelsLoading } = useQuery<LevelDto[]>({
+    queryKey: ["/api/catalogue/levels", examiningBodySlug],
     queryFn: async () => {
-      if (!topicsQueryParams) return [];
-      const res = await authFetch(`/api/tutor/syllabus-topics?${topicsQueryParams}`);
+      const res = await authFetch(`/api/catalogue/levels?body=${encodeURIComponent(examiningBodySlug)}`);
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: authenticated && !!topicsQueryParams,
+    enabled: authenticated && !!examiningBodySlug,
   });
 
-  // Group the flat inventory into { topic → subtopics[] } for rendering. The
-  // tutor ticks at the topic level (one box per topic); selecting a topic
-  // covers all of its subtopics. Subtopics are shown as a short hint.
-  const topicGroups = useMemo(() => {
-    const groups = new Map<string, Set<string>>();
-    for (const row of syllabusTopics) {
-      const topicName = (row.topic || "").trim();
-      if (!topicName) continue;
-      if (!groups.has(topicName)) groups.set(topicName, new Set());
-      const sub = (row.subtopic || "").trim();
-      if (sub) groups.get(topicName)!.add(sub);
-    }
-    return Array.from(groups.entries())
-      .map(([topic, subs]) => ({ topic, subtopics: Array.from(subs).sort((a, b) => a.localeCompare(b)) }))
-      .sort((a, b) => a.topic.localeCompare(b.topic));
-  }, [syllabusTopics]);
+  const { data: catalogueSubjects = [], isLoading: subjectsLoading } = useQuery<SubjectDto[]>({
+    queryKey: ["/api/catalogue/subjects", examiningBodySlug, levelCode],
+    queryFn: async () => {
+      const res = await authFetch(
+        `/api/catalogue/subjects?body=${encodeURIComponent(examiningBodySlug)}&level=${encodeURIComponent(levelCode)}`,
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: authenticated && !!examiningBodySlug && !!levelCode,
+  });
+
+  const { data: topicsPayload, isLoading: topicsLoading } = useQuery<{ syllabus: SyllabusDto; topics: TopicListItemDto[] }>({
+    queryKey: ["/api/catalogue/topics", examiningBodySlug, levelCode, subjectSlug],
+    queryFn: async () => {
+      const res = await authFetch(
+        `/api/catalogue/topics?body=${encodeURIComponent(examiningBodySlug)}&level=${encodeURIComponent(levelCode)}&subject=${encodeURIComponent(subjectSlug)}`,
+      );
+      if (!res.ok) throw new Error("Failed to load topics");
+      return res.json();
+    },
+    enabled: authenticated && !!examiningBodySlug && !!levelCode && !!subjectSlug,
+  });
+  const syllabusFromCatalogue = topicsPayload?.syllabus ?? null;
+  const catalogueTopics = useMemo(() => topicsPayload?.topics ?? [], [topicsPayload]);
+
+  // Sync the resolved syllabus code (declared earlier) whenever the topics
+  // query returns a new syllabus for the current body/level/subject.
+  useEffect(() => {
+    setResolvedSyllabusCode(syllabusFromCatalogue?.syllabusCode ?? "");
+  }, [syllabusFromCatalogue]);
+
+  // Display names for the currently-selected catalogue entries. Used when we
+  // send the legacy string fields (subject/level/syllabus) to the quiz API.
+  const selectedBody = useMemo(
+    () => examiningBodies.find((b) => b.slug === examiningBodySlug) ?? null,
+    [examiningBodies, examiningBodySlug],
+  );
+  const selectedLevel = useMemo(
+    () => catalogueLevels.find((l) => l.code === levelCode) ?? null,
+    [catalogueLevels, levelCode],
+  );
+  const selectedSubject = useMemo(
+    () => catalogueSubjects.find((s) => s.slug === subjectSlug) ?? null,
+    [catalogueSubjects, subjectSlug],
+  );
+
+  // Legacy-compatible strings we still write onto the quiz row. Reconstructed
+  // from the catalogue on every render so they stay in sync with the wizard.
+  const legacySubjectName = selectedSubject?.name ?? "";
+  const legacyLevelLabel = selectedLevel?.code ?? levelCode;
+  const legacySyllabusLabel = useMemo(() => {
+    if (!selectedBody || !syllabusFromCatalogue) return "";
+    return `${selectedBody.displayName} · ${syllabusFromCatalogue.syllabusCode}`;
+  }, [selectedBody, syllabusFromCatalogue]);
+  const selectedTopicTitles = useMemo(() => {
+    if (catalogueTopics.length === 0) return [] as string[];
+    const byId = new Map(catalogueTopics.map((t) => [t.id, t.title]));
+    return selectedTopicIds.map((id) => byId.get(id)).filter((t): t is string => !!t);
+  }, [catalogueTopics, selectedTopicIds]);
 
 
   const { data: quizData, isLoading: quizLoading } = useQuery<SomaQuiz & { questions: SomaQuestion[] }>({
@@ -506,37 +520,59 @@ export default function BuilderPage() {
     enabled: authenticated && activeQuizId !== null,
   });
 
-  // Populate metadata from quizData on first load
+  // Populate metadata from quizData on first load.
+  // quizData still carries the pre-Phase-5 free-text fields (subject/level/
+  // syllabus/topics as strings). We seed title + time limit directly and try
+  // to map the catalogue fields by best-effort slug lookup in the effects
+  // below. In edit mode we jump the wizard to the final step so the tutor
+  // lands straight on the parameter summary.
+  const [savedLegacyTopics, setSavedLegacyTopics] = useState<string[]>([]);
   useEffect(() => {
     if (quizData && !populated) {
       setTitle(quizData.title);
-      setSyllabus(quizData.syllabus || "");
-      setLevel(quizData.level || "");
-      setSubject(quizData.subject || "");
-      // Prefer the stored topics[] array. Fall back to the legacy singular
-      // `topic` column for quizzes saved before multi-topic existed — unless
-      // the tutor never picked one and we stored the title as a placeholder,
-      // in which case start empty so they re-pick against the inventory.
+      const savedLevel = (quizData.level || "").trim();
+      if (savedLevel === "IGCSE" || savedLevel === "AS" || savedLevel === "A2") {
+        setLevelCode(savedLevel);
+      }
       const savedTopics = Array.isArray((quizData as any).topics) ? (quizData as any).topics as string[] : [];
       if (savedTopics.length > 0) {
-        setTopics(savedTopics);
+        setSavedLegacyTopics(savedTopics);
       } else {
-        const savedTopic = quizData.topic || "";
-        setTopics(savedTopic && savedTopic !== quizData.title ? [savedTopic] : []);
+        const singular = (quizData.topic || "").trim();
+        if (singular && singular !== quizData.title) setSavedLegacyTopics([singular]);
       }
       setTimeLimitMinutes(quizData.timeLimitMinutes ?? 60);
       setPopulated(true);
+      if (isEditMode) setWizardStep(4);
     }
-  }, [quizData, populated]);
+  }, [quizData, populated, isEditMode]);
 
-  // Once both the quiz metadata and the syllabus catalogue have loaded, try
-  // to pre-select the syllabus document that matches the stored syllabus
-  // string so the topic dropdown can populate without extra clicks.
+  // Best-effort map of the legacy subject name → catalogue subject slug.
   useEffect(() => {
-    if (!populated || syllabusDocId !== null || !syllabus || syllabusDocs.length === 0) return;
-    const match = syllabusDocs.find((d) => formatSyllabusLabel(d) === syllabus || d.board === syllabus);
-    if (match) setSyllabusDocId(match.id);
-  }, [populated, syllabusDocId, syllabus, syllabusDocs]);
+    if (!populated || subjectSlug || !quizData?.subject) return;
+    if (catalogueSubjects.length === 0) return;
+    const needle = (quizData.subject || "").trim().toLowerCase();
+    if (!needle) return;
+    const hit = catalogueSubjects.find(
+      (s) => s.name.toLowerCase() === needle || s.slug.toLowerCase() === needle,
+    );
+    if (hit) setSubjectSlug(hit.slug);
+  }, [populated, subjectSlug, quizData, catalogueSubjects]);
+
+  // Once the topics have loaded for the recovered subject, resolve legacy
+  // topic titles → topic ids. Strings that no longer map are dropped
+  // silently; the tutor can re-pick them from the refreshed list.
+  useEffect(() => {
+    if (!populated || selectedTopicIds.length > 0 || savedLegacyTopics.length === 0) return;
+    if (catalogueTopics.length === 0) return;
+    const normalize = (s: string) => s.trim().toLowerCase();
+    const byTitle = new Map(catalogueTopics.map((t) => [normalize(t.title), t.id]));
+    const mapped = savedLegacyTopics
+      .map((t) => byTitle.get(normalize(t)))
+      .filter((id): id is number => typeof id === "number");
+    if (mapped.length > 0) setSelectedTopicIds(mapped);
+    setSavedLegacyTopics([]);
+  }, [populated, selectedTopicIds, savedLegacyTopics, catalogueTopics]);
 
   // Load draft from server when quiz is first opened (edit mode).
   // IMPORTANT: We only mark draftLoaded=true once we either:
@@ -617,10 +653,10 @@ export default function BuilderPage() {
     if (!title.trim()) throw new Error("Please fill in a quiz title before generating questions.");
     const quizRes = await authApiRequest("POST", "/api/tutor/quizzes", {
       title: title.trim(),
-      topics,
-      syllabus: syllabus || null,
-      level: level || null,
-      subject: subject || null,
+      topics: selectedTopicTitles,
+      syllabus: legacySyllabusLabel || null,
+      level: legacyLevelLabel || null,
+      subject: legacySubjectName || null,
       timeLimitMinutes,
     });
     const quiz = await quizRes.json();
@@ -671,10 +707,10 @@ export default function BuilderPage() {
       setGenerationState("generation_started");
       animatePipeline(1);
       const context = [
-        subject && `Subject: ${subject}`,
-        level && `Level: ${level}`,
-        syllabus && `Syllabus: ${syllabus}`,
-        topics.length > 0 && `Topics: ${topics.join(" / ")}`,
+        legacySubjectName && `Subject: ${legacySubjectName}`,
+        legacyLevelLabel && `Level: ${legacyLevelLabel}`,
+        legacySyllabusLabel && `Syllabus: ${legacySyllabusLabel}`,
+        selectedTopicTitles.length > 0 && `Topics: ${selectedTopicTitles.join(" / ")}`,
       ].filter(Boolean).join(", ");
       const enrichedMessage = context ? `[${context}]\n\n${message}` : message;
       // Snapshot current draft for context
@@ -688,7 +724,18 @@ export default function BuilderPage() {
       }, { easy: 0, medium: 0, hard: 0 });
 
       const assessmentContext = {
-        assessmentMeta: { title, subject, level, syllabus, topics },
+        assessmentMeta: {
+          title,
+          subject: legacySubjectName,
+          level: legacyLevelLabel,
+          syllabus: legacySyllabusLabel,
+          topics: selectedTopicTitles,
+          examiningBodySlug,
+          levelCode,
+          subjectSlug,
+          syllabusCode: resolvedSyllabusCode,
+          selectedTopicIds,
+        },
         difficultySpread,
       };
 
@@ -827,10 +874,10 @@ export default function BuilderPage() {
       if (validationError) throw new Error(validationError);
       await authApiRequest("PUT", `/api/tutor/quizzes/${activeQuizId}`, {
         title: title.trim(),
-        syllabus: syllabus || null,
-        level: level || null,
-        subject: subject || null,
-        topics,
+        syllabus: legacySyllabusLabel || null,
+        level: legacyLevelLabel || null,
+        subject: legacySubjectName || null,
+        topics: selectedTopicTitles,
         timeLimitMinutes,
       });
     },
@@ -1051,217 +1098,60 @@ export default function BuilderPage() {
         {/* LEFT COLUMN (parameters + copilot + pipeline + docs) */}
         <div className="md:col-span-8 flex flex-col gap-4">
 
-          {/* 1. Quiz Parameters */}
-          <div className="glass-card p-4 md:p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <BookOpen className="w-4 h-4 text-violet-400" />
-              <h2 className="font-semibold text-slate-100 text-sm">Assessment Parameters</h2>
-              {activeQuizId && <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] ml-auto">Live &middot; ID {activeQuizId}</Badge>}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
-                <Label className="text-slate-400 text-xs">Title</Label>
-                <Input
-                  value={title}
-                  onChange={(e) => { setTitle(e.target.value); markMeta(); }}
-                  placeholder="e.g. Pure Mathematics Paper 1"
-                  className="glass-input text-sm h-12"
-                  data-testid="input-quiz-title"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-slate-400 text-xs uppercase">Subject</Label>
-                <select
-                  value={subject}
-                  onChange={(e) => { setSubject(e.target.value); markMeta(); }}
-                  className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
-                  data-testid="input-quiz-subject"
-                >
-                  <option value="">Select subject</option>
-                  {STANDARDIZED_SUBJECTS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-slate-400 text-xs uppercase">Syllabus</Label>
-                <select
-                  value={syllabusDocId ?? ""}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    if (!raw) {
-                      setSyllabusDocId(null);
-                      setSyllabus("");
-                      setTopics([]);
-                      markMeta();
-                      return;
-                    }
-                    const id = Number(raw);
-                    const doc = syllabusDocs.find((d) => d.id === id) ?? null;
-                    setSyllabusDocId(doc ? doc.id : null);
-                    setSyllabus(doc ? formatSyllabusLabel(doc) : "");
-                    // Changing syllabus invalidates any previous topic picks.
-                    setTopics([]);
-                    markMeta();
-                  }}
-                  className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
-                  data-testid="select-quiz-syllabus"
-                  disabled={!subject}
-                >
-                  <option value="">
-                    {!subject
-                      ? "Pick a subject first"
-                      : syllabusDocsLoading
-                        ? "Loading syllabi…"
-                        : syllabusDocs.length === 0
-                          ? "No syllabi for this subject in the curriculum library"
-                          : "Select syllabus"}
-                  </option>
-                  {/* When editing a legacy quiz whose stored syllabus string doesn't
-                      match any uploaded doc, surface it as a disabled option so the
-                      tutor can see what was previously saved. */}
-                  {syllabus && !selectedSyllabusDoc && (
-                    <option value="" disabled>{syllabus} (not in library)</option>
-                  )}
-                  {syllabusDocs.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {formatSyllabusLabel(d)}
-                      {d.subject ? ` — ${d.subject}` : ""}
-                      {d.level ? ` (${d.level})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-slate-400 text-xs uppercase">Level</Label>
-                <select
-                  className="w-full glass-input px-3 rounded-lg bg-black/20 border border-white/10 text-slate-200 text-sm h-12"
-                  value={level}
-                  onChange={(e) => { setLevel(e.target.value); markMeta(); }}
-                  data-testid="select-quiz-level"
-                >
-                  <option value="">Select level</option>
-                  {getLevelsForSyllabus(syllabus).map((l) => (
-                    <option key={l} value={l}>{l}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-slate-400 text-xs uppercase">Time Limit (Min)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={300}
-                  value={timeLimitMinutes}
-                  onChange={(e) => {
-                    const raw = e.target.value.trim();
-                    const parsed = Number(raw);
-                    setTimeLimitMinutes(Number.isFinite(parsed) ? parsed : 0);
-                    markMeta();
-                  }}
-                  className="glass-input text-sm h-12"
-                  data-testid="input-quiz-time-limit"
-                />
-                <p className="text-[11px] text-slate-500">Allowed range: 1 to 300 minutes.</p>
-              </div>
-            </div>
+          {/* 1. Assessment parameters — step-by-step wizard. */}
+          <AssessmentWizard
+            step={wizardStep}
+            onStep={setWizardStep}
+            title={title}
+            onTitleChange={(v) => { setTitle(v); markMeta(); }}
+            examiningBodySlug={examiningBodySlug}
+            onExaminingBodyChange={(slug) => {
+              setExaminingBodySlug(slug);
+              setLevelCode("");
+              setSubjectSlug("");
+              setSelectedTopicIds([]);
+              setResolvedSyllabusCode("");
+              markMeta();
+            }}
+            bodies={examiningBodies}
+            bodiesLoading={bodiesLoading}
+            levelCode={levelCode}
+            onLevelChange={(code) => {
+              setLevelCode(code);
+              setSubjectSlug("");
+              setSelectedTopicIds([]);
+              setResolvedSyllabusCode("");
+              markMeta();
+            }}
+            levels={catalogueLevels}
+            levelsLoading={levelsLoading}
+            subjectSlug={subjectSlug}
+            onSubjectChange={(slug) => {
+              setSubjectSlug(slug);
+              setSelectedTopicIds([]);
+              markMeta();
+            }}
+            subjects={catalogueSubjects}
+            subjectsLoading={subjectsLoading}
+            resolvedSyllabus={syllabusFromCatalogue}
+            topics={catalogueTopics}
+            topicsLoading={topicsLoading}
+            selectedTopicIds={selectedTopicIds}
+            onToggleTopic={(id) => {
+              setSelectedTopicIds((prev) =>
+                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+              );
+              markMeta();
+            }}
+            onClearTopics={() => { setSelectedTopicIds([]); markMeta(); }}
+            timeLimitMinutes={timeLimitMinutes}
+            onTimeLimitChange={(v) => { setTimeLimitMinutes(v); markMeta(); }}
+            activeQuizId={activeQuizId}
+            metaDirty={metaDirty}
+            onSaveMeta={() => updateMetaMutation.mutate()}
+            saveMetaPending={updateMetaMutation.isPending}
+          />
 
-            {/* Topics — optional multi-select, appears once subject + syllabus
-                are chosen. Sourced from the canonical syllabus's parsed topic
-                inventory so every option is a real curriculum topic the AI can
-                ground on. Tutors may tick one, many, or none (= whole syllabus). */}
-            {subject && selectedSyllabusDoc && (
-              <div className="mt-3">
-                <Label className="text-slate-400 text-xs uppercase flex items-center gap-2">
-                  Topics <span className="text-[10px] text-slate-500 normal-case tracking-normal">(optional — pick one or more)</span>
-                </Label>
-                <div
-                  className="mt-1.5 rounded-lg bg-black/20 border border-white/10 p-3 max-h-64 overflow-y-auto"
-                  data-testid="multiselect-quiz-topics"
-                >
-                  {topicsLoading ? (
-                    <p className="text-xs text-slate-500">Loading topics…</p>
-                  ) : topicGroups.length === 0 ? (
-                    <p className="text-xs text-slate-500">
-                      No topics have been parsed from this syllabus yet. Leave blank to target the whole syllabus.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5">
-                      {topicGroups.map(({ topic: t, subtopics }) => {
-                        const checked = topics.includes(t);
-                        return (
-                          <label
-                            key={t}
-                            className={`flex items-start gap-2 text-xs rounded-md px-2 py-1.5 cursor-pointer border ${checked ? "border-violet-500/40 bg-violet-500/10" : "border-transparent hover:bg-white/5"}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {
-                                setTopics((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
-                                markMeta();
-                              }}
-                              className="mt-0.5 accent-violet-500"
-                              data-testid={`topic-checkbox-${t}`}
-                            />
-                            <span className="flex-1">
-                              <span className="text-slate-200">{t}</span>
-                              {subtopics.length > 0 && (
-                                <span className="block text-[10px] text-slate-500 leading-snug">
-                                  {subtopics.slice(0, 3).join(" · ")}
-                                  {subtopics.length > 3 ? ` · +${subtopics.length - 3} more` : ""}
-                                </span>
-                              )}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {topics.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>{topics.length} selected</span>
-                      <button
-                        type="button"
-                        className="text-violet-400 hover:text-violet-300"
-                        onClick={() => { setTopics([]); markMeta(); }}
-                        data-testid="clear-topics"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  {topicGroups.length > 0
-                    ? `${topicGroups.length} topic${topicGroups.length === 1 ? "" : "s"} parsed from ${selectedSyllabusDoc.board} ${selectedSyllabusDoc.syllabusCode}.`
-                    : "Topics appear here once the syllabus has been parsed."}
-                </p>
-              </div>
-            )}
-
-            <div className="mt-3 text-xs text-slate-500 flex items-start gap-2">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5 text-violet-400" />
-              <span>To publish: add title, subject, level, valid time limit, and at least one question.</span>
-            </div>
-            {metaDirty && activeQuizId && (
-              <div className="mt-3 flex justify-end">
-                <Button
-                  className="glow-button text-xs min-h-[44px]"
-                  size="sm"
-                  onClick={() => updateMetaMutation.mutate()}
-                  disabled={updateMetaMutation.isPending || !title.trim()}
-                  data-testid="button-save-metadata"
-                >
-                  {updateMetaMutation.isPending ? (
-                    <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving...</>
-                  ) : (
-                    <>Save Changes</>
-                  )}
-                </Button>
-              </div>
-            )}
-          </div>
 
           {/* 2. Co-Pilot — Main Focus */}
           <div className="glass-card flex flex-col overflow-hidden" style={{ minHeight: "400px" }}>
