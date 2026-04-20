@@ -4290,6 +4290,26 @@ ${JSON.stringify({
         topic: params.topic,
       });
 
+      const topicInventory = await storage.listSyllabusTopicInventory({
+        board: params.board,
+        syllabusCode: params.syllabusCode,
+        subject: params.subject,
+      });
+      const normalizedTopic = params.topic.toLowerCase().trim();
+      const normalizedSubtopic = (params.subtopic || "").toLowerCase().trim();
+      const inventoryContext = topicInventory
+        .filter((t) => {
+          const top = (t.topic || "").toLowerCase();
+          const sub = (t.subtopic || "").toLowerCase();
+          if (!top) return false;
+          if (top.includes(normalizedTopic) || normalizedTopic.includes(top)) return true;
+          if (normalizedSubtopic && sub && (sub.includes(normalizedSubtopic) || normalizedSubtopic.includes(sub))) return true;
+          return false;
+        })
+        .slice(0, 14)
+        .map((t) => `- Topic: ${t.topic}${t.subtopic ? ` | Subtopic: ${t.subtopic}` : ""}${t.description ? ` | Notes: ${t.description}` : ""}`)
+        .join("\n");
+
       const misconceptionContext = misconceptions.length > 0
         ? misconceptions
           .slice(0, 8)
@@ -4299,6 +4319,7 @@ ${JSON.stringify({
 
       const contextParts = [
         syllabusContext ? `SYLLABUS CONTEXT:\n${syllabusContext}` : "",
+        inventoryContext ? `CURRICULUM TOPIC MAP (LEVEL-AWARE):\n${inventoryContext}` : "",
         misconceptionContext ? `EXAMINER REPORT INSIGHTS:\n${misconceptionContext}` : "",
       ].filter(Boolean);
 
@@ -4370,8 +4391,8 @@ ${JSON.stringify({
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
-            `Checker (${result.telemetry.checkerModel})`,
-            result.telemetry.polishModel ? `Polisher (${result.telemetry.polishModel})` : "Polisher (skipped — no warnings)",
+            `Dual Checker (${result.telemetry.checkerModel})`,
+            result.telemetry.polishModel ? `Claude Rework (${result.telemetry.polishModel})` : "Claude Rework (skipped — no unresolved issues)",
           ],
           totalQuestions: insertedQuestions.length,
           totalDurationMs: result.telemetry.totalDurationMs,
@@ -4451,8 +4472,8 @@ ${JSON.stringify({
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
-            `Checker (${result.telemetry.checkerModel})`,
-            result.telemetry.polishModel ? `Polisher (${result.telemetry.polishModel})` : "Polisher (skipped — no warnings)",
+            `Dual Checker (${result.telemetry.checkerModel})`,
+            result.telemetry.polishModel ? `Claude Rework (${result.telemetry.polishModel})` : "Claude Rework (skipped — no unresolved issues)",
           ],
           totalQuestions: bundle.questions.length,
           totalDurationMs: result.telemetry.totalDurationMs,
