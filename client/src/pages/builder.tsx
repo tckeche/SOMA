@@ -149,9 +149,9 @@ function getDraftValidationError(questions: DraftQuestion[]): string | null {
 }
 
 const PIPELINE_STAGES = [
-  { stage: 1, icon: "brain", label: "Drafting questions (GPT-4o)", aiName: "Maker" },
-  { stage: 2, icon: "scan", label: "Auditing formatting & accuracy (Gemini Flash)", aiName: "Checker" },
-  { stage: 3, icon: "pencil", label: "Polishing flagged issues (Claude Sonnet)", aiName: "Polish" },
+  { stage: 1, icon: "brain", label: "Drafting questions", aiName: "Drafting" },
+  { stage: 2, icon: "scan", label: "Verifying answers & writing explanations", aiName: "Verifying" },
+  { stage: 3, icon: "pencil", label: "Saving to draft", aiName: "Saving" },
 ];
 
 
