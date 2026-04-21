@@ -84,6 +84,18 @@ export default function SomaQuizReview() {
     setLocation("/tutor/assessments");
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!data) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "report" && reportRef.current) {
+      const t = setTimeout(() => {
+        try { window.print(); } catch { /* ignore */ }
+      }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [data]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -198,17 +210,6 @@ export default function SomaQuizReview() {
       /* clipboard unavailable */
     }
   };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("view") === "report" && reportRef.current) {
-      const t = setTimeout(() => {
-        try { window.print(); } catch { /* ignore */ }
-      }, 500);
-      return () => clearTimeout(t);
-    }
-  }, [data]);
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
