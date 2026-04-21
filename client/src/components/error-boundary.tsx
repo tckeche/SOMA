@@ -1,8 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle, Home } from "lucide-react";
-import { Link } from "wouter";
+import { AlertCircle, Home, RefreshCw } from "lucide-react";
 
 type Props = {
   children: React.ReactNode;
@@ -26,6 +25,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
     console.error("UI runtime error:", error);
   }
 
+  private handleReturnHome = () => {
+    window.location.assign("/dashboard");
+  };
+
+  private handleReload = () => {
+    window.location.reload();
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -40,12 +47,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
                   {this.state.message}
                 </p>
               )}
-              <Link href="/dashboard">
-                <Button variant="outline" className="mt-4">
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button variant="outline" onClick={this.handleReload} data-testid="button-error-reload">
+                  <RefreshCw className="w-4 h-4 mr-1.5" />
+                  Reload
+                </Button>
+                <Button variant="outline" onClick={this.handleReturnHome} data-testid="button-error-home">
                   <Home className="w-4 h-4 mr-1.5" />
                   Return Home
                 </Button>
-              </Link>
+              </div>
             </CardContent>
           </Card>
         </div>
