@@ -75,6 +75,15 @@ export interface PaperSummaryDto {
   coreOrExtended: string | null;
 }
 
+export interface SubtopicListItemDto {
+  id: number;
+  subtopicNumber: string;
+  title: string;
+  levelTier: string;
+  coreOrExtended: string | null;
+  sortOrder: number;
+}
+
 export interface TopicListItemDto {
   id: number;
   topicNumber: string;
@@ -84,6 +93,7 @@ export interface TopicListItemDto {
   sortOrder: number;
   strandName: string | null;
   papers: PaperSummaryDto[];
+  subtopics: SubtopicListItemDto[];
 }
 
 export interface CompetencyWeightDto {
@@ -329,6 +339,42 @@ export async function listTopics(
   const papersByTopic = await fetchPapersByTopic(topicIds, tier);
   const strandNameById = await fetchStrandNameMap(strandIds);
 
+  // Pull subtopics for the visible topics so the wizard can render expandable
+  // sections. We filter by tier so AS quizzes don't surface A2-only subtopics
+  // (and vice-versa); if the tier filter yields nothing for a given topic we
+  // fall back to all subtopics so the UI still has something to show.
+  const subtopicRows = await handle
+    .select({
+      id: subtopics.id,
+      topicId: subtopics.topicId,
+      subtopicNumber: subtopics.subtopicNumber,
+      title: subtopics.title,
+      levelTier: subtopics.levelTier,
+      coreOrExtended: subtopics.coreOrExtended,
+      sortOrder: subtopics.sortOrder,
+    })
+    .from(subtopics)
+    .where(inArray(subtopics.topicId, topicIds))
+    .orderBy(asc(subtopics.sortOrder), asc(subtopics.subtopicNumber));
+
+  const subtopicsByTopic = new Map<number, SubtopicListItemDto[]>();
+  for (const r of subtopicRows) {
+    const list = subtopicsByTopic.get(r.topicId) ?? [];
+    list.push({
+      id: r.id,
+      subtopicNumber: r.subtopicNumber,
+      title: r.title,
+      levelTier: r.levelTier,
+      coreOrExtended: r.coreOrExtended,
+      sortOrder: r.sortOrder,
+    });
+    subtopicsByTopic.set(r.topicId, list);
+  }
+  subtopicsByTopic.forEach((list, tid) => {
+    const inTier = list.filter((s: SubtopicListItemDto) => s.levelTier === tier);
+    subtopicsByTopic.set(tid, inTier.length > 0 ? inTier : list);
+  });
+
   return topicRows.map((row) => ({
     id: row.id,
     topicNumber: row.topicNumber,
@@ -338,6 +384,7 @@ export async function listTopics(
     sortOrder: row.sortOrder,
     strandName: row.strandId ? strandNameById.get(row.strandId) ?? null : null,
     papers: papersByTopic.get(row.id) ?? [],
+    subtopics: subtopicsByTopic.get(row.id) ?? [],
   }));
 }
 

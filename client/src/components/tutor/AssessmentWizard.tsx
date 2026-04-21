@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  ChevronDown,
 } from "lucide-react";
 
 // ── Types shared with builder.tsx ──────────────────────────────────────────
@@ -34,10 +35,15 @@ interface PaperSummaryDto {
   id: number; paperNumber: number; code: string | null; title: string;
   levelTier: string | null; marks: number | null; durationMinutes: number | null;
 }
+interface SubtopicListItemDto {
+  id: number; subtopicNumber: string; title: string;
+  levelTier: string; coreOrExtended: string | null; sortOrder: number;
+}
 interface TopicListItemDto {
   id: number; topicNumber: string; title: string; description: string | null;
   levelTiers: string[]; sortOrder: number;
   strandName: string | null; papers: PaperSummaryDto[];
+  subtopics: SubtopicListItemDto[];
 }
 
 export interface AssessmentWizardProps {
@@ -68,6 +74,9 @@ export interface AssessmentWizardProps {
   selectedTopicIds: number[];
   onToggleTopic: (id: number) => void;
   onClearTopics: () => void;
+  selectedSubtopicIds: number[];
+  onToggleSubtopic: (topicId: number, subtopicId: number) => void;
+  onToggleAllSubtopicsForTopic: (topicId: number, subtopicIds: number[], select: boolean) => void;
 
   timeLimitMinutes: number;
   onTimeLimitChange: (v: number) => void;
@@ -99,6 +108,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     subjectSlug, onSubjectChange, subjects, subjectsLoading,
     resolvedSyllabus, topics, topicsLoading,
     selectedTopicIds, onToggleTopic, onClearTopics,
+    selectedSubtopicIds, onToggleSubtopic, onToggleAllSubtopicsForTopic,
     timeLimitMinutes, onTimeLimitChange,
     activeQuizId, metaDirty, onSaveMeta, saveMetaPending,
   } = props;
@@ -188,6 +198,9 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
             selectedTopicIds={selectedTopicIds}
             onToggleTopic={onToggleTopic}
             onClearTopics={onClearTopics}
+            selectedSubtopicIds={selectedSubtopicIds}
+            onToggleSubtopic={onToggleSubtopic}
+            onToggleAllSubtopicsForTopic={onToggleAllSubtopicsForTopic}
             subjectPicked={!!subjectSlug}
             resolvedSyllabus={resolvedSyllabus}
           />
@@ -474,6 +487,9 @@ function StepTopics({
   selectedTopicIds,
   onToggleTopic,
   onClearTopics,
+  selectedSubtopicIds,
+  onToggleSubtopic,
+  onToggleAllSubtopicsForTopic,
   subjectPicked,
   resolvedSyllabus,
 }: {
@@ -482,13 +498,18 @@ function StepTopics({
   selectedTopicIds: number[];
   onToggleTopic: (id: number) => void;
   onClearTopics: () => void;
+  selectedSubtopicIds: number[];
+  onToggleSubtopic: (topicId: number, subtopicId: number) => void;
+  onToggleAllSubtopicsForTopic: (topicId: number, subtopicIds: number[], select: boolean) => void;
   subjectPicked: boolean;
   resolvedSyllabus: SyllabusDto | null;
 }) {
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   if (!subjectPicked) {
     return <p className="text-xs text-slate-500">Pick a subject first.</p>;
   }
-  const selectedSet = new Set(selectedTopicIds);
+  const selectedTopicSet = new Set(selectedTopicIds);
+  const selectedSubtopicSet = new Set(selectedSubtopicIds);
   // Group by strand so the checklist mirrors the syllabus outline. Topics
   // with no strand fall under an "Uncategorised" heading.
   const groups = useMemo(() => {
@@ -504,21 +525,23 @@ function StepTopics({
     }));
   }, [topics]);
 
+  const totalSelected = selectedTopicIds.length + selectedSubtopicIds.length;
+
   return (
     <div className="space-y-2">
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs text-slate-400">
-          Optional. Pick one or more topics the AI should ground questions in.
+          Optional. Expand a topic to drill into its subtopics, or tick the topic header to ground the AI in the whole topic.
           Leave empty to target the full {resolvedSyllabus ? `syllabus ${resolvedSyllabus.syllabusCode}` : "subject"}.
         </p>
-        {selectedTopicIds.length > 0 && (
+        {totalSelected > 0 && (
           <button
             type="button"
             onClick={onClearTopics}
             className="text-[11px] text-violet-400 hover:text-violet-300 shrink-0"
             data-testid="wizard-clear-topics"
           >
-            Clear ({selectedTopicIds.length})
+            Clear ({totalSelected})
           </button>
         )}
       </div>
@@ -529,42 +552,115 @@ function StepTopics({
           No topics have been parsed for this syllabus yet. Leave blank to target the whole subject.
         </p>
       ) : (
-        <div className="max-h-72 overflow-y-auto pr-1 space-y-3" data-testid="wizard-topic-list">
+        <div className="max-h-96 overflow-y-auto pr-1 space-y-3" data-testid="wizard-topic-list">
           {groups.map((g) => (
             <div key={g.strand || "__none__"}>
               {g.strand && (
                 <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">{g.strand}</p>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+              <div className="space-y-1.5">
                 {g.topics.map((t) => {
-                  const checked = selectedSet.has(t.id);
+                  const subIds = t.subtopics.map((s) => s.id);
+                  const selectedSubsForTopic = subIds.filter((id) => selectedSubtopicSet.has(id));
+                  const topicSelected = selectedTopicSet.has(t.id);
+                  const allSubsSelected = subIds.length > 0 && selectedSubsForTopic.length === subIds.length;
+                  const someSubsSelected = selectedSubsForTopic.length > 0 && !allSubsSelected;
+                  // A topic header is "checked" when either the topic itself is
+                  // selected OR every subtopic underneath has been ticked.
+                  const headerChecked = topicSelected || allSubsSelected;
+                  const isOpen = !!expanded[t.id];
+                  const hasSubs = t.subtopics.length > 0;
                   return (
-                    <label
+                    <div
                       key={t.id}
-                      className={`flex items-start gap-2 text-xs rounded-md px-2 py-1.5 cursor-pointer border ${
-                        checked
+                      className={`rounded-md border ${
+                        headerChecked || someSubsSelected
                           ? "border-violet-500/40 bg-violet-500/10"
-                          : "border-transparent hover:bg-white/5"
+                          : "border-white/5 bg-white/[0.02]"
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => onToggleTopic(t.id)}
-                        className="mt-0.5 accent-violet-500"
-                        data-testid={`wizard-topic-checkbox-${t.id}`}
-                      />
-                      <span className="flex-1">
-                        <span className="text-slate-200">
-                          {t.topicNumber ? `${t.topicNumber} ` : ""}{t.title}
-                        </span>
-                        {t.levelTiers.length > 0 && (
-                          <span className="ml-1 text-[10px] text-slate-500">
-                            [{t.levelTiers.join("/")}]
+                      <div className="flex items-center gap-2 px-2 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={headerChecked}
+                          ref={(el) => { if (el) el.indeterminate = someSubsSelected; }}
+                          onChange={() => {
+                            if (hasSubs) {
+                              // Selecting/unselecting at the topic level toggles every subtopic.
+                              const select = !(headerChecked || someSubsSelected);
+                              onToggleAllSubtopicsForTopic(t.id, subIds, select);
+                            } else {
+                              onToggleTopic(t.id);
+                            }
+                          }}
+                          className="accent-violet-500"
+                          data-testid={`wizard-topic-checkbox-${t.id}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => hasSubs && setExpanded((prev) => ({ ...prev, [t.id]: !prev[t.id] }))}
+                          className="flex-1 flex items-center gap-2 text-left text-xs"
+                          disabled={!hasSubs}
+                          data-testid={`wizard-topic-toggle-${t.id}`}
+                        >
+                          <span className="flex-1 text-slate-200">
+                            {t.topicNumber ? `${t.topicNumber} ` : ""}{t.title}
+                            {t.levelTiers.length > 0 && (
+                              <span className="ml-1 text-[10px] text-slate-500">
+                                [{t.levelTiers.join("/")}]
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                    </label>
+                          {hasSubs && (
+                            <>
+                              <span className="text-[10px] text-slate-500">
+                                {selectedSubsForTopic.length > 0
+                                  ? `${selectedSubsForTopic.length}/${subIds.length}`
+                                  : `${subIds.length} subtopics`}
+                              </span>
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                              />
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {hasSubs && isOpen && (
+                        <div
+                          className="border-t border-white/5 px-2 py-1.5 grid grid-cols-1 md:grid-cols-2 gap-1"
+                          data-testid={`wizard-subtopic-list-${t.id}`}
+                        >
+                          {t.subtopics.map((s) => {
+                            const checked = selectedSubtopicSet.has(s.id);
+                            return (
+                              <label
+                                key={s.id}
+                                className={`flex items-start gap-2 text-[11px] rounded px-2 py-1 cursor-pointer ${
+                                  checked ? "bg-violet-500/15" : "hover:bg-white/5"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => onToggleSubtopic(t.id, s.id)}
+                                  className="mt-0.5 accent-violet-500"
+                                  data-testid={`wizard-subtopic-checkbox-${s.id}`}
+                                />
+                                <span className="flex-1 text-slate-300">
+                                  <span className="text-slate-500">{s.subtopicNumber}</span>{" "}
+                                  {s.title}
+                                  {s.coreOrExtended && (
+                                    <span className="ml-1 text-[10px] text-slate-500">
+                                      [{s.coreOrExtended}]
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

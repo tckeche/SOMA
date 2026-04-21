@@ -169,6 +169,7 @@ export default function BuilderPage() {
   const [levelCode, setLevelCode] = useState<string>("");
   const [subjectSlug, setSubjectSlug] = useState<string>("");
   const [selectedTopicIds, setSelectedTopicIds] = useState<number[]>([]);
+  const [selectedSubtopicIds, setSelectedSubtopicIds] = useState<number[]>([]);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
   // Wizard step: 0=Body, 1=Level, 2=Subject, 3=Topics, 4=Time limit.
   // In edit mode we jump straight to the end (everything already filled).
@@ -289,7 +290,7 @@ export default function BuilderPage() {
     // Don't save an empty shell — just clutters storage.
     const hasContent =
       title.trim() || levelCode.trim() || subjectSlug.trim() ||
-      selectedTopicIds.length > 0 || msg.trim();
+      selectedTopicIds.length > 0 || selectedSubtopicIds.length > 0 || msg.trim();
     if (!hasContent) return;
     if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = setTimeout(() => {
@@ -300,6 +301,7 @@ export default function BuilderPage() {
         subjectSlug,
         syllabusCode: resolvedSyllabusCode,
         selectedTopicIds,
+        selectedSubtopicIds,
         timeLimitMinutes,
         prompt: msg,
       });
@@ -307,7 +309,7 @@ export default function BuilderPage() {
     return () => {
       if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     };
-  }, [isEditMode, tutorUserId, activeQuizId, title, examiningBodySlug, levelCode, subjectSlug, resolvedSyllabusCode, selectedTopicIds, timeLimitMinutes, msg]);
+  }, [isEditMode, tutorUserId, activeQuizId, title, examiningBodySlug, levelCode, subjectSlug, resolvedSyllabusCode, selectedTopicIds, selectedSubtopicIds, timeLimitMinutes, msg]);
 
   // Clear the local draft as soon as the server-side quiz row exists — the
   // server's draft API owns post-creation state.
@@ -326,6 +328,7 @@ export default function BuilderPage() {
     setSubjectSlug(recoveredDraft.subjectSlug);
     setResolvedSyllabusCode(recoveredDraft.syllabusCode);
     setSelectedTopicIds(Array.isArray(recoveredDraft.selectedTopicIds) ? recoveredDraft.selectedTopicIds : []);
+    setSelectedSubtopicIds(Array.isArray((recoveredDraft as any).selectedSubtopicIds) ? (recoveredDraft as any).selectedSubtopicIds : []);
     setTimeLimitMinutes(
       Number.isFinite(recoveredDraft.timeLimitMinutes) && recoveredDraft.timeLimitMinutes > 0
         ? recoveredDraft.timeLimitMinutes
@@ -422,10 +425,15 @@ export default function BuilderPage() {
     id: number; paperNumber: number; code: string | null; title: string;
     levelTier: string | null; marks: number | null; durationMinutes: number | null;
   }
+  interface SubtopicListItemDto {
+    id: number; subtopicNumber: string; title: string;
+    levelTier: string; coreOrExtended: string | null; sortOrder: number;
+  }
   interface TopicListItemDto {
     id: number; topicNumber: string; title: string; description: string | null;
     levelTiers: string[]; sortOrder: number;
     strandName: string | null; papers: PaperSummaryDto[];
+    subtopics: SubtopicListItemDto[];
   }
 
   const { data: examiningBodies = [], isLoading: bodiesLoading } = useQuery<ExaminingBodyDto[]>({
@@ -735,6 +743,7 @@ export default function BuilderPage() {
           subjectSlug,
           syllabusCode: resolvedSyllabusCode,
           selectedTopicIds,
+          selectedSubtopicIds,
         },
         difficultySpread,
       };
@@ -1110,6 +1119,7 @@ export default function BuilderPage() {
               setLevelCode("");
               setSubjectSlug("");
               setSelectedTopicIds([]);
+              setSelectedSubtopicIds([]);
               setResolvedSyllabusCode("");
               markMeta();
             }}
@@ -1120,6 +1130,7 @@ export default function BuilderPage() {
               setLevelCode(code);
               setSubjectSlug("");
               setSelectedTopicIds([]);
+              setSelectedSubtopicIds([]);
               setResolvedSyllabusCode("");
               markMeta();
             }}
@@ -1129,6 +1140,7 @@ export default function BuilderPage() {
             onSubjectChange={(slug) => {
               setSubjectSlug(slug);
               setSelectedTopicIds([]);
+              setSelectedSubtopicIds([]);
               markMeta();
             }}
             subjects={catalogueSubjects}
@@ -1143,7 +1155,46 @@ export default function BuilderPage() {
               );
               markMeta();
             }}
-            onClearTopics={() => { setSelectedTopicIds([]); markMeta(); }}
+            onClearTopics={() => {
+              setSelectedTopicIds([]);
+              setSelectedSubtopicIds([]);
+              markMeta();
+            }}
+            selectedSubtopicIds={selectedSubtopicIds}
+            onToggleSubtopic={(topicId, subtopicId) => {
+              // Compute the next subtopic list synchronously so we can decide
+              // whether the parent topic should still be in scope.
+              const wasSelected = selectedSubtopicIds.includes(subtopicId);
+              const nextSubs = wasSelected
+                ? selectedSubtopicIds.filter((x) => x !== subtopicId)
+                : [...selectedSubtopicIds, subtopicId];
+              setSelectedSubtopicIds(nextSubs);
+
+              // A topic is "in scope" when ≥1 of its subtopics is ticked. If
+              // we just unchecked the last one, drop the parent topic so the
+              // backend doesn't silently widen the prompt to the whole topic.
+              const parentTopic = catalogueTopics.find((t) => t.id === topicId);
+              const parentSubIds = parentTopic?.subtopics?.map((s) => s.id) ?? [];
+              const anyParentSubSelected = nextSubs.some((id) => parentSubIds.includes(id));
+              setSelectedTopicIds((prev) => {
+                if (anyParentSubSelected) {
+                  return prev.includes(topicId) ? prev : [...prev, topicId];
+                }
+                return prev.filter((id) => id !== topicId);
+              });
+              markMeta();
+            }}
+            onToggleAllSubtopicsForTopic={(topicId, subtopicIds, select) => {
+              setSelectedSubtopicIds((prev) => {
+                const without = prev.filter((id) => !subtopicIds.includes(id));
+                return select ? [...without, ...subtopicIds] : without;
+              });
+              setSelectedTopicIds((prev) => {
+                if (select) return prev.includes(topicId) ? prev : [...prev, topicId];
+                return prev.filter((id) => id !== topicId);
+              });
+              markMeta();
+            }}
             timeLimitMinutes={timeLimitMinutes}
             onTimeLimitChange={(v) => { setTimeLimitMinutes(v); markMeta(); }}
             activeQuizId={activeQuizId}

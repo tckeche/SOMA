@@ -3462,6 +3462,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 selectedTopicIds: Array.isArray(m.selectedTopicIds)
                   ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
                   : [],
+                selectedSubtopicIds: Array.isArray(m.selectedSubtopicIds)
+                  ? m.selectedSubtopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
+                  : [],
                 timeLimitMinutes: typeof m.timeLimitMinutes === "number" ? m.timeLimitMinutes : null,
               });
               if (ctx) {
@@ -4395,6 +4398,7 @@ ${JSON.stringify({
     levelCode: z.string().optional(),
     subjectSlug: z.string().optional(),
     selectedTopicIds: z.array(z.number().int().positive()).optional(),
+    selectedSubtopicIds: z.array(z.number().int().positive()).optional(),
     timeLimitMinutes: z.number().int().positive().optional(),
   });
 
@@ -4403,6 +4407,7 @@ ${JSON.stringify({
     levelCode?: string;
     subjectSlug?: string;
     selectedTopicIds?: number[];
+    selectedSubtopicIds?: number[];
     timeLimitMinutes?: number | null;
     queryText?: string;
   }) {
@@ -4447,6 +4452,7 @@ ${JSON.stringify({
         levelCode: params.levelCode,
         subjectSlug: params.subjectSlug,
         selectedTopicIds: mergedIds,
+        selectedSubtopicIds: params.selectedSubtopicIds,
         timeLimitMinutes: params.timeLimitMinutes ?? null,
       });
     } catch (err: any) {
@@ -4541,7 +4547,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, selectedSubtopicIds, timeLimitMinutes } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
       const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
@@ -4559,6 +4565,7 @@ ${JSON.stringify({
         levelCode,
         subjectSlug,
         selectedTopicIds,
+        selectedSubtopicIds,
         timeLimitMinutes,
         queryText: [topic, subtopic, curriculumContext].filter(Boolean).join(" — "),
       });
@@ -4627,7 +4634,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, selectedSubtopicIds, timeLimitMinutes } = parsed.data;
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
@@ -4647,6 +4654,7 @@ ${JSON.stringify({
         levelCode,
         subjectSlug,
         selectedTopicIds,
+        selectedSubtopicIds,
         timeLimitMinutes,
         queryText: [topic, subtopic, curriculumContext].filter(Boolean).join(" — "),
       });

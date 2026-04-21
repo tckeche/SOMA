@@ -13,7 +13,7 @@
 // can migrate older payloads instead of surprising the tutor with garbled
 // values.
 
-export const TUTOR_DRAFT_VERSION = 2;
+export const TUTOR_DRAFT_VERSION = 3;
 
 export interface TutorAssessmentDraft {
   version: number;
@@ -34,6 +34,12 @@ export interface TutorAssessmentDraft {
    * rename upstream doesn't silently detach the draft from its topic.
    */
   selectedTopicIds: number[];
+  /**
+   * Zero-or-more subtopic ids chosen from a topic's subtopic list. Persisting
+   * these alongside selectedTopicIds means a draft round-trip preserves the
+   * tutor's exact granular scope rather than collapsing back to whole topics.
+   */
+  selectedSubtopicIds: number[];
   timeLimitMinutes: number;
   prompt: string;
   savedAt: string;
@@ -76,6 +82,7 @@ export function readTutorDraft(key: string | null): TutorAssessmentDraft | null 
         subjectSlug: "",
         syllabusCode: "",
         selectedTopicIds: [],
+        selectedSubtopicIds: [],
         timeLimitMinutes: Number.isFinite(parsed.timeLimitMinutes)
           ? Number(parsed.timeLimitMinutes)
           : 60,
@@ -84,7 +91,9 @@ export function readTutorDraft(key: string | null): TutorAssessmentDraft | null 
       };
     }
 
-    if (version !== TUTOR_DRAFT_VERSION) return null;
+    // v2 drafts had everything except subtopic ids; carry their fields forward
+    // and start subtopic selection empty (the tutor can re-expand the topic).
+    if (version !== TUTOR_DRAFT_VERSION && version !== 2) return null;
 
     return {
       version: TUTOR_DRAFT_VERSION,
@@ -96,6 +105,7 @@ export function readTutorDraft(key: string | null): TutorAssessmentDraft | null 
       subjectSlug: typeof parsed.subjectSlug === "string" ? parsed.subjectSlug : "",
       syllabusCode: typeof parsed.syllabusCode === "string" ? parsed.syllabusCode : "",
       selectedTopicIds: coerceNumberArray(parsed.selectedTopicIds),
+      selectedSubtopicIds: coerceNumberArray(parsed.selectedSubtopicIds),
       timeLimitMinutes: Number.isFinite(parsed.timeLimitMinutes)
         ? Number(parsed.timeLimitMinutes)
         : 60,
@@ -143,6 +153,7 @@ export function isMeaningfulDraft(draft: TutorAssessmentDraft | null): boolean {
   if (draft.subjectSlug.trim()) return true;
   if (draft.syllabusCode.trim()) return true;
   if (draft.selectedTopicIds.length > 0) return true;
+  if (draft.selectedSubtopicIds.length > 0) return true;
   if (draft.prompt.trim()) return true;
   return false;
 }
