@@ -394,24 +394,35 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
 
   // Batch quizzes > 15 into chunks of 15 so each stage stays within token budget.
+  // Batches are run in PARALLEL — they do not depend on each other, so a 30q
+  // quiz takes ~the same wall-clock as a 15q quiz instead of double.
   if (questionCount > 15) {
+    const batchSizes: number[] = [];
+    let remaining = questionCount;
+    while (remaining > 0) {
+      const size = Math.min(15, remaining);
+      batchSizes.push(size);
+      remaining -= size;
+    }
+
+    const batchResults = await Promise.all(
+      batchSizes.map((size) => generateAuditedQuiz({ ...context, questionCount: size })),
+    );
+
     const merged: QuizResult["questions"] = [];
     const allWarnings: PipelineWarning[] = [];
     let lastTelemetry: PipelineTelemetry = {
       makerModel: "unknown", checkerModel: "unknown", polishModel: null, totalDurationMs: 0,
     };
-    let remaining = questionCount;
-    while (remaining > 0) {
-      const currentBatch = Math.min(15, remaining);
+    for (const batch of batchResults) {
       const baseIndex = merged.length;
-      const batch = await generateAuditedQuiz({ ...context, questionCount: currentBatch });
       merged.push(...batch.questions);
       for (const w of batch.warnings) {
         allWarnings.push({ ...w, questionIndex: w.questionIndex + baseIndex });
       }
       lastTelemetry = batch.telemetry;
-      remaining -= currentBatch;
     }
+
     return {
       questions: validateAndCorrectMcqAnswers(merged.slice(0, questionCount)),
       warnings: allWarnings,
