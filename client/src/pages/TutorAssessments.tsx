@@ -14,6 +14,7 @@ import {
 import DOMPurify from "dompurify";
 import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
+import MarkdownRenderer from "@/components/MarkdownRenderer";
 
 interface SomaUser {
   id: string;
@@ -86,11 +87,20 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
   questions: SomaQuestion[];
   onViewReport: (report: SomaReport) => void;
 }) {
-  const pct = maxScore > 0 ? Math.round((report.score / maxScore) * 100) : 0;
+  const studentName = report.studentName ?? "Student";
+  const score = typeof report.score === "number" ? report.score : 0;
+  const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
   const duration = formatDuration(report.startedAt as any, report.completedAt as any);
   const startedDate = formatDate(report.startedAt as any);
   const answersObj = (report.answersJson || {}) as Record<string, string>;
-  const correctCount = questions.filter(q => answersObj[String(q.id)] === q.correctAnswer).length;
+  const safeQuestions = questions ?? [];
+  const correctCount = safeQuestions.filter(q => answersObj[String(q.id)] === q.correctAnswer).length;
+  const initials = studentName
+    .split(" ")
+    .map((n) => n[0] ?? "")
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "?";
 
   return (
     <div
@@ -101,12 +111,12 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="w-9 h-9 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center shrink-0">
             <span className="text-xs font-bold text-violet-300">
-              {report.studentName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+              {initials}
             </span>
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-200 truncate" data-testid={`report-student-name-${report.id}`}>
-              {report.studentName}
+              {studentName}
             </p>
             <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-0.5">
               {startedDate !== "—" && (
@@ -155,21 +165,25 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
   onClose: () => void;
 }) {
   const answersObj = (report.answersJson || {}) as Record<string, string>;
-  const pct = maxScore > 0 ? Math.round((report.score / maxScore) * 100) : 0;
+  const score = typeof report.score === "number" ? report.score : 0;
+  const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
   const duration = formatDuration(report.startedAt as any, report.completedAt as any);
+  const studentName = report.studentName ?? "Student";
+  const quizTitle = report.quiz?.title ?? "Assessment";
+  const safeQuestions = questions ?? [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={onClose}>
       <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-3xl w-full my-8" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 p-6 border-b border-slate-800">
           <div>
-            <h3 className="text-lg font-bold text-slate-200" data-testid="modal-student-name">{report.studentName}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">{report.quiz.title}</p>
+            <h3 className="text-lg font-bold text-slate-200" data-testid="modal-student-name">{studentName}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{quizTitle}</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className={`text-xl font-bold ${scoreColor(report.score, maxScore)}`}>{pct}%</p>
-              <p className="text-[10px] text-slate-400">{report.score}/{maxScore} marks</p>
+              <p className={`text-xl font-bold ${scoreColor(score, maxScore)}`}>{pct}%</p>
+              <p className="text-[10px] text-slate-400">{score}/{maxScore} marks</p>
             </div>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-300 p-2 min-h-[44px] min-w-[44px]" data-testid="button-close-report">
               <X className="w-5 h-5" />
@@ -204,9 +218,17 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
               <FileText className="w-4 h-4 text-violet-400" />
               Questions & Answers
             </h4>
-            {questions.map((q, idx) => {
-              const studentAnswer = answersObj[String(q.id)] || "Not answered";
-              const isCorrect = studentAnswer === q.correctAnswer;
+            {safeQuestions.length === 0 && (
+              <p className="text-xs text-slate-500 italic">No questions are linked to this report.</p>
+            )}
+            {safeQuestions.map((q, idx) => {
+              const stem = q.stem ?? "";
+              const correctAnswer = q.correctAnswer ?? "";
+              const explanation = q.explanation ?? "";
+              const marks = typeof q.marks === "number" ? q.marks : 0;
+              const studentAnswerRaw = answersObj[String(q.id)];
+              const studentAnswer = studentAnswerRaw && studentAnswerRaw.length > 0 ? studentAnswerRaw : null;
+              const isCorrect = studentAnswer !== null && studentAnswer === correctAnswer;
               return (
                 <div
                   key={q.id}
@@ -214,25 +236,37 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
                   data-testid={`modal-question-${q.id}`}
                 >
                   <div className="flex items-start gap-2 mb-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isCorrect ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
                       Q{idx + 1}
                     </span>
-                    <p className="text-sm text-slate-300 flex-1">{q.stem.replace(/\\\\/g, "\\")}</p>
-                    <span className="text-[10px] text-slate-500 shrink-0">{q.marks} mark{q.marks !== 1 ? "s" : ""}</span>
+                    <div className="text-sm text-slate-300 flex-1 min-w-0">
+                      <MarkdownRenderer content={stem} />
+                    </div>
+                    <span className="text-[10px] text-slate-500 shrink-0">{marks} mark{marks !== 1 ? "s" : ""}</span>
                   </div>
-                  <div className="ml-7 space-y-1">
-                    <p className="text-xs">
-                      <span className="text-slate-500">Student:</span>{" "}
-                      <span className={isCorrect ? "text-emerald-400" : "text-red-400"}>{studentAnswer}</span>
-                    </p>
-                    {!isCorrect && (
-                      <p className="text-xs">
-                        <span className="text-slate-500">Correct:</span>{" "}
-                        <span className="text-emerald-400">{q.correctAnswer}</span>
-                      </p>
+                  <div className="ml-7 space-y-1.5">
+                    <div className="text-xs flex flex-wrap items-baseline gap-1">
+                      <span className="text-slate-500">Student:</span>
+                      {studentAnswer === null ? (
+                        <span className="text-slate-500 italic">Not answered</span>
+                      ) : (
+                        <span className={`${isCorrect ? "text-emerald-400" : "text-red-400"} inline-block`}>
+                          <MarkdownRenderer content={studentAnswer} />
+                        </span>
+                      )}
+                    </div>
+                    {!isCorrect && correctAnswer && (
+                      <div className="text-xs flex flex-wrap items-baseline gap-1">
+                        <span className="text-slate-500">Correct:</span>
+                        <span className="text-emerald-400 inline-block">
+                          <MarkdownRenderer content={correctAnswer} />
+                        </span>
+                      </div>
                     )}
-                    {q.explanation && (
-                      <p className="text-[11px] text-slate-400 mt-1 italic">{q.explanation}</p>
+                    {explanation && (
+                      <div className="text-[11px] text-slate-400 mt-1 italic">
+                        <MarkdownRenderer content={explanation} />
+                      </div>
                     )}
                   </div>
                 </div>
