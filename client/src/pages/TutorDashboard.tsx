@@ -625,63 +625,86 @@ export default function TutorDashboard() {
             </div>
 
             {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
-            {activeTab === "notifications" && (
-              <FadeInSection>
-                <SectionHeader icon={Bell} title="Notifications" subtitle="Unread/read updates for submissions and publishing" />
-                {(notificationsData?.notifications?.length ?? 0) === 0 ? (
-                  <div className={`${GP} px-6 py-16 text-center`}>
-                    <Bell className="w-12 h-12 mx-auto text-slate-700 mb-4" />
-                    <p className="text-sm text-slate-400 font-medium">No notifications yet</p>
-                    <p className="text-xs text-slate-600 mt-1">New submissions and generation updates will appear here</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {notificationsData!.notifications.map((item) => {
-                      const isUnread = !item.readAt;
-                      const reportId = Number(item.payload?.reportId || 0) || null;
-                      const quizId = Number(item.payload?.quizId || 0) || null;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => { if (isUnread) markReadMutation.mutate(item.id); }}
-                          className={`${GP} w-full text-left p-5 hover:bg-white/[0.02] transition-colors`}
-                          data-testid={`notification-${item.id}`}
-                        >
-                          <div className="flex items-start gap-4">
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 bg-violet-500/15 border-violet-500/25 relative">
-                              <Bell className="w-5 h-5 text-violet-300" />
-                              {isUnread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 absolute -top-1 -right-1" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="text-[14px] font-semibold text-slate-100">{item.title}</p>
-                                {isUnread && <Badge className="text-[10px] font-bold border px-2 py-0.5 bg-red-500/10 text-red-300 border-red-500/25">Unread</Badge>}
+            {activeTab === "notifications" && (() => {
+              const unreadItems = (notificationsData?.notifications ?? []).filter((n) => !n.readAt);
+              return (
+                <FadeInSection>
+                  <SectionHeader
+                    icon={Bell}
+                    title="Notifications"
+                    subtitle={unreadItems.length > 0
+                      ? `${unreadItems.length} unread update${unreadItems.length === 1 ? "" : "s"}`
+                      : "You're all caught up"}
+                  />
+                  {unreadItems.length === 0 ? (
+                    <div className={`${GP} px-6 py-16 text-center`}>
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-slate-800/60 mx-auto mb-4 border border-white/[0.04]">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-400/70" />
+                      </div>
+                      <p className="text-sm text-slate-300 font-semibold">All caught up</p>
+                      <p className="text-xs text-slate-500 mt-1">New submissions and generation updates will appear here</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {unreadItems.map((item) => {
+                        const reportId = Number(item.payload?.reportId || 0) || null;
+                        const quizId = Number(item.payload?.quizId || 0) || null;
+                        const target = reportId ? `/soma/review/${reportId}` : quizId ? `/soma/quiz/${quizId}` : null;
+                        const handleOpen = () => markReadMutation.mutate(item.id);
+                        const inner = (
+                          <div
+                            className={`${GP} w-full p-4 transition-all hover:bg-white/[0.03] hover:border-white/[0.1] hover:translate-x-0.5 cursor-pointer`}
+                            data-testid={`notification-${item.id}`}
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className="relative shrink-0">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-violet-500/15 border-violet-500/25">
+                                  <Bell className="w-5 h-5 text-violet-300" />
+                                </div>
+                                <span
+                                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-[#080d1a] shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                                  aria-label="Unread"
+                                  data-testid={`notification-dot-${item.id}`}
+                                />
                               </div>
-                              <p className="text-[12px] text-slate-400 font-medium mb-2">{item.message}</p>
-                              <div className="flex items-center gap-4 text-[11px] text-slate-500 font-medium flex-wrap">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {format(new Date(item.createdAt), "MMM d, h:mm a")}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[14px] font-semibold text-slate-100 truncate">{item.title}</p>
+                                <p className="text-[12px] text-slate-400 mt-1 line-clamp-2">{item.message}</p>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium mt-2">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{format(new Date(item.createdAt), "MMM d, h:mm a")}</span>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {reportId && <Link href={`/soma/review/${reportId}`}>
-                                <span className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-[11px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/15 hover:bg-indigo-500/20 transition-all cursor-pointer">
-                                  <Eye className="w-3.5 h-3.5" /> Review
-                                </span>
-                              </Link>}
-                              {quizId && <Link href={`/soma/quiz/${quizId}`}>
-                                <span className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-[11px] font-semibold text-slate-400 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all cursor-pointer">
-                                  <FileText className="w-3.5 h-3.5" /> Quiz
-                                </span>
-                              </Link>}
+                              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-slate-500">
+                                {reportId ? (
+                                  <><Eye className="w-3.5 h-3.5" /> Review</>
+                                ) : quizId ? (
+                                  <><FileText className="w-3.5 h-3.5" /> Open</>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </FadeInSection>
-            )}
+                        );
+                        return target ? (
+                          <Link key={item.id} href={target} onClick={handleOpen} className="block">
+                            {inner}
+                          </Link>
+                        ) : (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={handleOpen}
+                            className="block w-full text-left"
+                          >
+                            {inner}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </FadeInSection>
+              );
+            })()}
 
             {/* ── OVERVIEW TAB ───────────────────────────────────── */}
             {activeTab === "overview" && (<>
