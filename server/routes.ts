@@ -15,6 +15,7 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
+import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
@@ -4403,14 +4404,49 @@ ${JSON.stringify({
     subjectSlug?: string;
     selectedTopicIds?: number[];
     timeLimitMinutes?: number | null;
+    queryText?: string;
   }) {
     if (!params.examiningBodySlug || !params.levelCode || !params.subjectSlug) return null;
+
+    const baseIds = (params.selectedTopicIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+    const mergedIds = [...baseIds];
+
+    if (
+      mergedIds.length < 8 &&
+      params.queryText &&
+      params.queryText.trim().length >= 4 &&
+      process.env.OPENAI_API_KEY
+    ) {
+      try {
+        const search = await semanticTopicSearch({
+          bodySlug: params.examiningBodySlug,
+          levelCode: params.levelCode,
+          subjectSlug: params.subjectSlug,
+          queryText: params.queryText,
+          topK: 5,
+        });
+        const seen = new Set(mergedIds);
+        for (const hit of search.hits) {
+          if (!seen.has(hit.topicId)) {
+            mergedIds.push(hit.topicId);
+            seen.add(hit.topicId);
+          }
+          if (mergedIds.length >= 8) break;
+        }
+        if (search.hits.length > 0) {
+          console.log(`[SOMA_CATALOGUE_CTX] Semantic search added ${mergedIds.length - baseIds.length} related topics (candidates=${search.candidateCount}).`);
+        }
+      } catch (err: any) {
+        console.warn(`[SOMA_CATALOGUE_CTX] Semantic search skipped: ${err?.message || "unknown"}`);
+      }
+    }
+
     try {
       return await loadCopilotContext({
         bodySlug: params.examiningBodySlug,
         levelCode: params.levelCode,
         subjectSlug: params.subjectSlug,
-        selectedTopicIds: params.selectedTopicIds ?? [],
+        selectedTopicIds: mergedIds,
         timeLimitMinutes: params.timeLimitMinutes ?? null,
       });
     } catch (err: any) {
@@ -4524,6 +4560,7 @@ ${JSON.stringify({
         subjectSlug,
         selectedTopicIds,
         timeLimitMinutes,
+        queryText: [topic, subtopic, curriculumContext].filter(Boolean).join(" — "),
       });
 
       const result = await generateAuditedQuiz({
@@ -4611,6 +4648,7 @@ ${JSON.stringify({
         subjectSlug,
         selectedTopicIds,
         timeLimitMinutes,
+        queryText: [topic, subtopic, curriculumContext].filter(Boolean).join(" — "),
       });
 
       const result = await generateAuditedQuiz({

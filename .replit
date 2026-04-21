@@ -51,12 +51,12 @@ waitForPort = 5000
 name = "Ingest Curriculum Docs"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npx tsx scripts/ingestCurriculumDocs.ts"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "DATABASE_URL=\"$SUPABASE_DB_URL\" npx tsx scripts/ingestSyllabi/index.ts"
 
 [userenv]
 
