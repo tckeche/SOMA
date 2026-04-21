@@ -4794,21 +4794,26 @@ ${JSON.stringify({
       const report = await storage.getSomaReportById(reportId);
       if (!report) return res.status(404).json({ message: "Report not found" });
 
-      // Ownership check: student owns the report, OR tutor adopted the student, OR super_admin
+      // Ownership check: student owns the report, OR super_admin, OR tutor who
+      // either authored the quiz or adopted the student. Quiz authorship is
+      // sufficient because the tutor created the assessment and can already
+      // see every submission on the assessment details page.
       const authUser = (req as any).authUser as { id: string | string[]; role: string };
       const authUserId = String(authUser.id);
-      const isOwner = report.studentId === authUserId;
+      const isOwner = !!report.studentId && report.studentId === authUserId;
       const isSuperAdmin = authUser.role === "super_admin";
 
       if (!isOwner && !isSuperAdmin) {
-        // Check if requester is a tutor who adopted this student
-        if (authUser.role === "tutor" && report.studentId) {
+        if (authUser.role !== "tutor") {
+          return res.status(403).json({ message: "Forbidden: you do not have access to this report" });
+        }
+        const isQuizAuthor = report.quiz?.authorId === authUserId;
+        let isTutorOfStudent = false;
+        if (!isQuizAuthor && report.studentId) {
           const adopted = await storage.getAdoptedStudents(authUserId);
-          const isTutorOfStudent = adopted.some((s) => s.id === report.studentId);
-          if (!isTutorOfStudent) {
-            return res.status(403).json({ message: "Forbidden: you do not have access to this report" });
-          }
-        } else {
+          isTutorOfStudent = adopted.some((s) => s.id === report.studentId);
+        }
+        if (!isQuizAuthor && !isTutorOfStudent) {
           return res.status(403).json({ message: "Forbidden: you do not have access to this report" });
         }
       }
@@ -4840,14 +4845,18 @@ ${JSON.stringify({
       if (!report) return res.status(404).json({ message: "Report not found" });
       const authUser = (req as any).authUser as { id: string | string[]; role: string };
       const authUserId = String(authUser.id);
-      const isOwner = report.studentId === authUserId;
+      const isOwner = !!report.studentId && report.studentId === authUserId;
       const isSuperAdmin = authUser.role === "super_admin";
+      let isQuizAuthor = false;
       let isTutorOfStudent = false;
-      if (authUser.role === "tutor" && report.studentId) {
-        const adopted = await storage.getAdoptedStudents(authUserId);
-        isTutorOfStudent = adopted.some((s) => s.id === report.studentId);
+      if (authUser.role === "tutor") {
+        isQuizAuthor = report.quiz?.authorId === authUserId;
+        if (!isQuizAuthor && report.studentId) {
+          const adopted = await storage.getAdoptedStudents(authUserId);
+          isTutorOfStudent = adopted.some((s) => s.id === report.studentId);
+        }
       }
-      if (!isOwner && !isSuperAdmin && !isTutorOfStudent) {
+      if (!isOwner && !isSuperAdmin && !isQuizAuthor && !isTutorOfStudent) {
         return res.status(403).json({ message: "Forbidden: you do not have access to this report" });
       }
 
