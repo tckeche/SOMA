@@ -11,7 +11,7 @@ import jwt from "jsonwebtoken";
 import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
-import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runGeminiFormattingCheck, runClaudePolish, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
+import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
@@ -2594,14 +2594,17 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         });
       }
 
-      const report = await storage.getSomaReportsByStudentId(studentId);
+      // 1. Pull performance in a single fan-out: all assignments + their questions + matching reports.
+      const [reports, assignments] = await Promise.all([
+        storage.getSomaReportsByStudentId(studentId),
+        storage.getQuizAssignmentsForStudent(studentId),
+      ]);
+      const reportByQuiz = new Map(reports.map((r) => [r.quizId, r]));
       const questionPerformance: QuestionPerformanceRow[] = [];
-      const assignmentRows = await Promise.all((await storage.getQuizAssignmentsForStudent(studentId)).map(async (a) => {
-        const matched = report.find((r) => r.quizId === a.quizId);
+      const assignmentRows = await Promise.all(assignments.map(async (a) => {
+        const matched = reportByQuiz.get(a.quizId);
         const questions = await storage.getSomaQuestionsByQuizId(a.quizId);
         const maxScore = questions.reduce((sum, q) => sum + q.marks, 0);
-
-        // Build question-level performance data from answersJson
         if (matched?.answersJson) {
           const answers = (matched.answersJson || {}) as Record<string, string>;
           for (const q of questions) {
@@ -2617,199 +2620,72 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             }
           }
         }
-
         return { quizSubject: a.quiz.subject, quizTitle: a.quiz.title, score: matched?.score ?? null, maxScore };
       }));
       const analysis = computeStudentPerformance(assignmentRows, questionPerformance);
 
-      // Update mastery tracking for ALL analyzed items (weak + strong)
-      for (const item of analysis.weak) {
-        await storage.upsertStudentTopicMastery({
-          studentId,
-          subject: item.subject,
-          topic: item.topic,
-          subtopic: item.subtopic,
-          understandingPercent: item.understanding,
-          masteryAchieved: false,
-          covered: true,
-          tested: true,
-        });
-      }
-      for (const item of analysis.strong) {
-        await storage.upsertStudentTopicMastery({
-          studentId,
-          subject: item.subject,
-          topic: item.topic,
-          subtopic: item.subtopic,
-          understandingPercent: item.understanding,
-          masteryAchieved: item.understanding >= 75,
-          covered: true,
-          tested: true,
-        });
-      }
-
-      // Remediation loop: check existing mastery records for topics still below 75%
-      // These get priority over generic weak areas — the student was already flagged
-      // and still hasn't reached satisfactory understanding
-      const existingMastery = await storage.listStudentTopicMastery(studentId);
-      const remediationTargets = existingMastery
-        .filter((m) => m.tested && !m.masteryAchieved && m.understandingPercent < 75)
-        .sort((a, b) => a.understandingPercent - b.understandingPercent);
-
-      const displayName = student?.displayName || "Student";
-
-      // Multi-subject: gather topic inventory & misconceptions from ALL subjects
-      const allMisconceptions: Array<{ topic: string; subtopic: string | null; misconception: string; frequency: string }> = [];
+      // 2. Top up uncovered topics from each subject's syllabus inventory so
+      //    every subject has something to suggest even if the student has no
+      //    history there yet. (Misconception catalogue + per-topic mastery
+      //    upserts intentionally skipped — they'll move to a dedicated
+      //    write-path later.)
       for (const subj of subjects) {
-        const topicInventory = await storage.listSyllabusTopicInventory({
+        const inventory = await storage.listSyllabusTopicInventory({
           board: subj.examBody,
           syllabusCode: subj.syllabusCode,
         });
-        if (topicInventory.length > 0) {
-          const coveredTopics = new Set([
-            ...analysis.weak.map((w) => w.topic.toLowerCase()),
-            ...analysis.strong.map((s) => s.topic.toLowerCase()),
-            ...existingMastery.map((m) => m.topic.toLowerCase()),
-          ]);
-          const uncoveredFromInventory = topicInventory
-            .filter((t) => !coveredTopics.has(t.topic.toLowerCase()))
-            .slice(0, 3);
-          for (const t of uncoveredFromInventory) {
-            if (!analysis.uncovered.some((u) => u.topic.toLowerCase() === t.topic.toLowerCase())) {
-              analysis.uncovered.push({ subject: t.subject || subj.subject, topic: t.topic, subtopic: t.subtopic });
-            }
-          }
-        }
-
-        const misconceptions = await storage.listExaminerMisconceptions({
-          board: subj.examBody,
-          syllabusCode: subj.syllabusCode,
-        });
-        for (const m of misconceptions.slice(0, 3)) {
-          allMisconceptions.push({ topic: m.topic, subtopic: m.subtopic, misconception: m.misconception, frequency: m.frequency });
+        if (inventory.length === 0) continue;
+        const seen = new Set([
+          ...analysis.weak.map((w) => w.topic.toLowerCase()),
+          ...analysis.strong.map((s) => s.topic.toLowerCase()),
+          ...analysis.uncovered.map((u) => u.topic.toLowerCase()),
+        ]);
+        for (const t of inventory.filter((t) => !seen.has(t.topic.toLowerCase())).slice(0, 3)) {
+          analysis.uncovered.push({ subject: t.subject || subj.subject, topic: t.topic, subtopic: t.subtopic });
         }
       }
 
-      // Build suggestions across ALL subjects
+      // 3. Build one suggestion per (subject, purpose) slot: weak → stretch → uncovered.
+      const displayName = student?.displayName || "Student";
       const suggestions: Array<{
         subject: string; purpose: string; rationale: string;
         topic: string; subtopic: string | null; targetDifficulty: string;
       }> = [];
+      const usedKey = new Set<string>();
+      const take = (
+        subject: string,
+        purpose: string,
+        topic: string,
+        subtopic: string | null,
+        targetDifficulty: string,
+        rationale: string,
+      ) => {
+        const key = `${subject}|||${topic}|||${subtopic || ""}`;
+        if (usedKey.has(key)) return;
+        usedKey.add(key);
+        suggestions.push({ subject, purpose, topic, subtopic, targetDifficulty, rationale });
+      };
 
-      // Per-subject: struggling areas (from remediation targets first, then weak areas)
-      const usedTopics = new Set<string>();
       for (const subj of subjects) {
-        const subjectRemediations = remediationTargets.filter((r) => r.subject === subj.subject);
-        const subjectWeak = analysis.weak.filter((w) => w.subject === subj.subject);
-        const struggleTopic = subjectRemediations[0] || subjectWeak[0];
-        if (struggleTopic) {
-          const key = `${struggleTopic.topic}|||${struggleTopic.subtopic || ""}`;
-          if (!usedTopics.has(key)) {
-            usedTopics.add(key);
-            const attempts = subjectRemediations[0]?.attempts ?? 0;
-            suggestions.push({
-              subject: subj.subject,
-              purpose: "struggling_areas",
-              rationale: `${displayName} is at ${(struggleTopic as any).understandingPercent ?? (struggleTopic as any).understanding}% in ${struggleTopic.topic}${struggleTopic.subtopic ? ` > ${struggleTopic.subtopic}` : ""}. ${attempts > 0 ? `Previously tested ${attempts} time(s) — still below 75% mastery threshold.` : "Continue targeting until mastery reaches at least 75%."}`,
-              topic: struggleTopic.topic,
-              subtopic: struggleTopic.subtopic ?? null,
-              targetDifficulty: "medium",
-            });
-          }
+        const weak = analysis.weak.find((w) => w.subject === subj.subject);
+        if (weak) {
+          take(subj.subject, "struggling_areas", weak.topic, weak.subtopic, "medium",
+            `${displayName} is at ${weak.understanding}% in ${weak.topic}${weak.subtopic ? ` > ${weak.subtopic}` : ""}. Target this until understanding reaches at least 75%.`);
         }
-      }
-      // Fallback if no struggling areas found for any subject
-      if (suggestions.filter((s) => s.purpose === "struggling_areas").length === 0) {
-        suggestions.push({
-          subject: subjects[0].subject,
-          purpose: "struggling_areas",
-          rationale: `${displayName} has no acute weak topic yet, so validate prior weak spots.`,
-          topic: "Core concepts",
-          subtopic: null,
-          targetDifficulty: "medium",
-        });
-      }
-
-      // Per-subject: uncovered content
-      for (const subj of subjects) {
-        const uncovered = analysis.uncovered.find((u) => u.subject === subj.subject);
-        if (uncovered) {
-          const key = `${uncovered.topic}|||${uncovered.subtopic || ""}`;
-          if (!usedTopics.has(key)) {
-            usedTopics.add(key);
-            suggestions.push({
-              subject: subj.subject,
-              purpose: "uncovered_content",
-              rationale: `Assess uncovered ${subj.subject} syllabus content to improve full coverage.`,
-              topic: uncovered.topic,
-              subtopic: uncovered.subtopic ?? null,
-              targetDifficulty: "easy",
-            });
-          }
-        }
-      }
-      // Fallback uncovered
-      if (suggestions.filter((s) => s.purpose === "uncovered_content").length === 0 && analysis.uncovered.length > 0) {
-        suggestions.push({
-          subject: analysis.uncovered[0].subject,
-          purpose: "uncovered_content",
-          rationale: "Assess currently uncovered syllabus content to improve full syllabus coverage.",
-          topic: analysis.uncovered[0].topic,
-          subtopic: analysis.uncovered[0].subtopic ?? null,
-          targetDifficulty: "easy",
-        });
-      }
-
-      // Per-subject: stretch strengths
-      for (const subj of subjects) {
         const strong = analysis.strong.find((s) => s.subject === subj.subject);
         if (strong) {
-          const key = `${strong.topic}|||${strong.subtopic || ""}`;
-          if (!usedTopics.has(key)) {
-            usedTopics.add(key);
-            suggestions.push({
-              subject: subj.subject,
-              purpose: "stretch_strengths",
-              rationale: `${displayName} scores ${strong.understanding}% in ${strong.topic}${strong.subtopic ? ` > ${strong.subtopic}` : ""}. Challenge with progressively harder questions.`,
-              topic: strong.topic,
-              subtopic: strong.subtopic ?? null,
-              targetDifficulty: "hard",
-            });
-          }
+          take(subj.subject, "stretch_strengths", strong.topic, strong.subtopic, "hard",
+            `${displayName} scores ${strong.understanding}% in ${strong.topic}${strong.subtopic ? ` > ${strong.subtopic}` : ""}. Push further with harder questions.`);
+        }
+        const uncovered = analysis.uncovered.find((u) => u.subject === subj.subject);
+        if (uncovered) {
+          take(subj.subject, "uncovered_content", uncovered.topic, uncovered.subtopic, "easy",
+            `Assess uncovered ${subj.subject} syllabus content to improve coverage.`);
         }
       }
-      // Fallback stretch
-      if (suggestions.filter((s) => s.purpose === "stretch_strengths").length === 0) {
-        suggestions.push({
-          subject: subjects[0].subject,
-          purpose: "stretch_strengths",
-          rationale: "Challenge stronger areas with progressively harder questions.",
-          topic: analysis.strong[0]?.topic || "Advanced mixed practice",
-          subtopic: analysis.strong[0]?.subtopic ?? null,
-          targetDifficulty: "hard",
-        });
-      }
-
-      // Spaced repetition: add review suggestions for mastered topics due for review
-      const now = new Date();
-      const dueForReview = existingMastery
-        .filter((m) => m.masteryAchieved && m.nextReviewAt && new Date(m.nextReviewAt) <= now)
-        .sort((a, b) => new Date(a.nextReviewAt!).getTime() - new Date(b.nextReviewAt!).getTime());
-
-      for (const review of dueForReview.slice(0, 2)) {
-        const key = `${review.topic}|||${review.subtopic || ""}`;
-        if (!usedTopics.has(key)) {
-          usedTopics.add(key);
-          const daysOverdue = Math.floor((now.getTime() - new Date(review.nextReviewAt!).getTime()) / 86400000);
-          suggestions.push({
-            subject: review.subject,
-            purpose: "spaced_review",
-            rationale: `${displayName} mastered ${review.topic}${review.subtopic ? ` > ${review.subtopic}` : ""} at ${review.understandingPercent}% but is ${daysOverdue > 0 ? `${daysOverdue} day(s) overdue` : "due today"} for spaced repetition review. Retention check to prevent forgetting.`,
-            topic: review.topic,
-            subtopic: review.subtopic ?? null,
-            targetDifficulty: "medium",
-          });
-        }
+      if (suggestions.length === 0) {
+        take(subjects[0].subject, "struggling_areas", "Core concepts", null, "medium",
+          `${displayName} has no quiz history yet — start with a baseline assessment.`);
       }
 
       const created = await Promise.all(suggestions.map((s) => storage.createSuggestedAssessment({
@@ -2826,14 +2702,6 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           weaknesses: analysis.weak,
           strengths: analysis.strong,
           uncovered: analysis.uncovered,
-          misconceptions: allMisconceptions.slice(0, 8),
-          remediationTargets: remediationTargets.slice(0, 5).map((r) => ({
-            topic: r.topic,
-            subtopic: r.subtopic,
-            understanding: r.understandingPercent,
-            attempts: r.attempts,
-            confidence: r.confidenceLevel,
-          })),
         },
         suggestions: created,
       });
@@ -3721,8 +3589,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
-      // ── Step 2.5: Gemini formatting check + conditional Claude polish on NEW MCQ questions ──
-      // Only audits questions added/replaced this turn; graph questions and pure DELETE/REORDER/NONE actions are skipped.
+      // ── Step 2.5: Verifier audit on NEW MCQ questions ──
+      // Same ChatGPT → Gemini verifier chain as the main quiz pipeline: checks
+      // each answer, fixes any that are wrong, and writes the Soma explanation.
+      // Only audits questions added/replaced this turn; graph questions and
+      // pure DELETE/REORDER/NONE actions are skipped.
       let pipelineWarnings: PipelineWarning[] = [];
       const newQuestionActions = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED"];
       const mcqIndices: number[] = [];
@@ -3750,36 +3621,24 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
           syllabus: meta.syllabus || "General",
           level: meta.level || "Grade 12",
         };
-        try {
-          const checkResult = await runGeminiFormattingCheck(mcqToCheck, checkerContext);
-          let fixedQs = checkResult.questions;
-          pipelineWarnings = checkResult.warnings;
-          // Cost gate: only invoke Claude polish when the checker actually ran AND
-          // produced real warnings. checkerOk=false means availability noise only.
-          if (checkResult.checkerOk && pipelineWarnings.length > 0) {
-            const polished = await runClaudePolish(fixedQs, pipelineWarnings, checkerContext);
-            fixedQs = polished.questions;
-          }
-          // Write fixes back into normalisedQuestions at the original indices
-          mcqIndices.forEach((origIdx, i) => {
-            const fixed = fixedQs[i];
-            if (!fixed) return;
-            const orig = normalisedQuestions[origIdx];
-            normalisedQuestions[origIdx] = {
-              ...orig,
-              stem: fixed.stem,
-              options: fixed.options,
-              correctAnswer: fixed.correct_answer,
-              explanation: fixed.explanation,
-              marks: fixed.marks,
-              difficultyTag: fixed.difficulty_tag ?? orig.difficultyTag,
-              topicTag: fixed.topic_tag ?? orig.topicTag,
-              subtopicTag: fixed.subtopic_tag ?? orig.subtopicTag,
-            };
-          });
-        } catch (e: any) {
-          console.warn(`[COPILOT_AUDIT] Gemini/Claude audit pass failed: ${e?.message || "unknown"}; returning unaudited drafts.`);
-        }
+        const audit = await runQuestionAudit(mcqToCheck, checkerContext);
+        pipelineWarnings = audit.warnings;
+        mcqIndices.forEach((origIdx, i) => {
+          const fixed = audit.questions[i];
+          if (!fixed) return;
+          const orig = normalisedQuestions[origIdx];
+          normalisedQuestions[origIdx] = {
+            ...orig,
+            stem: fixed.stem,
+            options: fixed.options,
+            correctAnswer: fixed.correct_answer,
+            explanation: fixed.explanation,
+            marks: fixed.marks,
+            difficultyTag: fixed.difficulty_tag ?? orig.difficultyTag,
+            topicTag: fixed.topic_tag ?? orig.topicTag,
+            subtopicTag: fixed.subtopic_tag ?? orig.subtopicTag,
+          };
+        });
       }
 
       // ── Step 3: Simulate the final draft state on the server to compute
