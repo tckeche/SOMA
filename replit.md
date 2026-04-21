@@ -65,27 +65,44 @@ A separate `stripSyllabusNoise` pre-processor drops page numbers, running
 headers, © UCLES lines, "How to register candidates" admin blocks and other
 PDF noise before any AI touches it.
 
-### AI generation pipeline (Phases 2, 8)
-`server/services/aiPipeline.ts` runs a multi-stage SOMA pipeline:
+### AI generation pipeline (Phase 12 — two-stage Maker → Verifier)
+`server/services/aiPipeline.ts` was collapsed (PR #72) from the previous
+five-stage flow into a leaner **two-stage Maker → Verifier** pipeline with
+a strict no-self-grading rule:
 
-  1. **Maker** — GPT-4o via `generateWithFallback`
-     (`gpt-4o → claude-sonnet-4-6 → gemini-2.5-flash → o3-mini → deepseek →
-     gpt-4o-mini`). Drafts the question set.
-  2. **Gemini formatting Checker** — called directly (not via fallback) to
-     audit LaTeX, currency symbols, option balance, scope, and emit
-     `PipelineWarning`s. Phase 8's `reconcileCheckerStems` guard reverts
-     any silent stem rewrites the checker emits without a corresponding
-     warning, keeping Maker's wording authoritative.
-  3. **Claude Polisher** — runs only when the checker surfaced real issues
-     (`checkerOk` flag prevents invocation on availability noise), saving
-     roughly half the cost on clean runs.
-  4. **Blind Dual-Check** — Gemini + Claude independently verify the final
-     set; consensus-only corrections are merged (answer/explanation only, no
-     wholesale rewrites).
-  5. **Math Validator** — arithmetic, unit, and answer-consistency sweep.
+  1. **Maker** — Claude Sonnet 4.6 drafts the MCQs *without* the
+     explanation field. If Claude is unavailable, GPT-4o takes over as a
+     fallback maker.
+  2. **Verifier** — the model that wrote the quiz must NOT grade itself:
+     - Claude maker → GPT-4o verifier (Gemini 2.5 Flash as availability
+       fallback).
+     - GPT-4o maker → Gemini 2.5 Flash verifier only (no self-check ever).
+     The verifier checks every question, fixes wrong/missing answers, and
+     writes the final Soma tutor explanation, emitting structured
+     `PipelineWarning`s for anything it had to repair.
+  3. **Deterministic guards** — `applyDeterministicIntegrityGuards`,
+     `validateAndCorrectMcqAnswers`, and `applyMathValidatorCorrections`
+     dedupe options, clamp marks, snap `correct_answer` onto a real option
+     verbatim, and re-run numeric answers through the math validator.
 
-Phase 8 caches the catalogue text once per generation (used to be
-re-serialised at five sites) via `context.catalogueContextText`.
+Quizzes larger than 15 questions are auto-batched in chunks of 15 so each
+stage stays inside the token budget. The retired stages (Gemini formatting
+Checker, Claude Polisher, Blind Dual-Check) are gone entirely — including
+the `checkerOk` / `polishModel` plumbing — and `aiPipeline.ts` shrank from
+~1463 lines to ~916. Catalogue text is still cached once per generation
+via `context.catalogueContextText`. Warnings are still plumbed through
+`generateAuditedQuiz` and `/api/tutor/copilot-chat` and rendered as amber
+blocks in the builder Co-Pilot.
+
+### Syllabus insights — radar + paper-readiness heatmap (Phase 12)
+`server/services/syllabusInsights.ts` builds a per-student
+**topic-coverage radar** and a **paper-readiness heatmap** by joining the
+student's submitted reports against the Cambridge syllabus catalogue. The
+payload is rendered by `client/src/components/SyllabusInsightsSection.tsx`
+and embedded in both `StudentDashboard.tsx` (student self-view) and
+`TutorStudentDetail.tsx` (tutor profile view). Topics with no submissions
+remain visible on the radar so coverage can only grow over time, and the
+heatmap card is hidden for subjects that don't yet have paper-level data.
 
 ### Legacy PDF path (Phase 10)
 The older `syllabus_documents` + `syllabus_chunks` tables and the
@@ -132,6 +149,7 @@ Incremental phases since the catalogue migration started:
 | 9    | Semantic auto-select wired into `loadCopilotContext` + `/api/tutor/copilot-chat`, `/api/soma/generate`, `/api/tutor/quizzes/generate`. |
 | 10   | Curriculum unification: catalogue is primary source; `syllabus_documents` explicitly deprecated; `ingestCurriculumDocs.ts` marked legacy. |
 | 11   | Docs + pipeline ledger (this file). |
+| 12   | Pipeline collapsed to two-stage Maker → Verifier (PR #72) with no-self-grade rule; 5-stage flow + Polisher retired. New syllabus insights service powering topic-coverage radar + paper-readiness heatmap on student dashboard and tutor student profile. |
 
 ## External Dependencies
 - **Auth**: Supabase Auth
