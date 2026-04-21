@@ -173,7 +173,23 @@ export default function BuilderPage() {
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
   // Wizard step: 0=Body, 1=Level, 2=Subject, 3=Topics, 4=Time limit.
   // In edit mode we jump straight to the end (everything already filled).
-  const [wizardStep, setWizardStep] = useState<0 | 1 | 2 | 3 | 4>(0);
+  // Default to step 1 (Level) when quick-start is on at mount so we never
+  // render a hidden step (0=body) on first paint.
+  const [wizardStep, setWizardStep] = useState<0 | 1 | 2 | 3 | 4>(() => {
+    if (typeof window === "undefined") return 0;
+    try { return window.localStorage.getItem("soma:wizard-quickstart") === "1" ? 1 : 0; }
+    catch { return 0; }
+  });
+  // Quick-start mode hides the Examining body and Topics steps so tutors of
+  // humanities subjects (English Lit, English Lang, History) can jump straight
+  // to Level → Subject → Time and let the Co-Pilot infer scope from the
+  // prompt. Persisted in localStorage so it survives reloads, but kept out of
+  // the draft schema (it's a UI preference, not part of the quiz).
+  const [quickStart, setQuickStart] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem("soma:wizard-quickstart") === "1"; }
+    catch { return false; }
+  });
   // Resolved Cambridge syllabus code, synced from the /api/catalogue/topics
   // response. Declared here (rather than inline with the query hook below) so
   // that the debounced-draft-write effect can reference it without a
@@ -253,6 +269,21 @@ export default function BuilderPage() {
     },
     [confirmDiscardIfDirty],
   );
+
+  // Quick-start invariant: whenever quickStart is true, the wizard must
+  // (a) force examiningBodySlug='cambridge', (b) carry no topic/subtopic
+  // selections (those steps are hidden, so any leftover IDs would silently
+  // narrow the AI prompt), and (c) sit on a visible step (skip 0=body and
+  // 3=topics). This effect runs reactively — not just on mount — so it also
+  // corrects state after draft recovery or any other path that might reseed
+  // hidden-step values while quickStart is on.
+  useEffect(() => {
+    if (!quickStart) return;
+    if (examiningBodySlug !== "cambridge") setExaminingBodySlug("cambridge");
+    if (selectedTopicIds.length > 0) setSelectedTopicIds([]);
+    if (selectedSubtopicIds.length > 0) setSelectedSubtopicIds([]);
+    if (wizardStep === 0 || wizardStep === 3) setWizardStep(1);
+  }, [quickStart, examiningBodySlug, selectedTopicIds, selectedSubtopicIds, wizardStep]);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1201,6 +1232,23 @@ export default function BuilderPage() {
             metaDirty={metaDirty}
             onSaveMeta={() => updateMetaMutation.mutate()}
             saveMetaPending={updateMetaMutation.isPending}
+            quickStart={quickStart}
+            onQuickStartChange={(next) => {
+              setQuickStart(next);
+              try { window.localStorage.setItem("soma:wizard-quickstart", next ? "1" : "0"); } catch {}
+              if (next) {
+                // Lock examining body to Cambridge (the only one we currently
+                // ingest) and clear any topic selections so the prompt isn't
+                // silently narrowed by stale state.
+                if (examiningBodySlug !== "cambridge") setExaminingBodySlug("cambridge");
+                if (selectedTopicIds.length > 0) setSelectedTopicIds([]);
+                if (selectedSubtopicIds.length > 0) setSelectedSubtopicIds([]);
+                // If the tutor was sitting on a now-hidden step, jump to the
+                // first visible one so the wizard renders sensibly.
+                if (wizardStep === 0 || wizardStep === 3) setWizardStep(1);
+                markMeta();
+              }
+            }}
           />
 
 

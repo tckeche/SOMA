@@ -71,9 +71,17 @@ Options:
 }
 
 function createPool(): pg.Pool {
-  const url = process.env.SUPABASE_URL || process.env.DATABASE_URL;
+  // Prefer DATABASE_URL (the workflow sets it explicitly to the Postgres
+  // connection string). Fall back to SUPABASE_URL only if it actually looks
+  // like a Postgres URL — Replit's SUPABASE_URL secret holds the HTTPS API
+  // origin (https://*.supabase.co) which would silently hang the pg pool.
+  const candidates = [process.env.DATABASE_URL, process.env.SUPABASE_DB_URL, process.env.SUPABASE_URL];
+  const url = candidates.find((c) => typeof c === "string" && /^postgres(ql)?:\/\//i.test(c));
   if (!url) {
-    throw new Error("Set SUPABASE_URL or DATABASE_URL before running the ingestion.");
+    throw new Error(
+      "Set DATABASE_URL (or SUPABASE_DB_URL) to a postgres:// connection string before running the ingestion. " +
+      "SUPABASE_URL is the HTTPS API origin and cannot be used as a database URL.",
+    );
   }
   const lower = url.toLowerCase();
   const useSsl = lower.includes("supabase.co") || lower.includes("sslmode=require");
@@ -152,10 +160,14 @@ async function main(): Promise<void> {
 
     if (!opts.skipReference) {
       console.log("\nSeeding reference data …");
+      const seedStart = Date.now();
       await seedReferenceData(db);
+      console.log(`Seed reference data done in ${Date.now() - seedStart}ms.`);
     }
 
+    console.log(`[trace] selecting examining_bodies …`);
     const bodyRows = await db.select().from(schema.examiningBodies);
+    console.log(`[trace] got ${bodyRows.length} bodies`);
     const cambridge = bodyRows.find((b) => b.slug === CAMBRIDGE_BODY_SLUG);
     if (!cambridge) throw new Error("Cambridge examining body row is missing — did the reference seed run?");
 
@@ -169,14 +181,20 @@ async function main(): Promise<void> {
     let totalPaperMappings = 0;
 
     for (const summary of summaries) {
+      const t0 = Date.now();
+      console.log(`[trace] [${summary.entry.syllabusCode}] upsertSyllabus …`);
       const result = await upsertSyllabus(db, cambridge.id, summary.entry);
+      console.log(`[trace] [${summary.entry.syllabusCode}] upsertSyllabus done in ${Date.now() - t0}ms (wroteRow=${result.wroteRow})`);
       summary.syllabusId = result.syllabusId;
       summary.wroteRow = result.wroteRow;
       if (result.wroteRow) wrote++;
       else unchanged++;
 
       if (summary.parsed) {
+        const t1 = Date.now();
+        console.log(`[trace] [${summary.entry.syllabusCode}] upsertParsedSyllabus (topics=${summary.parsed.topics.length}) …`);
         const write = await upsertParsedSyllabus(db, result.syllabusId, summary.parsed);
+        console.log(`[trace] [${summary.entry.syllabusCode}] upsertParsedSyllabus done in ${Date.now() - t1}ms (topics=${write.topicsWritten}, subs=${write.subtopicsWritten}, LRs=${write.requirementsWritten})`);
         summary.topicsWritten = write.topicsWritten;
         summary.subtopicsWritten = write.subtopicsWritten;
         summary.requirementsWritten = write.requirementsWritten;

@@ -85,6 +85,14 @@ export interface AssessmentWizardProps {
   metaDirty: boolean;
   onSaveMeta: () => void;
   saveMetaPending: boolean;
+
+  // Quick-start mode collapses the wizard to Level → Subject → Time only.
+  // Examining body is auto-fixed to Cambridge and the Topics step is hidden,
+  // so the Co-Pilot infers scope from the tutor's free-text prompt instead.
+  // Useful for English Lit / English Lang / History where the catalogue does
+  // not break the syllabus into machine-readable topics.
+  quickStart: boolean;
+  onQuickStartChange: (next: boolean) => void;
 }
 
 const STEPS: Array<{
@@ -111,7 +119,19 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     selectedSubtopicIds, onToggleSubtopic, onToggleAllSubtopicsForTopic,
     timeLimitMinutes, onTimeLimitChange,
     activeQuizId, metaDirty, onSaveMeta, saveMetaPending,
+    quickStart, onQuickStartChange,
   } = props;
+
+  // In quick-start mode the tutor only sees Level / Subject / Time. Examining
+  // body and Topics are intentionally hidden so the Co-Pilot can drive scope.
+  const visibleStepKeys = useMemo<Array<0 | 1 | 2 | 3 | 4>>(
+    () => quickStart ? [1, 2, 4] : [0, 1, 2, 3, 4],
+    [quickStart],
+  );
+  const visibleSteps = useMemo(
+    () => STEPS.filter((s) => visibleStepKeys.includes(s.key)),
+    [visibleStepKeys],
+  );
 
   // A step counts as "complete" once its required value is filled. Topics is
   // optional (empty selection = whole subject) and ticks complete as soon as
@@ -130,24 +150,51 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     return stepDone[from];
   };
 
+  // Walk forward/back through only the visible steps. This keeps the ordering
+  // stable (Level → Subject → Time in quick-start) without having to renumber
+  // the underlying step keys, which the parent uses for persistence.
   const goNext = () => {
-    if (step < 4 && canAdvance(step)) onStep((step + 1) as 0 | 1 | 2 | 3 | 4);
+    const idx = visibleStepKeys.indexOf(step);
+    if (idx < 0 || idx === visibleStepKeys.length - 1) return;
+    if (!canAdvance(step)) return;
+    onStep(visibleStepKeys[idx + 1]);
   };
   const goBack = () => {
-    if (step > 0) onStep((step - 1) as 0 | 1 | 2 | 3 | 4);
+    const idx = visibleStepKeys.indexOf(step);
+    if (idx <= 0) return;
+    onStep(visibleStepKeys[idx - 1]);
   };
+  const isLastVisibleStep = visibleStepKeys.indexOf(step) === visibleStepKeys.length - 1;
 
   return (
     <div className="glass-card p-4 md:p-5 space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <BookOpen className="w-4 h-4 text-violet-400" />
         <h2 className="font-semibold text-slate-100 text-sm">Assessment Parameters</h2>
         {activeQuizId && (
-          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] ml-auto">
+          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
             Live · ID {activeQuizId}
           </Badge>
         )}
+        <button
+          type="button"
+          onClick={() => onQuickStartChange(!quickStart)}
+          className={`ml-auto text-[11px] rounded-md px-2 py-1 border transition-colors ${
+            quickStart
+              ? "border-violet-500/50 bg-violet-500/15 text-violet-200"
+              : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/5"
+          }`}
+          title="Hide examining body and topics — let the Co-Pilot infer scope from your prompt"
+          data-testid="button-toggle-quick-start"
+        >
+          {quickStart ? "✓ Quick start" : "Quick start"}
+        </button>
       </div>
+      {quickStart && (
+        <p className="text-[11px] text-violet-300/80 -mt-2">
+          Quick start on — examining body fixed to Cambridge, topics skipped. The Co-Pilot will infer scope from your prompt.
+        </p>
+      )}
 
       {/* Title lives above the stepper — tutor can edit it at any step. */}
       <div className="space-y-1.5">
@@ -161,7 +208,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         />
       </div>
 
-      <StepBar steps={STEPS} current={step} onStep={onStep} stepDone={stepDone} />
+      <StepBar steps={visibleSteps} current={step} onStep={onStep} stepDone={stepDone} />
 
       <div className="rounded-lg border border-white/5 bg-black/20 p-4 min-h-[160px]">
         {step === 0 && (
