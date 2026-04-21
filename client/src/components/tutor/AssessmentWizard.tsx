@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -365,6 +366,58 @@ function StepBar({
   );
 }
 
+function SelectCard({
+  selected,
+  onClick,
+  children,
+  testId,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  testId?: string;
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      layout
+      initial={false}
+      animate={{
+        borderColor: selected ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.1)",
+        backgroundColor: selected ? "rgba(139,92,246,0.1)" : "rgba(255,255,255,0.02)",
+        boxShadow: selected
+          ? "0 0 0 1px rgba(139,92,246,0.25), 0 8px 24px -12px rgba(139,92,246,0.45)"
+          : "0 0 0 0 rgba(139,92,246,0)",
+      }}
+      whileHover={{ y: -2, transition: { type: "spring", stiffness: 400, damping: 25 } }}
+      whileTap={{ scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 350, damping: 28 }}
+      className={`relative text-left rounded-lg border px-3 py-3 text-sm overflow-hidden ${
+        selected ? "text-violet-100" : "text-slate-300 hover:bg-white/5"
+      }`}
+      data-testid={testId}
+    >
+      {children}
+      <AnimatePresence>
+        {selected && (
+          <motion.span
+            key="check"
+            initial={{ scale: 0, opacity: 0, rotate: -90 }}
+            animate={{ scale: 1, opacity: 1, rotate: 0 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 500, damping: 22 }}
+            className="absolute top-2 right-2 w-5 h-5 rounded-full bg-violet-500 text-white flex items-center justify-center shadow-[0_0_10px_rgba(139,92,246,0.6)]"
+            aria-hidden="true"
+          >
+            <Check className="w-3 h-3" strokeWidth={3} />
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </motion.button>
+  );
+}
+
 function StepExaminingBody({
   value,
   onChange,
@@ -387,24 +440,16 @@ function StepExaminingBody({
         <p className="text-xs text-slate-500">No examining bodies available.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {bodies.map((b) => {
-            const selected = value === b.slug;
-            return (
-              <button
-                type="button"
-                key={b.slug}
-                onClick={() => onChange(b.slug)}
-                className={`text-left rounded-lg border px-3 py-3 text-sm transition-colors ${
-                  selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/5"
-                }`}
-                data-testid={`wizard-body-${b.slug}`}
-              >
-                <span className="font-semibold">{b.displayName}</span>
-              </button>
-            );
-          })}
+          {bodies.map((b) => (
+            <SelectCard
+              key={b.slug}
+              selected={value === b.slug}
+              onClick={() => onChange(b.slug)}
+              testId={`wizard-body-${b.slug}`}
+            >
+              <span className="font-semibold">{b.displayName}</span>
+            </SelectCard>
+          ))}
         </div>
       )}
     </div>
@@ -438,24 +483,16 @@ function StepLevel({
         <p className="text-xs text-slate-500">No levels available for this body.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          {levels.map((l) => {
-            const selected = value === l.code;
-            return (
-              <button
-                type="button"
-                key={l.code}
-                onClick={() => onChange(l.code)}
-                className={`rounded-lg border px-3 py-3 text-sm transition-colors text-left ${
-                  selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/5"
-                }`}
-                data-testid={`wizard-level-${l.code}`}
-              >
-                <span className="font-semibold">{l.displayName}</span>
-              </button>
-            );
-          })}
+          {levels.map((l) => (
+            <SelectCard
+              key={l.code}
+              selected={value === l.code}
+              onClick={() => onChange(l.code)}
+              testId={`wizard-level-${l.code}`}
+            >
+              <span className="font-semibold">{l.displayName}</span>
+            </SelectCard>
+          ))}
         </div>
       )}
     </div>
@@ -493,24 +530,16 @@ function StepSubject({
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-          {subjects.map((s) => {
-            const selected = value === s.slug;
-            return (
-              <button
-                type="button"
-                key={s.slug}
-                onClick={() => onChange(s.slug)}
-                className={`text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                  selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/5"
-                }`}
-                data-testid={`wizard-subject-${s.slug}`}
-              >
-                <span className="font-semibold">{s.name}</span>
-              </button>
-            );
-          })}
+          {subjects.map((s) => (
+            <SelectCard
+              key={s.slug}
+              selected={value === s.slug}
+              onClick={() => onChange(s.slug)}
+              testId={`wizard-subject-${s.slug}`}
+            >
+              <span className="font-semibold">{s.name}</span>
+            </SelectCard>
+          ))}
         </div>
       )}
       {resolvedSyllabus && (
