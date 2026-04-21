@@ -21,7 +21,7 @@ const { examiningBodies, levels, competencies } = schema;
 export const CAMBRIDGE_BODY_SLUG = "cambridge";
 
 const BODIES: Array<{ slug: string; displayName: string; isActive: boolean }> = [
-  { slug: CAMBRIDGE_BODY_SLUG, displayName: "Cambridge International", isActive: true },
+  { slug: CAMBRIDGE_BODY_SLUG, displayName: "Cambridge Syllabus", isActive: true },
 ];
 
 /**
