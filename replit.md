@@ -150,6 +150,7 @@ Incremental phases since the catalogue migration started:
 | 10   | Curriculum unification: catalogue is primary source; `syllabus_documents` explicitly deprecated; `ingestCurriculumDocs.ts` marked legacy. |
 | 11   | Docs + pipeline ledger (this file). |
 | 12   | Pipeline collapsed to two-stage Maker → Verifier (PR #72) with no-self-grade rule; 5-stage flow + Polisher retired. New syllabus insights service powering topic-coverage radar + paper-readiness heatmap on student dashboard and tutor student profile. |
+| 13   | Builder Co-Pilot now streams real progress over Server-Sent Events: `/api/tutor/copilot-chat` honours `Accept: text/event-stream` and emits `stage` events at the drafting / verifying / saving boundaries plus a final `done` event with the full payload. Non-streaming clients still get the regular JSON response. Stale 5-stage `PIPELINE_STAGES` labels in `client/src/pages/builder.tsx` updated to match the current Maker → Verifier flow. |
 
 ## External Dependencies
 - **Auth**: Supabase Auth

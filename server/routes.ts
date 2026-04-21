@@ -3288,13 +3288,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const hasImplicitTopic = /about\s+\w+/i.test(text);
       const hasAnyContext = hasSubject || hasLevel || hasSyllabus || hasImplicitTopic;
       if (!hasAnyContext) {
-        return res.json({
+        const clarification = {
           reply: "To generate relevant questions, please fill in at least one of the Subject, Level, or Syllabus fields on the left — or mention the topic in your message (e.g. \"Generate 5 questions about Newton's laws\").",
           drafts: [],
           summary: buildCopilotSummary({ drafts: [] }),
           metadata: { provider: "clarification", model: "copilot-guard", durationMs: 0 },
           needsClarification: true,
-        });
+        };
+        if (wantsStream) {
+          sendEvent("done", clarification);
+          return res.end();
+        }
+        return res.json(clarification);
       }
 
       let supportingText = "";
@@ -3327,6 +3332,10 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           // No PDF *and* no catalogue selection → the tutor really has nothing
           // for us to ground on; keep the old 404 so they're nudged to upload
           // the syllabus or pick catalogue keys from the builder.
+          if (wantsStream) {
+            sendEvent("error", { message: "Selected syllabus could not be found" });
+            return res.end();
+          }
           return res.status(404).json({ message: "Selected syllabus could not be found" });
         }
         // else: PDF missing but catalogue keys present → silently continue.
@@ -3790,7 +3799,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         syllabusContextLabel,
       });
 
-      res.json({
+      const responsePayload = {
         reply: `${structured.reply}${replySuffix}${graphVerificationBlock}`,
         action: structured.action,
         questions: normalisedQuestions,
@@ -3821,9 +3830,22 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         metadata,
         warnings: pipelineWarnings,
         needsClarification: false,
-      });
+      };
+
+      if (wantsStream) {
+        sendEvent("stage", { stage: "saving", label: "Saving to draft" });
+        sendEvent("done", responsePayload);
+        res.end();
+      } else {
+        res.json(responsePayload);
+      }
     } catch (err: any) {
-      res.status(500).json({ message: `Copilot failed: ${err.message}` });
+      if (wantsStream) {
+        sendEvent("error", { message: `Copilot failed: ${err.message}` });
+        res.end();
+      } else {
+        res.status(500).json({ message: `Copilot failed: ${err.message}` });
+      }
     }
   });
 

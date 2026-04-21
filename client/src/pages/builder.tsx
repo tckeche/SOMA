@@ -779,40 +779,111 @@ export default function BuilderPage() {
         difficultySpread,
       };
 
-      animatePipeline(2);
+      animatePipeline(1);
       setGenerationState("generation_in_progress");
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      // Timeout bounds the *entire* request including stream consumption.
       const timeoutId = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
-      let res: Response;
+      let data: any;
       try {
-        res = await fetch("/api/tutor/copilot-chat", {
-          method: "POST",
-          headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: enrichedMessage,
-            chatHistory: chat,
-            includeGraphQuestions,
-            assessmentContext,
-            draftQuestions: currentDraftSnap,
-          }),
-          credentials: "include",
-          signal: controller.signal,
-        });
-      } catch (err: any) {
-        if (controller.signal.aborted) {
-          throw new Error("Generation was stopped. You can retry or refine your prompt.");
+        let res: Response;
+        try {
+          res = await fetch("/api/tutor/copilot-chat", {
+            method: "POST",
+            headers: {
+              ...authHeaders(),
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+            },
+            body: JSON.stringify({
+              message: enrichedMessage,
+              chatHistory: chat,
+              includeGraphQuestions,
+              assessmentContext,
+              draftQuestions: currentDraftSnap,
+            }),
+            credentials: "include",
+            signal: controller.signal,
+          });
+        } catch (err: any) {
+          if (controller.signal.aborted) {
+            throw new Error("Generation was stopped. You can retry or refine your prompt.");
+          }
+          throw err;
         }
-        throw err;
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || `Co-Pilot request failed (${res.status})`);
+        }
+
+        // Read response — server-sent events when streaming, plain JSON otherwise.
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("text/event-stream") && res.body) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let streamError: string | null = null;
+          let donePayload: any = null;
+
+          const processEvent = (block: string) => {
+            let eventName = "message";
+            let dataStr = "";
+            for (const line of block.split("\n")) {
+              if (line.startsWith("event:")) eventName = line.slice(6).trim();
+              else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+            }
+            if (!dataStr) return;
+            let payload: any;
+            try { payload = JSON.parse(dataStr); } catch { return; }
+            if (eventName === "stage") {
+              if (payload?.stage === "drafting") animatePipeline(1);
+              else if (payload?.stage === "verifying") animatePipeline(2);
+              else if (payload?.stage === "saving") animatePipeline(3);
+            } else if (eventName === "done") {
+              donePayload = payload;
+            } else if (eventName === "error") {
+              streamError = payload?.message || "Co-Pilot stream error";
+            }
+          };
+
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (value) {
+                // Normalise CRLF framing to LF before splitting on the SSE delimiter.
+                buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+              }
+              let idx;
+              while ((idx = buffer.indexOf("\n\n")) !== -1) {
+                const block = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                processEvent(block);
+              }
+              if (donePayload || streamError) {
+                try { await reader.cancel(); } catch { /* ignore */ }
+                break;
+              }
+              if (done) break;
+            }
+          } catch (err: any) {
+            if (controller.signal.aborted) {
+              throw new Error("Generation was stopped. You can retry or refine your prompt.");
+            }
+            throw err;
+          }
+          if (buffer.trim()) processEvent(buffer);
+
+          if (streamError) throw new Error(streamError);
+          if (!donePayload) throw new Error("Co-Pilot stream ended without a result.");
+          data = donePayload;
+        } else {
+          data = await res.json();
+        }
       } finally {
         clearTimeout(timeoutId);
         abortControllerRef.current = null;
       }
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Co-Pilot request failed (${res.status})`);
-      }
-      const data = await res.json();
 
       if (data.needsClarification) {
         setPipelineActive(false);
@@ -833,7 +904,7 @@ export default function BuilderPage() {
         // NOTE: navigate() is NOT called inside ensureQuizExists — we do it below
         // AFTER the draft is persisted, to prevent a route remount wiping state.
         const { quizId, isNew } = await ensureQuizExists();
-        animatePipeline(4);
+        animatePipeline(3);
 
         // Compute the new draft from the snapshot (captured before the AI call)
         const newDraft = applyDraftAction(currentDraftSnap, action, questions, positions);
