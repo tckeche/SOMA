@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  ChevronDown,
 } from "lucide-react";
 
 // ── Types shared with builder.tsx ──────────────────────────────────────────
@@ -34,10 +35,15 @@ interface PaperSummaryDto {
   id: number; paperNumber: number; code: string | null; title: string;
   levelTier: string | null; marks: number | null; durationMinutes: number | null;
 }
+interface SubtopicListItemDto {
+  id: number; subtopicNumber: string; title: string;
+  levelTier: string; coreOrExtended: string | null; sortOrder: number;
+}
 interface TopicListItemDto {
   id: number; topicNumber: string; title: string; description: string | null;
   levelTiers: string[]; sortOrder: number;
   strandName: string | null; papers: PaperSummaryDto[];
+  subtopics: SubtopicListItemDto[];
 }
 
 export interface AssessmentWizardProps {
@@ -68,6 +74,9 @@ export interface AssessmentWizardProps {
   selectedTopicIds: number[];
   onToggleTopic: (id: number) => void;
   onClearTopics: () => void;
+  selectedSubtopicIds: number[];
+  onToggleSubtopic: (topicId: number, subtopicId: number) => void;
+  onToggleAllSubtopicsForTopic: (topicId: number, subtopicIds: number[], select: boolean) => void;
 
   timeLimitMinutes: number;
   onTimeLimitChange: (v: number) => void;
@@ -76,6 +85,14 @@ export interface AssessmentWizardProps {
   metaDirty: boolean;
   onSaveMeta: () => void;
   saveMetaPending: boolean;
+
+  // Quick-start mode collapses the wizard to Level → Subject → Time only.
+  // Examining body is auto-fixed to Cambridge and the Topics step is hidden,
+  // so the Co-Pilot infers scope from the tutor's free-text prompt instead.
+  // Useful for English Lit / English Lang / History where the catalogue does
+  // not break the syllabus into machine-readable topics.
+  quickStart: boolean;
+  onQuickStartChange: (next: boolean) => void;
 }
 
 const STEPS: Array<{
@@ -99,9 +116,22 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     subjectSlug, onSubjectChange, subjects, subjectsLoading,
     resolvedSyllabus, topics, topicsLoading,
     selectedTopicIds, onToggleTopic, onClearTopics,
+    selectedSubtopicIds, onToggleSubtopic, onToggleAllSubtopicsForTopic,
     timeLimitMinutes, onTimeLimitChange,
     activeQuizId, metaDirty, onSaveMeta, saveMetaPending,
+    quickStart, onQuickStartChange,
   } = props;
+
+  // In quick-start mode the tutor only sees Level / Subject / Time. Examining
+  // body and Topics are intentionally hidden so the Co-Pilot can drive scope.
+  const visibleStepKeys = useMemo<Array<0 | 1 | 2 | 3 | 4>>(
+    () => quickStart ? [1, 2, 4] : [0, 1, 2, 3, 4],
+    [quickStart],
+  );
+  const visibleSteps = useMemo(
+    () => STEPS.filter((s) => visibleStepKeys.includes(s.key)),
+    [visibleStepKeys],
+  );
 
   // A step counts as "complete" once its required value is filled. Topics is
   // optional (empty selection = whole subject) and ticks complete as soon as
@@ -120,24 +150,51 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     return stepDone[from];
   };
 
+  // Walk forward/back through only the visible steps. This keeps the ordering
+  // stable (Level → Subject → Time in quick-start) without having to renumber
+  // the underlying step keys, which the parent uses for persistence.
   const goNext = () => {
-    if (step < 4 && canAdvance(step)) onStep((step + 1) as 0 | 1 | 2 | 3 | 4);
+    const idx = visibleStepKeys.indexOf(step);
+    if (idx < 0 || idx === visibleStepKeys.length - 1) return;
+    if (!canAdvance(step)) return;
+    onStep(visibleStepKeys[idx + 1]);
   };
   const goBack = () => {
-    if (step > 0) onStep((step - 1) as 0 | 1 | 2 | 3 | 4);
+    const idx = visibleStepKeys.indexOf(step);
+    if (idx <= 0) return;
+    onStep(visibleStepKeys[idx - 1]);
   };
+  const isLastVisibleStep = visibleStepKeys.indexOf(step) === visibleStepKeys.length - 1;
 
   return (
     <div className="glass-card p-4 md:p-5 space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <BookOpen className="w-4 h-4 text-violet-400" />
         <h2 className="font-semibold text-slate-100 text-sm">Assessment Parameters</h2>
         {activeQuizId && (
-          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] ml-auto">
+          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
             Live · ID {activeQuizId}
           </Badge>
         )}
+        <button
+          type="button"
+          onClick={() => onQuickStartChange(!quickStart)}
+          className={`ml-auto text-[11px] rounded-md px-2 py-1 border transition-colors ${
+            quickStart
+              ? "border-violet-500/50 bg-violet-500/15 text-violet-200"
+              : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/5"
+          }`}
+          title="Hide examining body and topics — let the Co-Pilot infer scope from your prompt"
+          data-testid="button-toggle-quick-start"
+        >
+          {quickStart ? "✓ Quick start" : "Quick start"}
+        </button>
       </div>
+      {quickStart && (
+        <p className="text-[11px] text-violet-300/80 -mt-2">
+          Quick start on — examining body fixed to Cambridge, topics skipped. The Co-Pilot will infer scope from your prompt.
+        </p>
+      )}
 
       {/* Title lives above the stepper — tutor can edit it at any step. */}
       <div className="space-y-1.5">
@@ -151,7 +208,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         />
       </div>
 
-      <StepBar steps={STEPS} current={step} onStep={onStep} stepDone={stepDone} />
+      <StepBar steps={visibleSteps} current={step} onStep={onStep} stepDone={stepDone} />
 
       <div className="rounded-lg border border-white/5 bg-black/20 p-4 min-h-[160px]">
         {step === 0 && (
@@ -188,6 +245,9 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
             selectedTopicIds={selectedTopicIds}
             onToggleTopic={onToggleTopic}
             onClearTopics={onClearTopics}
+            selectedSubtopicIds={selectedSubtopicIds}
+            onToggleSubtopic={onToggleSubtopic}
+            onToggleAllSubtopicsForTopic={onToggleAllSubtopicsForTopic}
             subjectPicked={!!subjectSlug}
             resolvedSyllabus={resolvedSyllabus}
           />
@@ -342,7 +402,6 @@ function StepExaminingBody({
                 data-testid={`wizard-body-${b.slug}`}
               >
                 <span className="font-semibold">{b.displayName}</span>
-                <span className="block text-[11px] text-slate-500 mt-0.5">{b.slug}</span>
               </button>
             );
           })}
@@ -394,7 +453,6 @@ function StepLevel({
                 data-testid={`wizard-level-${l.code}`}
               >
                 <span className="font-semibold">{l.displayName}</span>
-                <span className="block text-[11px] text-slate-500 mt-0.5">{l.code}</span>
               </button>
             );
           })}
@@ -450,7 +508,6 @@ function StepSubject({
                 data-testid={`wizard-subject-${s.slug}`}
               >
                 <span className="font-semibold">{s.name}</span>
-                <span className="block text-[10px] text-slate-500 mt-0.5">{s.slug}</span>
               </button>
             );
           })}
@@ -474,6 +531,9 @@ function StepTopics({
   selectedTopicIds,
   onToggleTopic,
   onClearTopics,
+  selectedSubtopicIds,
+  onToggleSubtopic,
+  onToggleAllSubtopicsForTopic,
   subjectPicked,
   resolvedSyllabus,
 }: {
@@ -482,13 +542,18 @@ function StepTopics({
   selectedTopicIds: number[];
   onToggleTopic: (id: number) => void;
   onClearTopics: () => void;
+  selectedSubtopicIds: number[];
+  onToggleSubtopic: (topicId: number, subtopicId: number) => void;
+  onToggleAllSubtopicsForTopic: (topicId: number, subtopicIds: number[], select: boolean) => void;
   subjectPicked: boolean;
   resolvedSyllabus: SyllabusDto | null;
 }) {
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   if (!subjectPicked) {
     return <p className="text-xs text-slate-500">Pick a subject first.</p>;
   }
-  const selectedSet = new Set(selectedTopicIds);
+  const selectedTopicSet = new Set(selectedTopicIds);
+  const selectedSubtopicSet = new Set(selectedSubtopicIds);
   // Group by strand so the checklist mirrors the syllabus outline. Topics
   // with no strand fall under an "Uncategorised" heading.
   const groups = useMemo(() => {
@@ -504,21 +569,23 @@ function StepTopics({
     }));
   }, [topics]);
 
+  const totalSelected = selectedTopicIds.length + selectedSubtopicIds.length;
+
   return (
     <div className="space-y-2">
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs text-slate-400">
-          Optional. Pick one or more topics the AI should ground questions in.
+          Optional. Expand a topic to drill into its subtopics, or tick the topic header to ground the AI in the whole topic.
           Leave empty to target the full {resolvedSyllabus ? `syllabus ${resolvedSyllabus.syllabusCode}` : "subject"}.
         </p>
-        {selectedTopicIds.length > 0 && (
+        {totalSelected > 0 && (
           <button
             type="button"
             onClick={onClearTopics}
             className="text-[11px] text-violet-400 hover:text-violet-300 shrink-0"
             data-testid="wizard-clear-topics"
           >
-            Clear ({selectedTopicIds.length})
+            Clear ({totalSelected})
           </button>
         )}
       </div>
@@ -529,42 +596,115 @@ function StepTopics({
           No topics have been parsed for this syllabus yet. Leave blank to target the whole subject.
         </p>
       ) : (
-        <div className="max-h-72 overflow-y-auto pr-1 space-y-3" data-testid="wizard-topic-list">
+        <div className="max-h-96 overflow-y-auto pr-1 space-y-3" data-testid="wizard-topic-list">
           {groups.map((g) => (
             <div key={g.strand || "__none__"}>
               {g.strand && (
                 <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">{g.strand}</p>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+              <div className="space-y-1.5">
                 {g.topics.map((t) => {
-                  const checked = selectedSet.has(t.id);
+                  const subIds = t.subtopics.map((s) => s.id);
+                  const selectedSubsForTopic = subIds.filter((id) => selectedSubtopicSet.has(id));
+                  const topicSelected = selectedTopicSet.has(t.id);
+                  const allSubsSelected = subIds.length > 0 && selectedSubsForTopic.length === subIds.length;
+                  const someSubsSelected = selectedSubsForTopic.length > 0 && !allSubsSelected;
+                  // A topic header is "checked" when either the topic itself is
+                  // selected OR every subtopic underneath has been ticked.
+                  const headerChecked = topicSelected || allSubsSelected;
+                  const isOpen = !!expanded[t.id];
+                  const hasSubs = t.subtopics.length > 0;
                   return (
-                    <label
+                    <div
                       key={t.id}
-                      className={`flex items-start gap-2 text-xs rounded-md px-2 py-1.5 cursor-pointer border ${
-                        checked
+                      className={`rounded-md border ${
+                        headerChecked || someSubsSelected
                           ? "border-violet-500/40 bg-violet-500/10"
-                          : "border-transparent hover:bg-white/5"
+                          : "border-white/5 bg-white/[0.02]"
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => onToggleTopic(t.id)}
-                        className="mt-0.5 accent-violet-500"
-                        data-testid={`wizard-topic-checkbox-${t.id}`}
-                      />
-                      <span className="flex-1">
-                        <span className="text-slate-200">
-                          {t.topicNumber ? `${t.topicNumber} ` : ""}{t.title}
-                        </span>
-                        {t.levelTiers.length > 0 && (
-                          <span className="ml-1 text-[10px] text-slate-500">
-                            [{t.levelTiers.join("/")}]
+                      <div className="flex items-center gap-2 px-2 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={headerChecked}
+                          ref={(el) => { if (el) el.indeterminate = someSubsSelected; }}
+                          onChange={() => {
+                            if (hasSubs) {
+                              // Selecting/unselecting at the topic level toggles every subtopic.
+                              const select = !(headerChecked || someSubsSelected);
+                              onToggleAllSubtopicsForTopic(t.id, subIds, select);
+                            } else {
+                              onToggleTopic(t.id);
+                            }
+                          }}
+                          className="accent-violet-500"
+                          data-testid={`wizard-topic-checkbox-${t.id}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => hasSubs && setExpanded((prev) => ({ ...prev, [t.id]: !prev[t.id] }))}
+                          className="flex-1 flex items-center gap-2 text-left text-xs"
+                          disabled={!hasSubs}
+                          data-testid={`wizard-topic-toggle-${t.id}`}
+                        >
+                          <span className="flex-1 text-slate-200">
+                            {t.topicNumber ? `${t.topicNumber} ` : ""}{t.title}
+                            {t.levelTiers.length > 0 && (
+                              <span className="ml-1 text-[10px] text-slate-500">
+                                [{t.levelTiers.join("/")}]
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                    </label>
+                          {hasSubs && (
+                            <>
+                              <span className="text-[10px] text-slate-500">
+                                {selectedSubsForTopic.length > 0
+                                  ? `${selectedSubsForTopic.length}/${subIds.length}`
+                                  : `${subIds.length} subtopics`}
+                              </span>
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                              />
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {hasSubs && isOpen && (
+                        <div
+                          className="border-t border-white/5 px-2 py-1.5 grid grid-cols-1 md:grid-cols-2 gap-1"
+                          data-testid={`wizard-subtopic-list-${t.id}`}
+                        >
+                          {t.subtopics.map((s) => {
+                            const checked = selectedSubtopicSet.has(s.id);
+                            return (
+                              <label
+                                key={s.id}
+                                className={`flex items-start gap-2 text-[11px] rounded px-2 py-1 cursor-pointer ${
+                                  checked ? "bg-violet-500/15" : "hover:bg-white/5"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => onToggleSubtopic(t.id, s.id)}
+                                  className="mt-0.5 accent-violet-500"
+                                  data-testid={`wizard-subtopic-checkbox-${s.id}`}
+                                />
+                                <span className="flex-1 text-slate-300">
+                                  <span className="text-slate-500">{s.subtopicNumber}</span>{" "}
+                                  {s.title}
+                                  {s.coreOrExtended && (
+                                    <span className="ml-1 text-[10px] text-slate-500">
+                                      [{s.coreOrExtended}]
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

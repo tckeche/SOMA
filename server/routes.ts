@@ -15,6 +15,7 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
+import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
@@ -4416,6 +4417,7 @@ ${JSON.stringify({
     levelCode: z.string().optional(),
     subjectSlug: z.string().optional(),
     selectedTopicIds: z.array(z.number().int().positive()).optional(),
+    selectedSubtopicIds: z.array(z.number().int().positive()).optional(),
     timeLimitMinutes: z.number().int().positive().optional(),
   });
 
@@ -4424,16 +4426,52 @@ ${JSON.stringify({
     levelCode?: string;
     subjectSlug?: string;
     selectedTopicIds?: number[];
+    selectedSubtopicIds?: number[];
     timeLimitMinutes?: number | null;
     queryText?: string;
   }) {
     if (!params.examiningBodySlug || !params.levelCode || !params.subjectSlug) return null;
+
+    const baseIds = (params.selectedTopicIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+    const mergedIds = [...baseIds];
+
+    if (
+      mergedIds.length < 8 &&
+      params.queryText &&
+      params.queryText.trim().length >= 4 &&
+      process.env.OPENAI_API_KEY
+    ) {
+      try {
+        const search = await semanticTopicSearch({
+          bodySlug: params.examiningBodySlug,
+          levelCode: params.levelCode,
+          subjectSlug: params.subjectSlug,
+          queryText: params.queryText,
+          topK: 5,
+        });
+        const seen = new Set(mergedIds);
+        for (const hit of search.hits) {
+          if (!seen.has(hit.topicId)) {
+            mergedIds.push(hit.topicId);
+            seen.add(hit.topicId);
+          }
+          if (mergedIds.length >= 8) break;
+        }
+        if (search.hits.length > 0) {
+          console.log(`[SOMA_CATALOGUE_CTX] Semantic search added ${mergedIds.length - baseIds.length} related topics (candidates=${search.candidateCount}).`);
+        }
+      } catch (err: any) {
+        console.warn(`[SOMA_CATALOGUE_CTX] Semantic search skipped: ${err?.message || "unknown"}`);
+      }
+    }
+
     try {
       return await loadCopilotContext({
         bodySlug: params.examiningBodySlug,
         levelCode: params.levelCode,
         subjectSlug: params.subjectSlug,
-        selectedTopicIds: params.selectedTopicIds ?? [],
+        selectedTopicIds: mergedIds,
+        selectedSubtopicIds: params.selectedSubtopicIds,
         timeLimitMinutes: params.timeLimitMinutes ?? null,
         queryText: params.queryText,
       });
@@ -4529,7 +4567,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, selectedSubtopicIds, timeLimitMinutes } = parsed.data;
       const quizTitle = title || `${topic} Quiz`;
 
       const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
@@ -4547,6 +4585,7 @@ ${JSON.stringify({
         levelCode,
         subjectSlug,
         selectedTopicIds,
+        selectedSubtopicIds,
         timeLimitMinutes,
         // Phase 9 — if the tutor didn't pick topics, let semantic search match
         // the free-text prompt against the catalogue (topic + subtopic +
@@ -4598,8 +4637,7 @@ ${JSON.stringify({
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
-            `Dual Checker (${result.telemetry.checkerModel})`,
-            result.telemetry.polishModel ? `Claude Rework (${result.telemetry.polishModel})` : "Claude Rework (skipped — no unresolved issues)",
+            `Verifier + Soma tutor voice (${result.telemetry.checkerModel})`,
           ],
           totalQuestions: insertedQuestions.length,
           totalDurationMs: result.telemetry.totalDurationMs,
@@ -4620,7 +4658,7 @@ ${JSON.stringify({
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, timeLimitMinutes } = parsed.data;
+      const { topic, title, curriculumContext, subject, syllabus, level, questionCount, difficultyDistribution, subtopic, examiningBodySlug, levelCode, subjectSlug, selectedTopicIds, selectedSubtopicIds, timeLimitMinutes } = parsed.data;
       const requestedStudentIds = sanitizeStudentIds(req.body?.assignTo);
       const quizTitle = title || `${topic} Quiz`;
 
@@ -4640,6 +4678,7 @@ ${JSON.stringify({
         levelCode,
         subjectSlug,
         selectedTopicIds,
+        selectedSubtopicIds,
         timeLimitMinutes,
         // Phase 9 — if the tutor didn't pick topics, let semantic search match
         // the free-text prompt against the catalogue (topic + subtopic +
@@ -4694,8 +4733,7 @@ ${JSON.stringify({
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
-            `Dual Checker (${result.telemetry.checkerModel})`,
-            result.telemetry.polishModel ? `Claude Rework (${result.telemetry.polishModel})` : "Claude Rework (skipped — no unresolved issues)",
+            `Verifier + Soma tutor voice (${result.telemetry.checkerModel})`,
           ],
           totalQuestions: bundle.questions.length,
           totalDurationMs: result.telemetry.totalDurationMs,

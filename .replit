@@ -53,7 +53,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npx tsx scripts/ingestCurriculumDocs.ts"
+args = "DATABASE_URL=\"$SUPABASE_DB_URL\" npx tsx scripts/ingestSyllabi/index.ts"
 
 [workflows.workflow.metadata]
 outputType = "console"

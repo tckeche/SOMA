@@ -177,11 +177,19 @@ function dedupeCompetencies(rows: CompetencyWeightDto[]): CompetencyWeightDto[] 
 export function buildTopicPayload(
   topicCtx: TopicContextDto,
   levelTierFilter: string | null,
+  selectedSubtopicIds?: number[] | null,
 ): CopilotTopicPayload {
   const subsInTier = levelTierFilter
     ? topicCtx.subtopics.filter((s) => s.levelTier === levelTierFilter)
     : topicCtx.subtopics;
-  const subs: SubtopicContextDto[] = subsInTier.length > 0 ? subsInTier : topicCtx.subtopics;
+  const tieredSubs: SubtopicContextDto[] = subsInTier.length > 0 ? subsInTier : topicCtx.subtopics;
+  // If the tutor narrowed to specific subtopics, only keep those that match.
+  // Empty intersection means "no narrowing for this topic" → use the full tier.
+  const subtopicFilter = (selectedSubtopicIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+  const filtered = subtopicFilter.length > 0
+    ? tieredSubs.filter((s) => subtopicFilter.includes(s.id))
+    : tieredSubs;
+  const subs: SubtopicContextDto[] = filtered.length > 0 ? filtered : tieredSubs;
 
   const requirements: CopilotRequirementRef[] = [];
   const requirementKeys = new Set<string>();
@@ -230,6 +238,8 @@ export interface AssembleCopilotContextInput {
   syllabus: SyllabusDto;
   timeLimitMinutes?: number | null;
   topicContexts?: TopicContextDto[];
+  /** When set, narrows each topic's subtopic list to these ids (preserves topics that have no match). */
+  selectedSubtopicIds?: number[];
   /** Used when topicContexts is empty → subject-level digest fallback. */
   subjectTopics?: TopicListItemDto[];
 }
@@ -239,8 +249,9 @@ export function assembleCopilotContext(
 ): CatalogueCopilotContext {
   const tier = input.level.code;
   const topicContexts = input.topicContexts ?? [];
+  const subFilter = input.selectedSubtopicIds ?? [];
 
-  const selectedTopics = topicContexts.map((tc) => buildTopicPayload(tc, tier));
+  const selectedTopics = topicContexts.map((tc) => buildTopicPayload(tc, tier, subFilter));
 
   let subjectDigest: CopilotSubjectDigest | null = null;
   if (selectedTopics.length === 0) {
@@ -296,6 +307,7 @@ export interface LoadCopilotContextParams {
   levelCode: string;
   subjectSlug: string;
   selectedTopicIds?: number[];
+  selectedSubtopicIds?: number[];
   timeLimitMinutes?: number | null;
   /**
    * Phase 9 — free-text tutor prompt. When supplied AND `selectedTopicIds` is
@@ -378,6 +390,7 @@ export async function loadCopilotContext(
     syllabus,
     timeLimitMinutes: params.timeLimitMinutes ?? null,
     topicContexts,
+    selectedSubtopicIds: params.selectedSubtopicIds,
     subjectTopics,
   });
 

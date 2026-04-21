@@ -60,33 +60,42 @@ export interface SeedReferenceResult {
  */
 export async function seedReferenceData(db: DB): Promise<SeedReferenceResult> {
   // examining_bodies
+  console.log(`  [seed] inserting ${BODIES.length} examining_bodies …`);
   for (const row of BODIES) {
+    const t = Date.now();
     await db.insert(examiningBodies)
       .values(row)
       .onConflictDoUpdate({
         target: examiningBodies.slug,
         set: { displayName: row.displayName, isActive: row.isActive },
       });
+    console.log(`    [seed] body ${row.slug} in ${Date.now() - t}ms`);
   }
 
   // levels
+  console.log(`  [seed] inserting ${LEVELS.length} levels …`);
   for (const row of LEVELS) {
+    const t = Date.now();
     await db.insert(levels)
       .values(row)
       .onConflictDoUpdate({
         target: levels.code,
         set: { displayName: row.displayName, topBand: row.topBand, sortOrder: row.sortOrder },
       });
+    console.log(`    [seed] level ${row.code} in ${Date.now() - t}ms`);
   }
 
   // competencies
+  console.log(`  [seed] inserting ${COMPETENCY_ROWS.length} competencies …`);
   for (const row of COMPETENCY_ROWS) {
+    const t = Date.now();
     await db.insert(competencies)
       .values(row)
       .onConflictDoUpdate({
         target: competencies.code,
         set: { displayName: row.displayName, description: row.description, sortOrder: row.sortOrder },
       });
+    console.log(`    [seed] comp ${row.code} in ${Date.now() - t}ms`);
   }
 
   // Build id lookup maps for the caller.

@@ -358,7 +358,6 @@ export default function TutorDashboard() {
         description: count > 0
           ? `${count} student${count !== 1 ? "s" : ""} assigned successfully.`
           : "All selected students already have an assignment for this quiz.",
-        variant: count > 0 ? "default" : "destructive",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
       emitSomaMutation({ type: "assessment_assigned" });
@@ -465,7 +464,7 @@ export default function TutorDashboard() {
               >
                 <Bell className="w-4.5 h-4.5" />
                 {(notificationsData?.unreadCount ?? 0) > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center leading-none">
+                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-[9px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-[#080d1a]">
                     {notificationsData!.unreadCount > 9 ? "9+" : notificationsData!.unreadCount}
                   </span>
                 )}
