@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
@@ -278,6 +278,10 @@ export default function TutorAssessments() {
   const [confirmDelete, setConfirmDelete] = useState<{ quizId: number; title: string } | null>(null);
   const [confirmDeleteQuestion, setConfirmDeleteQuestion] = useState<{ questionId: number; stem: string } | null>(null);
   const [reportSortBy, setReportSortBy] = useState<"student" | "time_allocated" | "time_submitted">("time_submitted");
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [levelFilter, setLevelFilter] = useState("");
+  const [studentFilter, setStudentFilter] = useState("");
+  const [quizSortBy, setQuizSortBy] = useState<"latest_submission" | "newest" | "title" | "subject">("latest_submission");
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
   const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
   const [allocationDateFilter, setAllocationDateFilter] = useState("");
@@ -308,6 +312,67 @@ export default function TutorAssessments() {
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
   });
+
+  const { data: assessmentsOverview = [] } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
+    queryKey: ["/api/tutor/assessments-overview", userId],
+    queryFn: async () => {
+      if (!userId) return [];
+      const res = await authFetch("/api/tutor/assessments-overview");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
+
+  const overviewByQuizId = useMemo(() => {
+    const map = new Map<number, { assignedStudentIds: string[]; latestSubmissionAt: string | null }>();
+    for (const o of assessmentsOverview) map.set(o.quizId, o);
+    return map;
+  }, [assessmentsOverview]);
+
+  const subjectOptions = useMemo(
+    () => Array.from(new Set(tutorQuizzes.map((q) => q.subject).filter((s): s is string => !!s))).sort(),
+    [tutorQuizzes],
+  );
+  const levelOptions = useMemo(
+    () => Array.from(new Set(tutorQuizzes.map((q) => q.level).filter((l): l is string => !!l))).sort(),
+    [tutorQuizzes],
+  );
+
+  const filteredSortedQuizzes = useMemo(() => {
+    let list = tutorQuizzes.filter((q) => {
+      if (subjectFilter && q.subject !== subjectFilter) return false;
+      if (levelFilter && q.level !== levelFilter) return false;
+      if (studentFilter) {
+        const ov = overviewByQuizId.get(q.id);
+        if (!ov || !ov.assignedStudentIds.includes(studentFilter)) return false;
+      }
+      return true;
+    });
+    list = [...list];
+    list.sort((a, b) => {
+      switch (quizSortBy) {
+        case "title":
+          return (a.title || "").localeCompare(b.title || "");
+        case "subject":
+          return (a.subject || "").localeCompare(b.subject || "") || (a.title || "").localeCompare(b.title || "");
+        case "newest":
+          return new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime();
+        case "latest_submission":
+        default: {
+          const at = overviewByQuizId.get(a.id)?.latestSubmissionAt;
+          const bt = overviewByQuizId.get(b.id)?.latestSubmissionAt;
+          const av = at ? new Date(at).getTime() : 0;
+          const bv = bt ? new Date(bt).getTime() : 0;
+          if (bv !== av) return bv - av;
+          return new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime();
+        }
+      }
+    });
+    return list;
+  }, [tutorQuizzes, subjectFilter, levelFilter, studentFilter, quizSortBy, overviewByQuizId]);
 
   const { data: adoptedStudents = [] } = useQuery<SomaUser[]>({
     queryKey: ["/api/tutor/students", userId],
@@ -527,15 +592,7 @@ export default function TutorAssessments() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-100">My Assessments</h2>
-            <p className="text-sm text-slate-400 mt-1">{tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""} · Newest first</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-400">Sort submissions</label>
-            <select value={reportSortBy} onChange={(e) => setReportSortBy(e.target.value as any)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300">
-              <option value="time_submitted">Time submitted</option>
-              <option value="student">Student</option>
-              <option value="time_allocated">Time allocated</option>
-            </select>
+            <p className="text-sm text-slate-400 mt-1">{filteredSortedQuizzes.length} of {tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""}</p>
           </div>
           <Link href="/tutor/assessments/new">
             <span className="glow-button flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-semibold cursor-pointer" data-testid="button-create-new">
@@ -543,6 +600,71 @@ export default function TutorAssessments() {
               Create New
             </span>
           </Link>
+        </div>
+
+        <div className={`${CARD_CLASS} flex flex-wrap items-end gap-3 p-4`}>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] uppercase tracking-wide text-slate-500">Subject</label>
+            <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[140px]"
+              data-testid="filter-subject"
+            >
+              <option value="">All subjects</option>
+              {subjectOptions.map((s) => (<option key={s} value={s}>{s}</option>))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] uppercase tracking-wide text-slate-500">Level</label>
+            <select
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[120px]"
+              data-testid="filter-level"
+            >
+              <option value="">All levels</option>
+              {levelOptions.map((l) => (<option key={l} value={l}>{l}</option>))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] uppercase tracking-wide text-slate-500">Student</label>
+            <select
+              value={studentFilter}
+              onChange={(e) => setStudentFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[160px]"
+              data-testid="filter-student"
+            >
+              <option value="">All students</option>
+              {adoptedStudents.map((s) => (
+                <option key={s.id} value={s.id}>{s.displayName || s.email}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1 ml-auto">
+            <label className="text-[10px] uppercase tracking-wide text-slate-500">Sort by</label>
+            <select
+              value={quizSortBy}
+              onChange={(e) => setQuizSortBy(e.target.value as any)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[180px]"
+              data-testid="sort-quizzes"
+            >
+              <option value="latest_submission">Latest submission</option>
+              <option value="newest">Newest created</option>
+              <option value="title">Title (A–Z)</option>
+              <option value="subject">Subject (A–Z)</option>
+            </select>
+          </div>
+          {(subjectFilter || levelFilter || studentFilter) && (
+            <button
+              type="button"
+              onClick={() => { setSubjectFilter(""); setLevelFilter(""); setStudentFilter(""); }}
+              className="text-xs text-slate-400 hover:text-slate-200 underline self-end pb-1"
+              data-testid="button-clear-filters"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
         {authLoading || quizzesLoading ? (
@@ -554,9 +676,14 @@ export default function TutorAssessments() {
             <BookOpen className="w-12 h-12 mx-auto text-slate-600 mb-4" />
             <p className="text-sm text-slate-400">No assessments created yet</p>
           </div>
+        ) : filteredSortedQuizzes.length === 0 ? (
+          <div className={`${CARD_CLASS} text-center py-12`}>
+            <BookOpen className="w-12 h-12 mx-auto text-slate-600 mb-4" />
+            <p className="text-sm text-slate-400">No assessments match the current filters</p>
+          </div>
         ) : (
           <div className="space-y-3">
-            {[...tutorQuizzes].sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()).map((quiz) => {
+            {filteredSortedQuizzes.map((quiz) => {
               const sc = getSubjectColor(quiz.subject);
               const SubIcon = getSubjectIcon(quiz.subject);
               const isExpanded = expandedQuiz === quiz.id;

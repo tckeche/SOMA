@@ -170,7 +170,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     <div className="glass-card p-4 md:p-5 space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <BookOpen className="w-4 h-4 text-violet-400" />
-        <h2 className="font-semibold text-slate-100 text-sm">Assessment Parameters</h2>
+        <h2 className="font-semibold text-slate-100 text-sm">Cambridge Syllabus</h2>
         {activeQuizId && (
           <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
             Live · ID {activeQuizId}

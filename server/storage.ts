@@ -105,6 +105,11 @@ export interface IStorage {
   createQuizAssignments(quizId: number, studentIds: string[], dueDate?: Date | null): Promise<QuizAssignment[]>;
   getQuizAssignmentsForStudent(studentId: string): Promise<(QuizAssignment & { quiz: SomaQuiz })[]>;
   getQuizAssignmentsForQuiz(quizId: number): Promise<(QuizAssignment & { student: SomaUser })[]>;
+  getTutorAssessmentsOverview(tutorId: string): Promise<Array<{
+    quizId: number;
+    assignedStudentIds: string[];
+    latestSubmissionAt: string | null;
+  }>>;
   updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void>;
   deleteQuizAssignment(quizId: number, studentId: string): Promise<void>;
   extendQuizAssignmentDeadlines(quizId: number, hours: number): Promise<number>;
@@ -799,6 +804,54 @@ class DatabaseStorage implements IStorage {
       .orderBy(desc(somaQuizzes.createdAt));
   }
 
+  async getTutorAssessmentsOverview(tutorId: string): Promise<Array<{
+    quizId: number;
+    assignedStudentIds: string[];
+    latestSubmissionAt: string | null;
+  }>> {
+    const quizRows = await this.database
+      .select({ id: somaQuizzes.id })
+      .from(somaQuizzes)
+      .where(eq(somaQuizzes.authorId, tutorId));
+    const quizIds = quizRows.map((r) => r.id);
+    if (quizIds.length === 0) return [];
+
+    const assignmentRows = await this.database
+      .select({ quizId: quizAssignments.quizId, studentId: quizAssignments.studentId })
+      .from(quizAssignments)
+      .where(inArray(quizAssignments.quizId, quizIds));
+
+    const submissionRows = await this.database
+      .select({
+        quizId: somaReports.quizId,
+        completedAt: somaReports.completedAt,
+        createdAt: somaReports.createdAt,
+      })
+      .from(somaReports)
+      .where(inArray(somaReports.quizId, quizIds));
+
+    const studentMap = new Map<number, Set<string>>();
+    for (const row of assignmentRows) {
+      if (!studentMap.has(row.quizId)) studentMap.set(row.quizId, new Set());
+      studentMap.get(row.quizId)!.add(row.studentId);
+    }
+
+    const latestMap = new Map<number, number>();
+    for (const row of submissionRows) {
+      const ts = (row.completedAt ?? row.createdAt) as Date | null;
+      if (!ts) continue;
+      const t = new Date(ts).getTime();
+      const prev = latestMap.get(row.quizId) ?? 0;
+      if (t > prev) latestMap.set(row.quizId, t);
+    }
+
+    return quizIds.map((quizId) => ({
+      quizId,
+      assignedStudentIds: Array.from(studentMap.get(quizId) ?? []),
+      latestSubmissionAt: latestMap.has(quizId) ? new Date(latestMap.get(quizId)!).toISOString() : null,
+    }));
+  }
+
   async addTutorComment(comment: InsertTutorComment): Promise<TutorComment> {
     const [result] = await this.database.insert(tutorComments).values(comment).returning();
     return result;
@@ -1374,6 +1427,31 @@ class MemoryStorage implements IStorage {
   async updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void> {
     const qa = this.quizAssignmentsList.find((a) => a.quizId === quizId && a.studentId === studentId);
     if (qa) qa.status = status;
+  }
+
+  async getTutorAssessmentsOverview(tutorId: string): Promise<Array<{
+    quizId: number;
+    assignedStudentIds: string[];
+    latestSubmissionAt: string | null;
+  }>> {
+    const quizzes = this.somaQuizzesList.filter((q) => q.authorId === tutorId);
+    return quizzes.map((quiz) => {
+      const assignedStudentIds = Array.from(
+        new Set(this.quizAssignmentsList.filter((a) => a.quizId === quiz.id).map((a) => a.studentId))
+      );
+      const reports = this.somaReportsList.filter((r) => r.quizId === quiz.id);
+      const latestTs = reports.reduce<number>((acc, r) => {
+        const ts = r.completedAt ?? r.createdAt;
+        if (!ts) return acc;
+        const t = new Date(ts as any).getTime();
+        return t > acc ? t : acc;
+      }, 0);
+      return {
+        quizId: quiz.id,
+        assignedStudentIds,
+        latestSubmissionAt: latestTs > 0 ? new Date(latestTs).toISOString() : null,
+      };
+    });
   }
 
   async deleteQuizAssignment(quizId: number, studentId: string): Promise<void> {

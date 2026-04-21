@@ -1696,6 +1696,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/tutor/assessments-overview", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const overview = await storage.getTutorAssessmentsOverview(tutorId);
+      res.json(overview);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch overview" });
+    }
+  });
+
   // Assign quiz to students
   app.post("/api/tutor/quizzes/:quizId/assign", requireTutor, async (req, res) => {
     try {
