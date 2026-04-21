@@ -1158,7 +1158,14 @@ export default function BuilderPage() {
             <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-violet-400" />
               <span className="text-sm font-semibold text-slate-200" data-testid="tab-copilot">Co-Pilot</span>
-              {pipelineActive && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400 ml-auto" />}
+              {pipelineActive && (
+                <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-violet-300" data-testid="text-pipeline-current-stage">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+                  <span className="hidden sm:inline">
+                    {(PIPELINE_STAGES.find((s) => s.stage === currentStage)?.aiName) || "Working"}…
+                  </span>
+                </span>
+              )}
               {totalQuestions > 0 && !pipelineActive && (
                 <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] ml-auto">
                   {totalQuestions} saved
