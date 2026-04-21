@@ -211,54 +211,64 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
 
       <StepBar steps={visibleSteps} current={step} onStep={onStep} stepDone={stepDone} />
 
-      <div className="rounded-lg border border-white/5 bg-black/20 p-4 min-h-[160px]">
-        {step === 0 && (
-          <StepExaminingBody
-            value={examiningBodySlug}
-            onChange={onExaminingBodyChange}
-            bodies={bodies}
-            loading={bodiesLoading}
-          />
-        )}
-        {step === 1 && (
-          <StepLevel
-            value={levelCode}
-            onChange={onLevelChange}
-            levels={levels}
-            loading={levelsLoading}
-            examiningBodyPicked={!!examiningBodySlug}
-          />
-        )}
-        {step === 2 && (
-          <StepSubject
-            value={subjectSlug}
-            onChange={onSubjectChange}
-            subjects={subjects}
-            loading={subjectsLoading}
-            levelPicked={!!levelCode}
-            resolvedSyllabus={resolvedSyllabus}
-          />
-        )}
-        {step === 3 && (
-          <StepTopics
-            topics={topics}
-            loading={topicsLoading}
-            selectedTopicIds={selectedTopicIds}
-            onToggleTopic={onToggleTopic}
-            onClearTopics={onClearTopics}
-            selectedSubtopicIds={selectedSubtopicIds}
-            onToggleSubtopic={onToggleSubtopic}
-            onToggleAllSubtopicsForTopic={onToggleAllSubtopicsForTopic}
-            subjectPicked={!!subjectSlug}
-            resolvedSyllabus={resolvedSyllabus}
-          />
-        )}
-        {step === 4 && (
-          <StepTimeLimit
-            value={timeLimitMinutes}
-            onChange={onTimeLimitChange}
-          />
-        )}
+      <div className="rounded-lg border border-white/5 bg-black/20 p-4 min-h-[160px] relative overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+          >
+            {step === 0 && (
+              <StepExaminingBody
+                value={examiningBodySlug}
+                onChange={onExaminingBodyChange}
+                bodies={bodies}
+                loading={bodiesLoading}
+              />
+            )}
+            {step === 1 && (
+              <StepLevel
+                value={levelCode}
+                onChange={onLevelChange}
+                levels={levels}
+                loading={levelsLoading}
+                examiningBodyPicked={!!examiningBodySlug}
+              />
+            )}
+            {step === 2 && (
+              <StepSubject
+                value={subjectSlug}
+                onChange={onSubjectChange}
+                subjects={subjects}
+                loading={subjectsLoading}
+                levelPicked={!!levelCode}
+                resolvedSyllabus={resolvedSyllabus}
+              />
+            )}
+            {step === 3 && (
+              <StepTopics
+                topics={topics}
+                loading={topicsLoading}
+                selectedTopicIds={selectedTopicIds}
+                onToggleTopic={onToggleTopic}
+                onClearTopics={onClearTopics}
+                selectedSubtopicIds={selectedSubtopicIds}
+                onToggleSubtopic={onToggleSubtopic}
+                onToggleAllSubtopicsForTopic={onToggleAllSubtopicsForTopic}
+                subjectPicked={!!subjectSlug}
+                resolvedSyllabus={resolvedSyllabus}
+              />
+            )}
+            {step === 4 && (
+              <StepTimeLimit
+                value={timeLimitMinutes}
+                onChange={onTimeLimitChange}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -335,30 +345,80 @@ function StepBar({
       {steps.map((s, idx) => {
         const isCurrent = s.key === current;
         const isDone = stepDone[s.key] && !isCurrent;
-        // Only allow jumping backward, or to a step whose prerequisites are met.
         const prerequisitesMet = steps.slice(0, idx).every((p) => stepDone[p.key]);
         const clickable = s.key <= current || prerequisitesMet;
         const Icon = s.icon;
         return (
           <li key={s.key} className="flex-1 min-w-0">
-            <button
+            <motion.button
               type="button"
               onClick={() => { if (clickable) onStep(s.key); }}
-              className={`w-full flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] border transition-colors ${
-                isCurrent
-                  ? "border-violet-500/50 bg-violet-500/10 text-violet-200"
+              layout
+              initial={false}
+              animate={{
+                borderColor: isCurrent
+                  ? "rgba(139,92,246,0.5)"
                   : isDone
-                    ? "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-300 hover:bg-emerald-500/10"
-                    : "border-white/5 bg-white/[0.02] text-slate-500 hover:border-white/10"
-              } ${clickable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
+                    ? "rgba(16,185,129,0.3)"
+                    : "rgba(255,255,255,0.05)",
+                backgroundColor: isCurrent
+                  ? "rgba(139,92,246,0.1)"
+                  : isDone
+                    ? "rgba(16,185,129,0.06)"
+                    : "rgba(255,255,255,0.02)",
+                color: isCurrent
+                  ? "rgb(221,214,254)"
+                  : isDone
+                    ? "rgb(110,231,183)"
+                    : "rgb(100,116,139)",
+                boxShadow: isCurrent
+                  ? "0 0 0 1px rgba(139,92,246,0.25), 0 6px 18px -8px rgba(139,92,246,0.4)"
+                  : "0 0 0 0 rgba(0,0,0,0)",
+              }}
+              whileHover={clickable && !isCurrent ? { y: -1 } : undefined}
+              whileTap={clickable ? { scale: 0.97 } : undefined}
+              transition={{ type: "spring", stiffness: 350, damping: 28 }}
+              className={`relative w-full flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] border overflow-hidden ${
+                clickable ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+              }`}
               disabled={!clickable}
               data-testid={`wizard-step-${s.key}`}
             >
-              <span className="shrink-0">
-                {isDone ? <Check className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
+              {isCurrent && (
+                <motion.span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-md bg-violet-500/10"
+                  animate={{ opacity: [0.35, 0.7, 0.35] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+                />
+              )}
+              <span className="relative shrink-0 w-3.5 h-3.5 flex items-center justify-center">
+                <AnimatePresence initial={false} mode="wait">
+                  {isDone ? (
+                    <motion.span
+                      key="check"
+                      initial={{ scale: 0, rotate: -90, opacity: 0 }}
+                      animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                      exit={{ scale: 0, rotate: 90, opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 22 }}
+                    >
+                      <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="icon"
+                      initial={{ scale: 0.7, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.7, opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </span>
-              <span className="truncate">{s.label}</span>
-            </button>
+              <span className="relative truncate">{s.label}</span>
+            </motion.button>
           </li>
         );
       })}
