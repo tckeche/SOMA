@@ -21,6 +21,7 @@ import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
+import { buildSyllabusInsights } from "./services/syllabusInsights";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
 import {
   getTopicContext,
@@ -2308,6 +2309,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Per-student syllabus insights: topic radar + paper readiness heatmap.
+  app.get("/api/tutor/students/:studentId/syllabus-insights", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const studentId = String(req.params.studentId);
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
+      const insights = await buildSyllabusInsights(storage, studentId);
+      res.json(insights);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch syllabus insights" });
+    }
+  });
+
   // Spaced repetition: return topics due for review
   app.get("/api/tutor/students/:studentId/review-schedule", requireTutor, async (req, res) => {
     try {
@@ -3934,6 +3949,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json({ updated: count });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to mark notifications read" });
+    }
+  });
+
+  app.get("/api/student/syllabus-insights", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const insights = await buildSyllabusInsights(storage, studentId);
+      res.json(insights);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to load syllabus insights" });
     }
   });
 

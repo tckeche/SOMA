@@ -16,6 +16,7 @@ import NextActionsList from "@/components/student/NextActionsList";
 import RecentWinsList from "@/components/student/RecentWinsList";
 import CompletedAssessmentsTab from "@/components/student/CompletedAssessmentsTab";
 import AssignmentsList from "@/components/student/AssignmentsList";
+import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 import type { StudentDashboardPayload } from "@/types/studentDashboard";
 
 function DashboardSkeleton() {
@@ -80,6 +81,16 @@ export default function StudentDashboard() {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
+  });
+
+  const { data: syllabusInsights, isLoading: syllabusInsightsLoading } = useQuery<{ subjects: SubjectInsight[] }>({
+    queryKey: ["/api/student/syllabus-insights", userId],
+    queryFn: async () => {
+      const res = await authFetch("/api/student/syllabus-insights");
+      if (!res.ok) return { subjects: [] };
+      return res.json();
+    },
+    enabled: !!userId,
   });
 
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
@@ -196,6 +207,19 @@ export default function StudentDashboard() {
 
                 {/* 5. Performance section */}
                 <PerformanceCard performance={data.performance} subjects={data.subjects} />
+
+                {/* 5b. Syllabus topic radar + paper readiness */}
+                <section className="space-y-3" data-testid="section-syllabus-insights">
+                  <header>
+                    <h2 className="text-lg font-semibold text-slate-100">Your syllabus shape</h2>
+                    <p className="text-xs text-slate-400">Topic mastery radar and end-of-year paper readiness for each subject.</p>
+                  </header>
+                  <SyllabusInsightsSection
+                    insights={syllabusInsights}
+                    isLoading={syllabusInsightsLoading}
+                    studentFirstName={data.student.displayName}
+                  />
+                </section>
 
                 {/* 6. Per-subject syllabus coverage */}
                 <section className="space-y-3" data-testid="section-subjects">
