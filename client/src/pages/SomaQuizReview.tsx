@@ -129,16 +129,28 @@ export default function SomaQuizReview() {
     );
   }
 
-  const { report, questions } = data;
-  const percentage = totalMarks > 0 ? Math.round((report.score / totalMarks) * 100) : 0;
+  const { report, questions: rawQuestions } = data;
+  const quiz = report.quiz ?? ({} as ReviewReport["quiz"]);
+  const quizTitle = quiz.title ?? "Assessment";
+  const studentName = report.studentName ?? "Student";
+  const score = typeof report.score === "number" ? report.score : 0;
+  const questions: ReviewQuestion[] = (rawQuestions ?? []).map((q) => ({
+    id: q.id,
+    stem: q.stem ?? "",
+    options: Array.isArray(q.options) ? q.options : [],
+    correctAnswer: q.correctAnswer ?? "",
+    marks: typeof q.marks === "number" ? q.marks : 0,
+    explanation: q.explanation ?? null,
+  }));
+  const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
 
   const pdfData: ReportPdfData = {
-    title: report.quiz.title,
-    subject: report.quiz.subject ?? null,
-    level: report.quiz.level ?? null,
-    syllabus: report.quiz.syllabus ?? null,
-    studentName: report.studentName,
-    score: report.score,
+    title: quizTitle,
+    subject: quiz.subject ?? null,
+    level: quiz.level ?? null,
+    syllabus: quiz.syllabus ?? null,
+    studentName,
+    score,
     totalMarks,
     completedAt: report.completedAt ?? report.createdAt,
     aiFeedbackHtml: report.aiFeedbackHtml ?? null,
@@ -148,7 +160,7 @@ export default function SomaQuizReview() {
 
   const slug = (s: string) => s.replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "report";
   const dateStamp = new Date().toISOString().slice(0, 10);
-  const filename = `${slug(report.quiz.title)}-${slug(report.studentName)}-${dateStamp}.pdf`;
+  const filename = `${slug(quizTitle)}-${slug(studentName)}-${dateStamp}.pdf`;
 
   const downloadPdf = async () => {
     if (!pdfRef.current || downloading) return;
