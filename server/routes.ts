@@ -3379,6 +3379,19 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       let supportingText = "";
       let syllabusContextLabel = "";
+      // Phase 10 — the primary context source is the catalogue (loadCopilotContext
+      // below, driven by assessmentContext.assessmentMeta). The legacy
+      // `syllabus_documents` PDF lookup is now optional back-compat: if a tutor
+      // still relies on an uploaded PDF for a niche syllabus that isn't in the
+      // catalogue yet, we attach the relevant chunks as supporting text. Missing
+      // PDFs are no longer fatal — the catalogue path takes over.
+      const hasCatalogueKeys = assessmentContext
+        && typeof assessmentContext === "object"
+        && (assessmentContext as any).assessmentMeta
+        && (assessmentContext as any).assessmentMeta.examiningBodySlug
+        && (assessmentContext as any).assessmentMeta.levelCode
+        && (assessmentContext as any).assessmentMeta.subjectSlug;
+
       if (syllabusSelection?.board && syllabusSelection?.level && syllabusSelection?.syllabusCode) {
         const syllabusDocument = await storage.getSyllabusDocumentBySelection({
           board: String(syllabusSelection.board),
@@ -3386,12 +3399,17 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           syllabusCode: String(syllabusSelection.syllabusCode),
           tutorId: (req as any).tutorId,
         });
-        if (!syllabusDocument) {
+        if (syllabusDocument) {
+          syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
+          const relevantChunks = scoreSyllabusChunks(syllabusDocument.chunks, text);
+          supportingText += `\nSelected syllabus (uploaded PDF): ${syllabusContextLabel}\n${relevantChunks.join("\n---\n") || syllabusDocument.extractedText.slice(0, 2000)}`;
+        } else if (!hasCatalogueKeys) {
+          // No PDF *and* no catalogue selection → the tutor really has nothing
+          // for us to ground on; keep the old 404 so they're nudged to upload
+          // the syllabus or pick catalogue keys from the builder.
           return res.status(404).json({ message: "Selected syllabus could not be found" });
         }
-        syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
-        const relevantChunks = scoreSyllabusChunks(syllabusDocument.chunks, text);
-        supportingText += `\nSelected syllabus: ${syllabusContextLabel}\n${relevantChunks.join("\n---\n") || syllabusDocument.extractedText.slice(0, 2000)}`;
+        // else: PDF missing but catalogue keys present → silently continue.
       }
 
       const paperCode = text.match(/\b\d{4}\/v\d\/\d{4}\b/i)?.[0];
@@ -3455,17 +3473,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           // context rather than just free-text labels.
           if (m.examiningBodySlug && m.levelCode && m.subjectSlug) {
             try {
+              const selectedIds = Array.isArray(m.selectedTopicIds)
+                ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
+                : [];
               const ctx = await loadCopilotContext({
                 bodySlug: String(m.examiningBodySlug),
                 levelCode: String(m.levelCode),
                 subjectSlug: String(m.subjectSlug),
-                selectedTopicIds: Array.isArray(m.selectedTopicIds)
-                  ? m.selectedTopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
-                  : [],
-                selectedSubtopicIds: Array.isArray(m.selectedSubtopicIds)
-                  ? m.selectedSubtopicIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
-                  : [],
+                selectedTopicIds: selectedIds,
                 timeLimitMinutes: typeof m.timeLimitMinutes === "number" ? m.timeLimitMinutes : null,
+                // Phase 9 — when no explicit topics are picked, use the tutor's
+                // message as a semantic query to auto-select relevant topics.
+                queryText: selectedIds.length === 0 ? text : undefined,
               });
               if (ctx) {
                 catalogueBlock = `=== CATALOGUE CONTEXT ===\n${formatCopilotContextAsText(ctx)}\n=========================`;
@@ -4454,6 +4473,7 @@ ${JSON.stringify({
         selectedTopicIds: mergedIds,
         selectedSubtopicIds: params.selectedSubtopicIds,
         timeLimitMinutes: params.timeLimitMinutes ?? null,
+        queryText: params.queryText,
       });
     } catch (err: any) {
       console.warn(`[SOMA_CATALOGUE_CTX] Failed to load catalogue context: ${err?.message || "unknown"}`);
@@ -4567,7 +4587,12 @@ ${JSON.stringify({
         selectedTopicIds,
         selectedSubtopicIds,
         timeLimitMinutes,
-        queryText: [topic, subtopic, curriculumContext].filter(Boolean).join(" — "),
+        // Phase 9 — if the tutor didn't pick topics, let semantic search match
+        // the free-text prompt against the catalogue (topic + subtopic +
+        // curriculumContext all concatenated gives the search something solid).
+        queryText: (selectedTopicIds && selectedTopicIds.length > 0)
+          ? undefined
+          : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
       const result = await generateAuditedQuiz({
@@ -4655,7 +4680,12 @@ ${JSON.stringify({
         selectedTopicIds,
         selectedSubtopicIds,
         timeLimitMinutes,
-        queryText: [topic, subtopic, curriculumContext].filter(Boolean).join(" — "),
+        // Phase 9 — if the tutor didn't pick topics, let semantic search match
+        // the free-text prompt against the catalogue (topic + subtopic +
+        // curriculumContext all concatenated gives the search something solid).
+        queryText: (selectedTopicIds && selectedTopicIds.length > 0)
+          ? undefined
+          : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
       const result = await generateAuditedQuiz({

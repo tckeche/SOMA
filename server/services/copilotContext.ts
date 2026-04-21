@@ -44,6 +44,11 @@ import {
   type TopicContextDto,
   type TopicListItemDto,
 } from "./syllabusCatalogue";
+import {
+  semanticTopicSearch,
+  type SemanticTopicHit,
+  type SemanticTopicSearchParams,
+} from "./semanticTopicSearch";
 
 // ---------------------------------------------------------------------------
 // Public payload shape — snapshot-friendly.
@@ -116,6 +121,15 @@ export interface CatalogueCopilotContext {
   selectedTopics: CopilotTopicPayload[];
   /** Populated when no topic was selected (subject-level fallback). */
   subjectDigest: CopilotSubjectDigest | null;
+  /**
+   * Phase 9 — set when `selectedTopics` was auto-picked by semantic search
+   * over the tutor's prompt (no explicit topic selection). Lets the UI / LLM
+   * tell the tutor which topics we matched so they can correct us.
+   */
+  autoSelectedFromQuery?: {
+    queryText: string;
+    hits: Array<{ topicId: number; score: number }>;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +309,21 @@ export interface LoadCopilotContextParams {
   selectedTopicIds?: number[];
   selectedSubtopicIds?: number[];
   timeLimitMinutes?: number | null;
+  /**
+   * Phase 9 — free-text tutor prompt. When supplied AND `selectedTopicIds` is
+   * empty, the loader runs semantic search over the catalogue's topic
+   * embeddings (same body/level/subject) and auto-populates `selectedTopics`
+   * with the top matches. Missing embeddings, missing API key, or any error
+   * falls through silently to the subject-level digest path.
+   */
+  queryText?: string;
+  /** Top-K topics to auto-select. Defaults to 5. */
+  autoTopK?: number;
+  /**
+   * Override the semantic-search runner (tests inject a stub). Defaults to the
+   * real `semanticTopicSearch`.
+   */
+  semanticSearch?: (params: SemanticTopicSearchParams) => Promise<{ hits: SemanticTopicHit[] }>;
 }
 
 /**
@@ -322,7 +351,30 @@ export async function loadCopilotContext(
   const subject = subjects.find((s) => s.slug === params.subjectSlug);
   if (!subject || !syllabus) return null;
 
-  const ids = (params.selectedTopicIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+  let ids = (params.selectedTopicIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+  let autoHits: SemanticTopicHit[] | null = null;
+  const queryText = params.queryText?.trim() ?? "";
+
+  if (ids.length === 0 && queryText.length > 0) {
+    const runner = params.semanticSearch ?? semanticTopicSearch;
+    try {
+      const result = await runner({
+        bodySlug: params.bodySlug,
+        levelCode: params.levelCode,
+        subjectSlug: params.subjectSlug,
+        queryText,
+        topK: params.autoTopK ?? 5,
+      });
+      if (result.hits.length > 0) {
+        ids = result.hits.map((h) => h.topicId);
+        autoHits = result.hits;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[COPILOT_CONTEXT] semantic auto-select failed; falling back to subject digest: ${err?.message || "unknown"}`,
+      );
+    }
+  }
 
   const [topicContexts, subjectTopics] = await Promise.all([
     ids.length > 0 ? getTopicContext(ids) : Promise.resolve<TopicContextDto[]>([]),
@@ -331,7 +383,7 @@ export async function loadCopilotContext(
       : Promise.resolve<TopicListItemDto[]>([]),
   ]);
 
-  return assembleCopilotContext({
+  const ctx = assembleCopilotContext({
     body,
     level,
     subject,
@@ -341,6 +393,15 @@ export async function loadCopilotContext(
     selectedSubtopicIds: params.selectedSubtopicIds,
     subjectTopics,
   });
+
+  if (autoHits && ctx.selectedTopics.length > 0) {
+    ctx.autoSelectedFromQuery = {
+      queryText,
+      hits: autoHits.map((h) => ({ topicId: h.topicId, score: h.score })),
+    };
+  }
+
+  return ctx;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +424,14 @@ export function formatCopilotContextAsText(ctx: CatalogueCopilotContext): string
   const lines: string[] = [...header, ""];
 
   if (ctx.selectedTopics.length > 0) {
+    if (ctx.autoSelectedFromQuery) {
+      const scores = ctx.autoSelectedFromQuery.hits
+        .map((h) => `#${h.topicId} (score=${h.score.toFixed(3)})`)
+        .join(", ");
+      lines.push(
+        `Note: topics auto-selected from tutor prompt "${ctx.autoSelectedFromQuery.queryText}" → ${scores}`,
+      );
+    }
     lines.push(`Selected topics (${ctx.selectedTopics.length}):`);
     for (const t of ctx.selectedTopics) {
       lines.push(`  • ${t.topic.topicNumber} ${t.topic.title}`);

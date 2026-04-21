@@ -148,6 +148,15 @@ export const somaQuestions = pgTable("soma_questions", {
 });
 
 
+/**
+ * ⚠️  LEGACY (Phase 10) — predates the structured catalogue. The new
+ *     catalogue stack (`examiningBodies` → `syllabi` → `topics` →
+ *     `subtopics` → `learningRequirements` + `topicEmbeddings`) is the
+ *     primary source for copilot / SOMA context. These PDF-derived text
+ *     chunks are retained as optional supporting text for syllabi not yet
+ *     in the catalogue and will be retired once full catalogue coverage
+ *     is in place.
+ */
 export const syllabusDocuments = pgTable("syllabus_documents", {
   id: serial("id").primaryKey(),
   tutorId: uuid("tutor_id").references(() => somaUsers.id, { onDelete: "set null" }),

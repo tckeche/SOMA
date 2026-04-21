@@ -1,6 +1,15 @@
 /**
  * Bulk curriculum document ingestion script.
  *
+ * ⚠️  LEGACY (Phase 10) — retained only for syllabi not yet in the
+ *     structured catalogue (seeds under `scripts/ingestSyllabi/`). New
+ *     curriculum coverage should go through the catalogue + topic embeddings
+ *     path (`scripts/embedTopics.ts`), which powers the Phase 9 semantic
+ *     retrieval in `loadCopilotContext`. The text-chunk path below is kept
+ *     as a bridge for PDFs that haven't been structured yet; once a syllabus
+ *     is in the catalogue, the copilot-chat route prefers the catalogue
+ *     context and treats these chunks as optional supporting text.
+ *
  * Usage:
  *   npx tsx scripts/ingestCurriculumDocs.ts
  *   (or via the npm script: npm run curriculum:ingest)
