@@ -4612,8 +4612,7 @@ ${JSON.stringify({
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
-            `Dual Checker (${result.telemetry.checkerModel})`,
-            result.telemetry.polishModel ? `Claude Rework (${result.telemetry.polishModel})` : "Claude Rework (skipped — no unresolved issues)",
+            `Verifier + Soma tutor voice (${result.telemetry.checkerModel})`,
           ],
           totalQuestions: insertedQuestions.length,
           totalDurationMs: result.telemetry.totalDurationMs,
@@ -4704,8 +4703,7 @@ ${JSON.stringify({
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
-            `Dual Checker (${result.telemetry.checkerModel})`,
-            result.telemetry.polishModel ? `Claude Rework (${result.telemetry.polishModel})` : "Claude Rework (skipped — no unresolved issues)",
+            `Verifier + Soma tutor voice (${result.telemetry.checkerModel})`,
           ],
           totalQuestions: bundle.questions.length,
           totalDurationMs: result.telemetry.totalDurationMs,
