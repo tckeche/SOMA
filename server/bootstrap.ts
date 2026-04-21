@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { log } from "./utils/logging";
 
 const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'`,
@@ -49,17 +50,6 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS topics JSONB NOT NULL DEFAULT '[]'::jsonb`,
 ] as const;
 
-function logBootstrap(message: string) {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [bootstrap] ${message}`);
-}
-
 export async function applyBootstrapMigrations() {
   const client = pool ? await pool.connect() : null;
   if (!client) return;
@@ -71,10 +61,10 @@ export async function applyBootstrapMigrations() {
       } catch (err: any) {
         // Log but continue — idempotent migrations that fail (e.g. unique index
         // conflicts when duplicates already exist) should not block the server.
-        logBootstrap(`migration warning (non-fatal): ${err.message?.slice(0, 120)}`);
+        log(`migration warning (non-fatal): ${err.message?.slice(0, 120)}`, "bootstrap");
       }
     }
-    logBootstrap("schema migrations applied");
+    log("schema migrations applied", "bootstrap");
   } finally {
     client.release();
   }
