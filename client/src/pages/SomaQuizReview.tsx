@@ -60,10 +60,28 @@ export default function SomaQuizReview() {
     queryKey: ["/api/soma/reports", reportId, "review"],
     queryFn: async () => {
       const res = await authFetch(`/api/soma/reports/${reportId}/review`);
-      if (!res.ok) throw new Error("Failed to load review data");
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error(
+            "This assessment report is no longer available. It may have been removed when the quiz was deleted. Please go back and refresh the list.",
+          );
+        }
+        if (res.status === 403) {
+          throw new Error("You don't have permission to view this report.");
+        }
+        let msg = "Failed to load review data";
+        try {
+          const body = await res.json();
+          if (body?.message) msg = body.message;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
       return res.json();
     },
     enabled: reportId > 0,
+    retry: false,
   });
 
   const studentAnswers: Record<string, string> = useMemo(() => {
