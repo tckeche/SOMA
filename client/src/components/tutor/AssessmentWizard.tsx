@@ -402,7 +402,6 @@ function StepExaminingBody({
                 data-testid={`wizard-body-${b.slug}`}
               >
                 <span className="font-semibold">{b.displayName}</span>
-                <span className="block text-[11px] text-slate-500 mt-0.5">{b.slug}</span>
               </button>
             );
           })}
@@ -454,7 +453,6 @@ function StepLevel({
                 data-testid={`wizard-level-${l.code}`}
               >
                 <span className="font-semibold">{l.displayName}</span>
-                <span className="block text-[11px] text-slate-500 mt-0.5">{l.code}</span>
               </button>
             );
           })}
@@ -510,7 +508,6 @@ function StepSubject({
                 data-testid={`wizard-subject-${s.slug}`}
               >
                 <span className="font-semibold">{s.name}</span>
-                <span className="block text-[10px] text-slate-500 mt-0.5">{s.slug}</span>
               </button>
             );
           })}
