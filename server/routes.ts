@@ -3243,12 +3243,39 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   // Copilot chat for tutor quiz builder
   app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
+    // ── SSE progress streaming ────────────────────────────────────────────
+    // When the client sends `Accept: text/event-stream`, we keep the response
+    // open and emit named events at each pipeline boundary so the builder UI
+    // can show real progress instead of a frozen spinner. Non-streaming
+    // clients still get the regular single JSON response at the end.
+    const wantsStream = String(req.headers.accept || "").includes("text/event-stream");
+    if (wantsStream) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders?.();
+    }
+    const sendEvent = (name: string, payload: unknown) => {
+      if (!wantsStream) return;
+      try {
+        res.write(`event: ${name}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      } catch { /* socket closed */ }
+    };
     try {
       const { message, chatHistory, syllabusSelection, includeGraphQuestions, assessmentContext, draftQuestions } = req.body;
       const allowGraphs = includeGraphQuestions === true;
       // draftQuestions is the current in-progress question list (may be empty for new assessments)
       const currentDraft: DraftQuestion[] = Array.isArray(draftQuestions) ? draftQuestions : [];
-      if (!message) return res.status(400).json({ message: "message is required" });
+      if (!message) {
+        if (wantsStream) {
+          sendEvent("error", { message: "message is required" });
+          return res.end();
+        }
+        return res.status(400).json({ message: "message is required" });
+      }
+      sendEvent("stage", { stage: "drafting", label: "Drafting questions" });
 
       const text = String(message);
       // Only ask for clarification when the message is a completely blank slate:
@@ -3646,6 +3673,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
           syllabus: meta.syllabus || "General",
           level: meta.level || "Grade 12",
         };
+        sendEvent("stage", { stage: "verifying", label: `Verifying ${mcqToCheck.length} question${mcqToCheck.length !== 1 ? "s" : ""}` });
         const audit = await runQuestionAudit(mcqToCheck, checkerContext);
         pipelineWarnings = audit.warnings;
         mcqIndices.forEach((origIdx, i) => {
