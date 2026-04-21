@@ -28,6 +28,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 
 const GP = "glass-panel-elite";
 
@@ -210,6 +211,16 @@ export default function TutorStudentDetail() {
     queryFn: async () => {
       const res = await authFetch(`/api/tutor/students/${studentId}/mastery`);
       if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!userId && !!studentId,
+  });
+
+  const { data: syllabusInsights, isLoading: syllabusInsightsLoading } = useQuery<{ subjects: SubjectInsight[] }>({
+    queryKey: ["/api/tutor/students", studentId, "syllabus-insights"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/students/${studentId}/syllabus-insights`);
+      if (!res.ok) return { subjects: [] };
       return res.json();
     },
     enabled: !!userId && !!studentId,
@@ -866,7 +877,14 @@ export default function TutorStudentDetail() {
               </div>
             </div>
 
-            {/* ── SYLLABUS COVERAGE RADAR ─────────────────────────── */}
+            {/* ── SYLLABUS TOPIC RADAR + PAPER READINESS (new) ────── */}
+            <SyllabusInsightsSection
+              insights={syllabusInsights}
+              isLoading={syllabusInsightsLoading}
+              studentFirstName={displayName.split(" ")[0]}
+            />
+
+            {/* ── LEGACY SUBJECT-LEVEL COVERAGE RADAR ───────────── */}
             {topicPerformance.length >= 2 && (
               <div className={GP}>
                 <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
