@@ -473,8 +473,8 @@ export default function TutorStudentDetail() {
               <div className="p-6 flex flex-col sm:flex-row sm:items-center gap-5">
                 <div className="flex items-center gap-4 flex-1">
                   <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white/90 shrink-0"
-                    style={{ background: "linear-gradient(145deg, rgba(99,102,241,0.25), rgba(139,92,246,0.15))", boxShadow: "0 4px 24px rgba(99,102,241,0.2), inset 0 1px 0 rgba(255,255,255,0.08)", border: "1.5px solid rgba(99,102,241,0.25)" }}
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0"
+                    style={{ background: "linear-gradient(145deg, rgb(79,70,229), rgb(124,58,237))", boxShadow: "0 4px 24px rgba(99,102,241,0.25), inset 0 1px 0 rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.15)" }}
                   >
                     {initials}
                   </div>
