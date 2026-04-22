@@ -321,6 +321,35 @@ export default function TutorDashboard() {
     refetchOnWindowFocus: false,
   });
 
+  // AI-grouped cohort weakness summary: Gemini/GPT/Claude condense the raw
+  // topic list into genuine multi-student patterns so the panel isn't a wall.
+  const cohortTopicKey = (cohortWeaknesses?.topics || [])
+    .slice(0, 20)
+    .map((t) => `${t.subject}|${t.topic}|${t.belowThreshold}/${t.testedStudents}`)
+    .join(",");
+  const { data: cohortWeaknessGroups, isFetching: groupsFetching } = useQuery<{
+    groups: Array<{ theme: string; subject: string; affectedCount: number; avgPercent: number; rationale: string; topics: string[]; studentNames: string[]; recommendedAction: string }>;
+    highlights: Array<{ student: string; topic: string; avgPercent: number; reason: string }>;
+  }>({
+    queryKey: ["/api/tutor/ai/cohort-weakness-groups", cohortTopicKey],
+    queryFn: async () => {
+      const res = await authFetch("/api/tutor/ai/cohort-weakness-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topics: cohortWeaknesses?.topics ?? [],
+          studentCount: cohortWeaknesses?.studentCount ?? 0,
+        }),
+      });
+      if (!res.ok) return { groups: [], highlights: [] };
+      return res.json();
+    },
+    enabled: !!userId && (cohortWeaknesses?.topics?.length ?? 0) > 0,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const [showRawWeaknesses, setShowRawWeaknesses] = useState(false);
+
   const markReadMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await authFetch(`/api/tutor/notifications/${id}/read`, { method: "POST" });
@@ -1053,7 +1082,9 @@ export default function TutorDashboard() {
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
-                COHORT WEAKNESS REPORT
+                COHORT WEAKNESS REPORT (AI-grouped)
+                Default view is the AI-condensed groups + individual highlights.
+                Tutors can toggle to the raw per-topic list if they want to dig in.
                ══════════════════════════════════════════════════════ */}
             {cohortWeaknesses && cohortWeaknesses.topics.length > 0 && (
               <FadeInSection>
@@ -1066,63 +1097,141 @@ export default function TutorDashboard() {
                       </div>
                       <div>
                         <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Cohort Weakness Report</h3>
-                        <p className="text-[10px] text-muted-foreground font-medium">Topics where multiple students are below 75% mastery &middot; {cohortWeaknesses.studentCount} students</p>
+                        <p className="text-[10px] text-muted-foreground font-medium">
+                          {showRawWeaknesses
+                            ? `Raw per-topic breakdown · ${cohortWeaknesses.studentCount} students`
+                            : `AI-grouped patterns across ${cohortWeaknesses.studentCount} students`}
+                        </p>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRawWeaknesses((v) => !v)}
+                      className="text-[10px] font-semibold text-violet-400 hover:text-violet-300 transition-colors"
+                      data-testid="button-toggle-raw-weaknesses"
+                    >
+                      {showRawWeaknesses ? "← Back to groups" : "See raw topics →"}
+                    </button>
                   </div>
-                  {(() => {
-                    const struggling = cohortWeaknesses.topics.filter((t) => t.belowThreshold > 0);
-                    if (struggling.length === 0) return (
-                      <div className="px-5 py-10 text-center">
-                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
-                        <p className="text-[11px] text-muted-foreground font-medium">No cohort-wide weaknesses detected</p>
-                      </div>
-                    );
-                    return (
-                      <div className="divide-y divide-white/[0.03] max-h-[400px] overflow-y-auto">
-                        {struggling.slice(0, 10).map((t, i) => {
-                          const severity = t.struggleRate >= 75 ? "critical" : t.struggleRate >= 50 ? "high" : t.struggleRate >= 25 ? "moderate" : "low";
-                          const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-muted-foreground bg-slate-500/10 border-slate-500/20";
-                          const barColor = t.avgPercent >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.avgPercent >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
-                          return (
-                            <div key={i} className="px-5 py-3.5 hover:bg-foreground/[0.03] transition-colors">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <span className="text-[12px] font-semibold text-foreground truncate">{t.topic}</span>
-                                  {t.subtopic && <span className="text-[10px] text-muted-foreground truncate">{t.subtopic}</span>}
-                                  <Badge className={`text-[8px] font-bold border shrink-0 ${severityColor}`}>{severity}</Badge>
-                                </div>
-                                <span className="text-[10px] text-muted-foreground font-medium shrink-0 ml-2">{t.subject}</span>
-                              </div>
-                              <div className="flex items-center gap-4 mb-2">
-                                <div className="flex-1">
-                                  <div className="h-[5px] rounded-full bg-muted/60 overflow-hidden">
-                                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.avgPercent}%`, background: barColor }} />
+
+                  {showRawWeaknesses ? (
+                    (() => {
+                      const struggling = cohortWeaknesses.topics.filter((t) => t.belowThreshold > 0);
+                      if (struggling.length === 0) return (
+                        <div className="px-5 py-10 text-center">
+                          <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                          <p className="text-[11px] text-muted-foreground font-medium">No cohort-wide weaknesses detected</p>
+                        </div>
+                      );
+                      return (
+                        <div className="divide-y divide-white/[0.03] max-h-[400px] overflow-y-auto">
+                          {struggling.slice(0, 10).map((t, i) => {
+                            const severity = t.struggleRate >= 75 ? "critical" : t.struggleRate >= 50 ? "high" : t.struggleRate >= 25 ? "moderate" : "low";
+                            const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-muted-foreground bg-slate-500/10 border-slate-500/20";
+                            const barColor = t.avgPercent >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.avgPercent >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
+                            return (
+                              <div key={i} className="px-5 py-3.5 hover:bg-foreground/[0.03] transition-colors">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <span className="text-[12px] font-semibold text-foreground truncate">{t.topic}</span>
+                                    {t.subtopic && <span className="text-[10px] text-muted-foreground truncate">{t.subtopic}</span>}
+                                    <Badge className={`text-[8px] font-bold border shrink-0 ${severityColor}`}>{severity}</Badge>
                                   </div>
+                                  <span className="text-[10px] text-muted-foreground font-medium shrink-0 ml-2">{t.subject}</span>
                                 </div>
-                                <span className={`text-[11px] font-bold tabular-nums w-10 text-right ${t.avgPercent >= 70 ? "text-emerald-400" : t.avgPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
-                                  {t.avgPercent}%
-                                </span>
+                                <div className="flex items-center gap-4 mb-2">
+                                  <div className="flex-1">
+                                    <div className="h-[5px] rounded-full bg-muted/60 overflow-hidden">
+                                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.avgPercent}%`, background: barColor }} />
+                                    </div>
+                                  </div>
+                                  <span className={`text-[11px] font-bold tabular-nums w-10 text-right ${t.avgPercent >= 70 ? "text-emerald-400" : t.avgPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                    {t.avgPercent}%
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+                                  <span>{t.belowThreshold}/{t.testedStudents} students struggling</span>
+                                  <span className="text-muted-foreground">&middot;</span>
+                                  <span>{t.totalQuestions} questions attempted</span>
+                                  <span className="text-muted-foreground">&middot;</span>
+                                  <span className={t.accuracy >= 70 ? "text-emerald-400" : t.accuracy >= 50 ? "text-amber-400" : "text-red-400"}>{t.accuracy}% accuracy</span>
+                                  {t.strugglingStudents.length > 0 && (
+                                    <>
+                                      <span className="text-muted-foreground">&middot;</span>
+                                      <span className="text-muted-foreground truncate">{t.strugglingStudents.join(", ")}</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
-                                <span>{t.belowThreshold}/{t.testedStudents} students struggling</span>
-                                <span className="text-muted-foreground">&middot;</span>
-                                <span>{t.totalQuestions} questions attempted</span>
-                                <span className="text-muted-foreground">&middot;</span>
-                                <span className={t.accuracy >= 70 ? "text-emerald-400" : t.accuracy >= 50 ? "text-amber-400" : "text-red-400"}>{t.accuracy}% accuracy</span>
-                                {t.strugglingStudents.length > 0 && (
-                                  <>
-                                    <span className="text-muted-foreground">&middot;</span>
-                                    <span className="text-muted-foreground truncate">{t.strugglingStudents.join(", ")}</span>
-                                  </>
-                                )}
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
+                  ) : groupsFetching && !cohortWeaknessGroups ? (
+                    <div className="px-5 py-10 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                      AI is grouping patterns…
+                    </div>
+                  ) : (cohortWeaknessGroups?.groups?.length ?? 0) === 0 && (cohortWeaknessGroups?.highlights?.length ?? 0) === 0 ? (
+                    <div className="px-5 py-10 text-center">
+                      <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                      <p className="text-[11px] text-muted-foreground font-medium">No cohort-wide patterns detected</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Individual weaknesses may still exist — check the raw topics.</p>
+                    </div>
+                  ) : (
+                    <div className="p-5 space-y-4">
+                      {(cohortWeaknessGroups?.groups ?? []).map((g, i) => {
+                        const severity = g.avgPercent < 40 ? "critical" : g.avgPercent < 55 ? "high" : g.avgPercent < 70 ? "moderate" : "low";
+                        const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-muted-foreground bg-slate-500/10 border-slate-500/20";
+                        return (
+                          <div key={i} className="rounded-xl border border-border/60 bg-foreground/[0.02] p-4">
+                            <div className="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Badge className={`text-[8px] font-bold border shrink-0 ${severityColor}`}>{severity}</Badge>
+                                <span className="text-[13px] font-semibold text-foreground">{g.theme}</span>
+                                <span className="text-[10px] text-muted-foreground">· {g.subject}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] text-muted-foreground font-medium">{g.affectedCount} student{g.affectedCount === 1 ? "" : "s"}</span>
+                                <span className={`text-[11px] font-bold tabular-nums ${g.avgPercent >= 70 ? "text-emerald-400" : g.avgPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>{g.avgPercent}%</span>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
+                            <p className="text-[11px] text-muted-foreground leading-relaxed mb-2">{g.rationale}</p>
+                            {g.topics?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {g.topics.slice(0, 6).map((t, j) => (
+                                  <span key={j} className="text-[9px] px-1.5 py-0.5 rounded border border-border/60 bg-foreground/[0.03] text-muted-foreground">{t}</span>
+                                ))}
+                              </div>
+                            )}
+                            {g.studentNames?.length > 0 && (
+                              <p className="text-[10px] text-muted-foreground"><span className="font-semibold">Affected:</span> {g.studentNames.join(", ")}</p>
+                            )}
+                            {g.recommendedAction && (
+                              <p className="text-[10px] text-violet-300 mt-2"><span className="font-semibold">Suggested:</span> {g.recommendedAction}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {(cohortWeaknessGroups?.highlights ?? []).length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Individual highlights</p>
+                          <div className="space-y-1.5">
+                            {cohortWeaknessGroups!.highlights.map((h, i) => (
+                              <div key={i} className="rounded-lg border border-border/50 bg-foreground/[0.03] px-3 py-2 flex items-center gap-3">
+                                <span className={`text-[11px] font-bold tabular-nums w-10 text-right ${h.avgPercent >= 70 ? "text-emerald-400" : h.avgPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>{h.avgPercent}%</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[12px] text-foreground"><span className="font-semibold">{h.student}</span> · {h.topic}</p>
+                                  <p className="text-[10px] text-muted-foreground leading-relaxed">{h.reason}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </FadeInSection>
             )}

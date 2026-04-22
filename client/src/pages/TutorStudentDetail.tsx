@@ -15,6 +15,7 @@ import {
   TrendingDown, TrendingUp, Minus, Clock, ChevronRight,
   BarChart3, Layers, AlertTriangle, Activity,
   ArrowRight, Calendar, Radar as RadarIcon, PlusCircle, Wand2,
+  Sparkles, X, Check, CalendarDays,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -119,6 +120,11 @@ export default function TutorStudentDetail() {
   const [newSubject, setNewSubject] = useState({ subject: "", examBody: "", syllabusCode: "", level: "" });
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<number[]>([]);
   const [profileTab, setProfileTab] = useState<"curriculum" | "assessments">("curriculum");
+  // Assign-existing quick-action modal (student is pre-selected from URL params).
+  const [showAssignExisting, setShowAssignExisting] = useState(false);
+  const [assignExistingQuizId, setAssignExistingQuizId] = useState<number | null>(null);
+  const [assignExistingDueDate, setAssignExistingDueDate] = useState("");
+  const suggestedSectionRef = useRef<HTMLDivElement>(null);
 
   const { userId } = useSupabaseSession();
 
@@ -275,6 +281,55 @@ export default function TutorStudentDetail() {
     },
     onError: () => { toast({ title: "Failed to revoke assignment", variant: "destructive" }); },
   });
+
+  // Quizzes available to assign — only fetched when the assign-existing modal is open.
+  const { data: tutorQuizzes = [] } = useQuery<Array<{ id: number; title: string; subject: string | null }>>({
+    queryKey: ["/api/tutor/quizzes", userId, "for-assign"],
+    queryFn: async () => {
+      const res = await authFetch("/api/tutor/quizzes");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!userId && showAssignExisting,
+  });
+
+  const assignExistingMutation = useMutation({
+    mutationFn: async () => {
+      if (assignExistingQuizId === null) throw new Error("Pick an assessment");
+      const payload: { studentIds: string[]; dueDate?: string } = { studentIds: [studentId] };
+      if (assignExistingDueDate) payload.dueDate = new Date(assignExistingDueDate).toISOString();
+      const res = await authFetch(`/api/tutor/quizzes/${assignExistingQuizId}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to assign");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const count = data?.assigned ?? 0;
+      toast({
+        title: count > 0 ? "Assessment assigned" : "Already assigned",
+        description: count > 0 ? "The student has the new assignment." : "The student already has this assignment.",
+      });
+      setShowAssignExisting(false);
+      setAssignExistingQuizId(null);
+      setAssignExistingDueDate("");
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/students", studentId, "report"] });
+    },
+    onError: (err: Error) => toast({ title: "Assign failed", description: err.message, variant: "destructive" }),
+  });
+
+  const handleGenerateSuggestedAI = () => {
+    setProfileTab("assessments");
+    // Kick off the generation; the tab will render the existing UI.
+    void refetchSuggestions();
+    setSelectedSuggestionIds([]);
+    // Scroll to the tab on the next frame once it renders.
+    requestAnimationFrame(() => {
+      suggestedSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const student = report?.student;
   const stats = report?.stats;
@@ -502,6 +557,38 @@ export default function TutorStudentDetail() {
                   <HeaderStat label="Trend" value={overallTrend} color={trendColor} icon={<TrendIcon className="w-3.5 h-3.5 opacity-50" />} />
                 </div>
               </div>
+
+              {/* ── QUICK ACTIONS ──────────────────────────────────
+                  Primary actions a tutor can take against this student's profile.
+                  Primary = AI-suggested assessment (aggregates failed questions,
+                  uncovered topics, spaced review). Secondary = assign an
+                  existing quiz directly to this student. */}
+              <div className="border-t border-border/40 px-6 py-3.5 flex items-center gap-2.5 flex-wrap bg-foreground/[0.015]">
+                <button
+                  type="button"
+                  onClick={handleGenerateSuggestedAI}
+                  disabled={suggestionsLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[40px] rounded-xl text-[12px] font-semibold text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:shadow-[0_0_22px_rgba(139,92,246,0.35)] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  data-testid="button-suggest-ai-assessment"
+                >
+                  {suggestionsLoading ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing…</>
+                  ) : (
+                    <><Sparkles className="w-3.5 h-3.5" /> Suggest AI Assessment</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowAssignExisting(true); setAssignExistingQuizId(null); setAssignExistingDueDate(""); }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[40px] rounded-xl text-[12px] font-semibold text-foreground/85 bg-foreground/[0.05] border border-border/60 hover:bg-foreground/[0.08] transition-all"
+                  data-testid="button-assign-existing"
+                >
+                  <Send className="w-3.5 h-3.5" /> Assign Existing Assessment
+                </button>
+                <span className="text-[11px] text-muted-foreground ml-auto">
+                  AI builds topic-matched questions from what {displayName.split(" ")[0]} has failed and hasn't covered.
+                </span>
+              </div>
             </div>
 
             {/* ── LEARNING CURVE ──────────────────────────────────── */}
@@ -654,7 +741,7 @@ export default function TutorStudentDetail() {
               </div>
             )}
 
-            <div className={GP}>
+            <div ref={suggestedSectionRef} className={GP}>
               {/* Tab header */}
               <div className="flex items-center border-b border-border/60">
                 <button
@@ -1285,6 +1372,103 @@ export default function TutorStudentDetail() {
           </div>
         )}
       </main>
+
+      {/* ── ASSIGN EXISTING ASSESSMENT MODAL ─────────────────────
+          Student is pre-selected (it's their profile). The tutor picks a
+          quiz + optional due date and fires POST /api/tutor/quizzes/:id/assign. */}
+      {showAssignExisting && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-lg p-4"
+          onClick={() => setShowAssignExisting(false)}
+        >
+          <div
+            className={`${GP} max-w-lg w-full max-h-[80vh] overflow-y-auto p-6`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-foreground">Assign to {displayName}</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Pick an existing assessment.</p>
+              </div>
+              <button
+                onClick={() => setShowAssignExisting(false)}
+                className="text-muted-foreground hover:text-foreground/80 p-1.5 rounded-lg hover:bg-foreground/[0.05]"
+                data-testid="button-close-assign-existing-modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {tutorQuizzes.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-sm text-muted-foreground mb-3">You haven't created any assessments yet.</p>
+                <Link href="/tutor/assessments/new">
+                  <span className="text-[12px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer">
+                    Create your first assessment &rarr;
+                  </span>
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+                  {tutorQuizzes.map((quiz) => {
+                    const sc = getSubjectColor(quiz.subject);
+                    const SubIcon = getSubjectIcon(quiz.subject);
+                    const selected = assignExistingQuizId === quiz.id;
+                    return (
+                      <button
+                        key={quiz.id}
+                        onClick={() => setAssignExistingQuizId(quiz.id)}
+                        className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left ${
+                          selected
+                            ? "bg-indigo-500/12 border border-indigo-500/25"
+                            : "bg-foreground/[0.03] border border-border/50 hover:bg-foreground/[0.05]"
+                        }`}
+                        data-testid={`assign-existing-quiz-${quiz.id}`}
+                      >
+                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${selected ? "bg-indigo-500 border-indigo-500" : "border-border"}`}>
+                          {selected && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}12`, borderColor: `${sc.hex}28` }}>
+                          <SubIcon className="w-3.5 h-3.5" style={{ color: sc.hex }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-foreground truncate">{quiz.title}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{quiz.subject || "General"}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
+                  <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
+                    <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
+                    Due Date <span className="text-muted-foreground">(optional)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={assignExistingDueDate}
+                    onChange={(e) => setAssignExistingDueDate(e.target.value)}
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
+                    data-testid="input-assign-existing-due-date"
+                  />
+                </div>
+                <button
+                  onClick={() => assignExistingMutation.mutate()}
+                  disabled={assignExistingQuizId === null || assignExistingMutation.isPending}
+                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  data-testid="button-confirm-assign-existing"
+                >
+                  {assignExistingMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                  ) : (
+                    `Assign to ${displayName.split(" ")[0]}`
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <AlertDialog open={revokeQuizId !== null} onOpenChange={() => setRevokeQuizId(null)}>
         <AlertDialogContent className="bg-card border-border/50">

@@ -23,6 +23,7 @@ import ResetPassword from "@/pages/ResetPassword";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleRouter from "@/components/RoleRouter";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { AIStatusLights } from "@/components/AIStatusLights";
 import { Redirect } from "wouter";
 import { supabase } from "@/lib/supabase";
 
@@ -114,6 +115,7 @@ function App() {
     <TooltipProvider>
       <Toaster />
       <ErrorBoundary title="Application error"><Router /></ErrorBoundary>
+      <AIStatusLights />
     </TooltipProvider>
   );
 }

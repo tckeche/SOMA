@@ -17,6 +17,7 @@ import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilot
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
+import { getAIStatus } from "./services/aiStatus";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
@@ -1616,6 +1617,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ─── AI Status ─────────────────────────────────────────────────────
+  // Public(ish) endpoint so the in-app AI status lights can render on any
+  // authed page. No heavy pings — just the most-recent outcome recorded by
+  // the orchestrator, plus API-key presence.
+  app.get("/api/ai/status", requireSupabaseAuth, (_req, res) => {
+    try {
+      res.json({ providers: getAIStatus() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch AI status" });
+    }
+  });
+
   // ─── Tutor API Routes ──────────────────────────────────────────────
 
   // Get tutor's adopted students
@@ -2540,6 +2553,58 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(row);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to update notification" });
+    }
+  });
+
+  // AI-grouped cohort weakness summary. Takes the raw topic list returned by
+  // /api/tutor/cohort-weaknesses and asks an LLM to condense it to genuine
+  // multi-student patterns so the dashboard isn't a wall of 1/1 struggles.
+  app.post("/api/tutor/ai/cohort-weakness-groups", requireTutor, async (req, res) => {
+    try {
+      const { topics, studentCount } = req.body as { topics: any[]; studentCount: number };
+      if (!Array.isArray(topics) || topics.length === 0) {
+        return res.json({ groups: [], highlights: [] });
+      }
+      const trimmed = topics.slice(0, 60).map((t) => ({
+        subject: t.subject,
+        topic: t.topic,
+        subtopic: t.subtopic,
+        avgPercent: t.avgPercent,
+        testedStudents: t.testedStudents,
+        belowThreshold: t.belowThreshold,
+        struggleRate: t.struggleRate,
+        strugglingStudents: t.strugglingStudents,
+      }));
+
+      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA.
+You condense a long list of topic-level weaknesses into the short list of genuine cohort-wide patterns a tutor should act on.
+Rules:
+- Only reference data provided. Never fabricate students, topics, or percentages.
+- A "genuine" cohort pattern means 2 or more students are below 75% on the same or closely-related topic. If only 1 student is struggling, exclude it from groups — surface that separately as an individual highlight only if the gap is large.
+- Collapse related subtopics under one parent topic where it is obvious (e.g. "Quadratic Equations" and "Quadratic Factorising" → "Quadratic Equations").
+- Keep 1-5 groups. Fewer is better.
+- Each group: { "theme": string, "subject": string, "affectedCount": number, "avgPercent": number, "rationale": 1-sentence explanation, "topics": [the raw topic names that feed into this group], "studentNames": [names], "recommendedAction": short action in <=12 words }
+- Also return up to 3 "highlights" for individual students struggling badly (single-student items excluded from groups).
+Return JSON: { "groups": [...], "highlights": [{ "student": string, "topic": string, "avgPercent": number, "reason": string }] }`;
+
+      const userPrompt = `Cohort size: ${studentCount} students.\nRaw topic weakness list (only topics where at least 1 student tested):\n${JSON.stringify(trimmed, null, 2)}\n\nReturn the JSON described.`;
+
+      const result = await generateWithFallback(systemPrompt, userPrompt);
+      let parsed: any = { groups: [], highlights: [] };
+      try {
+        const cleaned = result.data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        // swallow — fall back to empty
+      }
+      res.json({
+        groups: Array.isArray(parsed.groups) ? parsed.groups : [],
+        highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+        model: result.metadata,
+      });
+    } catch (err: any) {
+      console.error("[AI Cohort Weakness Groups] Error:", err.message);
+      res.json({ groups: [], highlights: [], error: err.message });
     }
   });
 

@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { recordProviderResult, type AIProvider } from "./aiStatus";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 interface ModelConfig {
@@ -295,12 +296,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+const STATUS_TRACKED: Record<string, AIProvider | null> = {
+  openai: "openai",
+  anthropic: "anthropic",
+  google: "google",
+  deepseek: null, // not surfaced in the footer
+};
+
 export async function generateWithFallback(
   systemPrompt: string,
   userPrompt: string,
   expectedSchema?: any
 ): Promise<AIResult> {
   for (const config of AI_FALLBACK_CHAIN) {
+    const tracked = STATUS_TRACKED[config.provider] ?? null;
     try {
       const startTime = Date.now();
       let result: string;
@@ -348,6 +357,7 @@ export async function generateWithFallback(
           }
 
           const anthropicData = typeof anthropicResponse === "string" ? anthropicResponse : JSON.stringify(anthropicResponse);
+          if (tracked) recordProviderResult(tracked, true);
           return { data: anthropicData, metadata: { provider: config.provider, model: config.model, durationMs: Date.now() - startTime } };
         }
         case "deepseek":
@@ -357,11 +367,13 @@ export async function generateWithFallback(
           continue;
       }
       const durationMs = Date.now() - startTime;
+      if (tracked) recordProviderResult(tracked, true);
       return {
         data: result,
         metadata: { provider: config.provider, model: config.model, durationMs },
       };
     } catch (error: any) {
+      if (tracked) recordProviderResult(tracked, false, error);
       console.warn(`[${config.provider} - ${config.model}] failed: ${error.message}. Attempting next model...`);
     }
   }
