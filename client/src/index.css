@@ -428,6 +428,113 @@
   html.light [data-state="active"] .text-violet-300,
   html.light [aria-selected="true"] .text-violet-300 { color: rgb(59, 7, 100); }
 
+  /* ─────────────────────────────────────────────────────────────
+     Round 2: badge / chip surface contrast
+     Tailwind `bg-*-500/10` utilities render at ~10% opacity, which
+     collapses to near-white on a light surface and leaves coloured
+     text floating on the same hue. Solidify these to pastel-100/200
+     so badge silhouettes read clearly, and darken matching borders.
+     ───────────────────────────────────────────────────────────── */
+
+  /* violet family */
+  html.light .bg-violet-500\/10,
+  html.light .bg-violet-500\/15 { background-color: rgb(237, 233, 254); }
+  html.light .bg-violet-500\/20,
+  html.light .bg-violet-500\/25,
+  html.light .bg-violet-500\/30 { background-color: rgb(221, 214, 254); }
+  html.light .border-violet-500\/15,
+  html.light .border-violet-500\/20,
+  html.light .border-violet-500\/25,
+  html.light .border-violet-500\/30,
+  html.light .border-violet-500\/40 { border-color: rgb(196, 181, 253); }
+
+  /* indigo family */
+  html.light .bg-indigo-500\/10,
+  html.light .bg-indigo-500\/15 { background-color: rgb(224, 231, 255); }
+  html.light .bg-indigo-500\/20,
+  html.light .bg-indigo-500\/25 { background-color: rgb(199, 210, 254); }
+  html.light .border-indigo-500\/15,
+  html.light .border-indigo-500\/20,
+  html.light .border-indigo-500\/25 { border-color: rgb(165, 180, 252); }
+
+  /* rose / red family */
+  html.light .bg-rose-500\/10,
+  html.light .bg-rose-500\/15 { background-color: rgb(254, 226, 226); }
+  html.light .bg-rose-500\/20,
+  html.light .bg-rose-500\/25 { background-color: rgb(254, 202, 202); }
+  html.light .border-rose-500\/15,
+  html.light .border-rose-500\/20,
+  html.light .border-rose-500\/25 { border-color: rgb(252, 165, 165); }
+  html.light .bg-red-500\/10,
+  html.light .bg-red-500\/15 { background-color: rgb(254, 226, 226); }
+  html.light .bg-red-500\/20,
+  html.light .bg-red-500\/25 { background-color: rgb(254, 202, 202); }
+  html.light .bg-red-500\/30,
+  html.light .bg-red-500\/35 { background-color: rgb(252, 165, 165); }
+  html.light .border-red-500\/15,
+  html.light .border-red-500\/20,
+  html.light .border-red-500\/25 { border-color: rgb(252, 165, 165); }
+
+  /* amber / orange / yellow family */
+  html.light .bg-amber-500\/10,
+  html.light .bg-amber-500\/15 { background-color: rgb(254, 243, 199); }
+  html.light .bg-amber-500\/20,
+  html.light .bg-amber-500\/25 { background-color: rgb(253, 230, 138); }
+  html.light .border-amber-500\/15,
+  html.light .border-amber-500\/20,
+  html.light .border-amber-500\/25,
+  html.light .border-amber-500\/30 { border-color: rgb(252, 211, 77); }
+  html.light .bg-yellow-500\/10 { background-color: rgb(254, 249, 195); }
+  html.light .border-yellow-500\/20 { border-color: rgb(253, 224, 71); }
+  html.light .bg-orange-500\/10 { background-color: rgb(255, 237, 213); }
+
+  /* emerald / green family — keep bases on emerald-100 so emerald-700
+     text clears AA; reserve emerald-200 for hover where contrast still
+     holds against the darker-label text override. */
+  html.light .bg-emerald-500\/10,
+  html.light .bg-emerald-500\/15,
+  html.light .bg-emerald-500\/20,
+  html.light .bg-emerald-500\/25,
+  html.light .bg-emerald-600\/20 { background-color: rgb(209, 250, 229); }
+  html.light .bg-emerald-600\/30,
+  html.light .hover\:bg-emerald-600\/30:hover { background-color: rgb(167, 243, 208); }
+  html.light .border-emerald-500\/15,
+  html.light .border-emerald-500\/20,
+  html.light .border-emerald-500\/25,
+  html.light .border-emerald-500\/30 { border-color: rgb(110, 231, 183); }
+  html.light .bg-green-500\/10,
+  html.light .bg-green-500\/15 { background-color: rgb(220, 252, 231); }
+
+  /* slate neutral family */
+  html.light .bg-slate-500\/10,
+  html.light .bg-slate-500\/15,
+  html.light .bg-slate-500\/20 { background-color: rgb(226, 232, 240); }
+  html.light .border-slate-500\/15,
+  html.light .border-slate-500\/20 { border-color: rgb(203, 213, 225); }
+
+  /* foreground-tinted neutral chips (bg-foreground/[0.03] etc.) */
+  html.light .bg-foreground\/\[0\.03\] { background-color: rgb(248, 250, 252); }
+  html.light .bg-foreground\/\[0\.05\] { background-color: rgb(241, 245, 249); }
+  html.light .bg-foreground\/\[0\.07\],
+  html.light .hover\:bg-foreground\/\[0\.07\]:hover { background-color: rgb(226, 232, 240); }
+  html.light .bg-foreground\/5 { background-color: rgb(241, 245, 249); }
+  html.light .bg-foreground\/10 { background-color: rgb(226, 232, 240); }
+  html.light .text-foreground\/80 { color: rgb(15, 23, 42); }
+
+  /* Low-opacity text utilities — designed for dark mode, ghost on white */
+  html.light .text-indigo-300\/80,
+  html.light .text-indigo-300\/70 { color: rgb(30, 41, 59); }          /* slate-800 for reading */
+  html.light .text-orange-200\/70,
+  html.light .text-amber-200\/70 { color: rgb(124, 45, 18); }          /* orange-900 */
+  html.light .text-amber-400\/70,
+  html.light .text-amber-400\/60 { color: rgb(120, 53, 15); }          /* amber-900 */
+  html.light .text-rose-400\/70 { color: rgb(159, 18, 57); }           /* rose-800 */
+  html.light .text-emerald-400\/70 { color: rgb(4, 120, 87); }         /* emerald-700 */
+
+  /* Glow-button fallback — if the gradient fails to paint for any
+     stacking reason, solid violet keeps the white label legible. */
+  html.light .glow-button { background-color: rgb(109, 40, 217); }
+
   /* ── Premium flip card system ─────────────────────────── */
   .plaque-card {
     perspective: 900px;

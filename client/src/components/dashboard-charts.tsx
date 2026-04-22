@@ -507,11 +507,11 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
   }
 
   function cellColor(score: number | undefined): string {
-    if (score === undefined) return isLight ? "rgba(100,116,139,0.20)" : "rgba(51,65,85,0.3)";
-    if (score >= 80) return "rgba(34,197,94,0.40)";
-    if (score >= 70) return "rgba(34,197,94,0.25)";
-    if (score >= 50) return "rgba(251,191,36,0.35)";
-    return "rgba(239,68,68,0.35)";
+    if (score === undefined) return isLight ? "rgb(226,232,240)" : "rgba(51,65,85,0.3)";   // slate-200
+    if (score >= 80) return isLight ? "rgb(167,243,208)" : "rgba(34,197,94,0.40)";          // emerald-200
+    if (score >= 70) return isLight ? "rgb(209,250,229)" : "rgba(34,197,94,0.25)";          // emerald-100
+    if (score >= 50) return isLight ? "rgb(253,230,138)" : "rgba(251,191,36,0.35)";         // amber-200
+    return isLight ? "rgb(254,202,202)" : "rgba(239,68,68,0.35)";                           // red-200
   }
 
   function textColor(score: number | undefined): string {

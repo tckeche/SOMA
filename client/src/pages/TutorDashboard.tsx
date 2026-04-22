@@ -463,7 +463,7 @@ export default function TutorDashboard() {
               </button>
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shrink-0"
-                style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(99,102,241,0.2))", boxShadow: "0 0 24px rgba(139,92,246,0.2), inset 0 1px 0 rgba(255,255,255,0.08)", border: "1.5px solid rgba(139,92,246,0.4)" }}
+                style={{ background: "linear-gradient(135deg, rgb(124,58,237), rgb(79,70,229))", boxShadow: "0 0 24px rgba(139,92,246,0.25), inset 0 1px 0 rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.15)" }}
               >
                 {initials}
               </div>

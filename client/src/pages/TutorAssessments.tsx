@@ -583,7 +583,7 @@ export default function TutorAssessments() {
             <div className="flex items-center gap-3">
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                style={{ backgroundColor: "rgba(139,92,246,0.3)", boxShadow: "0 0 16px rgba(139,92,246,0.3)", border: "2px solid #8B5CF6" }}
+                style={{ background: "linear-gradient(135deg, rgb(124,58,237), rgb(79,70,229))", boxShadow: "0 0 16px rgba(139,92,246,0.3)", border: "2px solid #8B5CF6" }}
               >
                 {initials}
               </div>
