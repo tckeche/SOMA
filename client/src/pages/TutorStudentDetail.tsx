@@ -426,7 +426,7 @@ export default function TutorStudentDetail() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/85">
+      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/95">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/tutor/students">
             <span className="flex items-center gap-2 text-[13px] text-muted-foreground hover:text-violet-500 dark:hover:text-violet-400 transition-colors cursor-pointer font-medium" data-testid="link-back-students">

@@ -87,10 +87,10 @@
   --sidebar: 0 0% 100%;
   --sidebar-foreground: 222 47% 12%;
   --sidebar-border: 220 24% 84%;
-  --sidebar-primary: 263 70% 48%;
+  --sidebar-primary: 263 70% 30%;
   --sidebar-primary-foreground: 0 0% 100%;
   --sidebar-accent: 263 75% 94%;
-  --sidebar-accent-foreground: 263 70% 34%;
+  --sidebar-accent-foreground: 263 70% 20%;
   --sidebar-ring: 263 70% 48%;
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 12%;
@@ -100,9 +100,9 @@
   --secondary: 220 34% 94%;
   --secondary-foreground: 222 47% 16%;
   --muted: 220 25% 92%;
-  --muted-foreground: 222 18% 33%;
+  --muted-foreground: 222 40% 18%;
   --accent: 263 72% 92%;
-  --accent-foreground: 263 70% 28%;
+  --accent-foreground: 263 70% 22%;
   --destructive: 0 72% 45%;
   --destructive-foreground: 0 0% 100%;
   --input: 220 24% 86%;
@@ -262,16 +262,22 @@
   }
 
   .gradient-text {
-    @apply bg-gradient-to-r from-white to-violet-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-white to-violet-400 bg-clip-text;
+    color: transparent;
+  }
+
+  /* Non-transparent fallback if background-clip:text is unsupported or fails */
+  @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+    .gradient-text { color: hsl(var(--foreground)); background: none; }
   }
 
   .glow-button {
-    @apply bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-semibold
+    @apply !bg-gradient-to-r from-violet-600 to-indigo-600 !text-white !border-transparent rounded-xl font-semibold
            transition-shadow duration-300 hover:shadow-[0_0_20px_rgba(139,92,246,0.5)];
   }
 
   .glow-button-outline {
-    @apply bg-transparent border border-violet-500 text-violet-400 rounded-xl font-semibold
+    @apply !bg-transparent border border-violet-500 !text-violet-400 rounded-xl font-semibold
            transition-shadow duration-300 hover:shadow-[0_0_15px_rgba(139,92,246,0.3)];
   }
 
@@ -291,11 +297,17 @@
   }
 
   html.light .glow-button-outline {
-    @apply border-violet-600 text-violet-700;
+    @apply border-violet-700 !text-violet-800;
   }
 
+  /* Navy-to-deep-violet gradient clears WCAG AA on light; transparent text
+     still relies on background-clip, so we pre-declare a fallback color too. */
   html.light .gradient-text {
-    @apply from-slate-900 to-violet-700;
+    @apply from-slate-900 to-violet-800;
+    color: hsl(222 47% 12%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   html.light .glass-panel-elite {
@@ -345,6 +357,76 @@
     color: rgb(185, 28, 28);
     text-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
   }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Contrast overrides for light mode
+     Many Tailwind colour utilities used across the app are tuned for dark
+     backgrounds (text-violet-300/400, text-amber-200/300, text-red-300/400,
+     etc.). In light mode they are washed out or invisible. These rules
+     darken them while keeping the same Tailwind class names in JSX, so
+     components stay legible in both themes without per-file edits.
+     Specificity: html.light .foo wins over plain .foo utilities.
+     ───────────────────────────────────────────────────────────────────── */
+
+  /* Violet / indigo / purple — light-bg variants need deep hues */
+  html.light .text-violet-400\/70,
+  html.light .text-violet-400\/60,
+  html.light .text-violet-400\/80 { color: rgb(91, 33, 182); }   /* violet-800 */
+
+  html.light .text-violet-300 { color: rgb(76, 29, 149); }       /* violet-900 */
+  html.light .text-violet-400 { color: rgb(91, 33, 182); }       /* violet-800 */
+  html.light .text-purple-300 { color: rgb(88, 28, 135); }
+  html.light .text-purple-400 { color: rgb(107, 33, 168); }
+  html.light .text-indigo-300 { color: rgb(49, 46, 129); }
+  html.light .text-indigo-400 { color: rgb(55, 48, 163); }
+  html.light .text-blue-300   { color: rgb(30, 58, 138); }
+  html.light .text-blue-400   { color: rgb(29, 78, 216); }
+  html.light .text-cyan-300   { color: rgb(14, 116, 144); }
+  html.light .text-cyan-400   { color: rgb(15, 118, 110); }
+
+  /* Red / rose — states like "declining", "critical" */
+  html.light .text-red-300    { color: rgb(185, 28, 28); }
+  html.light .text-red-400    { color: rgb(153, 27, 27); }
+  html.light .text-rose-300   { color: rgb(190, 18, 60); }
+  html.light .text-rose-400   { color: rgb(159, 18, 57); }
+
+  /* Amber / orange — "pending", "due" */
+  html.light .text-amber-100,
+  html.light .text-amber-200,
+  html.light .text-amber-200\/70,
+  html.light .text-orange-100,
+  html.light .text-orange-200,
+  html.light .text-amber-300 { color: rgb(124, 45, 18); }        /* orange-900 */
+  html.light .text-amber-400,
+  html.light .text-orange-400 { color: rgb(146, 64, 14); }        /* amber-800 */
+
+  /* Emerald / green — success, mastery */
+  html.light .text-emerald-300 { color: rgb(6, 95, 70); }
+  html.light .text-emerald-400 { color: rgb(4, 120, 87); }
+  html.light .text-green-300   { color: rgb(22, 101, 52); }
+  html.light .text-green-400   { color: rgb(21, 128, 61); }
+
+  /* Hover variants used in text-* hover: pairs */
+  html.light .hover\:text-violet-300:hover { color: rgb(76, 29, 149); }
+  html.light .hover\:text-violet-400:hover { color: rgb(91, 33, 182); }
+  html.light .hover\:text-red-300:hover    { color: rgb(185, 28, 28); }
+  html.light .hover\:text-red-400:hover    { color: rgb(153, 27, 27); }
+
+  /* Placeholders: ensure WCAG 3:1 minimum on semi-transparent inputs */
+  html.light input::placeholder,
+  html.light textarea::placeholder { color: rgb(71, 85, 105); opacity: 1; }
+  html.light .glass-input::placeholder { color: rgb(51, 65, 85); opacity: 1; }
+
+  /* Recharts: legend text defaults to the first series colour, which can
+     dip below AA on white. Force legend text to --foreground. */
+  html.light .recharts-legend-item-text,
+  html.light .recharts-cartesian-axis-tick-value { fill: hsl(var(--foreground)); }
+
+  /* Active tab / sidebar state text — violet-300 was used; swap to deep violet */
+  html.light [data-state="active"].text-violet-300,
+  html.light [aria-selected="true"].text-violet-300,
+  html.light [data-state="active"] .text-violet-300,
+  html.light [aria-selected="true"] .text-violet-300 { color: rgb(59, 7, 100); }
 
   /* ── Premium flip card system ─────────────────────────── */
   .plaque-card {

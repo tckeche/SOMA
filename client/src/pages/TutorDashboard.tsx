@@ -420,7 +420,7 @@ export default function TutorDashboard() {
   return (
     <div className="min-h-screen">
       {/* ── HEADER ─────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/85">
+      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/95">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3.5 cursor-pointer group">
