@@ -13,8 +13,8 @@ import {
   LayoutDashboard, Clock, Send, Eye, Bell,
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, Target, CheckCircle2,
-  CalendarDays, ExternalLink, RefreshCcw,
-  Radar, TrendingUp, Grid3X3, BarChart2,
+  CalendarDays, ExternalLink,
+  Radar, Grid3X3, BarChart2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -39,6 +39,7 @@ interface DashboardStats {
   cohortAverages: { subject: string; average: number; count: number }[];
   recentSubmissions: {
     reportId: number;
+    studentId: string;
     studentName: string;
     score: number;
     quizTitle: string;
@@ -222,6 +223,9 @@ export default function TutorDashboard() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "notifications">("overview");
+  // Student-first assign flow: pre-select a student and let the tutor pick a quiz.
+  const [assignForStudent, setAssignForStudent] = useState<{ id: string; name: string } | null>(null);
+  const [assignForStudentQuizId, setAssignForStudentQuizId] = useState<number | null>(null);
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -398,19 +402,20 @@ export default function TutorDashboard() {
     return (stats?.studentInsights || []).map((s) => {
       const chip = getStatusChip(s);
       const completionPct = s.assigned > 0 ? Math.round((s.completed / s.assigned) * 100) : 0;
-      const recentScores: number[] = [];
-      const submissions = (stats?.recentSubmissions || []).filter(
-        (sub) => sub.studentName === s.studentName
+      // Match by studentId (reliable) with a legacy fallback to studentName.
+      // recentSubmissions is ordered newest-first by the backend.
+      const submissions = (stats?.recentSubmissions || []).filter((sub) =>
+        sub.studentId ? sub.studentId === s.studentId : sub.studentName === s.studentName,
       );
-      for (const sub of submissions.slice(-5)) {
-        recentScores.push(sub.score);
-      }
-      const lastScore = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
+      // Take the most recent 5 scores in chronological (oldest → newest) order for the sparkline.
+      const recentScores: number[] = submissions.slice(0, 5).map((sub) => sub.score).reverse();
+      const lastScore = submissions.length > 0 ? submissions[0].score : null;
       const coveragePct = s.assigned > 0 ? Math.min(100, Math.round((s.completed / Math.max(s.assigned, 1)) * 100)) : 0;
 
       const lowestCoverage = s.weakTopics.slice(0, 3);
 
-      const lastSubmission = submissions.length > 0 ? submissions[submissions.length - 1] : null;
+      // The newest submission — the "last" one the student actually submitted.
+      const lastSubmission = submissions.length > 0 ? submissions[0] : null;
       const lastActivity = lastSubmission ? lastSubmission.createdAt : null;
 
       return { ...s, chip, completionPct, recentScores, lastScore, coveragePct, lowestCoverage, lastActivity, lastSubmission };
@@ -562,17 +567,14 @@ export default function TutorDashboard() {
                 <h2 className="text-lg font-bold text-foreground">{getGreeting()}, {displayName.split(" ")[0]}</h2>
                 <span className="text-[12px] text-muted-foreground font-medium">{format(new Date(), "EEEE, d MMMM yyyy")}</span>
                 {dataUpdatedAt > 0 && (
-                  <span className="text-[10px] text-muted-foreground font-medium">
-                    &middot; Updated {formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
+                  <span
+                    className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20"
+                    title={`Auto-refreshes every 15s · last update ${formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live
                   </span>
                 )}
-                <button
-                  onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] })}
-                  className="text-muted-foreground hover:text-violet-400 transition-colors p-1 rounded-md hover:bg-foreground/[0.05]"
-                  aria-label="Refresh data"
-                >
-                  <RefreshCcw className="w-3 h-3" />
-                </button>
               </div>
               <div className="flex items-center gap-2.5">
                 <Link href="/tutor/students">
@@ -755,9 +757,23 @@ export default function TutorDashboard() {
                                   {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
                                 </div>
                               </div>
-                              <Link href={`/tutor/students/${s.studentId}`}>
-                                <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer shrink-0 mt-1">View &rarr;</span>
-                              </Link>
+                              <div className="flex items-center gap-2 shrink-0 mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAssignForStudent({ id: s.studentId, name: s.studentName });
+                                    setAssignForStudentQuizId(null);
+                                    setDueDate("");
+                                  }}
+                                  className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                                  data-testid={`button-assign-intervention-${s.studentId}`}
+                                >
+                                  Assign &rarr;
+                                </button>
+                                <Link href={`/tutor/students/${s.studentId}`}>
+                                  <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer">View &rarr;</span>
+                                </Link>
+                              </div>
                             </div>
                           );
                         })}
@@ -799,19 +815,28 @@ export default function TutorDashboard() {
                       {stats!.pendingAssignments.slice(0, 10).map((pa) => {
                         const isOverdue = pa.dueDate && new Date(pa.dueDate) < new Date();
                         return (
-                          <div key={pa.assignmentId} className="px-5 py-2.5 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] text-foreground font-medium truncate">{pa.studentName}</p>
-                              <p className="text-[10px] text-muted-foreground truncate">{pa.quizTitle}</p>
+                          <Link
+                            key={pa.assignmentId}
+                            href={`/tutor/assessment/${pa.quizId}`}
+                            className="block"
+                          >
+                            <div
+                              className="px-5 py-2.5 flex items-center gap-3 hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+                              data-testid={`pending-assignment-${pa.assignmentId}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] text-foreground font-medium truncate">{pa.studentName}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">{pa.quizTitle}</p>
+                              </div>
+                              {isOverdue ? (
+                                <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
+                              ) : pa.dueDate ? (
+                                <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
+                              ) : (
+                                <span className="text-[9px] font-bold text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded border border-border/50">Pending</span>
+                              )}
                             </div>
-                            {isOverdue ? (
-                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
-                            ) : pa.dueDate ? (
-                              <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded border border-border/50">Pending</span>
-                            )}
-                          </div>
+                          </Link>
                         );
                       })}
                     </div>
@@ -895,22 +920,19 @@ export default function TutorDashboard() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="student-plaque-grid">
                   {studentPlaques.map((s, i) => (
-                    <StudentPlaque key={s.studentId} student={s} index={i} />
+                    <StudentPlaque
+                      key={s.studentId}
+                      student={s}
+                      index={i}
+                      onAssignRequest={() => {
+                        setAssignForStudent({ id: s.studentId, name: s.studentName });
+                        setAssignForStudentQuizId(null);
+                        setDueDate("");
+                      }}
+                    />
                   ))}
                 </div>
               )}
-            </FadeInSection>
-
-            {/* ══════════════════════════════════════════════════════
-                ROW 5 — Performance Trends (full-width area chart)
-               ══════════════════════════════════════════════════════ */}
-            <FadeInSection delay={0.05}>
-              <SectionHeader icon={TrendingUp} title="Performance Trends" subtitle="Cohort and individual student performance over time" />
-              <ChartCard>
-                <div style={{ height: 320 }}>
-                  <PerformanceTrendAreaChart stats={stats!} />
-                </div>
-              </ChartCard>
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
@@ -1185,6 +1207,115 @@ export default function TutorDashboard() {
         </div>
       )}
 
+      {/* ── STUDENT-FIRST ASSIGN MODAL ─────────────────────────
+          Opened from the Intervention Queue or student-plaque "Assign" button.
+          Student is pre-selected; the tutor chooses which quiz to assign. */}
+      {assignForStudent !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-lg p-4"
+          onClick={() => setAssignForStudent(null)}
+        >
+          <div
+            className={`${GP} max-w-lg w-full max-h-[80vh] overflow-y-auto p-6`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-foreground">Assign to {assignForStudent.name}</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Pick an assessment to assign.</p>
+              </div>
+              <button
+                onClick={() => setAssignForStudent(null)}
+                className="text-muted-foreground hover:text-foreground/80 p-1.5 rounded-lg hover:bg-foreground/[0.05] transition-colors"
+                data-testid="button-close-student-assign-modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {tutorQuizzes.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-sm text-muted-foreground mb-3">You haven't created any assessments yet.</p>
+                <Link href="/tutor/assessments/new">
+                  <span className="text-[12px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer">
+                    Create your first assessment &rarr;
+                  </span>
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+                  {tutorQuizzes.map((quiz) => {
+                    const sc = getSubjectColor(quiz.subject);
+                    const SubIcon = getSubjectIcon(quiz.subject);
+                    const selected = assignForStudentQuizId === quiz.id;
+                    return (
+                      <button
+                        key={quiz.id}
+                        onClick={() => setAssignForStudentQuizId(quiz.id)}
+                        className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left ${
+                          selected
+                            ? "bg-indigo-500/12 border border-indigo-500/25"
+                            : "bg-foreground/[0.03] border border-border/50 hover:bg-foreground/[0.05]"
+                        }`}
+                        data-testid={`assign-quiz-${quiz.id}`}
+                      >
+                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                          selected ? "bg-indigo-500 border-indigo-500" : "border-border"
+                        }`}>
+                          {selected && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}12`, borderColor: `${sc.hex}28` }}>
+                          <SubIcon className="w-3.5 h-3.5" style={{ color: sc.hex }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-foreground truncate">{quiz.title}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{quiz.subject || "General"}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
+                  <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
+                    <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
+                    Due Date <span className="text-muted-foreground">(optional)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
+                    data-testid="input-student-assign-due-date"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    if (!assignForStudentQuizId || !assignForStudent) return;
+                    assignMutation.mutate(
+                      {
+                        quizId: assignForStudentQuizId,
+                        studentIds: [assignForStudent.id],
+                        dueDate: dueDate || undefined,
+                      },
+                      { onSuccess: () => setAssignForStudent(null) },
+                    );
+                  }}
+                  disabled={assignForStudentQuizId === null || assignMutation.isPending}
+                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  data-testid="button-confirm-student-assign"
+                >
+                  {assignMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                  ) : (
+                    `Assign to ${assignForStudent.name.split(" ")[0]}`
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -1207,7 +1338,7 @@ interface PlaqueStudent {
   lastSubmission: { reportId: number; quizTitle: string; score: number } | null;
 }
 
-function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; index?: number }) {
+function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: PlaqueStudent; index?: number; onAssignRequest?: () => void }) {
   const [flipped, setFlipped] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -1263,17 +1394,29 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
                 <BookOpen className="w-4 h-4 text-muted-foreground" />
               </div>
               <p className="text-[11px] text-muted-foreground font-medium mb-1">No assignments yet</p>
-              <Link href="/tutor/assessments">
-                <span className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors">
+              {onAssignRequest ? (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onAssignRequest(); }}
+                  className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors"
+                  data-testid={`button-assign-empty-${s.studentId}`}
+                >
                   Assign work &rarr;
-                </span>
-              </Link>
+                </button>
+              ) : (
+                <Link href="/tutor/assessments">
+                  <span className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors">
+                    Assign work &rarr;
+                  </span>
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-3.5 flex-1">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">Workload</span>
+                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">Workload (assignments)</span>
+                  <span className="text-[10px] text-muted-foreground font-semibold tabular-nums">{s.completed}/{s.assigned}</span>
                 </div>
                 <WorkloadBar assigned={s.assigned} completed={s.completed} awaiting={s.awaiting} />
               </div>
@@ -1335,11 +1478,22 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
                 <Eye className="w-3 h-3" /> Profile
               </span>
             </Link>
-            <Link href="/tutor/assessments">
-              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-muted-foreground bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.06] transition-all cursor-pointer">
+            {onAssignRequest ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onAssignRequest(); }}
+                className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-muted-foreground bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.06] transition-all cursor-pointer"
+                data-testid={`button-assign-plaque-${s.studentId}`}
+              >
                 <Send className="w-3 h-3" /> Assign
-              </span>
-            </Link>
+              </button>
+            ) : (
+              <Link href="/tutor/assessments">
+                <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-muted-foreground bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.06] transition-all cursor-pointer">
+                  <Send className="w-3 h-3" /> Assign
+                </span>
+              </Link>
+            )}
             {s.lastSubmission && (
               <Link href={`/soma/review/${s.lastSubmission.reportId}`}>
                 <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-muted-foreground bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.06] transition-all cursor-pointer">

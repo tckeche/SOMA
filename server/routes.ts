@@ -2231,26 +2231,47 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // Get student mastery data
+  // Get student mastery data — filtered to subjects the tutor has assigned this student.
   app.get("/api/tutor/students/:studentId/mastery", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const mastery = await storage.listStudentTopicMastery(studentId);
-      res.json(mastery);
+      const [mastery, assignedSubjectsMap] = await Promise.all([
+        storage.listStudentTopicMastery(studentId),
+        storage.getAssignedSubjectsForStudents([studentId]),
+      ]);
+      const visible = new Set(
+        (assignedSubjectsMap[studentId] || []).map((s) => s.toLowerCase()),
+      );
+      const filtered = visible.size === 0
+        ? []
+        : mastery.filter((m) => visible.has((m.subject || "").toLowerCase()));
+      res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
     }
   });
 
-  // Cohort-level weakness report: aggregate mastery across all students
+  // Cohort-level weakness report: aggregate mastery across all students.
+  // Only includes subjects the tutor has actually assigned (subject visibility gating).
   app.get("/api/tutor/cohort-weaknesses", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (adopted.length === 0) return res.json({ topics: [], studentCount: 0 });
+
+      const assignedSubjectsByStudent = await storage.getAssignedSubjectsForStudents(
+        adopted.map((s) => s.id),
+      );
+      const visibleSubjectsPerStudent = new Map<string, Set<string>>();
+      for (const s of adopted) {
+        visibleSubjectsPerStudent.set(
+          s.id,
+          new Set((assignedSubjectsByStudent[s.id] || []).map((x) => x.toLowerCase())),
+        );
+      }
 
       const topicAgg: Record<string, {
         subject: string; topic: string; subtopic: string | null;
@@ -2260,10 +2281,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }> = {};
 
       for (const student of adopted) {
+        const visible = visibleSubjectsPerStudent.get(student.id) || new Set<string>();
+        if (visible.size === 0) continue; // tutor hasn't assigned this student anything yet
         const mastery = await storage.listStudentTopicMastery(student.id);
         const studentName = student.displayName || student.email?.split("@")[0] || "Student";
         for (const m of mastery) {
           if (!m.tested) continue;
+          // Skip subjects the tutor hasn't assigned this student
+          if (!visible.has((m.subject || "").toLowerCase())) continue;
           const key = `${m.subject}|||${m.topic}|||${m.subtopic || ""}`;
           if (!topicAgg[key]) {
             topicAgg[key] = {

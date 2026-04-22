@@ -855,7 +855,7 @@ export default function TutorStudentDetail() {
                             <div className="flex flex-wrap gap-2">
                               {suggestionsData.basis.remediationTargets.map((r: any, i: number) => (
                                 <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-red-500/8 text-red-400 border border-red-500/15">
-                                  {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}: {r.understanding}% ({r.attempts} attempts)
+                                  {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}: {r.understanding}% ({r.attempts} {r.attempts === 1 ? "attempt" : "attempts"})
                                 </span>
                               ))}
                             </div>
