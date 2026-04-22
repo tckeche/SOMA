@@ -4,6 +4,7 @@ import { useParams, Link } from "wouter";
 import { authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz } from "@shared/schema";
+import { toProperCase, getInitials } from "@/lib/utils";
 import {
   ArrowLeft, BookOpen, Users, Trash2, Plus, FileText,
   Loader2, Check, X, MoreVertical, Archive, ArchiveX,
@@ -64,10 +65,6 @@ interface AdoptedStudent {
 const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
 const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all";
 
-function toProperCase(str: string): string {
-  return str.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "—";
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -76,16 +73,6 @@ function formatDate(dateStr: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 }
 
 const AVATAR_COLORS = [

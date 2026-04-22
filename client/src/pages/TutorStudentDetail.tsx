@@ -29,12 +29,9 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
+import { toProperCase, formatDuration } from "@/lib/utils";
 
 const GP = "glass-panel-elite";
-
-function toProperCase(str: string): string {
-  return str.replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 interface AssignmentRow {
   assignmentId: number;
@@ -101,16 +98,6 @@ function getStatusLabel(a: AssignmentRow): { text: string; color: string } {
   if (a.reportStatus === "failed") return { text: "Failed", color: "bg-red-500/10 text-red-400 border-red-500/15" };
   if (a.assignmentStatus === "completed") return { text: "Done", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };
   return { text: "Pending", color: "bg-slate-500/10 text-slate-400 border-slate-500/15" };
-}
-
-function formatDuration(startedAt: string | null, completedAt: string | null): string {
-  if (!startedAt || !completedAt) return "";
-  const diffMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-  if (diffMs < 0 || isNaN(diffMs)) return "";
-  const mins = Math.floor(diffMs / 60000);
-  const secs = Math.floor((diffMs % 60000) / 1000);
-  if (mins === 0) return `${secs}s`;
-  return `${mins}m ${secs}s`;
 }
 
 function formatPercent(value: number | null | undefined) {

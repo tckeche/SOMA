@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import type { SomaQuiz, SomaQuestion } from "@shared/schema";
+import type { SomaQuiz, SomaQuestion, DraftQuestion } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,21 +34,6 @@ import {
 import DraftRecoveryBanner from "@/components/tutor/DraftRecoveryBanner";
 import AssessmentWizard from "@/components/tutor/AssessmentWizard";
 
-// ── Draft question type (mirrors server DraftQuestion) ───────────────────────
-export interface DraftQuestion {
-  draftId: string;
-  stem: string;
-  options: string[];
-  correctAnswer: string;
-  explanation: string;
-  marks: number;
-  questionType: "multiple_choice" | "graph";
-  graphSpec?: any | null;
-  topicTag?: string | null;
-  subtopicTag?: string | null;
-  difficultyTag?: string | null;
-}
-
 type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
 type GenerationState = "generation_started" | "generation_in_progress" | "generation_failed" | "partial_success" | "validation_failed" | "persistence_failed" | "ready_for_review";
 
@@ -60,15 +45,15 @@ function somaQuestionToDraft(q: SomaQuestion): DraftQuestion {
   return {
     draftId: `q-${q.id}`,
     stem: q.stem,
-    options: Array.isArray(q.options) ? (q.options as string[]) : [],
+    options: Array.isArray(q.options) ? q.options : [],
     correctAnswer: q.correctAnswer,
     explanation: q.explanation,
     marks: q.marks,
-    questionType: (q as any).questionType || "multiple_choice",
-    graphSpec: (q as any).graphSpec ?? null,
-    topicTag: (q as any).topicTag ?? null,
-    subtopicTag: (q as any).subtopicTag ?? null,
-    difficultyTag: (q as any).difficultyTag ?? null,
+    questionType: q.questionType === "graph" ? "graph" : "multiple_choice",
+    graphSpec: q.graphSpec ?? null,
+    topicTag: q.topicTag ?? null,
+    subtopicTag: q.subtopicTag ?? null,
+    difficultyTag: q.difficultyTag ?? null,
   };
 }
 
@@ -806,7 +791,7 @@ export default function BuilderPage() {
             credentials: "include",
             signal: controller.signal,
           });
-        } catch (err: any) {
+        } catch (err: unknown) {
           if (controller.signal.aborted) {
             throw new Error("Generation was stopped. You can retry or refine your prompt.");
           }
@@ -866,7 +851,7 @@ export default function BuilderPage() {
               }
               if (done) break;
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
             if (controller.signal.aborted) {
               throw new Error("Generation was stopped. You can retry or refine your prompt.");
             }
@@ -1053,8 +1038,9 @@ export default function BuilderPage() {
       setShowSuccessModal(true);
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", activeQuizId] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
-    } catch (err: any) {
-      toast({ title: "Publish failed", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const description = err instanceof Error ? err.message : String(err);
+      toast({ title: "Publish failed", description, variant: "destructive" });
     } finally {
       setIsPublishing(false);
     }

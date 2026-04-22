@@ -31,8 +31,9 @@ export async function withTimeout<T>(
   const timeout = setTimeout(() => controller.abort('timeout'), timeoutMs);
   try {
     return await fn(controller.signal);
-  } catch (error: any) {
-    if (error?.name === 'AbortError' || error === 'timeout') {
+  } catch (error: unknown) {
+    const name = error instanceof Error ? error.name : undefined;
+    if (name === 'AbortError' || error === 'timeout') {
       throw new AuthRequestError('The request took too long. Please check your connection and try again.', 'TIMEOUT', stage);
     }
     throw error;
