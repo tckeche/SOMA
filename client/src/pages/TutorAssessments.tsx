@@ -15,6 +15,15 @@ import DOMPurify from "dompurify";
 import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { formatDuration as baseFormatDuration } from "@/lib/utils";
+
+function formatDuration(
+  startedAt: string | Date | null,
+  completedAt: string | Date | null,
+): string {
+  return baseFormatDuration(startedAt, completedAt, "—");
+}
+
 
 interface SomaUser {
   id: string;
@@ -46,19 +55,7 @@ interface QuizAssignmentWithStudent {
 
 const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
 
-function formatDuration(startedAt: string | null, completedAt: string | null): string {
-  if (!startedAt || !completedAt) return "—";
-  const start = new Date(startedAt).getTime();
-  const end = new Date(completedAt).getTime();
-  const diffMs = end - start;
-  if (diffMs < 0 || isNaN(diffMs)) return "—";
-  const mins = Math.floor(diffMs / 60000);
-  const secs = Math.floor((diffMs % 60000) / 1000);
-  if (mins === 0) return `${secs}s`;
-  return `${mins}m ${secs}s`;
-}
-
-function formatDate(dateStr: string | null): string {
+function formatDate(dateStr: string | Date | null): string {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return "—";
@@ -90,8 +87,8 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
   const studentName = report.studentName ?? "Student";
   const score = typeof report.score === "number" ? report.score : 0;
   const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
-  const duration = formatDuration(report.startedAt as any, report.completedAt as any);
-  const startedDate = formatDate(report.startedAt as any);
+  const duration = formatDuration(report.startedAt, report.completedAt);
+  const startedDate = formatDate(report.startedAt);
   const answersObj = (report.answersJson || {}) as Record<string, string>;
   const safeQuestions = questions ?? [];
   const correctCount = safeQuestions.filter(q => answersObj[String(q.id)] === q.correctAnswer).length;
@@ -167,7 +164,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
   const answersObj = (report.answersJson || {}) as Record<string, string>;
   const score = typeof report.score === "number" ? report.score : 0;
   const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
-  const duration = formatDuration(report.startedAt as any, report.completedAt as any);
+  const duration = formatDuration(report.startedAt, report.completedAt);
   const studentName = report.studentName ?? "Student";
   const quizTitle = report.quiz?.title ?? "Assessment";
   const safeQuestions = questions ?? [];
@@ -196,13 +193,13 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
             {report.startedAt && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
-                Started: {formatDate(report.startedAt as any)}
+                Started: {formatDate(report.startedAt)}
               </span>
             )}
             {report.completedAt && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300">
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                Completed: {formatDate(report.completedAt as any)}
+                Completed: {formatDate(report.completedAt)}
               </span>
             )}
             {duration !== "—" && (
@@ -393,7 +390,7 @@ export default function TutorAssessments() {
         case "subject":
           return (a.subject || "").localeCompare(b.subject || "") || (a.title || "").localeCompare(b.title || "");
         case "newest":
-          return new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime();
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         case "latest_submission":
         default: {
           const at = overviewByQuizId.get(a.id)?.latestSubmissionAt;
@@ -401,7 +398,7 @@ export default function TutorAssessments() {
           const av = at ? new Date(at).getTime() : 0;
           const bv = bt ? new Date(bt).getTime() : 0;
           if (bv !== av) return bv - av;
-          return new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime();
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         }
       }
     });
@@ -942,8 +939,12 @@ export default function TutorAssessments() {
                             {[...reports].sort((a, b) => {
                               if (reportSortBy === "student") return a.studentName.localeCompare(b.studentName);
                               if (reportSortBy === "time_allocated") {
-                                const aDur = ((new Date(a.completedAt as any).getTime() || 0) - (new Date(a.startedAt as any).getTime() || 0));
-                                const bDur = ((new Date(b.completedAt as any).getTime() || 0) - (new Date(b.startedAt as any).getTime() || 0));
+                                const aDur = a.completedAt && a.startedAt
+                                  ? new Date(a.completedAt).getTime() - new Date(a.startedAt).getTime()
+                                  : 0;
+                                const bDur = b.completedAt && b.startedAt
+                                  ? new Date(b.completedAt).getTime() - new Date(b.startedAt).getTime()
+                                  : 0;
                                 return bDur - aDur;
                               }
                               return new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime();

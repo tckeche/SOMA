@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion } from "@shared/schema";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { z } from "zod";
 import multer from "multer";
@@ -320,19 +320,6 @@ const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
 // Draft Assessment Store — in-memory, keyed by quizId
 // Drafts survive page refresh for the current server process.
 // ---------------------------------------------------------------------------
-export interface DraftQuestion {
-  draftId: string;
-  stem: string;
-  options: string[];
-  correctAnswer: string;
-  explanation: string;
-  marks: number;
-  questionType: "multiple_choice" | "graph";
-  graphSpec?: import("@shared/schema").GraphQuestionSpec | null;
-  topicTag?: string | null;
-  subtopicTag?: string | null;
-  difficultyTag?: string | null;
-}
 
 const draftStore = new Map<number, { questions: DraftQuestion[]; updatedAt: Date }>();
 const verificationResendAttempts = new Map<string, number>();

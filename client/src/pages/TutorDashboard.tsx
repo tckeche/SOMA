@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
+import { formatDuration } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import {
   LogOut, Users, BookOpen, Plus, X,
@@ -80,16 +81,6 @@ interface TutorNotification {
   payload: Record<string, any> | null;
   readAt: string | null;
   createdAt: string;
-}
-
-function formatDuration(startedAt: string | null, completedAt: string | null): string {
-  if (!startedAt || !completedAt) return "";
-  const diffMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-  if (diffMs < 0 || isNaN(diffMs)) return "";
-  const mins = Math.floor(diffMs / 60000);
-  const secs = Math.floor((diffMs % 60000) / 1000);
-  if (mins === 0) return `${secs}s`;
-  return `${mins}m ${secs}s`;
 }
 
 const GP = "glass-panel-elite";

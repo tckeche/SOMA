@@ -11,6 +11,7 @@ import {
   AlertTriangle, CheckCircle2, Target,
 } from "lucide-react";
 import DOMPurify from "dompurify";
+import { toProperCase } from "@/lib/utils";
 
 interface ReportWithQuiz {
   id: number;
@@ -32,10 +33,6 @@ interface SubmissionWithQuiz {
   maxPossibleScore: number;
   submittedAt: string;
   quiz: { id: number; title: string; subject: string | null };
-}
-
-function toProperCase(str: string): string {
-  return str.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default function SomaChatPage() {

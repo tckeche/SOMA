@@ -104,6 +104,27 @@ export const graphQuestionSpecSchema = z.object({
 
 export type GraphQuestionSpec = z.infer<typeof graphQuestionSpecSchema>;
 
+/**
+ * Draft question shape used by the assessment builder.
+ *
+ * Shared between the server's in-memory draft store (`server/routes.ts`) and
+ * the client-side builder UI (`client/src/pages/builder.tsx`) so both sides
+ * stay in sync. Not a DB row — drafts live only in memory until persisted.
+ */
+export interface DraftQuestion {
+  draftId: string;
+  stem: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+  marks: number;
+  questionType: "multiple_choice" | "graph";
+  graphSpec?: GraphQuestionSpec | null;
+  topicTag?: string | null;
+  subtopicTag?: string | null;
+  difficultyTag?: string | null;
+}
+
 export const somaUsers = pgTable("soma_users", {
   id: uuid("id").primaryKey(),
   email: text("email").notNull(),

@@ -79,8 +79,9 @@ export function writeAutosave(
   try {
     localStorage.setItem(key, JSON.stringify(payload));
     return { ok: true, savedAt: payload.savedAt };
-  } catch (err: any) {
-    return { ok: false, error: err?.name || "storage_error" };
+  } catch (err: unknown) {
+    const name = err instanceof Error ? err.name : undefined;
+    return { ok: false, error: name || "storage_error" };
   }
 }
 
