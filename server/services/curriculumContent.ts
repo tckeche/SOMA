@@ -37,10 +37,10 @@ interface SubjectContent {
 const NORMALIZE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/&/g, "and"],
   [/business\s+studies/i, "business"],
-  [/further\s+(maths|mathematics)/i, "mathematics"],
+  [/further\s+maths/i, "further mathematics"],
   [/pure\s+(maths|mathematics)/i, "mathematics"],
   [/additional\s+(maths|mathematics)/i, "mathematics"],
-  [/maths/i, "mathematics"],
+  [/(?<!further\s)maths\b/i, "mathematics"],
   [/computer\s+science/i, "computer science"],
 ];
 
@@ -291,12 +291,227 @@ const ECONOMICS_A2: SubjectContent = {
   ],
 };
 
+const ACCOUNTING_AS: SubjectContent = {
+  topics: [
+    { topic: "The Accounting System", description: "Double entry, ledgers, trial balance, books of prime entry." },
+    { topic: "Accounting Concepts", description: "Going concern, accruals, consistency, prudence." },
+    { topic: "Sole Trader Accounts", description: "Income statement, statement of financial position." },
+    { topic: "Partnership Accounts", description: "Appropriation, capital and current accounts." },
+    { topic: "Limited Company Accounts", description: "Share capital, reserves, dividends." },
+    { topic: "Analysis of Financial Statements", description: "Profitability, liquidity, efficiency ratios." },
+    { topic: "Costing", description: "Unit cost, job costing, marginal vs absorption." },
+    { topic: "Budgeting", description: "Cash budgets, master budgets, variance analysis." },
+  ],
+  reminders: [
+    { id: "as-acc-1", topic: "Ratios", text: "Always show the formula and the working. Bare numbers without the formula lose marks even if the answer is right." },
+    { id: "as-acc-2", topic: "The Accounting System", text: "For every debit there is a credit — check the trial balance totals match before you continue." },
+    { id: "as-acc-3", topic: "Partnership Accounts", text: "Interest on drawings is DEBITED to partners' current accounts, not credited. A common slip under pressure." },
+  ],
+};
+
+const ACCOUNTING_A2: SubjectContent = {
+  topics: [
+    { topic: "Published Accounts", description: "IAS 1, statement of changes in equity, notes to accounts." },
+    { topic: "Consolidated Accounts", description: "Group structure, goodwill, non-controlling interest." },
+    { topic: "Statement of Cash Flows", description: "IAS 7, operating/investing/financing activities." },
+    { topic: "Auditing and Stewardship", description: "Role of the auditor, audit report types." },
+    { topic: "Standard Costing", description: "Material, labour and overhead variances." },
+    { topic: "Activity Based Costing", description: "Cost drivers, pools, comparison with absorption." },
+    { topic: "Investment Appraisal", description: "Payback, ARR, NPV, IRR." },
+    { topic: "Business Purchase", description: "Valuing goodwill, acquisition accounting." },
+  ],
+  reminders: [
+    { id: "a2-acc-1", topic: "Statement of Cash Flows", text: "Depreciation is added back in the operating section — it is a non-cash expense. Many students forget and lose easy marks." },
+    { id: "a2-acc-2", topic: "Investment Appraisal", text: "NPV beats IRR for ranking projects. State this explicitly in evaluation answers to score analysis marks." },
+  ],
+};
+
+const BUSINESS_AS: SubjectContent = {
+  topics: [
+    { topic: "Business and its Environment", description: "Enterprise, business structure, size, stakeholders." },
+    { topic: "People in Organisations", description: "Management, leadership, motivation, HR." },
+    { topic: "Marketing", description: "The marketing mix, market research, segmentation." },
+    { topic: "Operations and Project Management", description: "Productivity, capacity, inventory, quality." },
+    { topic: "Finance and Accounting", description: "Costs, revenues, break-even, cash flow forecasts." },
+    { topic: "Strategic Management", description: "SWOT, PEST, objectives, decision trees." },
+  ],
+  reminders: [
+    { id: "as-bus-1", topic: "Marketing", text: "Always relate the 4Ps back to the case-study business — generic answers rarely score beyond a level 2." },
+    { id: "as-bus-2", topic: "Finance and Accounting", text: "Break-even in units = fixed costs ÷ (price − variable cost). Don't mix up total cost with variable cost in the denominator." },
+  ],
+};
+
+const BUSINESS_A2: SubjectContent = {
+  topics: [
+    { topic: "Organisational Culture", description: "Types of culture, culture change, influences." },
+    { topic: "Strategic Human Resource Management", description: "Workforce planning, performance management." },
+    { topic: "Global Marketing", description: "Pan-global vs localised strategy, international markets." },
+    { topic: "Operations Strategy", description: "Lean, Kaizen, TQM, outsourcing." },
+    { topic: "Strategic Finance", description: "Investment appraisal, sources of finance." },
+    { topic: "Strategic Choice and Implementation", description: "Ansoff, Porter's generic strategies, change management." },
+  ],
+  reminders: [
+    { id: "a2-bus-1", topic: "Strategic Management", text: "Evaluation means a justified judgement, not another point. Use 'however' and weigh both sides before concluding." },
+    { id: "a2-bus-2", topic: "Investment Appraisal", text: "For NPV, the year 0 cash flow is NOT discounted. Many students apply the discount factor and lose the mark." },
+  ],
+};
+
+const COMPUTER_SCIENCE_AS: SubjectContent = {
+  topics: [
+    { topic: "Information Representation", description: "Binary, hexadecimal, floating point, character codes." },
+    { topic: "Communication", description: "Networks, protocols, internet structure." },
+    { topic: "Hardware", description: "Logic gates, CPU, memory, I/O devices." },
+    { topic: "Processor Fundamentals", description: "Fetch-execute cycle, registers, assembly language." },
+    { topic: "System Software", description: "Operating systems, compilers, interpreters." },
+    { topic: "Security, Privacy and Data Integrity", description: "Encryption, authentication, backup strategies." },
+    { topic: "Ethics and Ownership", description: "Copyright, professional codes of conduct." },
+    { topic: "Databases", description: "Relational model, normalisation up to 3NF, SQL." },
+    { topic: "Algorithm Design and Problem Solving", description: "Pseudocode, trace tables, structured programming." },
+    { topic: "Data Types and Structures", description: "Arrays, records, linked lists, stacks, queues." },
+    { topic: "Programming", description: "Iteration, selection, procedures/functions, file handling." },
+    { topic: "Software Development", description: "Lifecycle, testing strategies, documentation." },
+  ],
+  reminders: [
+    { id: "as-cs-1", topic: "Information Representation", text: "When converting two's complement, invert the bits and add one — don't flip sign by just changing the MSB." },
+    { id: "as-cs-2", topic: "Databases", text: "A table in 2NF has no partial dependencies on a composite key. If there's no composite key, 1NF already satisfies 2NF." },
+    { id: "as-cs-3", topic: "Algorithm Design and Problem Solving", text: "Trace tables need one column per variable AND one for any output. Missing the output column is a common slip." },
+  ],
+};
+
+const COMPUTER_SCIENCE_A2: SubjectContent = {
+  topics: [
+    { topic: "Data Representation", description: "User-defined types, file organisation, records." },
+    { topic: "Communication and Internet Technologies", description: "LAN/WAN, packet switching, TCP/IP stack." },
+    { topic: "Hardware and Virtual Machines", description: "RISC vs CISC, parallel processing, virtualisation." },
+    { topic: "System Software", description: "OS scheduling, memory management, interrupts." },
+    { topic: "Security", description: "Asymmetric encryption, digital signatures, SSL/TLS." },
+    { topic: "Artificial Intelligence", description: "Machine learning types, neural networks, expert systems." },
+    { topic: "Computational Thinking and Problem Solving", description: "Abstraction, decomposition, recursion." },
+    { topic: "Further Programming", description: "OOP, inheritance, polymorphism, exception handling." },
+    { topic: "Software Development", description: "Algorithms: Dijkstra, A*, binary tree traversal." },
+  ],
+  reminders: [
+    { id: "a2-cs-1", topic: "Artificial Intelligence", text: "Supervised learning needs labelled data, unsupervised does not. Always state the data type when describing an ML algorithm." },
+    { id: "a2-cs-2", topic: "Further Programming", text: "Inheritance uses IS-A, composition uses HAS-A. Confusing these two is one of the easiest marks to lose in OOP questions." },
+  ],
+};
+
+const ENGLISH_AS: SubjectContent = {
+  topics: [
+    { topic: "Reading and Analysis", description: "Unseen prose and poetry, textual evidence." },
+    { topic: "Directed Writing", description: "Audience, purpose, form, register." },
+    { topic: "Writing Skills", description: "Discursive, descriptive, narrative, argumentative." },
+    { topic: "Text and Discourse Analysis", description: "Linguistic frameworks: lexis, syntax, pragmatics." },
+    { topic: "Language Change", description: "Historical change, standardisation, attitudes." },
+    { topic: "Child Language Acquisition", description: "Spoken and written development stages." },
+  ],
+  reminders: [
+    { id: "as-eng-1", topic: "Text and Discourse Analysis", text: "Always link a linguistic feature to its effect — identifying 'an imperative' without effect rarely scores beyond AO1." },
+    { id: "as-eng-2", topic: "Directed Writing", text: "Match the register to the brief. A formal report uses nominalisation; a blog uses first-person and contractions." },
+  ],
+};
+
+const ENGLISH_A2: SubjectContent = {
+  topics: [
+    { topic: "Shakespeare and Drama", description: "Close analysis, staging, critical interpretations." },
+    { topic: "Poetry and Prose", description: "Set texts, comparison, literary context." },
+    { topic: "Unseen Comparison", description: "Comparative analysis of unseen extracts." },
+    { topic: "Language and the Self", description: "Idiolect, sociolect, identity construction." },
+    { topic: "English in the World", description: "Global English, World Englishes, pidgins and creoles." },
+    { topic: "Language and Power", description: "Fairclough, instrumental and influential power." },
+  ],
+  reminders: [
+    { id: "a2-eng-1", topic: "Shakespeare and Drama", text: "Reference AO5 (critical views) explicitly — integrate at least one named critic or school of thought per essay." },
+    { id: "a2-eng-2", topic: "Language and Power", text: "Fairclough distinguishes instrumental (enforced) from influential (persuasive) power. Naming the theorist scores the AO3 mark." },
+  ],
+};
+
+const GEOGRAPHY_AS: SubjectContent = {
+  topics: [
+    { topic: "Hydrology and Fluvial Geomorphology", description: "Drainage basins, river processes, landforms." },
+    { topic: "Atmosphere and Weather", description: "Heat budget, circulation, weather systems." },
+    { topic: "Rocks and Weathering", description: "Plate tectonics, weathering, mass movement." },
+    { topic: "Population", description: "Distribution, change, structure, migration." },
+    { topic: "Migration", description: "Push-pull, internal, international, impacts." },
+    { topic: "Settlement Dynamics", description: "Urbanisation, urban structure, rural change." },
+  ],
+  reminders: [
+    { id: "as-geo-1", topic: "Hydrology and Fluvial Geomorphology", text: "Always distinguish ERoSion (wearing away) from TRANSportation (movement). Exam reports flag this mix-up every year." },
+    { id: "as-geo-2", topic: "Population", text: "DTM has 5 stages; most African LDCs sit in stage 2 or 3. Name a country at each stage to strengthen answers." },
+  ],
+};
+
+const GEOGRAPHY_A2: SubjectContent = {
+  topics: [
+    { topic: "Tropical Environments", description: "Climate, ecosystems, management pressures." },
+    { topic: "Coastal Environments", description: "Wave processes, landforms, management strategies." },
+    { topic: "Hazardous Environments", description: "Tectonic, mass movement, atmospheric hazards." },
+    { topic: "Arid and Semi-Arid Environments", description: "Processes, landforms, human use." },
+    { topic: "Production, Location and Change", description: "Primary, secondary, tertiary, quaternary sectors." },
+    { topic: "Environmental Management", description: "Sustainability, energy, resource management." },
+    { topic: "Global Interdependence", description: "Trade, aid, debt, globalisation." },
+    { topic: "Economic Transition", description: "NICs, transition economies, development indicators." },
+  ],
+  reminders: [
+    { id: "a2-geo-1", topic: "Hazardous Environments", text: "Park's model = three phases (relief, rehab, reconstruction). Always annotate them on the response curve if drawn." },
+    { id: "a2-geo-2", topic: "Global Interdependence", text: "HDI combines income, education and life expectancy — GDP alone is NOT a development indicator, it is an economic one." },
+  ],
+};
+
+const HISTORY_AS: SubjectContent = {
+  topics: [
+    { topic: "European History 1789–1917", description: "French Revolution, Napoleon, unification of Germany and Italy, Russian Revolution." },
+    { topic: "American History 1840–1877", description: "Manifest Destiny, Civil War causes, Reconstruction." },
+    { topic: "International History 1870–1945", description: "Imperialism, WWI causes, interwar, WWII." },
+    { topic: "African History 1800–1945", description: "Scramble for Africa, colonial rule, early nationalism." },
+    { topic: "Source Analysis", description: "Utility, reliability, provenance, cross-referencing." },
+  ],
+  reminders: [
+    { id: "as-hist-1", topic: "Source Analysis", text: "Utility = usefulness FOR THE QUESTION. A source can be biased AND useful — always explain both sides." },
+    { id: "as-hist-2", topic: "European History 1789–1917", text: "Don't confuse causes of 1905 with causes of 1917. Economic grievances recur; the trigger events differ." },
+  ],
+};
+
+const HISTORY_A2: SubjectContent = {
+  topics: [
+    { topic: "European History 1905–1989", description: "Russian Revolution, Stalin, Nazi Germany, Cold War Europe." },
+    { topic: "American History 1865–2008", description: "Industrialisation, New Deal, civil rights, foreign policy." },
+    { topic: "International History 1945–2000", description: "Cold War, decolonisation, Middle East, end of USSR." },
+    { topic: "African History 1945–2000", description: "Decolonisation, post-independence politics, apartheid." },
+    { topic: "Historiography", description: "Schools of interpretation, debates, changing views." },
+  ],
+  reminders: [
+    { id: "a2-hist-1", topic: "Historiography", text: "Naming a historian is AO3, but ONLY if you explain their argument. 'Taylor says...' on its own earns zero." },
+    { id: "a2-hist-2", topic: "International History 1945–2000", text: "The Cold War never turned hot DIRECTLY between the superpowers — proxy wars like Korea and Vietnam did. Stress this distinction." },
+  ],
+};
+
+const FURTHER_MATHEMATICS_A2: SubjectContent = {
+  topics: [
+    { topic: "Further Pure Mathematics 1", description: "Roots of polynomials, matrices, vectors, complex numbers, proof." },
+    { topic: "Further Pure Mathematics 2", description: "Hyperbolic functions, polar coordinates, differential equations, further integration." },
+    { topic: "Further Mechanics", description: "Momentum, circular motion, equilibrium of rigid bodies, elastic strings." },
+    { topic: "Further Probability and Statistics", description: "Continuous distributions, Poisson, chi-squared, non-parametric tests." },
+  ],
+  reminders: [
+    { id: "fm-1", topic: "Further Pure Mathematics 1", text: "For matrix transformations, the order matters: AB applies B first, then A. Reversing this is the most common exam error." },
+    { id: "fm-2", topic: "Further Mechanics", text: "When using impulse = change in momentum, both quantities are vectors. Always resolve along consistent axes before substituting." },
+  ],
+};
+
 const SUBJECT_CONTENT: Record<string, Partial<Record<CurriculumLevel, SubjectContent>>> = {
   mathematics: { AS: MATHEMATICS_AS, A2: MATHEMATICS_A2, IGCSE: MATHEMATICS_IGCSE },
+  "further mathematics": { A2: FURTHER_MATHEMATICS_A2 },
   physics: { AS: PHYSICS_AS, A2: PHYSICS_A2 },
   chemistry: { AS: CHEMISTRY_AS, A2: CHEMISTRY_A2 },
   biology: { AS: BIOLOGY_AS, A2: BIOLOGY_A2 },
   economics: { AS: ECONOMICS_AS, A2: ECONOMICS_A2 },
+  accounting: { AS: ACCOUNTING_AS, A2: ACCOUNTING_A2 },
+  business: { AS: BUSINESS_AS, A2: BUSINESS_A2 },
+  "computer science": { AS: COMPUTER_SCIENCE_AS, A2: COMPUTER_SCIENCE_A2 },
+  english: { AS: ENGLISH_AS, A2: ENGLISH_A2 },
+  geography: { AS: GEOGRAPHY_AS, A2: GEOGRAPHY_A2 },
+  history: { AS: HISTORY_AS, A2: HISTORY_A2 },
 };
 
 export function getCurriculumTopics(subject: string, level: CurriculumLevel | null): CurriculumTopic[] {

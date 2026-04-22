@@ -2550,16 +2550,61 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.json({ insights: [] });
       }
       const truncated = students.slice(0, 8);
-      const dataPayload = truncated.map((s: any) => ({
-        name: s.studentName,
-        trend: s.trend,
-        weakTopics: s.weakTopics,
-        assigned: s.assigned,
-        completed: s.completed,
-        awaiting: s.awaiting,
+
+      // Enrich each flagged student with concrete performance signals so the
+      // AI can produce a targeted "what to assign next" suggestion rather than
+      // a generic intervention reason.
+      const dataPayload = await Promise.all(truncated.map(async (s: any) => {
+        const studentId = s.studentId as string | undefined;
+        let focusTopic: { topic: string; subtopic: string | null; understandingPercent: number; attempts: number; totalQuestions: number } | null = null;
+        let lastTestedDays: number | null = null;
+        if (studentId) {
+          try {
+            const mastery = await storage.listStudentTopicMastery(studentId);
+            const ranked = [...mastery]
+              .filter((m) => m.totalQuestions > 0)
+              .sort((a, b) => a.understandingPercent - b.understandingPercent);
+            if (ranked.length > 0) {
+              const worst = ranked[0];
+              focusTopic = {
+                topic: worst.topic,
+                subtopic: worst.subtopic,
+                understandingPercent: worst.understandingPercent,
+                attempts: worst.attempts,
+                totalQuestions: worst.totalQuestions,
+              };
+              if (worst.lastTestedAt) {
+                const ms = Date.now() - new Date(worst.lastTestedAt).getTime();
+                lastTestedDays = Math.round(ms / (1000 * 60 * 60 * 24));
+              }
+            }
+          } catch {}
+        }
+        return {
+          studentId,
+          name: s.studentName,
+          trend: s.trend,
+          weakTopics: s.weakTopics,
+          assigned: s.assigned,
+          completed: s.completed,
+          awaiting: s.awaiting,
+          focusTopic,
+          lastTestedDays,
+        };
       }));
-      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based intervention explanations. You MUST only reference data provided to you. Never fabricate trends, topics, or scores. Each explanation must be 1-2 sentences, specific, and actionable. Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
-      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided metrics:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
+
+      const systemPrompt = `You are an academic analytics assistant for SOMA, a tutor platform. For each flagged student, produce a SHARP, evidence-based intervention card. Only cite the data provided — never fabricate trends, topics, or scores.
+
+Return a JSON array of objects with EXACTLY these fields:
+- "name": student name (echo the input name exactly)
+- "reason": ONE short sentence explaining the core issue, citing specific numbers (e.g. "Declining: last 3 scores 62%→48%→41%, 2 assignments overdue.")
+- "suggestedTopic": the specific topic to focus on next (from weakTopics or focusTopic), or null if none
+- "suggestedDifficulty": one of "easy" | "medium" | "hard" | "mixed" — pick based on current mastery (<40% → easy, 40-60% → mixed, 60-75% → medium, 75%+ → hard)
+- "action": ONE imperative sentence telling the tutor what to assign next (e.g. "Assign a 15-question medium diagnostic on Quadratics with scaffolded worked examples.")
+- "priority": "high" | "medium" | "low" — high if declining trend OR mastery <40% OR 3+ overdue; low if one weak topic with steady trend
+
+Keep "reason" and "action" under 22 words each. Never repeat the student's name inside reason/action.`;
+      const userPrompt = `Students flagged for intervention. Produce a tightly-scoped action per student:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array.`;
 
       const { generateWithFallback } = await import("./services/aiOrchestrator.js");
       const result = await generateWithFallback(systemPrompt, userPrompt);
@@ -2570,7 +2615,43 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       } catch {
         parsed = [];
       }
-      res.json({ insights: parsed, model: result.metadata });
+
+      // Merge in a deterministic fallback so the UI has something usable even
+      // if the model fails/timeouts — suggestion is derived from focusTopic.
+      const byName = new Map<string, any>();
+      for (const p of parsed) {
+        if (p && typeof p.name === "string") byName.set(p.name.toLowerCase(), p);
+      }
+      const merged = dataPayload.map((d) => {
+        const ai = byName.get((d.name || "").toLowerCase()) || {};
+        const fallbackTopic = d.focusTopic?.topic || (d.weakTopics?.[0] ?? null);
+        const mastery = d.focusTopic?.understandingPercent;
+        const fallbackDifficulty = mastery == null
+          ? "mixed"
+          : mastery < 40 ? "easy" : mastery < 60 ? "mixed" : mastery < 75 ? "medium" : "hard";
+        const fallbackReason = d.focusTopic
+          ? `${d.focusTopic.understandingPercent}% in ${d.focusTopic.topic}${d.focusTopic.subtopic ? ` — ${d.focusTopic.subtopic}` : ""} (${d.focusTopic.totalQuestions} qs${d.lastTestedDays != null ? `, ${d.lastTestedDays}d ago` : ""})`
+          : d.trend === "declining" ? "Declining trend across recent assessments."
+          : (d.assigned > 0 && d.completed === 0) ? `${d.awaiting || d.assigned} assessment${(d.awaiting || d.assigned) !== 1 ? "s" : ""} awaiting completion.`
+          : "Flagged by weakness scan.";
+        const fallbackAction = fallbackTopic
+          ? `Assign a ${fallbackDifficulty} ${fallbackTopic} diagnostic (15–20 questions) to rebuild fluency.`
+          : "Open the student profile and generate targeted suggestions.";
+        const fallbackPriority = d.trend === "declining" || (mastery != null && mastery < 40)
+          ? "high"
+          : (d.weakTopics?.length ?? 0) >= 2 ? "medium" : "low";
+        return {
+          name: d.name,
+          studentId: d.studentId,
+          reason: ai.reason || fallbackReason,
+          suggestedTopic: ai.suggestedTopic ?? fallbackTopic,
+          suggestedDifficulty: ai.suggestedDifficulty || fallbackDifficulty,
+          action: ai.action || fallbackAction,
+          priority: ai.priority || fallbackPriority,
+        };
+      });
+
+      res.json({ insights: merged, model: result.metadata });
     } catch (err: any) {
       console.error("[AI Intervention Insights] Error:", err.message);
       res.json({ insights: [], error: err.message });

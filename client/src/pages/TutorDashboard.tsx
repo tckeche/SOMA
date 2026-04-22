@@ -15,6 +15,7 @@ import {
   FileText, Target, CheckCircle2,
   CalendarDays, ExternalLink,
   Radar, Grid3X3, BarChart2,
+  Wand2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -73,7 +74,12 @@ interface DashboardStats {
 
 interface AIInsight {
   name: string;
+  studentId?: string;
   reason: string;
+  suggestedTopic?: string | null;
+  suggestedDifficulty?: "easy" | "medium" | "hard" | "mixed";
+  action?: string;
+  priority?: "high" | "medium" | "low";
 }
 interface TutorNotification {
   id: number;
@@ -395,6 +401,13 @@ export default function TutorDashboard() {
     const match = aiInsights.insights.find((i) => i.name === studentName)
       || aiInsights.insights.find((i) => i.name?.toLowerCase() === studentName?.toLowerCase());
     return match?.reason || null;
+  };
+
+  const getInsightForStudent = (studentName: string): AIInsight | null => {
+    if (!aiInsights?.insights?.length) return null;
+    return aiInsights.insights.find((i) => i.name === studentName)
+      || aiInsights.insights.find((i) => i.name?.toLowerCase() === studentName?.toLowerCase())
+      || null;
   };
 
 
@@ -737,39 +750,77 @@ export default function TutorDashboard() {
                         <p className="text-[11px] text-muted-foreground font-medium">No students flagged — great work!</p>
                       </div>
                     );
+                    const priorityRank = { high: 0, medium: 1, low: 2 } as const;
+                    const sorted = [...atRisk].sort((a, b) => {
+                      const ia = getInsightForStudent(a.studentName);
+                      const ib = getInsightForStudent(b.studentName);
+                      const pa = priorityRank[ia?.priority || "low"];
+                      const pb = priorityRank[ib?.priority || "low"];
+                      if (pa !== pb) return pa - pb;
+                      // Tie-breaker: declining trend first, then by worst last score.
+                      if (a.trend === "declining" && b.trend !== "declining") return -1;
+                      if (b.trend === "declining" && a.trend !== "declining") return 1;
+                      return 0;
+                    });
                     return (
-                      <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
-                        {atRisk.slice(0, 6).map((s) => {
-                          const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
-                          const insight = getInsightChip(s.studentName);
+                      <div className="divide-y divide-white/[0.03] max-h-[380px] overflow-y-auto">
+                        {sorted.slice(0, 6).map((s) => {
+                          const insight = getInsightForStudent(s.studentName);
+                          const priority = insight?.priority || (s.trend === "declining" ? "high" : s.weakTopics.length >= 2 ? "medium" : "low");
+                          const borderColor = priority === "high" ? "#EF4444" : priority === "medium" ? "#F97316" : "#FBBF24";
+                          const priorityBadge = priority === "high"
+                            ? "text-rose-300 bg-rose-500/15 border-rose-500/30"
+                            : priority === "medium"
+                              ? "text-orange-300 bg-orange-500/15 border-orange-500/30"
+                              : "text-amber-300 bg-amber-500/10 border-amber-500/25";
+                          const diffBadge = (insight?.suggestedDifficulty === "hard")
+                            ? "text-rose-300 bg-rose-500/10 border-rose-500/25"
+                            : insight?.suggestedDifficulty === "medium"
+                              ? "text-amber-300 bg-amber-500/10 border-amber-500/25"
+                              : insight?.suggestedDifficulty === "easy"
+                                ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25"
+                                : "text-violet-300 bg-violet-500/10 border-violet-500/25";
                           return (
                             <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-foreground/[0.03] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
                                   <p className="text-[12px] text-foreground font-semibold truncate">{s.studentName}</p>
+                                  <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${priorityBadge}`}>
+                                    {priority.toUpperCase()}
+                                  </Badge>
                                   <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
                                 </div>
-                                {insight && (
-                                  <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
+                                {insight?.reason && (
+                                  <p className="text-[10px] text-indigo-300/85 leading-relaxed mb-1">{insight.reason}</p>
                                 )}
-                                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                                  {s.weakTopics.length > 0 && <span>Weak subjects: {s.weakTopics.slice(0, 2).join(", ")}</span>}
+                                {insight?.action && (
+                                  <div className="mt-1.5 flex items-start gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/[0.06] px-2 py-1.5">
+                                    <Wand2 className="w-3 h-3 text-violet-300 shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[10px] text-violet-100/90 leading-relaxed">{insight.action}</p>
+                                      {(insight.suggestedTopic || insight.suggestedDifficulty) && (
+                                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                          {insight.suggestedTopic && (
+                                            <span className="text-[9px] font-semibold text-violet-200 bg-violet-500/15 border border-violet-500/30 px-1.5 py-0 rounded">
+                                              {insight.suggestedTopic}
+                                            </span>
+                                          )}
+                                          {insight.suggestedDifficulty && (
+                                            <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[16px] ${diffBadge}`}>
+                                              {insight.suggestedDifficulty}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-1.5">
+                                  {!insight?.suggestedTopic && s.weakTopics.length > 0 && <span>Weak: {s.weakTopics.slice(0, 2).join(", ")}</span>}
                                   {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 shrink-0 mt-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setAssignForStudent({ id: s.studentId, name: s.studentName });
-                                    setAssignForStudentQuizId(null);
-                                    setDueDate("");
-                                  }}
-                                  className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer"
-                                  data-testid={`button-assign-intervention-${s.studentId}`}
-                                >
-                                  Assign &rarr;
-                                </button>
                                 <Link href={`/tutor/students/${s.studentId}`}>
                                   <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer">View &rarr;</span>
                                 </Link>

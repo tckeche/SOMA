@@ -15,6 +15,7 @@
  */
 import type { IStorage } from "../storage";
 import { resolveSyllabus } from "./syllabusCatalogue";
+import { getCurriculumTopics, normalizeLevel } from "./curriculumContent";
 import { db } from "../db";
 import { and, eq, inArray } from "drizzle-orm";
 import { papers, paperTopicMappings, topics } from "@shared/schema";
@@ -94,16 +95,37 @@ export async function buildSyllabusInsights(
       subject: enrollment.subject,
     });
 
-    const topicNames = new Set<string>();
-    for (const row of inventory) topicNames.add(row.topic);
+    // Canonical topic list, in priority order:
+    //   1. Ingested inventory (board+syllabusCode+subject specific)
+    //   2. Built-in curriculum topics for this subject+level (Cambridge/AS/A2/IGCSE)
+    //   3. Mastery topics the student has been tested on
+    // This ensures the radar always shows syllabus-accurate topic names for
+    // THIS subject rather than generic quiz-tag leftovers like "Calculus".
+    const orderedTopics: string[] = [];
+    const topicSet = new Set<string>();
+    const pushTopic = (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (topicSet.has(key)) return;
+      topicSet.add(key);
+      orderedTopics.push(trimmed);
+    };
 
-    // Also surface any mastery topics that aren't in the inventory so tested
-    // topics never disappear from the radar.
-    for (const m of mastery) {
-      if (m.subject.toLowerCase() === enrollment.subject.toLowerCase()) topicNames.add(m.topic);
+    for (const row of inventory) pushTopic(row.topic);
+
+    if (orderedTopics.length === 0) {
+      const level = normalizeLevel(enrollment.level);
+      for (const t of getCurriculumTopics(enrollment.subject, level)) pushTopic(t.topic);
     }
 
-    const topicInsights: TopicInsight[] = Array.from(topicNames).map((topic) => {
+    // Still surface tested topics so a student's quiz work never disappears,
+    // even if it was tagged with a label outside the canonical list.
+    for (const m of mastery) {
+      if (m.subject.toLowerCase() === enrollment.subject.toLowerCase()) pushTopic(m.topic);
+    }
+
+    const topicInsights: TopicInsight[] = orderedTopics.map((topic) => {
       const hit = masteryByKey.get(`${enrollment.subject.toLowerCase()}|${topic.toLowerCase()}`);
       return {
         topic,
@@ -112,7 +134,8 @@ export async function buildSyllabusInsights(
         attempted: (hit?.totalQuestions ?? 0) > 0,
         totalQuestions: hit?.totalQuestions ?? 0,
       };
-    }).sort((a, b) => a.topic.localeCompare(b.topic));
+    });
+    // Preserve canonical syllabus order (inventory/curriculum order), not alphabetical.
 
     const paperInsights = await buildPaperInsights(enrollment, masteryByKey);
 
