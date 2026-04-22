@@ -28,6 +28,8 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useChartPalette } from "@/lib/chartTheme";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 import { toProperCase, formatDuration } from "@/lib/utils";
 
@@ -97,7 +99,7 @@ function getStatusLabel(a: AssignmentRow): { text: string; color: string } {
   if (a.reportStatus === "pending") return { text: "Grading", color: "bg-amber-500/10 text-amber-400 border-amber-500/15" };
   if (a.reportStatus === "failed") return { text: "Failed", color: "bg-red-500/10 text-red-400 border-red-500/15" };
   if (a.assignmentStatus === "completed") return { text: "Done", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };
-  return { text: "Pending", color: "bg-slate-500/10 text-slate-400 border-slate-500/15" };
+  return { text: "Pending", color: "bg-slate-500/10 text-muted-foreground border-slate-500/15" };
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -109,6 +111,7 @@ export default function TutorStudentDetail() {
   const params = useParams<{ id: string }>();
   const studentId = params.id || "";
   const queryClient = useQueryClient();
+  const chartPalette = useChartPalette();
   const { toast } = useToast();
   const [newComment, setNewComment] = useState("");
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
@@ -415,28 +418,29 @@ export default function TutorStudentDetail() {
     return { chartData, subjects };
   }, [assignments]);
 
-  const subjectChartColors = ["#8B5CF6", "#22D3EE", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#6366F1", "#14B8A6"];
+  const subjectChartColors = chartPalette.series;
 
   const TrendIcon = overallTrend === "declining" ? TrendingDown : overallTrend === "improving" ? TrendingUp : Minus;
-  const trendColor = overallTrend === "declining" ? "text-red-400" : overallTrend === "improving" ? "text-emerald-400" : "text-slate-500";
+  const trendColor = overallTrend === "declining" ? "text-red-400" : overallTrend === "improving" ? "text-emerald-400" : "text-muted-foreground";
   const trendBg = overallTrend === "declining" ? "bg-red-500/8" : overallTrend === "improving" ? "bg-emerald-500/8" : "bg-slate-500/8";
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] backdrop-blur-2xl" style={{ background: "linear-gradient(180deg, rgba(8,13,26,0.92) 0%, rgba(8,13,26,0.85) 100%)" }}>
+      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/85">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/tutor/students">
-            <span className="flex items-center gap-2 text-[13px] text-slate-500 hover:text-violet-400 transition-colors cursor-pointer font-medium" data-testid="link-back-students">
+            <span className="flex items-center gap-2 text-[13px] text-muted-foreground hover:text-violet-500 dark:hover:text-violet-400 transition-colors cursor-pointer font-medium" data-testid="link-back-students">
               <ArrowLeft className="w-3.5 h-3.5" />
               Students
             </span>
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/tutor">
-              <span className="text-[12px] text-slate-600 hover:text-slate-400 transition-colors cursor-pointer font-medium">Dashboard</span>
+              <span className="text-[12px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer font-medium">Dashboard</span>
             </Link>
-            <span className="text-slate-700">/</span>
-            <span className="text-[12px] text-slate-400 font-medium truncate max-w-[200px]">{displayName}</span>
+            <span className="text-muted-foreground">/</span>
+            <span className="text-[12px] text-foreground font-medium truncate max-w-[200px]">{displayName}</span>
+            <ThemeToggle size="sm" />
           </div>
         </div>
       </header>
@@ -445,21 +449,21 @@ export default function TutorStudentDetail() {
         {reportError ? (
           <div className="flex flex-col items-center justify-center py-32 gap-4" data-testid="profile-error">
             <AlertTriangle className="w-10 h-10 text-amber-400/70" />
-            <p className="text-sm text-slate-400 font-medium">Unable to load student data</p>
-            <p className="text-xs text-slate-600">Check your connection and try refreshing</p>
+            <p className="text-sm text-muted-foreground font-medium">Unable to load student data</p>
+            <p className="text-xs text-muted-foreground">Check your connection and try refreshing</p>
           </div>
         ) : reportLoading ? (
           <div className="space-y-5 animate-in fade-in duration-300">
             <div className={`${GP} p-6`}>
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-white/[0.04] shimmer-pulse" />
-                <div className="flex-1"><div className="h-5 w-40 rounded bg-white/[0.04] shimmer-pulse" /><div className="h-3 w-24 rounded bg-white/[0.03] mt-2 shimmer-pulse" /></div>
+                <div className="w-14 h-14 rounded-2xl bg-foreground/[0.05] shimmer-pulse" />
+                <div className="flex-1"><div className="h-5 w-40 rounded bg-foreground/[0.05] shimmer-pulse" /><div className="h-3 w-24 rounded bg-foreground/[0.04] mt-2 shimmer-pulse" /></div>
               </div>
               <div className="grid grid-cols-4 gap-3 mt-5">
-                {[1,2,3,4].map((i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] shimmer-pulse" />)}
+                {[1,2,3,4].map((i) => <div key={i} className="h-16 rounded-xl bg-foreground/[0.04] shimmer-pulse" />)}
               </div>
             </div>
-            <div className={`${GP} p-6`}><div className="h-40 rounded-xl bg-white/[0.02] shimmer-pulse" /></div>
+            <div className={`${GP} p-6`}><div className="h-40 rounded-xl bg-foreground/[0.03] shimmer-pulse" /></div>
           </div>
         ) : (
           <div className="space-y-7 animate-in fade-in duration-500">
@@ -475,14 +479,14 @@ export default function TutorStudentDetail() {
                     {initials}
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-slate-100 tracking-tight" data-testid="text-student-name">{displayName}</h2>
+                    <h2 className="text-xl font-bold text-foreground tracking-tight" data-testid="text-student-name">{displayName}</h2>
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                       <div className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${trendBg} ${trendColor}`}>
                         <TrendIcon className="w-3 h-3" />
                         {overallTrend}
                       </div>
                       {lastActivity && (
-                        <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                        <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           Last active {formatDistanceToNow(new Date(lastActivity), { addSuffix: true })}
                         </span>
@@ -503,26 +507,26 @@ export default function TutorStudentDetail() {
             {/* ── LEARNING CURVE ──────────────────────────────────── */}
             {learningCurveData.chartData.length >= 2 && (
               <div className={GP}>
-                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
                       <Activity className="w-3.5 h-3.5 text-violet-400" />
                     </div>
                     <div>
-                      <h3 className="text-[13px] font-semibold text-slate-100">Learning Curve</h3>
-                      <p className="text-[10px] text-slate-600 font-medium">Score progression over time &middot; {learningCurveData.chartData.length} data points</p>
+                      <h3 className="text-[13px] font-semibold text-foreground">Learning Curve</h3>
+                      <p className="text-[10px] text-muted-foreground font-medium">Score progression over time &middot; {learningCurveData.chartData.length} data points</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     {learningCurveData.subjects.map((subj, i) => (
                       <div key={subj} className="flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ background: subjectChartColors[i % subjectChartColors.length] }} />
-                        <span className="text-[10px] text-slate-400 font-medium">{subj}</span>
+                        <span className="text-[10px] text-muted-foreground font-medium">{subj}</span>
                       </div>
                     ))}
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-0.5 rounded-full bg-slate-400" />
-                      <span className="text-[10px] text-slate-500 font-medium">Moving Avg</span>
+                      <span className="text-[10px] text-muted-foreground font-medium">Moving Avg</span>
                     </div>
                   </div>
                 </div>
@@ -541,20 +545,20 @@ export default function TutorStudentDetail() {
                             );
                           })}
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-                        <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
-                        <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartPalette.gridStroke} />
+                        <XAxis dataKey="date" tick={{ fill: chartPalette.axisTick, fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                        <YAxis domain={[0, 100]} tick={{ fill: chartPalette.axisTickMuted, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
                         <Tooltip
                           content={({ active, payload, label }: any) => {
                             if (!active || !payload?.length) return null;
                             return (
-                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-white/[0.08] backdrop-blur-xl" style={{ background: "rgba(15,23,42,0.95)" }}>
-                                <p className="text-slate-300 font-semibold mb-1">{label}</p>
+                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-border backdrop-blur-xl bg-popover text-popover-foreground">
+                                <p className="text-foreground/80 font-semibold mb-1">{label}</p>
                                 {payload.map((entry: any, i: number) => (
                                   <div key={i} className="flex items-center gap-2 py-0.5">
                                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color || entry.stroke }} />
-                                    <span className="text-slate-400">{entry.name}:</span>
-                                    <span className="text-white font-bold tabular-nums">{entry.value}%</span>
+                                    <span className="text-muted-foreground">{entry.name}:</span>
+                                    <span className="font-bold tabular-nums">{entry.value}%</span>
                                   </div>
                                 ))}
                               </div>
@@ -577,7 +581,7 @@ export default function TutorStudentDetail() {
                           type="monotone"
                           dataKey="movingAvg"
                           name="Moving Avg"
-                          stroke="#94a3b8"
+                          stroke={chartPalette.axisTickMuted}
                           strokeWidth={1.5}
                           strokeDasharray="6 3"
                           dot={false}
@@ -593,14 +597,14 @@ export default function TutorStudentDetail() {
             {/* ── SPACED REPETITION REVIEW SCHEDULE ────────────────── */}
             {reviewSchedule && (reviewSchedule.dueForReview.length > 0 || reviewSchedule.upcoming.length > 0) && (
               <div className={GP}>
-                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
                       <Calendar className="w-3.5 h-3.5 text-violet-400" />
                     </div>
                     <div>
-                      <h3 className="text-[13px] font-semibold text-slate-100">Spaced Repetition Schedule</h3>
-                      <p className="text-[10px] text-slate-600 font-medium">Review mastered topics at 7 / 30 / 90 day intervals to prevent forgetting</p>
+                      <h3 className="text-[13px] font-semibold text-foreground">Spaced Repetition Schedule</h3>
+                      <p className="text-[10px] text-muted-foreground font-medium">Review mastered topics at 7 / 30 / 90 day intervals to prevent forgetting</p>
                     </div>
                   </div>
                   {reviewSchedule.dueForReview.length > 0 && (
@@ -618,8 +622,8 @@ export default function TutorStudentDetail() {
                           <div key={i} className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
                             <div className="flex items-center gap-2">
                               <Clock className="w-3.5 h-3.5 text-amber-400" />
-                              <span className="text-[12px] text-slate-200 font-medium">{r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}</span>
-                              <span className="text-[10px] text-slate-500">{r.subject}</span>
+                              <span className="text-[12px] text-foreground font-medium">{r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}</span>
+                              <span className="text-[10px] text-muted-foreground">{r.subject}</span>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className={`text-[11px] font-bold tabular-nums ${r.understandingPercent >= 75 ? "text-emerald-400" : "text-amber-400"}`}>
@@ -636,10 +640,10 @@ export default function TutorStudentDetail() {
                   )}
                   {reviewSchedule.upcoming.length > 0 && (
                     <div>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">Upcoming Reviews</p>
+                      <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-2">Upcoming Reviews</p>
                       <div className="flex flex-wrap gap-2">
                         {reviewSchedule.upcoming.map((r, i) => (
-                          <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-slate-500/8 text-slate-400 border border-slate-500/15">
+                          <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-slate-500/8 text-muted-foreground border border-slate-500/15">
                             {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""} — in {r.daysUntilDue}d
                           </span>
                         ))}
@@ -652,16 +656,16 @@ export default function TutorStudentDetail() {
 
             <div className={GP}>
               {/* Tab header */}
-              <div className="flex items-center border-b border-white/[0.06]">
+              <div className="flex items-center border-b border-border/60">
                 <button
                   onClick={() => setProfileTab("curriculum")}
-                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "curriculum" ? "text-violet-300 border-violet-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}
+                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "curriculum" ? "text-violet-300 border-violet-400" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
                 >
                   Curriculum Profile
                 </button>
                 <button
                   onClick={() => setProfileTab("assessments")}
-                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "assessments" ? "text-emerald-300 border-emerald-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}
+                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "assessments" ? "text-emerald-300 border-emerald-400" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
                 >
                   Suggested Assessments
                 </button>
@@ -671,18 +675,18 @@ export default function TutorStudentDetail() {
                 {profileTab === "curriculum" ? (
                   <>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-[14px] font-semibold text-slate-100">Student Curriculum Profile</h3>
-                      <span className="text-[10px] text-slate-500">Required for assessment suggestions</span>
+                      <h3 className="text-[14px] font-semibold text-foreground">Student Curriculum Profile</h3>
+                      <span className="text-[10px] text-muted-foreground">Required for assessment suggestions</span>
                     </div>
                     <div className="space-y-2 mb-4">
                       {subjects.map((s) => (
-                        <div key={s.id} className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2">
-                          <span className="text-[12px] text-slate-300">
+                        <div key={s.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-foreground/[0.03] px-3 py-2">
+                          <span className="text-[12px] text-foreground/80">
                             <strong>{s.subject}</strong> · {s.examBody} · {s.syllabusCode} · {s.level}
                           </span>
                           <button
                             onClick={() => deleteSubjectMutation.mutate(s.id)}
-                            className="p-1 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors"
+                            className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors"
                             title="Remove subject"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -692,21 +696,21 @@ export default function TutorStudentDetail() {
                       {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using suggestions.</p>}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                      <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))}>
-                        <option value="" className="text-slate-500">Select Subject</option>
+                      <select className="bg-card/60 border border-border/70 rounded-md px-2 py-2 text-[12px] text-foreground" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))}>
+                        <option value="" className="text-muted-foreground">Select Subject</option>
                         {["Mathematics", "Physics", "Chemistry", "Biology", "Economics", "Business Studies", "English", "Computer Science", "Accounting", "Geography", "History"].map((s) => (
                           <option key={s} value={s}>{s}</option>
                         ))}
                       </select>
-                      <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))}>
-                        <option value="" className="text-slate-500">Exam Body</option>
+                      <select className="bg-card/60 border border-border/70 rounded-md px-2 py-2 text-[12px] text-foreground" value={newSubject.examBody} onChange={(e) => setNewSubject((p) => ({ ...p, examBody: e.target.value }))}>
+                        <option value="" className="text-muted-foreground">Exam Body</option>
                         {["Cambridge (CAIE)", "Edexcel", "IEB", "AQA", "OCR", "ZIMSEC", "WJEC"].map((b) => (
                           <option key={b} value={b}>{b}</option>
                         ))}
                       </select>
-                      <input className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code (e.g. 0580)" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
-                      <select className="bg-slate-900/60 border border-white/[0.08] rounded-md px-2 py-2 text-[12px] text-slate-200" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))}>
-                        <option value="" className="text-slate-500">Level</option>
+                      <input className="bg-card/60 border border-border/70 rounded-md px-2 py-2 text-[12px]" placeholder="Syllabus code (e.g. 0580)" value={newSubject.syllabusCode} onChange={(e) => setNewSubject((p) => ({ ...p, syllabusCode: e.target.value }))} />
+                      <select className="bg-card/60 border border-border/70 rounded-md px-2 py-2 text-[12px] text-foreground" value={newSubject.level} onChange={(e) => setNewSubject((p) => ({ ...p, level: e.target.value }))}>
+                        <option value="" className="text-muted-foreground">Level</option>
                         {["IGCSE", "O Level", "AS Level", "A Level", "Grade 10", "Grade 11", "Grade 12", "IB SL", "IB HL"].map((l) => (
                           <option key={l} value={l}>{l}</option>
                         ))}
@@ -718,14 +722,14 @@ export default function TutorStudentDetail() {
                   </>
                 ) : (
                   <>
-                    <h3 className="text-[14px] font-semibold text-slate-100 mb-1">Create Assessment for {displayName}</h3>
-                    <p className="text-[11px] text-slate-500 mb-4">Analyzes performance history, curriculum metadata, syllabus content, and examiner report misconceptions.</p>
+                    <h3 className="text-[14px] font-semibold text-foreground mb-1">Create Assessment for {displayName}</h3>
+                    <p className="text-[11px] text-muted-foreground mb-4">Analyzes performance history, curriculum metadata, syllabus content, and examiner report misconceptions.</p>
 
                     {subjects.length === 0 ? (
                       <div className="text-center py-8">
                         <AlertTriangle className="w-8 h-8 mx-auto text-amber-400/60 mb-2" />
                         <p className="text-[12px] text-amber-300 font-medium">Curriculum profile required</p>
-                        <p className="text-[11px] text-slate-500 mt-1">Switch to the Curriculum Profile tab and add at least one subject.</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">Switch to the Curriculum Profile tab and add at least one subject.</p>
                       </div>
                     ) : (
                       <>
@@ -739,7 +743,7 @@ export default function TutorStudentDetail() {
                             {suggestionsLoading ? "Analyzing student data..." : "Generate Suggested Assessments"}
                           </button>
                           {suggestionsData?.basis?.curriculum && (
-                            <span className="text-[10px] text-slate-500">
+                            <span className="text-[10px] text-muted-foreground">
                               {Array.isArray(suggestionsData.basis.curriculum)
                                 ? suggestionsData.basis.curriculum.map((c: any) => `${c.subject} (${c.examBody} ${c.syllabusCode})`).join(" · ")
                                 : `${suggestionsData.basis.curriculum.examBody} · ${suggestionsData.basis.curriculum.syllabusCode} · ${suggestionsData.basis.curriculum.level}`}
@@ -751,7 +755,7 @@ export default function TutorStudentDetail() {
                         {suggestionsData?.suggestions && suggestionsData.suggestions.length > 0 && (
                           <div className="space-y-3 mb-4">
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] text-slate-400 font-medium">{suggestionsData.suggestions.length} suggestions generated</span>
+                              <span className="text-[11px] text-muted-foreground font-medium">{suggestionsData.suggestions.length} suggestions generated</span>
                               <button
                                 onClick={() => {
                                   const allIds = suggestionsData.suggestions.map((s) => s.id);
@@ -770,7 +774,7 @@ export default function TutorStudentDetail() {
                                 stretch_strengths: { label: "Challenge", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: TrendingUp },
                                 spaced_review: { label: "Spaced Review", color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Clock },
                               };
-                              const purpose = purposeLabels[s.purpose] || { label: s.purpose, color: "text-slate-400 bg-slate-500/10 border-slate-500/20", icon: Target };
+                              const purpose = purposeLabels[s.purpose] || { label: s.purpose, color: "text-muted-foreground bg-slate-500/10 border-slate-500/20", icon: Target };
                               const PurposeIcon = purpose.icon;
                               const isSelected = selectedSuggestionIds.includes(s.id);
 
@@ -782,7 +786,7 @@ export default function TutorStudentDetail() {
                               return (
                                 <label
                                   key={s.id}
-                                  className={`block rounded-xl border p-4 cursor-pointer transition-all ${isSelected ? "border-violet-500/40 bg-violet-500/[0.06]" : "border-white/[0.07] bg-white/[0.02] hover:border-white/[0.12]"}`}
+                                  className={`block rounded-xl border p-4 cursor-pointer transition-all ${isSelected ? "border-violet-500/40 bg-violet-500/[0.06]" : "border-border/60 bg-foreground/[0.03] hover:border-border/60"}`}
                                 >
                                   <div className="flex items-start gap-3">
                                     <input
@@ -797,10 +801,10 @@ export default function TutorStudentDetail() {
                                           <PurposeIcon className="w-2.5 h-2.5 mr-1" />
                                           {purpose.label}
                                         </Badge>
-                                        <span className="text-[13px] font-semibold text-slate-200">{s.topic}</span>
-                                        {s.subtopic && <span className="text-[11px] text-slate-500">{s.subtopic}</span>}
+                                        <span className="text-[13px] font-semibold text-foreground">{s.topic}</span>
+                                        {s.subtopic && <span className="text-[11px] text-muted-foreground">{s.subtopic}</span>}
                                       </div>
-                                      <p className="text-[11px] text-slate-400 leading-relaxed mb-2">{s.rationale}</p>
+                                      <p className="text-[11px] text-muted-foreground leading-relaxed mb-2">{s.rationale}</p>
 
                                       {/* Assessment history for this topic */}
                                       {topicMastery && (
@@ -808,18 +812,18 @@ export default function TutorStudentDetail() {
                                           <span className={`font-bold tabular-nums ${topicMastery.understandingPercent >= 75 ? "text-emerald-400" : topicMastery.understandingPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
                                             {topicMastery.understandingPercent}% mastery
                                           </span>
-                                          <span className="text-slate-600">|</span>
-                                          <span className="text-slate-500">{topicMastery.totalQuestions} questions attempted</span>
-                                          <span className="text-slate-600">|</span>
-                                          <span className="text-slate-500">{topicMastery.attempts} assessment{topicMastery.attempts !== 1 ? "s" : ""}</span>
-                                          <span className="text-slate-600">|</span>
-                                          <Badge className={`text-[8px] border ${topicMastery.confidenceLevel === "high" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/15" : topicMastery.confidenceLevel === "medium" ? "text-amber-400 bg-amber-500/8 border-amber-500/15" : "text-slate-400 bg-slate-500/8 border-slate-500/15"}`}>
+                                          <span className="text-muted-foreground">|</span>
+                                          <span className="text-muted-foreground">{topicMastery.totalQuestions} questions attempted</span>
+                                          <span className="text-muted-foreground">|</span>
+                                          <span className="text-muted-foreground">{topicMastery.attempts} assessment{topicMastery.attempts !== 1 ? "s" : ""}</span>
+                                          <span className="text-muted-foreground">|</span>
+                                          <Badge className={`text-[8px] border ${topicMastery.confidenceLevel === "high" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/15" : topicMastery.confidenceLevel === "medium" ? "text-amber-400 bg-amber-500/8 border-amber-500/15" : "text-muted-foreground bg-slate-500/8 border-slate-500/15"}`}>
                                             {topicMastery.confidenceLevel} confidence
                                           </Badge>
                                         </div>
                                       )}
                                       {!topicMastery && (
-                                        <span className="text-[10px] text-slate-600">No prior assessment data for this topic</span>
+                                        <span className="text-[10px] text-muted-foreground">No prior assessment data for this topic</span>
                                       )}
                                     </div>
                                   </div>
@@ -846,8 +850,8 @@ export default function TutorStudentDetail() {
 
                         {/* Remediation & misconception insights */}
                         {suggestionsData?.basis?.remediationTargets && suggestionsData.basis.remediationTargets.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-white/[0.06]">
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">Remediation Targets (below 75%)</p>
+                          <div className="mt-4 pt-4 border-t border-border/60">
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-2">Remediation Targets (below 75%)</p>
                             <div className="flex flex-wrap gap-2">
                               {suggestionsData.basis.remediationTargets.map((r: any, i: number) => (
                                 <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-red-500/8 text-red-400 border border-red-500/15">
@@ -874,14 +878,14 @@ export default function TutorStudentDetail() {
             {/* ── LEGACY SUBJECT-LEVEL COVERAGE RADAR ───────────── */}
             {topicPerformance.length >= 2 && (
               <div className={GP}>
-                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
                       <RadarIcon className="w-3.5 h-3.5 text-violet-400" />
                     </div>
                     <div>
-                      <h3 className="text-[13px] font-semibold text-slate-100">Syllabus Coverage</h3>
-                      <p className="text-[10px] text-slate-600 font-medium">Subject coverage &middot; drill down into topics and subtopics</p>
+                      <h3 className="text-[13px] font-semibold text-foreground">Syllabus Coverage</h3>
+                      <p className="text-[10px] text-muted-foreground font-medium">Subject coverage &middot; drill down into topics and subtopics</p>
                     </div>
                   </div>
                 </div>
@@ -897,22 +901,22 @@ export default function TutorStudentDetail() {
                           coverage: Math.min(100, t.assessmentCount * 20),
                           fullMark: 100,
                         }))} cx="50%" cy="50%" outerRadius="70%">
-                          <PolarGrid stroke="rgba(148,163,184,0.12)" />
-                          <PolarAngleAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} />
-                          <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} />
-                          <RechartsRadar name="Score" dataKey="score" stroke="#8B5CF6" fill="rgba(139,92,246,0.25)" strokeWidth={2} dot={{ r: 3, fill: "#8B5CF6" }} />
-                          <RechartsRadar name="Coverage" dataKey="coverage" stroke="#22D3EE" fill="rgba(34,211,238,0.12)" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2.5, fill: "#22D3EE" }} />
+                          <PolarGrid stroke={chartPalette.gridStroke} />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: chartPalette.axisTick, fontSize: 10, fontWeight: 600 }} />
+                          <PolarRadiusAxis domain={[0, 100]} tick={{ fill: chartPalette.axisTickMuted, fontSize: 9 }} axisLine={false} />
+                          <RechartsRadar name="Score" dataKey="score" stroke={chartPalette.radarStroke} fill={chartPalette.radarArea} strokeWidth={2} dot={{ r: 3, fill: chartPalette.radarStroke }} />
+                          <RechartsRadar name="Coverage" dataKey="coverage" stroke={chartPalette.series[1]} fill={chartPalette.series[1] + "22"} strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2.5, fill: chartPalette.series[1] }} />
                           <Tooltip content={({ active, payload }: any) => {
                             if (!active || !payload?.length) return null;
                             const d = payload[0]?.payload;
                             return (
-                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-white/[0.08] backdrop-blur-xl" style={{ background: "rgba(15,23,42,0.95)" }}>
-                                <p className="text-slate-300 font-semibold mb-1">{d?.fullSubject || d?.subject}</p>
+                              <div className="rounded-xl px-3.5 py-2.5 text-xs border border-border backdrop-blur-xl bg-popover text-popover-foreground">
+                                <p className="text-foreground/80 font-semibold mb-1">{d?.fullSubject || d?.subject}</p>
                                 {payload.map((entry: any, i: number) => (
                                   <div key={i} className="flex items-center gap-2 py-0.5">
                                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
-                                    <span className="text-slate-400">{entry.name}:</span>
-                                    <span className="text-white font-bold tabular-nums">{Math.round(entry.value)}%</span>
+                                    <span className="text-muted-foreground">{entry.name}:</span>
+                                    <span className="font-bold tabular-nums">{Math.round(entry.value)}%</span>
                                   </div>
                                 ))}
                               </div>
@@ -929,12 +933,12 @@ export default function TutorStudentDetail() {
                         const barColor = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
                         const covColor = coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
                         const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
-                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-slate-600";
+                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
                         return (
-                          <div key={t.topic} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-3.5">
+                          <div key={t.topic} className="bg-foreground/[0.03] border border-border/40 rounded-xl p-3.5">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-[12px] font-semibold text-slate-200">{t.topic}</span>
+                                <span className="text-[12px] font-semibold text-foreground">{t.topic}</span>
                                 <TIcon className={`w-3 h-3 ${tc}`} />
                               </div>
                               <span className={`text-[11px] font-bold tabular-nums ${t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400"}`}>{t.average}%</span>
@@ -942,22 +946,22 @@ export default function TutorStudentDetail() {
                             <div className="space-y-1.5">
                               <div>
                                 <div className="flex items-center justify-between mb-0.5">
-                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Performance</span>
+                                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Performance</span>
                                 </div>
-                                <div className="h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                <div className="h-[5px] rounded-full bg-muted/60 overflow-hidden">
                                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.average}%`, background: barColor }} />
                                 </div>
                               </div>
                               <div>
                                 <div className="flex items-center justify-between mb-0.5">
-                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Coverage</span>
+                                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Coverage</span>
                                   <span className="text-[9px] text-cyan-400 font-bold tabular-nums">{coveragePct}%</span>
                                 </div>
-                                <div className="h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                <div className="h-[5px] rounded-full bg-muted/60 overflow-hidden">
                                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${coveragePct}%`, background: covColor }} />
                                 </div>
                               </div>
-                              <p className="text-[10px] text-slate-500 font-medium">{t.assessmentCount} assessment{t.assessmentCount !== 1 ? "s" : ""} &middot; {t.evidence} evidence</p>
+                              <p className="text-[10px] text-muted-foreground font-medium">{t.assessmentCount} assessment{t.assessmentCount !== 1 ? "s" : ""} &middot; {t.evidence} evidence</p>
                             </div>
                           </div>
                         );
@@ -970,33 +974,33 @@ export default function TutorStudentDetail() {
 
             {/* ── SUBJECT PERFORMANCE ────────────────────────────── */}
             <div className={GP}>
-              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                 <div className="flex items-center gap-2.5">
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-500/10 border border-blue-500/12">
                     <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-[13px] font-semibold text-slate-100">Subject Performance</h3>
-                    <p className="text-[10px] text-slate-600 font-medium">Performance by subject &middot; trend &middot; evidence</p>
+                    <h3 className="text-[13px] font-semibold text-foreground">Subject Performance</h3>
+                    <p className="text-[10px] text-muted-foreground font-medium">Performance by subject &middot; trend &middot; evidence</p>
                   </div>
                 </div>
               </div>
 
               {topicPerformance.length === 0 ? (
                 <div className="px-6 py-14 text-center">
-                  <BarChart3 className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                  <p className="text-sm text-slate-400 font-medium">No completed assessments yet</p>
+                  <BarChart3 className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-sm text-muted-foreground font-medium">No completed assessments yet</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[640px]">
                     <thead>
-                      <tr className="border-b border-white/[0.04]">
-                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Subject</th>
-                        <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-44">Score</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Attempts</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Trend</th>
-                        <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Evidence</th>
+                      <tr className="border-b border-border/40">
+                        <th className="text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-6 py-3">Subject</th>
+                        <th className="text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-44">Score</th>
+                        <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-16">Attempts</th>
+                        <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-16">Trend</th>
+                        <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-20">Evidence</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.025]">
@@ -1004,22 +1008,22 @@ export default function TutorStudentDetail() {
                         const barGradient = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
                         const scoreColor = t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400";
                         const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
-                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-slate-600";
-                        const evColor = t.evidence === "Strong" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/10" : t.evidence === "Moderate" ? "text-amber-400 bg-amber-500/8 border-amber-500/10" : "text-slate-400 bg-slate-500/8 border-slate-500/10";
+                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
+                        const evColor = t.evidence === "Strong" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/10" : t.evidence === "Moderate" ? "text-amber-400 bg-amber-500/8 border-amber-500/10" : "text-muted-foreground bg-slate-500/8 border-slate-500/10";
                         return (
-                          <tr key={t.topic} className="hover:bg-white/[0.01] transition-colors">
+                          <tr key={t.topic} className="hover:bg-foreground/[0.02] transition-colors">
                             <td className="px-6 py-3.5">
-                              <span className="text-[13px] font-medium text-slate-200">{t.topic}</span>
+                              <span className="text-[13px] font-medium text-foreground">{t.topic}</span>
                             </td>
                             <td className="px-3 py-3.5">
                               <div className="flex items-center gap-3">
-                                <div className="flex-1 h-2 rounded-full bg-slate-800/60 overflow-hidden">
+                                <div className="flex-1 h-2 rounded-full bg-muted/60 overflow-hidden">
                                   <div className="h-full rounded-full transition-all duration-700" style={{ width: `${t.average}%`, background: barGradient }} />
                                 </div>
                                 <span className={`text-xs font-bold tabular-nums w-9 text-right ${scoreColor}`}>{t.average}%</span>
                               </div>
                             </td>
-                            <td className="text-center text-[13px] tabular-nums text-slate-400 font-medium px-3 py-3.5">{t.assessmentCount}</td>
+                            <td className="text-center text-[13px] tabular-nums text-muted-foreground font-medium px-3 py-3.5">{t.assessmentCount}</td>
                             <td className="text-center px-3 py-3.5">
                               <TIcon className={`w-4 h-4 mx-auto ${tc}`} />
                             </td>
@@ -1039,33 +1043,33 @@ export default function TutorStudentDetail() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               <div className="lg:col-span-7">
                 <div className={GP}>
-                  <div className="px-6 pt-5 pb-3 border-b border-white/[0.04]">
+                  <div className="px-6 pt-5 pb-3 border-b border-border/40">
                     <div className="flex items-center gap-2.5">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-cyan-500/10 border border-cyan-500/12">
                         <Layers className="w-3.5 h-3.5 text-cyan-400" />
                       </div>
                       <div>
-                        <h3 className="text-[13px] font-semibold text-slate-100">Coverage Matrix</h3>
-                        <p className="text-[10px] text-slate-600 font-medium">Subject depth &middot; assessments &middot; performance</p>
+                        <h3 className="text-[13px] font-semibold text-foreground">Coverage Matrix</h3>
+                        <p className="text-[10px] text-muted-foreground font-medium">Subject depth &middot; assessments &middot; performance</p>
                       </div>
                     </div>
                   </div>
 
                   {coverageData.length === 0 ? (
                     <div className="px-6 py-14 text-center">
-                      <Layers className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                      <p className="text-sm text-slate-400 font-medium">No coverage data yet</p>
+                      <Layers className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                      <p className="text-sm text-muted-foreground font-medium">No coverage data yet</p>
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[550px]">
                         <thead>
-                          <tr className="border-b border-white/[0.04]">
-                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3">Subject</th>
-                            <th className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-32">Coverage</th>
-                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-20">Assess.</th>
-                            <th className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 py-3 w-16">Perf.</th>
-                            <th className="text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider px-6 py-3 w-24">Last Seen</th>
+                          <tr className="border-b border-border/40">
+                            <th className="text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-6 py-3">Subject</th>
+                            <th className="text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-32">Coverage</th>
+                            <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-20">Assess.</th>
+                            <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3 py-3 w-16">Perf.</th>
+                            <th className="text-right text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-6 py-3 w-24">Last Seen</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/[0.025]">
@@ -1073,23 +1077,23 @@ export default function TutorStudentDetail() {
                             const barColor = c.coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : c.coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
                             const perfColor = c.performance >= 70 ? "text-emerald-400" : c.performance >= 50 ? "text-amber-400" : "text-red-400";
                             return (
-                              <tr key={c.topic} className="hover:bg-white/[0.01] transition-colors">
+                              <tr key={c.topic} className="hover:bg-foreground/[0.02] transition-colors">
                                 <td className="px-6 py-3">
-                                  <span className="text-[12px] font-medium text-slate-300">{c.topic}</span>
+                                  <span className="text-[12px] font-medium text-foreground/80">{c.topic}</span>
                                 </td>
                                 <td className="px-3 py-3">
                                   <div className="flex items-center gap-2">
-                                    <div className="flex-1 h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                    <div className="flex-1 h-[5px] rounded-full bg-muted/60 overflow-hidden">
                                       <div className="h-full rounded-full" style={{ width: `${c.coveragePct}%`, background: barColor }} />
                                     </div>
                                     <span className="text-[10px] text-cyan-400 font-bold tabular-nums w-7 text-right">{c.coveragePct}%</span>
                                   </div>
                                 </td>
-                                <td className="text-center text-[12px] tabular-nums text-slate-400 font-medium px-3 py-3">{c.assessments}</td>
+                                <td className="text-center text-[12px] tabular-nums text-muted-foreground font-medium px-3 py-3">{c.assessments}</td>
                                 <td className="text-center px-3 py-3">
                                   <span className={`text-[12px] font-bold tabular-nums ${perfColor}`}>{c.performance}%</span>
                                 </td>
-                                <td className="text-right text-[10px] text-slate-500 font-medium px-6 py-3">
+                                <td className="text-right text-[10px] text-muted-foreground font-medium px-6 py-3">
                                   {c.lastAssessed ? format(new Date(c.lastAssessed), "MMM d") : "—"}
                                 </td>
                               </tr>
@@ -1105,12 +1109,12 @@ export default function TutorStudentDetail() {
               <div className="lg:col-span-5 space-y-5">
                 {/* Private Notes */}
                 <div className={GP}>
-                  <div className="px-6 pt-5 pb-3 border-b border-white/[0.04]">
+                  <div className="px-6 pt-5 pb-3 border-b border-border/40">
                     <div className="flex items-center gap-2.5">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
                         <MessageSquare className="w-3.5 h-3.5 text-violet-400" />
                       </div>
-                      <h3 className="text-[13px] font-semibold text-slate-100">Private Notes</h3>
+                      <h3 className="text-[13px] font-semibold text-foreground">Private Notes</h3>
                     </div>
                   </div>
                   <div className="px-6 py-4">
@@ -1118,12 +1122,12 @@ export default function TutorStudentDetail() {
                       {commentsLoading ? (
                         <Loader2 className="w-5 h-5 text-violet-400 animate-spin mx-auto" />
                       ) : comments.length === 0 ? (
-                        <p className="text-xs text-slate-500 text-center py-4 font-medium">No notes yet</p>
+                        <p className="text-xs text-muted-foreground text-center py-4 font-medium">No notes yet</p>
                       ) : (
                         comments.map((c) => (
-                          <div key={c.id} className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-3">
-                            <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed">{c.comment}</p>
-                            <p className="text-[10px] text-slate-500 mt-1.5 font-medium">{format(new Date(c.createdAt), "PPp")}</p>
+                          <div key={c.id} className="bg-foreground/[0.03] border border-border/40 rounded-lg p-3">
+                            <p className="text-[13px] text-foreground/80 whitespace-pre-wrap leading-relaxed">{c.comment}</p>
+                            <p className="text-[10px] text-muted-foreground mt-1.5 font-medium">{format(new Date(c.createdAt), "PPp")}</p>
                           </div>
                         ))
                       )}
@@ -1133,7 +1137,7 @@ export default function TutorStudentDetail() {
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
                         placeholder="Add a note..."
-                        className="flex-1 bg-[#0c1222]/80 border border-white/[0.06] rounded-lg p-3 text-sm text-slate-200 placeholder:text-slate-600 resize-none min-h-[44px] focus:outline-none focus:border-violet-500/30 focus:ring-1 focus:ring-violet-500/15"
+                        className="flex-1 bg-background/80 border border-border/60 rounded-lg p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-[44px] focus:outline-none focus:border-violet-500/30 focus:ring-1 focus:ring-violet-500/15"
                         rows={2}
                         data-testid="input-note"
                       />
@@ -1151,12 +1155,12 @@ export default function TutorStudentDetail() {
 
                 {/* Academic Summary */}
                 <div className={GP}>
-                  <div className="px-6 pt-5 pb-3 border-b border-white/[0.04]">
+                  <div className="px-6 pt-5 pb-3 border-b border-border/40">
                     <div className="flex items-center gap-2.5">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
                         <FileText className="w-3.5 h-3.5 text-emerald-400" />
                       </div>
-                      <h3 className="text-[13px] font-semibold text-slate-100">Academic Summary</h3>
+                      <h3 className="text-[13px] font-semibold text-foreground">Academic Summary</h3>
                     </div>
                   </div>
                   <div className="px-6 py-4">
@@ -1171,40 +1175,40 @@ export default function TutorStudentDetail() {
                     ) : aiLoading ? (
                       <div className="py-8 text-center">
                         <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mx-auto mb-2" />
-                        <p className="text-xs text-slate-500 font-medium">Analysing student data...</p>
+                        <p className="text-xs text-muted-foreground font-medium">Analysing student data...</p>
                       </div>
                     ) : aiSummaryData?.summary ? (
-                      <div className="space-y-4 text-[13px] text-slate-300 leading-relaxed" data-testid="ai-summary-content">
+                      <div className="space-y-4 text-[13px] text-foreground/80 leading-relaxed" data-testid="ai-summary-content">
                         <p>{aiSummaryData.summary.narrative}</p>
                         {aiSummaryData.summary.weaknesses && (
                           <div>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Key Weaknesses</p>
-                            <p className="text-slate-400">{aiSummaryData.summary.weaknesses}</p>
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">Key Weaknesses</p>
+                            <p className="text-muted-foreground">{aiSummaryData.summary.weaknesses}</p>
                           </div>
                         )}
                         {aiSummaryData.summary.improvements && (
                           <div>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Recent Improvements</p>
-                            <p className="text-slate-400">{aiSummaryData.summary.improvements}</p>
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">Recent Improvements</p>
+                            <p className="text-muted-foreground">{aiSummaryData.summary.improvements}</p>
                           </div>
                         )}
                         {aiSummaryData.summary.focusAreas?.length > 0 && (
                           <div>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Focus Areas</p>
-                            <ul className="list-disc list-inside text-slate-400 space-y-0.5">
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">Focus Areas</p>
+                            <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
                               {aiSummaryData.summary.focusAreas.map((f, i) => <li key={i}>{f}</li>)}
                             </ul>
                           </div>
                         )}
                         {aiSummaryData.summary.nextSteps && (
                           <div>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Recommended Next Steps</p>
-                            <p className="text-slate-400">{aiSummaryData.summary.nextSteps}</p>
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">Recommended Next Steps</p>
+                            <p className="text-muted-foreground">{aiSummaryData.summary.nextSteps}</p>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-slate-500 text-center py-4">Unable to generate summary. Try again later.</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">Unable to generate summary. Try again later.</p>
                     )}
                   </div>
                 </div>
@@ -1213,22 +1217,22 @@ export default function TutorStudentDetail() {
 
             {/* ── EVIDENCE HISTORY ──────────────────────────────── */}
             <div className={GP}>
-              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                 <div className="flex items-center gap-2.5">
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/10 border border-indigo-500/12">
                     <Activity className="w-3.5 h-3.5 text-indigo-400" />
                   </div>
                   <div>
-                    <h3 className="text-[13px] font-semibold text-slate-100">Evidence History</h3>
-                    <p className="text-[10px] text-slate-600 font-medium">Timeline of assessments &middot; topics &middot; scores</p>
+                    <h3 className="text-[13px] font-semibold text-foreground">Evidence History</h3>
+                    <p className="text-[10px] text-muted-foreground font-medium">Timeline of assessments &middot; topics &middot; scores</p>
                   </div>
                 </div>
               </div>
 
               {assignments.length === 0 ? (
                 <div className="px-6 py-14 text-center">
-                  <BookOpen className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-                  <p className="text-sm text-slate-400 font-medium">No assignments yet</p>
+                  <BookOpen className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-sm text-muted-foreground font-medium">No assignments yet</p>
                 </div>
               ) : (
                 <div className="divide-y divide-white/[0.03]">
@@ -1240,13 +1244,13 @@ export default function TutorStudentDetail() {
                     const duration = formatDuration(a.startedAt, a.completedAt);
                     const scoreColor = pct !== null ? (pct >= 70 ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/15" : pct >= 40 ? "text-amber-400 bg-amber-500/10 border-amber-500/15" : "text-red-400 bg-red-500/10 border-red-500/15") : "";
                     return (
-                      <div key={a.assignmentId} className="px-6 py-4 flex items-center gap-4 hover:bg-white/[0.01] transition-colors group" data-testid={`assignment-${a.assignmentId}`}>
+                      <div key={a.assignmentId} className="px-6 py-4 flex items-center gap-4 hover:bg-foreground/[0.02] transition-colors group" data-testid={`assignment-${a.assignmentId}`}>
                         <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
                           <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-medium text-slate-200 truncate">{a.quizTitle}</p>
-                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500 font-medium flex-wrap">
+                          <p className="text-[13px] font-medium text-foreground truncate">{a.quizTitle}</p>
+                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground font-medium flex-wrap">
                             {a.quizSubject && <span>{a.quizSubject}</span>}
                             <span>{format(new Date(a.assignedAt), "MMM d, yyyy")}</span>
                             {duration && <span className="text-violet-400/60">{duration}</span>}
@@ -1258,14 +1262,14 @@ export default function TutorStudentDetail() {
                         )}
                         {a.reportId ? (
                           <Link href={`/soma/review/${a.reportId}`}>
-                            <span className="text-slate-600 hover:text-violet-400 transition-colors cursor-pointer">
+                            <span className="text-muted-foreground hover:text-violet-400 transition-colors cursor-pointer">
                               <Eye className="w-4 h-4" />
                             </span>
                           </Link>
                         ) : (
                           <button
                             onClick={() => setRevokeQuizId(a.quizId)}
-                            className="text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                            className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
                             aria-label="Revoke assignment"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1283,15 +1287,15 @@ export default function TutorStudentDetail() {
       </main>
 
       <AlertDialog open={revokeQuizId !== null} onOpenChange={() => setRevokeQuizId(null)}>
-        <AlertDialogContent className="bg-slate-900 border-white/10">
+        <AlertDialogContent className="bg-card border-border/50">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-slate-100">Revoke Assignment?</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-400">
+            <AlertDialogTitle className="text-foreground">Revoke Assignment?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
               This will remove the assignment from the student. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="bg-muted text-foreground/80 border-border/50 hover:bg-slate-700">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => revokeQuizId && revokeMutation.mutate(revokeQuizId)}
               className="bg-red-600 text-white hover:bg-red-500"
@@ -1307,10 +1311,10 @@ export default function TutorStudentDetail() {
 
 function HeaderStat({ label, value, color, icon }: { label: string; value: string | null; color: string; icon?: React.ReactNode }) {
   return (
-    <div className="text-center sm:text-left p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+    <div className="text-center sm:text-left p-3 rounded-xl bg-foreground/[0.03] border border-border/40">
       <div className="flex items-center gap-1.5 mb-1">
         {icon}
-        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">{label}</p>
+        <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">{label}</p>
       </div>
       <p className={`text-base font-bold tabular-nums ${color}`}>{value || "—"}</p>
     </div>

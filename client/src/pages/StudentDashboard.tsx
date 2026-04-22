@@ -8,6 +8,7 @@ import {
   LogOut, Sparkles, ArrowRight, AlertCircle, RefreshCw, Loader2, LayoutDashboard, ListChecks,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import NotificationsPanel from "@/components/student/NotificationsPanel";
 import SubjectCoverageCard from "@/components/student/SubjectCoverageCard";
 import PerformanceCard from "@/components/student/PerformanceCard";
@@ -22,14 +23,14 @@ import type { StudentDashboardPayload } from "@/types/studentDashboard";
 function DashboardSkeleton() {
   return (
     <div className="space-y-6 animate-pulse" data-testid="dashboard-skeleton">
-      <div className="h-32 rounded-2xl bg-slate-900/60 border border-slate-800" />
+      <div className="h-32 rounded-2xl bg-card/60 border border-card-border" />
       <div className="grid md:grid-cols-3 gap-4">
-        <div className="h-48 rounded-2xl bg-slate-900/60 border border-slate-800 md:col-span-2" />
-        <div className="h-48 rounded-2xl bg-slate-900/60 border border-slate-800" />
+        <div className="h-48 rounded-2xl bg-card/60 border border-card-border md:col-span-2" />
+        <div className="h-48 rounded-2xl bg-card/60 border border-card-border" />
       </div>
       <div className="grid md:grid-cols-2 gap-4">
-        <div className="h-64 rounded-2xl bg-slate-900/60 border border-slate-800" />
-        <div className="h-64 rounded-2xl bg-slate-900/60 border border-slate-800" />
+        <div className="h-64 rounded-2xl bg-card/60 border border-card-border" />
+        <div className="h-64 rounded-2xl bg-card/60 border border-card-border" />
       </div>
     </div>
   );
@@ -37,13 +38,13 @@ function DashboardSkeleton() {
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-8 text-center" data-testid="dashboard-error">
-      <AlertCircle className="w-10 h-10 text-rose-400 mx-auto mb-3" />
-      <h2 className="text-lg font-semibold text-rose-200">We couldn't load your dashboard</h2>
-      <p className="text-sm text-rose-300/80 mt-1">Check your connection and try again — your data is safe.</p>
+    <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-8 text-center" data-testid="dashboard-error">
+      <AlertCircle className="w-10 h-10 text-rose-500 dark:text-rose-400 mx-auto mb-3" />
+      <h2 className="text-lg font-semibold text-rose-800 dark:text-rose-200">We couldn't load your dashboard</h2>
+      <p className="text-sm text-rose-700/90 dark:text-rose-300/80 mt-1">Check your connection and try again — your data is safe.</p>
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 transition-colors"
+        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/50 bg-rose-500/15 text-rose-800 dark:text-rose-200 hover:bg-rose-500/25 transition-colors"
         data-testid="button-retry-dashboard"
       >
         <RefreshCw className="w-4 h-4" /> Retry
@@ -113,14 +114,14 @@ export default function StudentDashboard() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-border/70 bg-background/80 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer" data-testid="link-dashboard-home">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain" />
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain brightness-0 dark:brightness-100" />
               <div>
                 <h1 className="text-lg font-bold gradient-text" data-testid="text-dashboard-title">SOMA</h1>
-                <p className="text-[10px] text-slate-400 tracking-widest uppercase">Student Dashboard</p>
+                <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Student Dashboard</p>
               </div>
             </div>
           </Link>
@@ -128,7 +129,7 @@ export default function StudentDashboard() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => refetch()}
-              className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-200 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/[0.04]"
+              className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-lg hover-elevate"
               aria-label="Refresh dashboard"
               title={lastUpdated ? `Last updated ${formatUpdated(lastUpdated)}` : "Refresh"}
               data-testid="button-refresh-dashboard"
@@ -142,20 +143,20 @@ export default function StudentDashboard() {
             </button>
             <div className="flex items-center gap-3">
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-violet-500/40"
-                style={{ backgroundColor: "rgba(139,92,246,0.25)", boxShadow: "0 0 16px rgba(139,92,246,0.35)" }}
+                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-violet-500/60 bg-violet-600/80 shadow-[0_0_16px_rgba(139,92,246,0.35)]"
                 data-testid="avatar-user"
               >
                 {initials}
               </div>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-slate-200" data-testid="text-user-name">{displayName}</p>
-                <p className="text-[10px] text-slate-400">{session?.user?.email}</p>
+                <p className="text-sm font-medium text-foreground" data-testid="text-user-name">{displayName}</p>
+                <p className="text-[10px] text-muted-foreground">{session?.user?.email}</p>
               </div>
             </div>
+            <ThemeToggle />
             <button
               onClick={handleLogout}
-              className="text-slate-400 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px]"
+              className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px]"
               aria-label="Log out"
               data-testid="button-logout"
             >
@@ -180,13 +181,13 @@ export default function StudentDashboard() {
             />
 
             {/* 2. Greeting + due summary */}
-            <section className="rounded-2xl border border-slate-800 bg-gradient-to-br from-violet-900/30 via-slate-900/70 to-slate-900/60 p-6 shadow-xl" data-testid="section-greeting">
-              <h2 className="text-2xl font-bold text-slate-100" data-testid="text-greeting">{data.greeting}</h2>
-              <p className="text-sm text-slate-300 mt-2" data-testid="text-due-summary">{data.dueSummary}</p>
+            <section className="rounded-2xl border border-card-border bg-gradient-to-br from-violet-500/15 via-card/80 to-card/70 p-6 shadow-xl" data-testid="section-greeting">
+              <h2 className="text-2xl font-bold text-foreground" data-testid="text-greeting">{data.greeting}</h2>
+              <p className="text-sm text-foreground/80 mt-2" data-testid="text-due-summary">{data.dueSummary}</p>
             </section>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "home" | "completed")}>
-              <TabsList className="bg-slate-900/60 border border-slate-800">
+              <TabsList className="bg-card/60 border border-card-border">
                 <TabsTrigger value="home" data-testid="tab-trigger-home">
                   <LayoutDashboard className="w-4 h-4 mr-2" /> Home
                 </TabsTrigger>
@@ -211,8 +212,8 @@ export default function StudentDashboard() {
                 {/* 5b. Syllabus topic radar + paper readiness */}
                 <section className="space-y-3" data-testid="section-syllabus-insights">
                   <header>
-                    <h2 className="text-lg font-semibold text-slate-100">Your syllabus shape</h2>
-                    <p className="text-xs text-slate-400">Topic mastery radar and end-of-year paper readiness for each subject.</p>
+                    <h2 className="text-lg font-semibold text-foreground">Your syllabus shape</h2>
+                    <p className="text-xs text-muted-foreground">Topic mastery radar and end-of-year paper readiness for each subject.</p>
                   </header>
                   <SyllabusInsightsSection
                     insights={syllabusInsights}
@@ -225,13 +226,13 @@ export default function StudentDashboard() {
                 <section className="space-y-3" data-testid="section-subjects">
                   <header className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold text-slate-100">Your subjects</h2>
-                      <p className="text-xs text-slate-400">Each subject shows the syllabus topics for the level you're studying.</p>
+                      <h2 className="text-lg font-semibold text-foreground">Your subjects</h2>
+                      <p className="text-xs text-muted-foreground">Each subject shows the syllabus topics for the level you're studying.</p>
                     </div>
                   </header>
                   {data.subjects.length === 0 ? (
-                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">
-                      <p className="text-sm text-slate-400">Once you have an assigned assessment or your tutor sets your subjects, your syllabus coverage will appear here.</p>
+                    <div className="rounded-2xl border border-card-border bg-card/70 p-8 text-center">
+                      <p className="text-sm text-muted-foreground">Once you have an assigned assessment or your tutor sets your subjects, your syllabus coverage will appear here.</p>
                     </div>
                   ) : (
                     <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -245,8 +246,8 @@ export default function StudentDashboard() {
                 {/* 7. Open assignments */}
                 <section className="space-y-3" data-testid="section-assignments">
                   <header>
-                    <h2 className="text-lg font-semibold text-slate-100">Pending assessments</h2>
-                    <p className="text-xs text-slate-400">Sorted by what's most urgent.</p>
+                    <h2 className="text-lg font-semibold text-foreground">Pending assessments</h2>
+                    <p className="text-xs text-muted-foreground">Sorted by what's most urgent.</p>
                   </header>
                   <AssignmentsList assignments={data.assignments} />
                 </section>

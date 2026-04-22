@@ -9,7 +9,7 @@ export default function NotFound() {
       <div className="glass-card w-full max-w-md mx-4 p-10 text-center">
         <AlertCircle className="h-12 w-12 text-red-400/60 mx-auto mb-4" />
         <h1 className="text-2xl font-bold gradient-text mb-2">404 Page Not Found</h1>
-        <p className="text-sm text-slate-400 mb-6">
+        <p className="text-sm text-muted-foreground mb-6">
           The page you're looking for doesn't exist.
         </p>
         <Link href="/dashboard">

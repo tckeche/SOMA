@@ -88,14 +88,14 @@ function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
           const codeChildren = codeElement?.props?.children;
           const language = codeClassName ? codeClassName.replace("language-", "") : "";
           return (
-            <div className="my-3 rounded-xl overflow-hidden border border-white/10">
+            <div className="my-3 rounded-xl overflow-hidden border border-border/50">
               {language && (
-                <div className="bg-white/5 px-4 py-1.5 text-xs text-slate-500 font-mono border-b border-white/5">
+                <div className="bg-foreground/5 px-4 py-1.5 text-xs text-muted-foreground font-mono border-b border-border/30">
                   {language}
                 </div>
               )}
-              <pre className="bg-[rgba(0,0,0,0.4)] p-4 overflow-x-auto">
-                <code className={`text-sm font-mono text-slate-200 ${codeClassName}`}>
+              <pre className="bg-foreground/10 p-4 overflow-x-auto">
+                <code className={`text-sm font-mono text-foreground ${codeClassName}`}>
                   {codeChildren}
                 </code>
               </pre>
@@ -105,7 +105,7 @@ function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
         code({ className: codeClassName, children, ...props }) {
           return (
             <code
-              className="bg-white/10 text-violet-300 px-1.5 py-0.5 rounded text-[0.85em] font-mono border border-white/5"
+              className="bg-foreground/10 text-violet-300 px-1.5 py-0.5 rounded text-[0.85em] font-mono border border-border/30"
               {...props}
             >
               {children}
@@ -124,23 +124,23 @@ function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
         table({ children }) {
           return (
             <div className="overflow-x-auto my-3">
-              <table className="w-full border-collapse border border-white/10 text-sm">
+              <table className="w-full border-collapse border border-border/50 text-sm">
                 {children}
               </table>
             </div>
           );
         },
         th({ children }) {
-          return <th className="bg-white/5 border border-white/10 px-3 py-2 text-left font-semibold">{children}</th>;
+          return <th className="bg-foreground/5 border border-border/50 px-3 py-2 text-left font-semibold">{children}</th>;
         },
         td({ children }) {
-          return <td className="border border-white/10 px-3 py-2">{children}</td>;
+          return <td className="border border-border/50 px-3 py-2">{children}</td>;
         },
         blockquote({ children }) {
-          return <blockquote className="border-l-2 border-violet-500/50 pl-4 my-2 text-slate-400 italic">{children}</blockquote>;
+          return <blockquote className="border-l-2 border-violet-500/50 pl-4 my-2 text-muted-foreground italic">{children}</blockquote>;
         },
         strong({ children }) {
-          return <strong className="font-semibold text-slate-100">{children}</strong>;
+          return <strong className="font-semibold text-foreground">{children}</strong>;
         },
       }}
     >

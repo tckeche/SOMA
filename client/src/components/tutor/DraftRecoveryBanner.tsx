@@ -45,12 +45,12 @@ export function DraftRecoveryBanner({
           <FileText className="w-4 h-4 text-violet-300" aria-hidden="true" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-100">
+          <p className="text-sm font-semibold text-foreground">
             You have an unfinished assessment draft
           </p>
-          <p className="text-xs text-slate-400 truncate">
-            <span className="text-slate-300">{label}</span>
-            {savedAt && <span className="text-slate-500"> · last edited {savedAt}</span>}
+          <p className="text-xs text-muted-foreground truncate">
+            <span className="text-foreground/80">{label}</span>
+            {savedAt && <span className="text-muted-foreground"> · last edited {savedAt}</span>}
           </p>
         </div>
       </div>
@@ -74,7 +74,7 @@ export function DraftRecoveryBanner({
         <Button
           size="sm"
           variant="ghost"
-          className="text-slate-500 hover:text-slate-200 hover:bg-white/5"
+          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5"
           onClick={onDismiss}
           aria-label="Dismiss draft recovery banner"
           data-testid="button-draft-dismiss"

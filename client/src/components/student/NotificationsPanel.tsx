@@ -66,7 +66,7 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
 
   return (
     <section
-      className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/95 to-slate-900/70 p-6 shadow-xl"
+      className="rounded-2xl border border-card-border bg-gradient-to-br from-card/95 to-card/70 p-6 shadow-xl"
       aria-label="Notifications"
       data-testid="panel-notifications"
     >
@@ -77,14 +77,14 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
               className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${
                 unreadCount > 0
                   ? "bg-violet-500/15 text-violet-300 border border-violet-500/30"
-                  : "bg-slate-800/60 text-slate-500 border border-slate-800"
+                  : "bg-muted/60 text-muted-foreground border border-card-border"
               }`}
             >
               <Bell className="w-5 h-5" aria-hidden="true" />
             </div>
             {unreadCount > 0 && (
               <span
-                className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-[10px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-slate-900 tabular-nums"
+                className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-[10px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-card tabular-nums"
                 aria-label={`${unreadCount} unread notifications`}
                 data-testid="bell-unread-count"
               >
@@ -93,8 +93,8 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
             )}
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Notifications</h2>
-            <p className="text-xs text-slate-400">
+            <h2 className="text-lg font-semibold text-foreground">Notifications</h2>
+            <p className="text-xs text-muted-foreground">
               {unreadCount > 0
                 ? `${unreadCount} new ${unreadCount === 1 ? "update" : "updates"} to review`
                 : "You're all caught up"}
@@ -105,7 +105,7 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
           <button
             onClick={() => markAllRead.mutate()}
             disabled={markAllRead.isPending}
-            className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-500 transition-colors disabled:opacity-60"
+            className="text-xs text-foreground/80 hover:text-white px-3 py-1.5 rounded-lg border border-border hover:border-border transition-colors disabled:opacity-60"
             data-testid="button-mark-all-read"
           >
             <CheckCheck className="w-3.5 h-3.5 inline mr-1.5" />
@@ -116,14 +116,14 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
 
       {unread.length === 0 ? (
         <div
-          className="flex flex-col items-center justify-center text-center py-10 px-4 rounded-xl border border-dashed border-slate-800 bg-slate-900/40"
+          className="flex flex-col items-center justify-center text-center py-10 px-4 rounded-xl border border-dashed border-card-border bg-card/40"
           data-testid="empty-notifications"
         >
-          <div className="w-12 h-12 rounded-full bg-slate-800/80 flex items-center justify-center mb-3">
-            <Inbox className="w-5 h-5 text-slate-500" aria-hidden="true" />
+          <div className="w-12 h-12 rounded-full bg-muted/80 flex items-center justify-center mb-3">
+            <Inbox className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
           </div>
-          <p className="text-sm font-medium text-slate-300">No new notifications</p>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-sm font-medium text-foreground/80">No new notifications</p>
+          <p className="text-xs text-muted-foreground mt-1">
             New work, feedback and reminders will show up here.
           </p>
         </div>
@@ -155,16 +155,16 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
                           aria-label="Unread"
                           data-testid={`notification-dot-${n.id}`}
                         />
-                        <p className="text-sm font-semibold text-slate-100 truncate">
+                        <p className="text-sm font-semibold text-foreground truncate">
                           <span className="sr-only">{tone.ariaPrefix}: </span>
                           {n.title}
                         </p>
                       </div>
-                      <span className="text-[10px] text-slate-500 whitespace-nowrap shrink-0">
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
                         {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 mt-1 line-clamp-2">{n.message}</p>
+                    <p className="text-xs text-foreground/80 mt-1 line-clamp-2">{n.message}</p>
                     {dueLabel && (
                       <span
                         className={`inline-flex items-center gap-1 mt-2 text-[11px] font-medium px-2 py-0.5 rounded-full border ${tone.chip}`}
@@ -201,7 +201,7 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
           })}
           {unread.length > visible.length && (
             <li className="pt-1 text-center">
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-muted-foreground">
                 +{unread.length - visible.length} more unread
               </p>
             </li>

@@ -31,6 +31,7 @@ import {
   ActivityTimelineChart,
 } from "@/components/dashboard-charts";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface DashboardStats {
   totalStudents: number;
@@ -132,8 +133,8 @@ function SectionHeader({ icon: Icon, title, subtitle, action }: { icon: LucideIc
           <Icon className="w-3.5 h-3.5 text-indigo-400" />
         </div>
         <div>
-          <h3 className="text-lg font-bold text-slate-100" style={{ letterSpacing: "0.3px" }}>{title}</h3>
-          {subtitle && <p className="text-[10px] text-slate-500 font-medium mt-0.5">{subtitle}</p>}
+          <h3 className="text-lg font-bold text-foreground" style={{ letterSpacing: "0.3px" }}>{title}</h3>
+          {subtitle && <p className="text-[10px] text-muted-foreground font-medium mt-0.5">{subtitle}</p>}
         </div>
       </div>
       {action}
@@ -155,11 +156,11 @@ function getStatusChip(s: DashboardStats["studentInsights"][0]): { text: string;
 
   if (!hasSubmissions && s.assigned > 0) return { text: "Awaiting", color: "bg-amber-500/10 text-amber-300 border-amber-500/20", dot: "bg-amber-400" };
   if (s.trend === "declining" && s.completed >= 2) return { text: "Trend down", color: "bg-rose-500/10 text-rose-300 border-rose-500/20", dot: "bg-rose-400" };
-  if (s.completed < 3 && s.assigned > 0) return { text: "Low evidence", color: "bg-slate-500/10 text-slate-400 border-slate-500/20", dot: "bg-slate-400" };
+  if (s.completed < 3 && s.assigned > 0) return { text: "Low evidence", color: "bg-slate-500/10 text-muted-foreground border-slate-500/20", dot: "bg-slate-400" };
   if (s.awaiting > 0 && !allDone) return { text: "Needs marking", color: "bg-violet-500/10 text-violet-300 border-violet-500/20", dot: "bg-violet-400" };
   if (s.trend === "improving") return { text: "Trend up", color: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20", dot: "bg-emerald-400" };
   if (allDone) return { text: "On track", color: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20", dot: "bg-emerald-400" };
-  return { text: "Stable", color: "bg-slate-500/10 text-slate-400 border-slate-500/20", dot: "bg-slate-400" };
+  return { text: "Stable", color: "bg-slate-500/10 text-muted-foreground border-slate-500/20", dot: "bg-slate-400" };
 }
 
 function MiniSparkline({ scores }: { scores: number[] }) {
@@ -199,15 +200,15 @@ function WorkloadBar({ assigned, completed, awaiting }: { assigned: number; comp
   const pPct = Math.max(0, 100 - cPct - aPct);
   return (
     <div className="space-y-1.5">
-      <div className="flex-1 h-[7px] rounded-full bg-slate-800/60 overflow-hidden flex">
+      <div className="flex-1 h-[7px] rounded-full bg-muted/60 overflow-hidden flex">
         {cPct > 0 && <div className="h-full rounded-l-full" style={{ width: `${cPct}%`, background: "linear-gradient(90deg, #059669, #34d399)" }} />}
         {aPct > 0 && <div className="h-full" style={{ width: `${aPct}%`, background: "linear-gradient(90deg, #d97706, #fbbf24)" }} />}
         {pPct > 0 && <div className="h-full rounded-r-full bg-slate-700/30" style={{ width: `${pPct}%` }} />}
       </div>
       <div className="flex items-center gap-3 text-[9px] tabular-nums">
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /><span className="text-slate-500 font-medium">{completed}</span></span>
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /><span className="text-slate-500 font-medium">{awaiting}</span></span>
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-600 inline-block" /><span className="text-slate-600 font-medium">{Math.max(0, assigned - completed - awaiting)}</span></span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /><span className="text-muted-foreground font-medium">{completed}</span></span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /><span className="text-muted-foreground font-medium">{awaiting}</span></span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-muted-foreground inline-block" /><span className="text-muted-foreground font-medium">{Math.max(0, assigned - completed - awaiting)}</span></span>
       </div>
     </div>
   );
@@ -419,14 +420,14 @@ export default function TutorDashboard() {
   return (
     <div className="min-h-screen">
       {/* ── HEADER ─────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] backdrop-blur-2xl" style={{ background: "linear-gradient(180deg, rgba(8,13,26,0.92) 0%, rgba(8,13,26,0.85) 100%)" }}>
+      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/85">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3.5 cursor-pointer group">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity brightness-0 dark:brightness-100" />
               <div>
                 <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
-                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
+                <p className="text-[9px] text-muted-foreground tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>
@@ -436,12 +437,12 @@ export default function TutorDashboard() {
                 <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
               </span>
               <Link href="/tutor/students">
-                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-students">
+                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground/80 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-students">
                   <Users className="w-3.5 h-3.5" /> Students
                 </span>
               </Link>
               <Link href="/tutor/assessments">
-                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-assessments">
+                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground/80 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-assessments">
                   <BookOpen className="w-3.5 h-3.5" /> Assessments
                 </span>
               </Link>
@@ -450,12 +451,12 @@ export default function TutorDashboard() {
               {/* Notification bell */}
               <button
                 onClick={() => setActiveTab("notifications")}
-                className="relative text-slate-500 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-white/[0.03]"
+                className="relative text-muted-foreground hover:text-foreground/80 transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-foreground/[0.04]"
                 aria-label="Notifications"
               >
                 <Bell className="w-4.5 h-4.5" />
                 {(notificationsData?.unreadCount ?? 0) > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-[9px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-[#080d1a]">
+                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-[9px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-background">
                     {notificationsData!.unreadCount > 9 ? "9+" : notificationsData!.unreadCount}
                   </span>
                 )}
@@ -467,27 +468,28 @@ export default function TutorDashboard() {
                 {initials}
               </div>
               <div className="hidden sm:block">
-                <p className="text-[13px] font-medium text-slate-200 leading-none">{displayName}</p>
+                <p className="text-[13px] font-medium text-foreground leading-none">{displayName}</p>
                 <p className="text-[9px] text-violet-400/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-slate-600 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-white/[0.03]" aria-label="Log out" data-testid="button-logout">
+            <ThemeToggle />
+            <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-foreground/[0.04]" aria-label="Log out" data-testid="button-logout">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
         {/* Mobile nav */}
-        <div className="md:hidden border-t border-white/[0.04] flex">
+        <div className="md:hidden border-t border-border/40 flex">
           <span className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-semibold text-violet-300 border-b-2 border-violet-500" data-testid="nav-dashboard-mobile">
             <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
           </span>
           <Link href="/tutor/students">
-            <span className="flex items-center justify-center gap-1.5 px-4 py-2.5 text-[12px] font-medium text-slate-500">
+            <span className="flex items-center justify-center gap-1.5 px-4 py-2.5 text-[12px] font-medium text-muted-foreground">
               <Users className="w-3.5 h-3.5" /> Students
             </span>
           </Link>
           <Link href="/tutor/assessments">
-            <span className="flex items-center justify-center gap-1.5 px-4 py-2.5 text-[12px] font-medium text-slate-500">
+            <span className="flex items-center justify-center gap-1.5 px-4 py-2.5 text-[12px] font-medium text-muted-foreground">
               <BookOpen className="w-3.5 h-3.5" /> Assessments
             </span>
           </Link>
@@ -501,8 +503,8 @@ export default function TutorDashboard() {
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-amber-500/10 border border-amber-500/15">
               <AlertTriangle className="w-6 h-6 text-amber-400/80" />
             </div>
-            <p className="text-sm text-slate-300 font-semibold">Unable to load dashboard data</p>
-            <p className="text-xs text-slate-600">Check your connection and try refreshing</p>
+            <p className="text-sm text-foreground/80 font-semibold">Unable to load dashboard data</p>
+            <p className="text-xs text-muted-foreground">Check your connection and try refreshing</p>
           </div>
         ) : isLoading ? (
           <div className="space-y-6 animate-in fade-in duration-300">
@@ -557,16 +559,16 @@ export default function TutorDashboard() {
             {/* ── TITLE BAR ──────────────────────────────────────── */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3 flex-wrap">
-                <h2 className="text-lg font-bold text-slate-100">{getGreeting()}, {displayName.split(" ")[0]}</h2>
-                <span className="text-[12px] text-slate-500 font-medium">{format(new Date(), "EEEE, d MMMM yyyy")}</span>
+                <h2 className="text-lg font-bold text-foreground">{getGreeting()}, {displayName.split(" ")[0]}</h2>
+                <span className="text-[12px] text-muted-foreground font-medium">{format(new Date(), "EEEE, d MMMM yyyy")}</span>
                 {dataUpdatedAt > 0 && (
-                  <span className="text-[10px] text-slate-600 font-medium">
+                  <span className="text-[10px] text-muted-foreground font-medium">
                     &middot; Updated {formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
                   </span>
                 )}
                 <button
                   onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] })}
-                  className="text-slate-600 hover:text-violet-400 transition-colors p-1 rounded-md hover:bg-white/[0.04]"
+                  className="text-muted-foreground hover:text-violet-400 transition-colors p-1 rounded-md hover:bg-foreground/[0.05]"
                   aria-label="Refresh data"
                 >
                   <RefreshCcw className="w-3 h-3" />
@@ -574,7 +576,7 @@ export default function TutorDashboard() {
               </div>
               <div className="flex items-center gap-2.5">
                 <Link href="/tutor/students">
-                  <span className="flex items-center gap-2 px-3.5 py-2 min-h-[36px] rounded-xl text-[12px] font-medium text-slate-300 bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] hover:border-white/[0.1] transition-all cursor-pointer" data-testid="button-view-students">
+                  <span className="flex items-center gap-2 px-3.5 py-2 min-h-[36px] rounded-xl text-[12px] font-medium text-foreground/80 bg-foreground/[0.05] border border-border/60 hover:bg-foreground/[0.07] hover:border-border transition-all cursor-pointer" data-testid="button-view-students">
                     <Users className="w-3.5 h-3.5" /> Students
                   </span>
                 </Link>
@@ -587,13 +589,13 @@ export default function TutorDashboard() {
             </div>
 
             {/* ── TAB SWITCHER ─────────────────────────────────── */}
-            <div className="flex items-center gap-1 bg-white/[0.03] rounded-xl p-1 border border-white/[0.06] w-fit">
+            <div className="flex items-center gap-1 bg-foreground/[0.04] rounded-xl p-1 border border-border/60 w-fit">
               <button
                 onClick={() => setActiveTab("overview")}
                 className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
                   activeTab === "overview"
                     ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
-                    : "text-slate-500 hover:text-slate-300 border border-transparent"
+                    : "text-muted-foreground hover:text-foreground/80 border border-transparent"
                 }`}
               >
                 <LayoutDashboard className="w-3.5 h-3.5" /> Overview
@@ -603,7 +605,7 @@ export default function TutorDashboard() {
                 className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
                   activeTab === "notifications"
                     ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
-                    : "text-slate-500 hover:text-slate-300 border border-transparent"
+                    : "text-muted-foreground hover:text-foreground/80 border border-transparent"
                 }`}
               >
                 <Bell className="w-3.5 h-3.5" /> Notifications
@@ -629,11 +631,11 @@ export default function TutorDashboard() {
                   />
                   {unreadItems.length === 0 ? (
                     <div className={`${GP} px-6 py-16 text-center`}>
-                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-slate-800/60 mx-auto mb-4 border border-white/[0.04]">
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-muted/60 mx-auto mb-4 border border-border/40">
                         <CheckCircle2 className="w-6 h-6 text-emerald-400/70" />
                       </div>
-                      <p className="text-sm text-slate-300 font-semibold">All caught up</p>
-                      <p className="text-xs text-slate-500 mt-1">New submissions and generation updates will appear here</p>
+                      <p className="text-sm text-foreground/80 font-semibold">All caught up</p>
+                      <p className="text-xs text-muted-foreground mt-1">New submissions and generation updates will appear here</p>
                     </div>
                   ) : (
                     <div className="space-y-2.5">
@@ -644,7 +646,7 @@ export default function TutorDashboard() {
                         const handleOpen = () => markReadMutation.mutate(item.id);
                         const inner = (
                           <div
-                            className={`${GP} w-full p-4 transition-all hover:bg-white/[0.03] hover:border-white/[0.1] hover:translate-x-0.5 cursor-pointer`}
+                            className={`${GP} w-full p-4 transition-all hover:bg-foreground/[0.04] hover:border-border hover:translate-x-0.5 cursor-pointer`}
                             data-testid={`notification-${item.id}`}
                           >
                             <div className="flex items-start gap-4">
@@ -653,20 +655,20 @@ export default function TutorDashboard() {
                                   <Bell className="w-5 h-5 text-violet-300" />
                                 </div>
                                 <span
-                                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-[#080d1a] shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-background shadow-[0_0_8px_rgba(244,63,94,0.6)]"
                                   aria-label="Unread"
                                   data-testid={`notification-dot-${item.id}`}
                                 />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-[14px] font-semibold text-slate-100 truncate">{item.title}</p>
-                                <p className="text-[12px] text-slate-400 mt-1 line-clamp-2">{item.message}</p>
-                                <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium mt-2">
+                                <p className="text-[14px] font-semibold text-foreground truncate">{item.title}</p>
+                                <p className="text-[12px] text-muted-foreground mt-1 line-clamp-2">{item.message}</p>
+                                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium mt-2">
                                   <Clock className="w-3 h-3" />
                                   <span>{format(new Date(item.createdAt), "MMM d, h:mm a")}</span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-slate-500">
+                              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-muted-foreground">
                                 {reportId ? (
                                   <><Eye className="w-3.5 h-3.5" /> Review</>
                                 ) : quizId ? (
@@ -708,15 +710,15 @@ export default function TutorDashboard() {
 
                 {/* Intervention Queue */}
                 <div className={`${GP} lg:col-span-3`}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-r from-rose-500/[0.06] to-transparent pointer-events-none" />
                     <div className="flex items-center gap-2.5 relative">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-rose-500/15 border border-rose-500/20">
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
                       </div>
                       <div>
-                        <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Students who are slipping or stalled — auto-populated from scores and completion.</p>
+                        <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Students who are slipping or stalled — auto-populated from scores and completion.</p>
                       </div>
                     </div>
                     <Link href="/tutor/students">
@@ -730,7 +732,7 @@ export default function TutorDashboard() {
                     if (atRisk.length === 0) return (
                       <div className="px-5 py-10 text-center">
                         <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
-                        <p className="text-[11px] text-slate-600 font-medium">No students flagged — great work!</p>
+                        <p className="text-[11px] text-muted-foreground font-medium">No students flagged — great work!</p>
                       </div>
                     );
                     return (
@@ -739,16 +741,16 @@ export default function TutorDashboard() {
                           const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
                           const insight = getInsightChip(s.studentName);
                           return (
-                            <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
+                            <div key={s.studentId} className="px-5 py-3 flex items-start gap-3 hover:bg-foreground/[0.03] transition-colors relative" style={{ borderLeft: `3px solid ${borderColor}` }}>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-[12px] text-slate-100 font-semibold truncate">{s.studentName}</p>
+                                  <p className="text-[12px] text-foreground font-semibold truncate">{s.studentName}</p>
                                   <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
                                 </div>
                                 {insight && (
                                   <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
                                 )}
-                                <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                                   {s.weakTopics.length > 0 && <span>Weak subjects: {s.weakTopics.slice(0, 2).join(", ")}</span>}
                                   {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
                                 </div>
@@ -766,13 +768,13 @@ export default function TutorDashboard() {
 
                 {/* Pending Submissions — prominent right panel */}
                 <div className={`${GP} lg:col-span-2`}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
                     <div className="flex items-center gap-2.5 relative">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
                         <Clock className="w-3.5 h-3.5 text-amber-400" />
                       </div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
+                      <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
                     </div>
                     <div className="relative flex items-center gap-2">
                       {(stats?.pendingAssignments?.length ?? 0) > 0 && (
@@ -790,7 +792,7 @@ export default function TutorDashboard() {
                   {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
                     <div className="px-5 py-8 text-center">
                       <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
-                      <p className="text-[11px] text-slate-600 font-medium">No pending work</p>
+                      <p className="text-[11px] text-muted-foreground font-medium">No pending work</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
@@ -799,15 +801,15 @@ export default function TutorDashboard() {
                         return (
                           <div key={pa.assignmentId} className="px-5 py-2.5 flex items-center gap-3" data-testid={`pending-assignment-${pa.assignmentId}`}>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[11px] text-slate-200 font-medium truncate">{pa.studentName}</p>
-                              <p className="text-[10px] text-slate-600 truncate">{pa.quizTitle}</p>
+                              <p className="text-[11px] text-foreground font-medium truncate">{pa.studentName}</p>
+                              <p className="text-[10px] text-muted-foreground truncate">{pa.quizTitle}</p>
                             </div>
                             {isOverdue ? (
                               <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
                             ) : pa.dueDate ? (
                               <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
                             ) : (
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-800/40 px-1.5 py-0.5 rounded border border-white/[0.05]">Pending</span>
+                              <span className="text-[9px] font-bold text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded border border-border/50">Pending</span>
                             )}
                           </div>
                         );
@@ -823,14 +825,14 @@ export default function TutorDashboard() {
                ══════════════════════════════════════════════════════ */}
             <FadeInSection>
               <div className={`${GP}`}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06]">
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     </div>
                     <div>
-                      <h3 className="text-[13px] font-bold text-slate-100 tracking-wide">Student Flags</h3>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Questions your students flagged for review — across all assessments.</p>
+                      <h3 className="text-[13px] font-bold text-foreground tracking-wide">Student Flags</h3>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Questions your students flagged for review — across all assessments.</p>
                     </div>
                   </div>
                 </div>
@@ -847,19 +849,19 @@ export default function TutorDashboard() {
               <SectionHeader icon={Radar} title="Cohort Performance Overview" subtitle="Averages across all subjects and assignment completion" />
               <div className="grid grid-cols-1 lg:grid-cols-10 gap-5">
                 <ChartCard className="lg:col-span-4">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Subject Radar</p>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3">Subject Radar</p>
                   <div style={{ height: 280 }}>
                     <CohortRadarChart stats={stats!} />
                   </div>
                 </ChartCard>
                 <ChartCard className="lg:col-span-2 flex flex-col items-center justify-center">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 self-start">Completion</p>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2 self-start">Completion</p>
                   <div style={{ height: 220, width: "100%" }}>
                     <CompletionDonutChart stats={stats!} />
                   </div>
                 </ChartCard>
                 <ChartCard className="lg:col-span-4">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Performance Trend</p>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3">Performance Trend</p>
                   <div style={{ height: 280 }}>
                     <PerformanceTrendAreaChart stats={stats!} />
                   </div>
@@ -886,9 +888,9 @@ export default function TutorDashboard() {
               <SectionHeader icon={Users} title="Students" subtitle={`${studentPlaques.length} students in your cohort`} />
               {studentPlaques.length === 0 ? (
                 <div className={`${GP} px-6 py-16 text-center`}>
-                  <Users className="w-12 h-12 mx-auto text-slate-700 mb-4" />
-                  <p className="text-sm text-slate-400 font-medium">No students yet</p>
-                  <p className="text-xs text-slate-600 mt-1">Go to the Students tab to adopt students</p>
+                  <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-sm text-muted-foreground font-medium">No students yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Go to the Students tab to adopt students</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="student-plaque-grid">
@@ -946,13 +948,13 @@ export default function TutorDashboard() {
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
               <div className={GP}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
                   <div className="flex items-center gap-2.5 relative">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
                       <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
-                    <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
+                    <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
                   </div>
                   <Link href="/tutor/assessments">
                     <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
@@ -964,8 +966,8 @@ export default function TutorDashboard() {
                   </div>
                 ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 && (stats?.recentSubmissions?.length ?? 0) === 0 ? (
                   <div className="px-5 py-8 text-center">
-                    <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
-                    <p className="text-[11px] text-slate-600 font-medium">No assessments yet</p>
+                    <BookOpen className="w-7 h-7 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-[11px] text-muted-foreground font-medium">No assessments yet</p>
                     <Link href="/tutor/assessments/new">
                       <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
@@ -976,13 +978,13 @@ export default function TutorDashboard() {
                       const sc = getSubjectColor(sub.subject);
                       const SubIcon = getSubjectIcon(sub.subject);
                       return (
-                        <div key={sub.reportId} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors">
+                        <div key={sub.reportId} className="px-5 py-2.5 flex items-center gap-3 hover:bg-foreground/[0.03] transition-colors">
                           <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
                             <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-medium text-slate-200 truncate">{sub.quizTitle}</p>
-                            <p className="text-[10px] text-slate-600">{sub.studentName} &middot; {format(new Date(sub.createdAt), "MMM d, yyyy")}</p>
+                            <p className="text-[11px] font-medium text-foreground truncate">{sub.quizTitle}</p>
+                            <p className="text-[10px] text-muted-foreground">{sub.studentName} &middot; {format(new Date(sub.createdAt), "MMM d, yyyy")}</p>
                           </div>
                           <span className={`text-[11px] font-bold tabular-nums ${sub.score >= 70 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-rose-400"}`}>
                             {sub.score}%
@@ -993,8 +995,8 @@ export default function TutorDashboard() {
                   </div>
                 ) : tutorQuizzes.length === 0 ? (
                   <div className="px-5 py-8 text-center">
-                    <BookOpen className="w-7 h-7 mx-auto text-slate-700 mb-2" />
-                    <p className="text-[11px] text-slate-600 font-medium">No assessments to show</p>
+                    <BookOpen className="w-7 h-7 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-[11px] text-muted-foreground font-medium">No assessments to show</p>
                     <Link href="/tutor/assessments/new">
                       <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
@@ -1005,13 +1007,13 @@ export default function TutorDashboard() {
                       const sc = getSubjectColor(quiz.subject);
                       const SubIcon = getSubjectIcon(quiz.subject);
                       return (
-                        <div key={quiz.id} className="px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
+                        <div key={quiz.id} className="px-5 py-2.5 flex items-center gap-3 hover:bg-foreground/[0.03] transition-colors group" data-testid={`quiz-tile-${quiz.id}`}>
                           <div className="w-6 h-6 rounded-md flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
                             <SubIcon className="w-3 h-3" style={{ color: sc.hex }} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-medium text-slate-200 truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
-                            <p className="text-[10px] text-slate-600">{quiz.subject || "General"}</p>
+                            <p className="text-[11px] font-medium text-foreground truncate" data-testid={`quiz-title-${quiz.id}`}>{quiz.title}</p>
+                            <p className="text-[10px] text-muted-foreground">{quiz.subject || "General"}</p>
                           </div>
                           <button
                             onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
@@ -1034,15 +1036,15 @@ export default function TutorDashboard() {
             {cohortWeaknesses && cohortWeaknesses.topics.length > 0 && (
               <FadeInSection>
                 <div className={GP}>
-                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.06] relative overflow-hidden">
+                  <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.04] to-transparent pointer-events-none" />
                     <div className="flex items-center gap-2.5 relative">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
                         <Target className="w-3.5 h-3.5 text-amber-400" />
                       </div>
                       <div>
-                        <h3 className="text-[13px] font-bold text-slate-100 tracking-wide" style={{ letterSpacing: "0.3px" }}>Cohort Weakness Report</h3>
-                        <p className="text-[10px] text-slate-600 font-medium">Topics where multiple students are below 75% mastery &middot; {cohortWeaknesses.studentCount} students</p>
+                        <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Cohort Weakness Report</h3>
+                        <p className="text-[10px] text-muted-foreground font-medium">Topics where multiple students are below 75% mastery &middot; {cohortWeaknesses.studentCount} students</p>
                       </div>
                     </div>
                   </div>
@@ -1051,28 +1053,28 @@ export default function TutorDashboard() {
                     if (struggling.length === 0) return (
                       <div className="px-5 py-10 text-center">
                         <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
-                        <p className="text-[11px] text-slate-600 font-medium">No cohort-wide weaknesses detected</p>
+                        <p className="text-[11px] text-muted-foreground font-medium">No cohort-wide weaknesses detected</p>
                       </div>
                     );
                     return (
                       <div className="divide-y divide-white/[0.03] max-h-[400px] overflow-y-auto">
                         {struggling.slice(0, 10).map((t, i) => {
                           const severity = t.struggleRate >= 75 ? "critical" : t.struggleRate >= 50 ? "high" : t.struggleRate >= 25 ? "moderate" : "low";
-                          const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                          const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-muted-foreground bg-slate-500/10 border-slate-500/20";
                           const barColor = t.avgPercent >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.avgPercent >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
                           return (
-                            <div key={i} className="px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+                            <div key={i} className="px-5 py-3.5 hover:bg-foreground/[0.03] transition-colors">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <span className="text-[12px] font-semibold text-slate-200 truncate">{t.topic}</span>
-                                  {t.subtopic && <span className="text-[10px] text-slate-500 truncate">{t.subtopic}</span>}
+                                  <span className="text-[12px] font-semibold text-foreground truncate">{t.topic}</span>
+                                  {t.subtopic && <span className="text-[10px] text-muted-foreground truncate">{t.subtopic}</span>}
                                   <Badge className={`text-[8px] font-bold border shrink-0 ${severityColor}`}>{severity}</Badge>
                                 </div>
-                                <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{t.subject}</span>
+                                <span className="text-[10px] text-muted-foreground font-medium shrink-0 ml-2">{t.subject}</span>
                               </div>
                               <div className="flex items-center gap-4 mb-2">
                                 <div className="flex-1">
-                                  <div className="h-[5px] rounded-full bg-slate-800/60 overflow-hidden">
+                                  <div className="h-[5px] rounded-full bg-muted/60 overflow-hidden">
                                     <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.avgPercent}%`, background: barColor }} />
                                   </div>
                                 </div>
@@ -1080,16 +1082,16 @@ export default function TutorDashboard() {
                                   {t.avgPercent}%
                                 </span>
                               </div>
-                              <div className="flex items-center gap-4 text-[10px] text-slate-500">
+                              <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
                                 <span>{t.belowThreshold}/{t.testedStudents} students struggling</span>
-                                <span className="text-slate-700">&middot;</span>
+                                <span className="text-muted-foreground">&middot;</span>
                                 <span>{t.totalQuestions} questions attempted</span>
-                                <span className="text-slate-700">&middot;</span>
+                                <span className="text-muted-foreground">&middot;</span>
                                 <span className={t.accuracy >= 70 ? "text-emerald-400" : t.accuracy >= 50 ? "text-amber-400" : "text-red-400"}>{t.accuracy}% accuracy</span>
                                 {t.strugglingStudents.length > 0 && (
                                   <>
-                                    <span className="text-slate-700">&middot;</span>
-                                    <span className="text-slate-400 truncate">{t.strugglingStudents.join(", ")}</span>
+                                    <span className="text-muted-foreground">&middot;</span>
+                                    <span className="text-muted-foreground truncate">{t.strugglingStudents.join(", ")}</span>
                                   </>
                                 )}
                               </div>
@@ -1110,17 +1112,17 @@ export default function TutorDashboard() {
 
       {/* ── ASSIGN MODAL ──────────────────────────────────────── */}
       {showAssignModal !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-lg p-4" onClick={() => setShowAssignModal(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-lg p-4" onClick={() => setShowAssignModal(null)}>
           <div className={`${GP} max-w-lg w-full max-h-[80vh] overflow-y-auto p-6`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
-              <h3 className="text-base font-bold text-slate-100">Assign Assessment</h3>
-              <button onClick={() => setShowAssignModal(null)} className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/[0.04] transition-colors" data-testid="button-close-assign-modal">
+              <h3 className="text-base font-bold text-foreground">Assign Assessment</h3>
+              <button onClick={() => setShowAssignModal(null)} className="text-muted-foreground hover:text-foreground/80 p-1.5 rounded-lg hover:bg-foreground/[0.05] transition-colors" data-testid="button-close-assign-modal">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-[11px] text-slate-500 mb-4 font-medium">Select students:</p>
+            <p className="text-[11px] text-muted-foreground mb-4 font-medium">Select students:</p>
             {adoptedStudents.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">No students yet. Go to the Students tab to add students first.</p>
+              <p className="text-sm text-muted-foreground text-center py-8">No students yet. Go to the Students tab to add students first.</p>
             ) : (
               <>
                 <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
@@ -1135,33 +1137,33 @@ export default function TutorDashboard() {
                         className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left ${
                           selectedStudentIds.has(student.id)
                             ? "bg-indigo-500/12 border border-indigo-500/25"
-                            : "bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04]"
+                            : "bg-foreground/[0.03] border border-border/50 hover:bg-foreground/[0.05]"
                         }`}
                         data-testid={`assign-student-${student.id}`}
                       >
                         <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                          selectedStudentIds.has(student.id) ? "bg-indigo-500 border-indigo-500" : "border-slate-600"
+                          selectedStudentIds.has(student.id) ? "bg-indigo-500 border-indigo-500" : "border-border"
                         }`}>
                           {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
                         </div>
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[9px] font-bold text-slate-300 bg-white/[0.04] border border-white/[0.06] shrink-0">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[9px] font-bold text-foreground/80 bg-foreground/[0.05] border border-border/60 shrink-0">
                           {si}
                         </div>
-                        <p className="text-[13px] font-medium text-slate-200">{studentLabel}</p>
+                        <p className="text-[13px] font-medium text-foreground">{studentLabel}</p>
                       </button>
                     );
                   })}
                 </div>
-                <div className="mt-4 p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                  <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-2">
+                <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
+                  <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
                     <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date <span className="text-slate-600">(optional)</span>
+                    Due Date <span className="text-muted-foreground">(optional)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-[#0c1222]/80 border border-white/[0.06] text-sm text-slate-200 focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20 [color-scheme:dark]"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
                     data-testid="input-due-date"
                   />
                 </div>
@@ -1216,7 +1218,7 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
 
   const si = s.studentName.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
   const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
-  const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-slate-500";
+  const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
   const avatarGradient = AVATAR_GRADIENTS[index % AVATAR_GRADIENTS.length];
 
   return (
@@ -1245,7 +1247,7 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
               <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${s.chip.dot}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-slate-100 truncate leading-tight">{s.studentName}</p>
+              <p className="text-[13px] font-semibold text-foreground truncate leading-tight">{s.studentName}</p>
               <div className="flex items-center gap-2 mt-1">
                 <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
                 <TrendIcon className={`w-3.5 h-3.5 ${trendColor}`} />
@@ -1257,10 +1259,10 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
           {s.assigned === 0 && s.completed === 0 ? (
             /* Empty state for students with no work */
             <div className="flex-1 flex flex-col items-center justify-center text-center py-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-800/40 border border-white/[0.05] mb-2.5">
-                <BookOpen className="w-4 h-4 text-slate-600" />
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-muted/40 border border-border/50 mb-2.5">
+                <BookOpen className="w-4 h-4 text-muted-foreground" />
               </div>
-              <p className="text-[11px] text-slate-500 font-medium mb-1">No assignments yet</p>
+              <p className="text-[11px] text-muted-foreground font-medium mb-1">No assignments yet</p>
               <Link href="/tutor/assessments">
                 <span className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors">
                   Assign work &rarr;
@@ -1271,17 +1273,17 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
             <div className="space-y-3.5 flex-1">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Workload</span>
+                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">Workload</span>
                 </div>
                 <WorkloadBar assigned={s.assigned} completed={s.completed} awaiting={s.awaiting} />
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Completion</span>
+                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">Completion</span>
                   <span className={`text-[10px] font-bold tabular-nums ${s.coveragePct >= 75 ? "glow-green" : s.coveragePct >= 50 ? "glow-amber" : "text-cyan-400"}`}>{s.coveragePct}%</span>
                 </div>
-                <div className="h-[6px] rounded-full bg-slate-800/50 overflow-hidden">
+                <div className="h-[6px] rounded-full bg-muted/50 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-700 progress-shimmer"
                     style={{
@@ -1298,7 +1300,7 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.08em]">Performance</span>
+                  <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">Performance</span>
                   {s.lastScore !== null && (
                     <span className={`text-[11px] font-bold tabular-nums ${s.lastScore >= 75 ? "glow-green" : s.lastScore >= 50 ? "glow-amber" : "glow-red"}`}>{s.lastScore}%</span>
                   )}
@@ -1311,18 +1313,18 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
 
         {/* ── BACK ──────────────────────────────────────────── */}
         <div className={`plaque-back ${GP} p-5 h-full flex flex-col overflow-y-auto`}>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em] mb-3">{s.studentName}</p>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em] mb-3">{s.studentName}</p>
 
           {/* Last assessment info */}
-          <div className="text-[10px] text-slate-500 space-y-1.5 mb-3">
+          <div className="text-[10px] text-muted-foreground space-y-1.5 mb-3">
             {s.lastActivity && (
-              <p className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-slate-600 shrink-0" /> Last active {formatDistanceToNow(new Date(s.lastActivity), { addSuffix: true })}</p>
+              <p className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-muted-foreground shrink-0" /> Last active {formatDistanceToNow(new Date(s.lastActivity), { addSuffix: true })}</p>
             )}
             {s.lastSubmission && (
-              <p className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-slate-600 shrink-0" /> {s.lastSubmission.score}% &middot; {s.lastSubmission.quizTitle}</p>
+              <p className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-muted-foreground shrink-0" /> {s.lastSubmission.score}% &middot; {s.lastSubmission.quizTitle}</p>
             )}
             {!s.lastActivity && !s.lastSubmission && (
-              <p className="text-[10px] text-slate-600 font-medium">No submissions yet</p>
+              <p className="text-[10px] text-muted-foreground font-medium">No submissions yet</p>
             )}
           </div>
 
@@ -1334,13 +1336,13 @@ function StudentPlaque({ student: s, index = 0 }: { student: PlaqueStudent; inde
               </span>
             </Link>
             <Link href="/tutor/assessments">
-              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-slate-400 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all cursor-pointer">
+              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-muted-foreground bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.06] transition-all cursor-pointer">
                 <Send className="w-3 h-3" /> Assign
               </span>
             </Link>
             {s.lastSubmission && (
               <Link href={`/soma/review/${s.lastSubmission.reportId}`}>
-                <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-slate-400 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all cursor-pointer">
+                <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-muted-foreground bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.06] transition-all cursor-pointer">
                   <ExternalLink className="w-3 h-3" /> Review
                 </span>
               </Link>

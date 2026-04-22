@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Mail, ArrowLeft, Loader2, CheckCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -49,10 +50,13 @@ export default function ForgotPassword() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center px-4 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(139,92,246,0.15),transparent)]">
+      <div className="fixed top-4 right-4 z-30">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <Link href="/login">
           <span
-            className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-violet-400 transition-colors cursor-pointer mb-8 block"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-violet-400 transition-colors cursor-pointer mb-8 block"
             data-testid="link-back-to-login"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -61,19 +65,19 @@ export default function ForgotPassword() {
         </Link>
 
         <div className="text-center mb-8">
-          <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-16 w-auto object-contain mx-auto mb-4" />
+          <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-16 w-auto object-contain mx-auto mb-4 brightness-0 dark:brightness-100" />
           <h1 className="text-2xl font-bold gradient-text drop-shadow-[0_0_15px_rgba(139,92,246,0.5)]">
             SOMA
           </h1>
-          <p className="text-xs text-slate-400 mt-1 tracking-widest uppercase">Password Recovery</p>
+          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">Password Recovery</p>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <div className="bg-card/50 backdrop-blur-md border border-border/50 rounded-2xl p-8 shadow-xl">
           {sent ? (
             <div className="text-center py-4" data-testid="status-reset-sent">
               <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
-              <h2 className="text-lg font-semibold text-white mb-2">Check your inbox</h2>
-              <p className="text-sm text-slate-400 mb-6">
+              <h2 className="text-lg font-semibold text-foreground mb-2">Check your inbox</h2>
+              <p className="text-sm text-muted-foreground mb-6">
                 If <span className="text-violet-300 font-medium">{email}</span> is registered, you'll receive a password reset link shortly. Check your spam folder if it doesn't arrive within a minute.
               </p>
               <Link href="/login">
@@ -89,17 +93,17 @@ export default function ForgotPassword() {
           ) : (
             <>
               <div className="mb-6">
-                <h2 className="text-lg font-semibold text-white">Forgot your password?</h2>
-                <p className="text-sm text-slate-400 mt-1">
+                <h2 className="text-lg font-semibold text-foreground">Forgot your password?</h2>
+                <p className="text-sm text-muted-foreground mt-1">
                   Enter the email address linked to your account and we'll send you a reset link.
                 </p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">Email address</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Email address</label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type="email"
                       value={email}
@@ -130,7 +134,7 @@ export default function ForgotPassword() {
                 </button>
               </form>
 
-              <p className="text-center text-xs text-slate-400 mt-6">
+              <p className="text-center text-xs text-muted-foreground mt-6">
                 Remember your password?{" "}
                 <Link href="/login">
                   <span className="text-violet-400 hover:text-violet-300 transition-colors font-medium cursor-pointer" data-testid="link-sign-in">

@@ -95,10 +95,10 @@ export function renderLatex(text: string) {
     // Render code blocks with monospace styling
     if (segment.startsWith('```') && segment.endsWith('```')) {
       const code = segment.slice(3, -3).replace(/^\w+\n/, '');
-      return <pre key={si} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-4 py-3 my-2 text-sm font-mono text-emerald-300 overflow-x-auto whitespace-pre-wrap">{code}</pre>;
+      return <pre key={si} className="bg-muted/60 border border-border/50 rounded-lg px-4 py-3 my-2 text-sm font-mono text-emerald-300 overflow-x-auto whitespace-pre-wrap">{code}</pre>;
     }
     if (segment.startsWith('`') && segment.endsWith('`') && segment.length > 2) {
-      return <code key={si} className="bg-slate-800/50 border border-slate-700/40 rounded px-1.5 py-0.5 text-sm font-mono text-cyan-300">{segment.slice(1, -1)}</code>;
+      return <code key={si} className="bg-muted/50 border border-border/40 rounded px-1.5 py-0.5 text-sm font-mono text-cyan-300">{segment.slice(1, -1)}</code>;
     }
 
     // Handle LaTeX delimiters within non-code segments

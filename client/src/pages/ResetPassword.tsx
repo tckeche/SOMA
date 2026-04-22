@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Lock, Eye, EyeOff, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type PageState = "loading" | "ready" | "success" | "invalid";
 
@@ -121,29 +122,32 @@ export default function ResetPassword() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center px-4 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(139,92,246,0.15),transparent)]">
+      <div className="fixed top-4 right-4 z-30">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-16 w-auto object-contain mx-auto mb-4" />
+          <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-16 w-auto object-contain mx-auto mb-4 brightness-0 dark:brightness-100" />
           <h1 className="text-2xl font-bold gradient-text drop-shadow-[0_0_15px_rgba(139,92,246,0.5)]">
             SOMA
           </h1>
-          <p className="text-xs text-slate-400 mt-1 tracking-widest uppercase">Reset Password</p>
+          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">Reset Password</p>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <div className="bg-card/50 backdrop-blur-md border border-border/50 rounded-2xl p-8 shadow-xl">
 
           {pageState === "loading" && (
             <div className="text-center py-8" data-testid="status-verifying">
               <Loader2 className="w-8 h-8 text-violet-400 mx-auto animate-spin mb-3" />
-              <p className="text-sm text-slate-400">Verifying your reset link…</p>
+              <p className="text-sm text-muted-foreground">Verifying your reset link…</p>
             </div>
           )}
 
           {pageState === "invalid" && (
             <div className="text-center py-4" data-testid="status-invalid-token">
               <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-              <h2 className="text-lg font-semibold text-white mb-2">Link expired or invalid</h2>
-              <p className="text-sm text-slate-400 mb-6">
+              <h2 className="text-lg font-semibold text-foreground mb-2">Link expired or invalid</h2>
+              <p className="text-sm text-muted-foreground mb-6">
                 This password reset link has expired or already been used. Please request a new one.
               </p>
               <Link href="/forgot-password">
@@ -155,7 +159,7 @@ export default function ResetPassword() {
                   Request New Link
                 </button>
               </Link>
-              <p className="text-center text-xs text-slate-400 mt-4">
+              <p className="text-center text-xs text-muted-foreground mt-4">
                 <Link href="/login">
                   <span className="text-violet-400 hover:text-violet-300 transition-colors cursor-pointer" data-testid="link-back-to-login">
                     Back to login
@@ -168,23 +172,23 @@ export default function ResetPassword() {
           {pageState === "success" && (
             <div className="text-center py-4" data-testid="status-password-updated">
               <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
-              <h2 className="text-lg font-semibold text-white mb-2">Password updated!</h2>
-              <p className="text-sm text-slate-400">Redirecting you to the login page…</p>
+              <h2 className="text-lg font-semibold text-foreground mb-2">Password updated!</h2>
+              <p className="text-sm text-muted-foreground">Redirecting you to the login page…</p>
             </div>
           )}
 
           {pageState === "ready" && (
             <>
               <div className="mb-6">
-                <h2 className="text-lg font-semibold text-white">Set a new password</h2>
-                <p className="text-sm text-slate-400 mt-1">Choose a strong password of at least 8 characters.</p>
+                <h2 className="text-lg font-semibold text-foreground">Set a new password</h2>
+                <p className="text-sm text-muted-foreground mt-1">Choose a strong password of at least 8 characters.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4" data-testid="form-reset-password">
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">New Password</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">New Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type={showNew ? "text" : "password"}
                       value={newPassword}
@@ -199,7 +203,7 @@ export default function ResetPassword() {
                     <button
                       type="button"
                       onClick={() => setShowNew(!showNew)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-300 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-foreground/80 transition-colors"
                       data-testid="button-toggle-new-password"
                     >
                       {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -208,9 +212,9 @@ export default function ResetPassword() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">Confirm New Password</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Confirm New Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type={showConfirm ? "text" : "password"}
                       value={confirmPassword}
@@ -224,7 +228,7 @@ export default function ResetPassword() {
                     <button
                       type="button"
                       onClick={() => setShowConfirm(!showConfirm)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-300 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-foreground/80 transition-colors"
                       data-testid="button-toggle-confirm-password"
                     >
                       {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

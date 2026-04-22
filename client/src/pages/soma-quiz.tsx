@@ -29,6 +29,7 @@ import {
   isResumableAutosave,
   type SaveStatus,
 } from "@/lib/quizAutosave";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export type StudentQuestion = {
   id: number;
@@ -48,26 +49,26 @@ function LoadingSkeleton() {
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-violet-500/20 animate-pulse" />
             <div className="flex-1">
-              <Skeleton className="h-6 w-48 mb-2 bg-white/10" />
-              <Skeleton className="h-4 w-32 bg-white/10" />
+              <Skeleton className="h-6 w-48 mb-2 bg-foreground/10" />
+              <Skeleton className="h-4 w-32 bg-foreground/10" />
             </div>
           </div>
           <div className="space-y-4">
-            <Skeleton className="h-8 w-full bg-white/10" />
-            <Skeleton className="h-6 w-3/4 bg-white/10" />
+            <Skeleton className="h-8 w-full bg-foreground/10" />
+            <Skeleton className="h-6 w-3/4 bg-foreground/10" />
           </div>
         </div>
         <div className="grid gap-3">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="glass-card p-5 animate-pulse" style={{ animationDelay: `${i * 100}ms` }}>
-              <Skeleton className="h-5 w-full bg-white/10" />
+              <Skeleton className="h-5 w-full bg-foreground/10" />
             </div>
           ))}
         </div>
         <div className="mt-8 flex justify-center">
           <div className="flex items-center gap-2">
             <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
-            <span className="text-sm text-slate-400">Loading assessment...</span>
+            <span className="text-sm text-muted-foreground">Loading assessment...</span>
           </div>
         </div>
       </div>
@@ -82,8 +83,8 @@ function ErrorView({ message }: { message: string }) {
         <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-5 border border-red-500/30">
           <AlertCircle className="w-8 h-8 text-red-400" />
         </div>
-        <h2 className="text-xl font-bold mb-2 text-slate-100">Failed to Load</h2>
-        <p className="text-sm text-slate-400 mb-6">{message}</p>
+        <h2 className="text-xl font-bold mb-2 text-foreground">Failed to Load</h2>
+        <p className="text-sm text-muted-foreground mb-6">{message}</p>
         <Link href="/dashboard">
           <Button className="glow-button" data-testid="button-error-back">
             <Home className="w-4 h-4 mr-1.5" />
@@ -115,13 +116,13 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: s
         <h2 className="text-2xl font-bold mb-1 gradient-text" data-testid="text-results-title">
           Assessment Complete
         </h2>
-        <p className="text-sm text-slate-400 mb-6">{quizTitle}</p>
+        <p className="text-sm text-muted-foreground mb-6">{quizTitle}</p>
 
-        <div className="bg-white/5 rounded-2xl p-6 border border-white/10 mb-4">
+        <div className="bg-foreground/5 rounded-2xl p-6 border border-border/50 mb-4">
           <p className={`text-5xl font-black ${tier.color}`} style={{ filter: `drop-shadow(0 0 15px ${tier.glow})` }} data-testid="text-grade-percentage">
             {percentage}%
           </p>
-          <p className="text-sm text-slate-400 mt-2" data-testid="text-grade-score">
+          <p className="text-sm text-muted-foreground mt-2" data-testid="text-grade-score">
             {totalScore} / {maxPossibleScore} marks
           </p>
           <span className={`inline-block mt-3 text-xs font-semibold px-3 py-1 rounded-full ${tier.bg} ${tier.color} ${tier.border} border`} data-testid="badge-performance-tier">
@@ -129,10 +130,10 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: s
           </span>
         </div>
 
-        <p className="text-sm text-slate-300 mb-2" data-testid="text-encouragement">
+        <p className="text-sm text-foreground/80 mb-2" data-testid="text-encouragement">
           {tier.message}
         </p>
-        <p className="text-xs text-slate-500 italic mb-8" data-testid="text-wait-message">
+        <p className="text-xs text-muted-foreground italic mb-8" data-testid="text-wait-message">
           Your detailed report is being generated. Check your dashboard shortly for feedback.
         </p>
 
@@ -177,22 +178,22 @@ function SummaryView({
             </div>
             <div>
               <h2 className="text-xl font-bold gradient-text" data-testid="text-summary-title">Assessment Summary</h2>
-              <p className="text-xs text-slate-400">{quiz.title}</p>
+              <p className="text-xs text-muted-foreground">{quiz.title}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-violet-300" data-testid="text-summary-answered">{answeredCount}</p>
-              <p className="text-xs text-slate-400">Answered</p>
+              <p className="text-xs text-muted-foreground">Answered</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
-              <p className="text-2xl font-bold text-slate-300" data-testid="text-summary-total">{questions.length}</p>
-              <p className="text-xs text-slate-400">Total</p>
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
+              <p className="text-2xl font-bold text-foreground/80" data-testid="text-summary-total">{questions.length}</p>
+              <p className="text-xs text-muted-foreground">Total</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-cyan-300" data-testid="text-summary-marks">{totalMarks}</p>
-              <p className="text-xs text-slate-400">Marks</p>
+              <p className="text-xs text-muted-foreground">Marks</p>
             </div>
           </div>
 
@@ -205,19 +206,19 @@ function SummaryView({
                   className={`flex items-center gap-3 rounded-lg p-3 border transition-all ${
                     isAnswered
                       ? "bg-blue-500/10 border-blue-500/40 ring-2 ring-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                      : "bg-slate-800/40 border-slate-700/40 opacity-50 grayscale"
+                      : "bg-muted/40 border-border/40 opacity-50 grayscale"
                   }`}
                 >
-                  <span className={`text-xs font-mono w-6 text-right ${isAnswered ? "text-cyan-400" : "text-slate-600"}`}>{idx + 1}</span>
+                  <span className={`text-xs font-mono w-6 text-right ${isAnswered ? "text-cyan-400" : "text-muted-foreground"}`}>{idx + 1}</span>
                   {isAnswered ? (
                     <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
                   ) : (
-                    <Circle className="w-4 h-4 text-slate-600 shrink-0" />
+                    <Circle className="w-4 h-4 text-muted-foreground shrink-0" />
                   )}
-                  <span className={`text-sm truncate flex-1 ${isAnswered ? "text-slate-200" : "text-slate-400"}`}>
+                  <span className={`text-sm truncate flex-1 ${isAnswered ? "text-foreground" : "text-muted-foreground"}`}>
                     {q.stem.slice(0, 60)}{q.stem.length > 60 ? "..." : ""}
                   </span>
-                  <Badge className={`text-xs ${isAnswered ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/30" : "bg-slate-800/60 text-slate-600 border-slate-700/40"}`}>
+                  <Badge className={`text-xs ${isAnswered ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/30" : "bg-muted/60 text-muted-foreground border-border/40"}`}>
                     [{q.marks}]
                   </Badge>
                 </div>
@@ -538,11 +539,11 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   };
 
   const previewBanner = isPreview ? (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 shadow-lg" data-testid="banner-preview-mode">
+    <div className="fixed top-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-md border-b border-card-border shadow-lg" data-testid="banner-preview-mode">
       <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between">
         <Button
           size="default"
-          className="hover:bg-slate-800 bg-transparent text-slate-300 transition-colors rounded-lg flex items-center gap-2"
+          className="hover:bg-muted bg-transparent text-foreground/80 transition-colors rounded-lg flex items-center gap-2"
           onClick={(props as PreviewProps).onExitPreview}
           data-testid="button-exit-preview"
         >
@@ -555,7 +556,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         </div>
         <Button
           size="default"
-          className="hover:bg-slate-800 bg-transparent text-slate-400 transition-colors rounded-lg flex items-center gap-2"
+          className="hover:bg-muted bg-transparent text-muted-foreground transition-colors rounded-lg flex items-center gap-2"
           onClick={() => { (props as PreviewProps).onExitPreview(); setLocation("/tutor/assessments"); }}
           data-testid="button-preview-to-dashboard"
         >
@@ -587,8 +588,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-5 border border-amber-500/30">
             <AlertCircle className="w-8 h-8 text-amber-400" />
           </div>
-          <h2 className="text-xl font-bold mb-2 text-slate-100">Already Submitted</h2>
-          <p className="text-sm text-slate-400 mb-6">You have already submitted this assessment. Check your dashboard for results.</p>
+          <h2 className="text-xl font-bold mb-2 text-foreground">Already Submitted</h2>
+          <p className="text-sm text-muted-foreground mb-6">You have already submitted this assessment. Check your dashboard for results.</p>
           <Link href="/dashboard">
             <Button className="glow-button" data-testid="button-already-submitted-back">
               <Home className="w-4 h-4 mr-1.5" />
@@ -652,7 +653,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             <Button
               variant="ghost"
               size="default"
-              className="text-slate-400 hover:text-slate-200 px-2 sm:px-3"
+              className="text-muted-foreground hover:text-foreground px-2 sm:px-3"
               onClick={(props as PreviewProps).onExitPreview}
               aria-label="Exit preview"
               data-testid="button-preview-back"
@@ -665,7 +666,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
               <Button
                 variant="ghost"
                 size="default"
-                className="text-slate-400 hover:text-slate-200 px-2 sm:px-3"
+                className="text-muted-foreground hover:text-foreground px-2 sm:px-3"
                 aria-label="Exit assessment"
                 data-testid="button-soma-back"
               >
@@ -696,15 +697,16 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             <Badge className="bg-violet-500/10 text-violet-300 border-violet-500/30" data-testid="badge-progress">
               {currentIndex + 1} / {questions.length}
             </Badge>
-            <Badge className="bg-white/5 text-slate-400 border-white/10 hidden sm:inline-flex" data-testid="badge-marks">
+            <Badge className="bg-foreground/5 text-muted-foreground border-border/50 hidden sm:inline-flex" data-testid="badge-marks">
               {totalMarks} marks
             </Badge>
+            <ThemeToggle size="sm" />
           </div>
         </div>
 
         {!isPreview && (
           <div
-            className="sticky top-2 z-20 mb-4 rounded-full bg-slate-900/70 border border-slate-800 h-2.5 overflow-hidden backdrop-blur"
+            className="sticky top-2 z-20 mb-4 rounded-full bg-card/70 border border-card-border h-2.5 overflow-hidden backdrop-blur"
             role="progressbar"
             aria-label="Answered progress"
             aria-valuenow={answeredCount}
@@ -726,14 +728,14 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 {currentIndex + 1}
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] sm:text-xs text-slate-400 uppercase tracking-wider truncate">Question {currentIndex + 1} of {questions.length}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground uppercase tracking-wider truncate">Question {currentIndex + 1} of {questions.length}</p>
                 <p className="text-[11px] sm:text-xs text-violet-400/70">{currentQuestion.marks} mark{currentQuestion.marks > 1 ? "s" : ""}</p>
               </div>
             </div>
             <FlagQuestionButton questionId={currentQuestion.id} quizId={currentQuestion.quizId} />
           </div>
 
-          <div className="text-base sm:text-lg text-slate-100 leading-relaxed mb-2" data-testid="text-question-stem">
+          <div className="text-base sm:text-lg text-foreground leading-relaxed mb-2" data-testid="text-question-stem">
             <MarkdownRenderer content={currentQuestion.stem} />
           </div>
           {currentQuestion.questionType === "graph" ? (
@@ -742,7 +744,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 <GraphPlot spec={currentQuestion.graphSpec} />
               </div>
             ) : (
-              <div className="mt-6 rounded-2xl border border-slate-700/50 bg-slate-900/60 p-4 text-center text-slate-400 text-sm" data-testid="graph-unavailable">
+              <div className="mt-6 rounded-2xl border border-border/50 bg-card/60 p-4 text-center text-muted-foreground text-sm" data-testid="graph-unavailable">
                 Graph data unavailable for this question.
               </div>
             )
@@ -760,7 +762,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 className={`w-full text-left p-4 sm:p-5 min-h-[60px] rounded-2xl border transition-all duration-200 active:scale-[0.99] ${
                   isSelected
                     ? "bg-violet-500/15 border-violet-500/40 shadow-[0_0_20px_rgba(139,92,246,0.15)]"
-                    : "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
+                    : "bg-foreground/[0.04] border-border/50 hover:bg-foreground/[0.06] hover:border-white/20"
                 }`}
                 data-testid={`button-option-${idx}`}
               >
@@ -768,11 +770,11 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-semibold ${
                     isSelected
                       ? "bg-violet-500/30 text-violet-200 border border-violet-500/50"
-                      : "bg-white/5 text-slate-400 border border-white/10"
+                      : "bg-foreground/5 text-muted-foreground border border-border/50"
                   }`}>
                     {letter}
                   </div>
-                  <div className="text-[15px] sm:text-base text-slate-200 pt-0.5 sm:pt-1 flex-1 leading-relaxed">
+                  <div className="text-[15px] sm:text-base text-foreground pt-0.5 sm:pt-1 flex-1 leading-relaxed">
                     <MarkdownRenderer content={option} />
                   </div>
                 </div>
@@ -785,7 +787,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             stay reachable after scrolling through a long question; inline on
             desktop where vertical space isn't as precious. */}
         <div
-          className="fixed bottom-0 left-0 right-0 z-30 md:static md:z-auto bg-background/85 md:bg-transparent backdrop-blur-md md:backdrop-blur-0 border-t border-white/5 md:border-0 px-3 sm:px-4 md:px-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:py-0 md:mb-8"
+          className="fixed bottom-0 left-0 right-0 z-30 md:static md:z-auto bg-background/85 md:bg-transparent backdrop-blur-md md:backdrop-blur-0 border-t border-border/30 md:border-0 px-3 sm:px-4 md:px-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:py-0 md:mb-8"
           data-testid="quiz-action-bar"
         >
           <div className="max-w-3xl mx-auto flex items-center gap-2 sm:gap-3">
@@ -858,7 +860,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         </div>
 
         <div className="hidden md:block text-center mt-4">
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground">
             {answeredCount} of {questions.length} answered
           </p>
         </div>

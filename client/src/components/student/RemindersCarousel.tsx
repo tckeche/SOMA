@@ -86,11 +86,11 @@ export default function RemindersCarousel({ reminders }: Props) {
           {reminders.map((r) => (
             <div
               key={r.id}
-              className="flex-[0_0_100%] min-w-0 rounded-xl bg-slate-900/60 border border-amber-500/15 p-4"
+              className="flex-[0_0_100%] min-w-0 rounded-xl bg-card/60 border border-amber-500/15 p-4"
               data-testid={`reminder-${r.id}`}
             >
               <p className="text-[10px] uppercase tracking-wider text-amber-400/80 mb-1.5">{r.topic}</p>
-              <p className="text-sm leading-relaxed text-slate-100">{r.text}</p>
+              <p className="text-sm leading-relaxed text-foreground">{r.text}</p>
             </div>
           ))}
         </div>

@@ -7,6 +7,7 @@ import {
   Users, UserPlus, X, Loader2, Check, ChevronRight,
   BookOpen, LogOut, LayoutDashboard, Search, RotateCcw, Mail, AlertTriangle,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface SomaUser {
   id: string;
@@ -156,21 +157,21 @@ export default function TutorStudents() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] backdrop-blur-2xl" style={{ background: "linear-gradient(180deg, rgba(8,13,26,0.92) 0%, rgba(8,13,26,0.85) 100%)" }}>
+      <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/85">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3.5 cursor-pointer group">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-9 w-auto object-contain opacity-90 group-hover:opacity-100 transition-opacity brightness-0 dark:brightness-100" />
               <div>
                 <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
-                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
+                <p className="text-[9px] text-muted-foreground tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>
           <div className="flex items-center gap-5">
             <nav className="hidden md:flex items-center gap-0.5 mr-2">
               <Link href="/tutor">
-                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-dashboard">
+                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground/80 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-dashboard">
                   <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
                 </span>
               </Link>
@@ -178,7 +179,7 @@ export default function TutorStudents() {
                 <Users className="w-3.5 h-3.5" /> Students
               </span>
               <Link href="/tutor/assessments">
-                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-assessments">
+                <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground/80 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-assessments">
                   <BookOpen className="w-3.5 h-3.5" /> Assessments
                 </span>
               </Link>
@@ -191,11 +192,12 @@ export default function TutorStudents() {
                 {initials}
               </div>
               <div className="hidden sm:block">
-                <p className="text-[13px] font-medium text-slate-200 leading-none">{displayName}</p>
+                <p className="text-[13px] font-medium text-foreground leading-none">{displayName}</p>
                 <p className="text-[9px] text-violet-400/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-slate-600 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-white/[0.03]" aria-label="Log out">
+            <ThemeToggle />
+            <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px] rounded-lg hover:bg-foreground/[0.04]" aria-label="Log out">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -213,8 +215,8 @@ export default function TutorStudents() {
       <main className="max-w-[1440px] mx-auto px-6 lg:px-10 py-7 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-slate-100">My Students</h2>
-            <p className="text-sm text-slate-400 mt-1">{adoptedStudents.length} student{adoptedStudents.length !== 1 ? "s" : ""} in your cohort</p>
+            <h2 className="text-2xl font-bold text-foreground">My Students</h2>
+            <p className="text-sm text-muted-foreground mt-1">{adoptedStudents.length} student{adoptedStudents.length !== 1 ? "s" : ""} in your cohort</p>
           </div>
           <button
             onClick={() => { setShowAdoptModal(true); setSelectedStudentIds(new Set()); setAdoptSearchQuery(""); }}
@@ -228,19 +230,19 @@ export default function TutorStudents() {
 
         {(adoptedStudents.length > 3 || searchQuery) && (
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by name or email..."
-              className="w-full h-12 pl-11 pr-4 rounded-xl bg-slate-900/60 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40"
+              className="w-full h-12 pl-11 pr-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
               data-testid="input-search-students"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-foreground/80"
                 aria-label="Clear search"
                 data-testid="button-clear-search-students"
               >
@@ -256,9 +258,9 @@ export default function TutorStudents() {
           </div>
         ) : filteredStudents.length === 0 ? (
           <div className={`${GP} text-center py-14 px-6`}>
-            <Users className="w-10 h-10 mx-auto text-slate-700 mb-3" />
-            <p className="text-[13px] text-slate-400 font-medium">{searchQuery ? "No matching students found" : "No students yet"}</p>
-            {!searchQuery && <p className="text-[11px] text-slate-600 mt-1">Click "Add Students" to add students to your cohort</p>}
+            <Users className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+            <p className="text-[13px] text-muted-foreground font-medium">{searchQuery ? "No matching students found" : "No students yet"}</p>
+            {!searchQuery && <p className="text-[11px] text-muted-foreground mt-1">Click "Add Students" to add students to your cohort</p>}
           </div>
         ) : (
           <div className="grid gap-3">
@@ -268,16 +270,16 @@ export default function TutorStudents() {
               return (
                 <div
                   key={student.id}
-                  className="group flex items-center gap-4 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl px-5 py-4 hover:border-slate-700 transition-all"
+                  className="group flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-4 hover:border-border transition-all"
                   data-testid={`student-card-${student.id}`}
                 >
                   <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs font-bold text-emerald-300 shrink-0">
                     {si}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate">{name}</p>
+                    <p className="text-sm font-medium text-foreground truncate">{name}</p>
                     {student.email && (
-                      <p className="text-xs text-slate-500 truncate">{student.email}</p>
+                      <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
@@ -317,20 +319,20 @@ export default function TutorStudents() {
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-100">Remove student?</h3>
-                <p className="text-xs text-slate-400 mt-1">
+                <h3 className="text-base font-bold text-foreground">Remove student?</h3>
+                <p className="text-xs text-muted-foreground mt-1">
                   {formatStudentName(pendingRemoveStudent)}
                   {pendingRemoveStudent.email ? ` · ${pendingRemoveStudent.email}` : ""}
                 </p>
               </div>
             </div>
-            <p className="text-sm text-slate-300 mb-5">
+            <p className="text-sm text-foreground/80 mb-5">
               They will be removed from your cohort. You can re-add them at any time from "Add Students".
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setPendingRemoveId(null)}
-                className="px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium text-slate-300 bg-slate-800/60 border border-slate-700 hover:bg-slate-800 transition-all"
+                className="px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium text-foreground/80 bg-muted/60 border border-border hover:bg-muted transition-all"
                 data-testid="button-cancel-remove"
               >
                 Cancel
@@ -349,16 +351,16 @@ export default function TutorStudents() {
       )}
 
       {showAdoptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-lg p-4" onClick={() => setShowAdoptModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-lg p-4" onClick={() => setShowAdoptModal(false)}>
           <div className="glass-panel-elite max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-base font-bold text-slate-100">Add Students</h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">Search by name or email, then select the accounts to add to your cohort.</p>
+                <h3 className="text-base font-bold text-foreground">Add Students</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Search by name or email, then select the accounts to add to your cohort.</p>
               </div>
               <button
                 onClick={() => setShowAdoptModal(false)}
-                className="text-slate-500 hover:text-slate-300 p-2 min-h-[40px] min-w-[40px] rounded-lg hover:bg-white/[0.04] transition-colors"
+                className="text-muted-foreground hover:text-foreground/80 p-2 min-h-[40px] min-w-[40px] rounded-lg hover:bg-foreground/[0.05] transition-colors"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
@@ -366,24 +368,24 @@ export default function TutorStudents() {
             </div>
 
             {availableStudents.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">No students available to add</p>
+              <p className="text-sm text-muted-foreground text-center py-8">No students available to add</p>
             ) : (
               <>
                 <div className="relative mb-3">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
                     type="text"
                     value={adoptSearchQuery}
                     onChange={(e) => setAdoptSearchQuery(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 pl-11 pr-10 rounded-xl bg-slate-900/60 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40"
+                    className="w-full h-11 pl-11 pr-10 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
                     data-testid="input-search-adopt"
                     autoFocus
                   />
                   {adoptSearchQuery && (
                     <button
                       onClick={() => setAdoptSearchQuery("")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-foreground/80"
                       aria-label="Clear search"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
@@ -391,7 +393,7 @@ export default function TutorStudents() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2 px-1">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-2 px-1">
                   <span>
                     {filteredAvailable.length} result{filteredAvailable.length !== 1 ? "s" : ""}
                     {selectedStudentIds.size > 0 ? ` · ${selectedStudentIds.size} selected` : ""}
@@ -409,7 +411,7 @@ export default function TutorStudents() {
 
                 <div className="space-y-2 flex-1 overflow-y-auto pr-1">
                   {filteredAvailable.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-6">No matches for "{adoptSearchQuery}"</p>
+                    <p className="text-xs text-muted-foreground text-center py-6">No matches for "{adoptSearchQuery}"</p>
                   ) : (
                     filteredAvailable.map((student) => {
                       const name = formatStudentName(student);
@@ -422,7 +424,7 @@ export default function TutorStudents() {
                           className={`w-full min-h-[56px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
                             isSelected
                               ? "bg-violet-500/20 border-2 border-violet-500/60 ring-1 ring-violet-500/30"
-                              : "bg-slate-800/40 border-2 border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600"
+                              : "bg-muted/40 border-2 border-border/50 hover:bg-muted/60 hover:border-border"
                           }`}
                           data-testid={`adopt-student-${student.id}`}
                           aria-pressed={isSelected}
@@ -436,9 +438,9 @@ export default function TutorStudents() {
                             {si}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-100 truncate">{name}</p>
+                            <p className="text-sm font-medium text-foreground truncate">{name}</p>
                             {student.email && (
-                              <p className="flex items-center gap-1 text-[11px] text-slate-400 truncate">
+                              <p className="flex items-center gap-1 text-[11px] text-muted-foreground truncate">
                                 <Mail className="w-3 h-3 shrink-0" />
                                 <span className="truncate">{student.email}</span>
                               </p>

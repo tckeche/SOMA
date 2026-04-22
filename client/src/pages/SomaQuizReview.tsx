@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check,
 } from "lucide-react";
@@ -120,10 +121,10 @@ export default function SomaQuizReview() {
         <div className="w-full max-w-3xl space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="glass-card p-6">
-              <Skeleton className="h-6 w-3/4 mb-4 bg-white/10" />
+              <Skeleton className="h-6 w-3/4 mb-4 bg-foreground/10" />
               <div className="space-y-3">
                 {[1, 2, 3, 4].map((j) => (
-                  <Skeleton key={j} className="h-12 w-full bg-white/10" />
+                  <Skeleton key={j} className="h-12 w-full bg-foreground/10" />
                 ))}
               </div>
             </div>
@@ -131,7 +132,7 @@ export default function SomaQuizReview() {
           <div className="flex justify-center">
             <div className="flex items-center gap-2">
               <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
-              <span className="text-sm text-slate-400">Loading review...</span>
+              <span className="text-sm text-muted-foreground">Loading review...</span>
             </div>
           </div>
         </div>
@@ -146,8 +147,8 @@ export default function SomaQuizReview() {
           <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-5 border border-red-500/30">
             <AlertCircle className="w-8 h-8 text-red-400" />
           </div>
-          <h2 className="text-xl font-bold mb-2 text-slate-100">Failed to Load Review</h2>
-          <p className="text-sm text-slate-400 mb-6">{(error as Error)?.message || "Review data not available"}</p>
+          <h2 className="text-xl font-bold mb-2 text-foreground">Failed to Load Review</h2>
+          <p className="text-sm text-muted-foreground mb-6">{(error as Error)?.message || "Review data not available"}</p>
           <Link href="/dashboard">
             <Button className="glow-button" data-testid="button-review-error-back">
               <Home className="w-4 h-4 mr-1.5" />
@@ -271,6 +272,7 @@ export default function SomaQuizReview() {
               {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Award className="w-5 h-5" />}
               {downloading ? "Preparing…" : "Download PDF"}
             </Button>
+            <ThemeToggle size="sm" />
           </div>
         </div>
 
@@ -281,22 +283,22 @@ export default function SomaQuizReview() {
             </div>
             <div className="flex-1">
               <h2 className="text-xl font-bold gradient-text" data-testid="text-review-title">{report.quiz.title}</h2>
-              <p className="text-xs text-slate-400">{report.quiz.topic}</p>
+              <p className="text-xs text-muted-foreground">{report.quiz.topic}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-violet-300" data-testid="text-review-percentage">{percentage}%</p>
-              <p className="text-xs text-slate-400">Score</p>
+              <p className="text-xs text-muted-foreground">Score</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
-              <p className="text-2xl font-bold text-slate-300" data-testid="text-review-marks">{report.score}/{totalMarks}</p>
-              <p className="text-xs text-slate-400">Marks</p>
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
+              <p className="text-2xl font-bold text-foreground/80" data-testid="text-review-marks">{report.score}/{totalMarks}</p>
+              <p className="text-xs text-muted-foreground">Marks</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-cyan-300" data-testid="text-review-total-q">{questions.length}</p>
-              <p className="text-xs text-slate-400">Questions</p>
+              <p className="text-xs text-muted-foreground">Questions</p>
             </div>
           </div>
         </div>
@@ -313,14 +315,14 @@ export default function SomaQuizReview() {
                     {idx + 1}
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Q{idx + 1}</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Q{idx + 1}</p>
                   </div>
-                  <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-slate-400 border-slate-500/30"}`}>
+                  <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>
                     {isCorrect ? "Correct" : studentAnswer ? "Incorrect" : "Skipped"} [{q.marks}]
                   </Badge>
                 </div>
 
-                <div className="text-base text-slate-100 leading-relaxed mb-4" data-testid={`text-review-stem-${idx + 1}`}>
+                <div className="text-base text-foreground leading-relaxed mb-4" data-testid={`text-review-stem-${idx + 1}`}>
                   <MarkdownRenderer content={q.stem} />
                 </div>
 
@@ -330,7 +332,7 @@ export default function SomaQuizReview() {
                     const isCorrectOption = option === q.correctAnswer;
                     const isStudentWrongPick = option === studentAnswer && !isCorrectOption;
 
-                    let optionClasses = "bg-white/[0.03] border-white/10";
+                    let optionClasses = "bg-foreground/[0.04] border-border/50";
                     let ringClasses = "";
                     let iconEl = null;
 
@@ -356,12 +358,12 @@ export default function SomaQuizReview() {
                               ? "bg-green-500/30 text-green-200 border border-green-500/50"
                               : isStudentWrongPick
                                 ? "bg-red-500/30 text-red-200 border border-red-500/50"
-                                : "bg-white/5 text-slate-400 border border-white/10"
+                                : "bg-foreground/5 text-muted-foreground border border-border/50"
                           }`}>
                             {letter}
                           </div>
                           <div className={`text-sm pt-0.5 flex-1 ${
-                            isCorrectOption ? "text-green-200" : isStudentWrongPick ? "text-red-200" : "text-slate-300"
+                            isCorrectOption ? "text-green-200" : isStudentWrongPick ? "text-red-200" : "text-foreground/80"
                           }`}>
                             <MarkdownRenderer content={option} />
                           </div>
@@ -387,7 +389,7 @@ export default function SomaQuizReview() {
                       <Lightbulb className="w-4 h-4" />
                       soma explanation
                     </p>
-                    <div className="text-sm text-slate-200 leading-relaxed">
+                    <div className="text-sm text-foreground leading-relaxed">
                       <MarkdownRenderer content={q.explanation} />
                     </div>
                   </div>
