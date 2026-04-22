@@ -13,8 +13,9 @@ import {
   Loader2, AlertTriangle, Search, UserX, X,
   ShieldCheck, GraduationCap, UserCog, ChevronRight,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
-const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
+const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
 
 interface SomaUser {
   id: string;
@@ -210,11 +211,11 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-red-900/40 bg-slate-950/90 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-red-900/40 bg-background/90 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain" />
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain brightness-0 dark:brightness-100" />
               <div>
                 <h1 className="text-lg font-bold gradient-text">SOMA</h1>
                 <p className="text-[10px] text-red-400 tracking-widest uppercase font-semibold">Super Admin</p>
@@ -230,11 +231,12 @@ export default function SuperAdminDashboard() {
                 <Shield className="w-5 h-5 text-red-400" />
               </div>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-slate-200">{session?.user?.email?.split("@")[0]}</p>
+                <p className="text-sm font-medium text-foreground">{session?.user?.email?.split("@")[0]}</p>
                 <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Super Admin</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-slate-400 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px]" aria-label="Log out" data-testid="button-logout">
+            <ThemeToggle />
+            <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px]" aria-label="Log out" data-testid="button-logout">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -257,7 +259,7 @@ export default function SuperAdminDashboard() {
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "tutors"
                   ? "bg-red-500/20 text-red-300 border border-red-500/40"
-                  : "bg-slate-800/40 text-slate-400 border border-slate-700/50 hover:bg-slate-800/60"
+                  : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-tutors"
             >
@@ -269,7 +271,7 @@ export default function SuperAdminDashboard() {
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "users"
                   ? "bg-red-500/20 text-red-300 border border-red-500/40"
-                  : "bg-slate-800/40 text-slate-400 border border-slate-700/50 hover:bg-slate-800/60"
+                  : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-users"
             >
@@ -281,7 +283,7 @@ export default function SuperAdminDashboard() {
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "quizzes"
                   ? "bg-red-500/20 text-red-300 border border-red-500/40"
-                  : "bg-slate-800/40 text-slate-400 border border-slate-700/50 hover:bg-slate-800/60"
+                  : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-quizzes"
             >
@@ -290,13 +292,13 @@ export default function SuperAdminDashboard() {
             </button>
           </div>
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={`Search ${activeTab}...`}
-              className="w-full h-12 pl-11 pr-4 rounded-xl bg-slate-900/60 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-red-500/40"
+              className="w-full h-12 pl-11 pr-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-red-500/40"
               data-testid="input-search"
             />
           </div>
@@ -308,13 +310,13 @@ export default function SuperAdminDashboard() {
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
             ) : filteredTutors.length === 0 ? (
               <div className={`${CARD_CLASS} text-center py-12`}>
-                <UserCog className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-                <p className="text-sm text-slate-400">{searchQuery ? "No matching tutors" : "No tutors found yet"}</p>
+                <UserCog className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-sm text-muted-foreground">{searchQuery ? "No matching tutors" : "No tutors found yet"}</p>
               </div>
             ) : (
-              <div className="overflow-x-auto bg-slate-900/50 border border-slate-800 rounded-xl">
+              <div className="overflow-x-auto bg-card/50 border border-card-border rounded-xl">
                 <table className="w-full text-sm">
-                  <thead className="text-slate-400 border-b border-slate-800">
+                  <thead className="text-muted-foreground border-b border-card-border">
                     <tr>
                       <th className="text-left px-4 py-3">Tutor</th>
                       <th className="text-left px-4 py-3">Students</th>
@@ -327,22 +329,22 @@ export default function SuperAdminDashboard() {
                   </thead>
                   <tbody>
                     {filteredTutors.map((tutor) => (
-                      <tr key={tutor.tutorId} className="border-b border-slate-800/60 hover:bg-slate-800/40">
+                      <tr key={tutor.tutorId} className="border-b border-card-border/60 hover:bg-muted/40">
                         <td className="px-4 py-3">
-                          <p className="text-slate-100 font-medium">{tutor.tutorName || tutor.tutorEmail.split("@")[0]}</p>
-                          <p className="text-xs text-slate-400">{tutor.tutorEmail}</p>
+                          <p className="text-foreground font-medium">{tutor.tutorName || tutor.tutorEmail.split("@")[0]}</p>
+                          <p className="text-xs text-muted-foreground">{tutor.tutorEmail}</p>
                         </td>
-                        <td className="px-4 py-3 text-slate-200">{tutor.adoptedStudentsCount}</td>
-                        <td className="px-4 py-3 text-slate-200">{tutor.assessmentsCompletedCount}</td>
-                        <td className="px-4 py-3 text-slate-200">{tutor.averageStudentGrade !== null ? `${tutor.averageStudentGrade}%` : "—"}</td>
-                        <td className="px-4 py-3 text-slate-400 text-xs">
+                        <td className="px-4 py-3 text-foreground">{tutor.adoptedStudentsCount}</td>
+                        <td className="px-4 py-3 text-foreground">{tutor.assessmentsCompletedCount}</td>
+                        <td className="px-4 py-3 text-foreground">{tutor.averageStudentGrade !== null ? `${tutor.averageStudentGrade}%` : "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">
                           {tutor.lastLoginAt ? formatDistanceToNow(new Date(tutor.lastLoginAt), { addSuffix: true }) : "Not tracked yet"}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
                             {tutor.subjects.length ? tutor.subjects.map((subj) => (
-                              <Badge key={subj} className="text-[10px] bg-slate-800 border-slate-700 text-slate-300">{subj}</Badge>
-                            )) : <span className="text-xs text-slate-500">No subjects</span>}
+                              <Badge key={subj} className="text-[10px] bg-muted border-border text-foreground/80">{subj}</Badge>
+                            )) : <span className="text-xs text-muted-foreground">No subjects</span>}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -367,15 +369,15 @@ export default function SuperAdminDashboard() {
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
             ) : filteredUsers.length === 0 ? (
               <div className={`${CARD_CLASS} text-center py-12`}>
-                <Users className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-                <p className="text-sm text-slate-400">{searchQuery ? "No matching users" : "No users found"}</p>
+                <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-sm text-muted-foreground">{searchQuery ? "No matching users" : "No users found"}</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {filteredUsers.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center gap-4 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl px-5 py-3.5"
+                    className="flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-3.5"
                     data-testid={`user-row-${user.id}`}
                   >
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
@@ -388,14 +390,14 @@ export default function SuperAdminDashboard() {
                       {(user.displayName || user.email)[0]?.toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-200 truncate">{user.displayName || user.email.split("@")[0]}</p>
-                      <p className="text-xs text-slate-400">{user.email}</p>
+                      <p className="text-sm font-medium text-foreground truncate">{user.displayName || user.email.split("@")[0]}</p>
+                      <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
                     <Badge className={`text-[10px] font-semibold border ${roleBadgeClass(user.role)} flex items-center gap-1`} data-testid={`badge-role-${user.id}`}>
                       {roleIcon(user.role)}
                       {user.role}
                     </Badge>
-                    <p className="text-[10px] text-slate-500 hidden md:block shrink-0">
+                    <p className="text-[10px] text-muted-foreground hidden md:block shrink-0">
                       {user.createdAt ? format(new Date(user.createdAt), "PP") : ""}
                     </p>
                     {user.role !== "super_admin" && (
@@ -420,8 +422,8 @@ export default function SuperAdminDashboard() {
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
             ) : filteredQuizzes.length === 0 ? (
               <div className={`${CARD_CLASS} text-center py-12`}>
-                <BookOpen className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-                <p className="text-sm text-slate-400">{searchQuery ? "No matching assessments" : "No assessments found"}</p>
+                <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-sm text-muted-foreground">{searchQuery ? "No matching assessments" : "No assessments found"}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -431,22 +433,22 @@ export default function SuperAdminDashboard() {
                   return (
                     <div
                       key={quiz.id}
-                      className="flex items-center gap-4 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl px-5 py-3.5"
+                      className="flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-3.5"
                       data-testid={`quiz-row-${quiz.id}`}
                     >
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center border ${sc.border} shrink-0`} style={{ backgroundColor: `${sc.hex}15` }}>
                         <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-200 truncate">{quiz.title}</p>
-                        <p className="text-xs text-slate-400">{quiz.topic} | {quiz.level}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{quiz.title}</p>
+                        <p className="text-xs text-muted-foreground">{quiz.topic} | {quiz.level}</p>
                       </div>
                       <Badge className={`text-[10px] font-semibold border ${
                         quiz.status === "published" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"
                       }`}>
                         {quiz.status}
                       </Badge>
-                      <p className="text-[10px] text-slate-500 hidden md:block shrink-0">
+                      <p className="text-[10px] text-muted-foreground hidden md:block shrink-0">
                         {quiz.createdAt ? format(new Date(quiz.createdAt), "PP") : ""}
                       </p>
                       <button
@@ -467,17 +469,17 @@ export default function SuperAdminDashboard() {
 
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-slate-900 border border-red-900/50 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()} data-testid="modal-delete-confirm">
+          <div className="bg-card border border-red-900/50 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()} data-testid="modal-delete-confirm">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-100">Confirm Deletion</h3>
-                <p className="text-xs text-slate-400">This action cannot be undone</p>
+                <h3 className="text-lg font-bold text-foreground">Confirm Deletion</h3>
+                <p className="text-xs text-muted-foreground">This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-slate-300 mb-6">
+            <p className="text-sm text-foreground/80 mb-6">
               Are you sure you want to permanently delete{" "}
               <span className="font-semibold text-red-300">{deleteConfirm.name}</span>?
               {deleteConfirm.type === "user" && " All their data, reports, and comments will also be removed."}
@@ -486,7 +488,7 @@ export default function SuperAdminDashboard() {
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-all"
+                className="flex-1 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
                 data-testid="button-cancel-delete"
               >
                 Cancel
@@ -529,8 +531,8 @@ function StatCard({ label, value, color, icon: Icon }: { label: string; value: n
           <Icon className="w-5 h-5" style={{ color }} />
         </div>
         <div>
-          <p className="text-xl font-bold text-slate-100">{value}</p>
-          <p className="text-[10px] text-slate-400 uppercase tracking-wider">{label}</p>
+          <p className="text-xl font-bold text-foreground">{value}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</p>
         </div>
       </div>
     </div>

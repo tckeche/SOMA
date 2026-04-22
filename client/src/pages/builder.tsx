@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
 import { unescapeLatex } from '@/lib/render-latex';
+import { ThemeToggle } from "@/components/ThemeToggle";
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import SomaQuizEngine from "./soma-quiz";
 import type { StudentQuestion } from "./soma-quiz";
@@ -1096,7 +1097,7 @@ export default function BuilderPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="glass-card p-8 text-center">
-          <p className="text-slate-300">Please <Link href="/login" className="text-violet-400 underline">log in</Link> to access the builder.</p>
+          <p className="text-foreground/80">Please <Link href="/login" className="text-violet-400 underline">log in</Link> to access the builder.</p>
         </div>
       </div>
     );
@@ -1105,14 +1106,14 @@ export default function BuilderPage() {
   if (isEditMode && quizLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="border-b border-white/5 bg-white/[0.02] backdrop-blur-sm">
+        <header className="border-b border-border/30 bg-background/80 backdrop-blur-sm">
           <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-4">
-            <Skeleton className="h-8 w-48 bg-white/5" />
+            <Skeleton className="h-8 w-48 bg-foreground/5" />
           </div>
         </header>
         <main className="max-w-[1400px] mx-auto p-4 md:p-6 space-y-4">
-          <Skeleton className="h-64 w-full bg-white/5" />
-          <Skeleton className="h-64 w-full bg-white/5" />
+          <Skeleton className="h-64 w-full bg-foreground/5" />
+          <Skeleton className="h-64 w-full bg-foreground/5" />
         </main>
       </div>
     );
@@ -1121,7 +1122,7 @@ export default function BuilderPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-white/5 bg-white/[0.02] backdrop-blur-sm sticky top-0 z-10">
+      <header className="border-b border-border/30 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
             <Button className="glow-button-outline" size="default" data-testid="button-back-admin" onClick={handleBack}>
@@ -1129,17 +1130,17 @@ export default function BuilderPage() {
                 <span>Back</span>
             </Button>
             <div className="flex items-center gap-2 md:gap-3 min-w-0">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" className="h-7 md:h-8 w-auto object-contain" />
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" className="h-7 md:h-8 w-auto object-contain brightness-0 dark:brightness-100" />
               <div className="min-w-0">
                 <h1 className="text-base md:text-lg font-bold gradient-text truncate" data-testid="text-builder-title">
                   {activeQuizId ? "Edit Assessment" : "New Assessment"}
                 </h1>
-                {activeQuizId && <p className="text-[10px] md:text-xs text-slate-500">ID: {activeQuizId}</p>}
+                {activeQuizId && <p className="text-[10px] md:text-xs text-muted-foreground">ID: {activeQuizId}</p>}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Badge className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-white/5 text-slate-400 border-white/10"}`}>
+            <Badge className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-foreground/5 text-muted-foreground border-border/50"}`}>
               {totalQuestions} Q{totalQuestions !== 1 ? "s" : ""}
               {isDraftDirty && <span className="ml-1 hidden md:inline">· unsaved</span>}
             </Badge>
@@ -1168,11 +1169,12 @@ export default function BuilderPage() {
               <span className="hidden md:inline">{isPublishing ? "Publishing…" : "Save & Publish"}</span>
             </Button>
             <Link href="/tutor/assessments" onClick={handleExit}>
-              <Button className="border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all" size="default" data-testid="button-exit-builder">
+              <Button className="border border-red-500/30 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/25 hover:border-red-500/50 transition-all" size="default" data-testid="button-exit-builder">
                 <X className="w-4 h-4 md:mr-1" />
                 <span>Exit Assessment</span>
               </Button>
             </Link>
+            <ThemeToggle size="sm" />
           </div>
         </div>
       </header>
@@ -1311,9 +1313,9 @@ export default function BuilderPage() {
 
           {/* 2. Co-Pilot — Main Focus */}
           <div className="glass-card flex flex-col overflow-hidden" style={{ minHeight: "400px" }}>
-            <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+            <div className="px-4 py-3 border-b border-border/30 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-violet-400" />
-              <span className="text-sm font-semibold text-slate-200" data-testid="tab-copilot">Co-Pilot</span>
+              <span className="text-sm font-semibold text-foreground" data-testid="tab-copilot">Co-Pilot</span>
               {pipelineActive && (
                 <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-violet-300" data-testid="text-pipeline-current-stage">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
@@ -1328,19 +1330,19 @@ export default function BuilderPage() {
                 </Badge>
               )}
             </div>
-            <div className="px-4 py-2 border-b border-white/5 text-xs">
+            <div className="px-4 py-2 border-b border-border/30 text-xs">
               {generationState === "generation_in_progress" && <span className="text-violet-300">Generation in progress…</span>}
               {generationState === "generation_failed" && <span className="text-red-400">Generation failed or produced no valid draft. Please refine your prompt.</span>}
               {generationState === "partial_success" && <span className="text-amber-300">Generation partially succeeded. Review the available questions before publishing.</span>}
               {generationState === "validation_failed" && <span className="text-amber-300">Generation output failed validation. No trusted draft changes were applied.</span>}
               {generationState === "persistence_failed" && <span className="text-red-400">Draft persistence failed. Please retry to sync questions.</span>}
               {generationState === "ready_for_review" && <span className="text-emerald-400">Draft is ready for review and publish.</span>}
-              {generationState === "generation_started" && !pipelineActive && <span className="text-slate-500">Ready to generate when you send a prompt.</span>}
+              {generationState === "generation_started" && !pipelineActive && <span className="text-muted-foreground">Ready to generate when you send a prompt.</span>}
             </div>
 
             {/* Pipeline Progress */}
             {pipelineActive && (
-              <div className="px-4 py-3 border-b border-white/5">
+              <div className="px-4 py-3 border-b border-border/30">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {PIPELINE_STAGES.map((s) => {
                     const isDone = completedStages.has(s.stage);
@@ -1351,7 +1353,7 @@ export default function BuilderPage() {
                         className={`flex items-center gap-1.5 p-2 rounded-lg border text-xs transition-all ${
                           isDone ? "bg-emerald-500/10 border-emerald-500/30" :
                           isActive ? "bg-violet-500/10 border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.1)]" :
-                          "bg-white/[0.02] border-white/5 opacity-40"
+                          "bg-foreground/[0.03] border-border/30 opacity-40"
                         }`}
                         data-testid={`pipeline-stage-${s.stage}`}
                       >
@@ -1361,12 +1363,12 @@ export default function BuilderPage() {
                           {s.icon === "pencil" && <Pencil className="w-3 h-3" />}
                           {s.icon === "search" && <Search className="w-3 h-3" />}
                         </span>
-                        <span className={`flex-1 truncate ${isDone ? "text-emerald-400" : isActive ? "text-violet-300" : "text-slate-500"}`}>
+                        <span className={`flex-1 truncate ${isDone ? "text-emerald-400" : isActive ? "text-violet-300" : "text-muted-foreground"}`}>
                           {isActive ? s.label : s.aiName}
                         </span>
                         {isDone ? <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" /> :
                          isActive ? <Loader2 className="w-3 h-3 animate-spin text-violet-400 shrink-0" /> :
-                         <div className="w-3 h-3 rounded-full border border-white/10 shrink-0" />}
+                         <div className="w-3 h-3 rounded-full border border-border/50 shrink-0" />}
                       </div>
                     );
                   })}
@@ -1379,9 +1381,9 @@ export default function BuilderPage() {
               {chat.length === 0 && (
                 <div className="text-center pt-8 space-y-2">
                   <Sparkles className="w-8 h-8 mx-auto text-violet-400/40" />
-                  <p className="text-sm text-slate-400">Generate assessment questions using the Co-Pilot.</p>
-                  <p className="text-xs text-slate-500">Questions are auto-saved to the database.</p>
-                  <p className="text-xs text-slate-600 italic">"Generate 5 IGCSE quadratics MCQs"</p>
+                  <p className="text-sm text-muted-foreground">Generate assessment questions using the Co-Pilot.</p>
+                  <p className="text-xs text-muted-foreground">Questions are auto-saved to the database.</p>
+                  <p className="text-xs text-muted-foreground italic">"Generate 5 IGCSE quadratics MCQs"</p>
                 </div>
               )}
               {chat.map((m, i) => (
@@ -1389,11 +1391,11 @@ export default function BuilderPage() {
                   <div className={`inline-block max-w-[90%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
                     m.role === "user"
                       ? "bg-violet-600/20 text-violet-200 border border-violet-500/20"
-                      : "bg-white/5 text-slate-300 border border-white/5"
+                      : "bg-foreground/5 text-foreground/80 border border-border/30"
                   }`}>
                     {m.text}
                     {m.metadata && (
-                      <div className="mt-1.5 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-900/50 border border-white/5 text-[9px] text-slate-400 font-mono" data-testid={`badge-telemetry-${i}`}>
+                      <div className="mt-1.5 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-card/50 border border-border/30 text-[9px] text-muted-foreground font-mono" data-testid={`badge-telemetry-${i}`}>
                         <span>{m.metadata.model}</span>
                         <span>{(m.metadata.durationMs / 1000).toFixed(2)}s</span>
                       </div>
@@ -1425,7 +1427,7 @@ export default function BuilderPage() {
             </div>
 
             {/* Chat input */}
-            <div className="p-3 md:p-4 border-t border-white/5 space-y-2">
+            <div className="p-3 md:p-4 border-t border-border/30 space-y-2">
               {chatMutation.isPending && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-violet-500/30 bg-violet-500/[0.06] px-3 py-2">
                   <div className="flex items-center gap-2 text-[11px] text-violet-200">
@@ -1486,7 +1488,7 @@ export default function BuilderPage() {
                   className="w-3.5 h-3.5 accent-violet-500"
                   data-testid="checkbox-include-graph-questions"
                 />
-                <span className="text-xs text-slate-400">Include some questions with graphs</span>
+                <span className="text-xs text-muted-foreground">Include some questions with graphs</span>
               </label>
             </div>
           </div>
@@ -1500,19 +1502,19 @@ export default function BuilderPage() {
             {/* Panel header */}
             <div className="flex items-center gap-2">
               <FileStack className="w-4 h-4 text-amber-400" />
-              <h2 className="font-semibold text-slate-100 text-sm">Draft Questions</h2>
+              <h2 className="font-semibold text-foreground text-sm">Draft Questions</h2>
               {isDraftDirty && (
                 <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   Unsaved
                 </Badge>
               )}
-              <Badge className="bg-white/5 text-slate-400 border-white/10 text-[10px] ml-auto">{totalQuestions}</Badge>
+              <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px] ml-auto">{totalQuestions}</Badge>
             </div>
 
             {/* Draft syncing indicator */}
             {isSyncingDraft && (
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Auto-saving draft…
               </div>
@@ -1521,24 +1523,24 @@ export default function BuilderPage() {
             {/* Empty state */}
             {draftQuestions.length === 0 && !pipelineActive ? (
               <div className="py-8 text-center space-y-2">
-                <FileStack className="w-8 h-8 mx-auto text-slate-700" />
-                <p className="text-sm text-slate-500">No draft questions yet.</p>
-                <p className="text-xs text-slate-600">Use the Co-Pilot to generate questions. They'll appear here before you publish.</p>
+                <FileStack className="w-8 h-8 mx-auto text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No draft questions yet.</p>
+                <p className="text-xs text-muted-foreground">Use the Co-Pilot to generate questions. They'll appear here before you publish.</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[50vh] md:max-h-[calc(100vh-280px)] overflow-auto pr-1">
                 {draftQuestions.map((q, idx) => (
                   <div
                     key={q.draftId}
-                    className="bg-white/[0.03] border border-white/5 rounded-lg p-3 flex items-start gap-2"
+                    className="bg-foreground/[0.04] border border-border/30 rounded-lg p-3 flex items-start gap-2"
                     data-testid={`card-draft-q-${idx}`}
                   >
                     <span className="text-xs font-mono text-amber-400 font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs text-slate-300 line-clamp-2"><MarkdownRenderer content={unescapeLatex(q.stem)} /></div>
+                      <div className="text-xs text-foreground/80 line-clamp-2"><MarkdownRenderer content={unescapeLatex(q.stem)} /></div>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px]">{q.options.length} opts</Badge>
-                        <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px]">{q.marks}m</Badge>
+                        <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.options.length} opts</Badge>
+                        <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.marks}m</Badge>
                         {q.questionType === "graph" && (
                           <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px]">graph</Badge>
                         )}
@@ -1548,13 +1550,13 @@ export default function BuilderPage() {
                               ? "bg-red-500/10 text-red-400 border-red-500/20"
                               : q.difficultyTag.toLowerCase().includes("easy")
                                 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                : "bg-white/5 text-slate-500 border-white/10"
+                                : "bg-foreground/5 text-muted-foreground border-border/50"
                           }`}>{q.difficultyTag}</Badge>
                         )}
                       </div>
                     </div>
                     <button
-                      className="text-slate-600 hover:text-red-400 shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg transition-colors"
+                      className="text-muted-foreground hover:text-red-400 shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg transition-colors"
                       onClick={() => deleteDraftQuestion(q.draftId)}
                       title="Remove from draft"
                       data-testid={`button-delete-draft-${idx}`}
@@ -1568,7 +1570,7 @@ export default function BuilderPage() {
 
             {/* Publish CTA */}
             {draftQuestions.length > 0 && (
-              <div className="border-t border-white/5 pt-3">
+              <div className="border-t border-border/30 pt-3">
                 <Button
                   className="w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold min-h-[44px]"
                   onClick={handlePublish}
@@ -1587,7 +1589,7 @@ export default function BuilderPage() {
                     </>
                   )}
                 </Button>
-                <p className="text-[10px] text-slate-600 text-center mt-2">
+                <p className="text-[10px] text-muted-foreground text-center mt-2">
                   {draftValidationError ? `Cannot publish: ${draftValidationError}` : "Questions are in draft until you publish. Keep editing freely."}
                 </p>
               </div>
@@ -1598,14 +1600,14 @@ export default function BuilderPage() {
 
       {/* Success Modal */}
       {showSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-success">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" data-testid="modal-success">
           <div className="glass-card w-full max-w-md p-6 md:p-8 text-center space-y-5 border border-violet-500/20 shadow-[0_0_40px_rgba(139,92,246,0.15)]">
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500/20 to-violet-500/20 flex items-center justify-center mx-auto border border-emerald-500/30">
               <PartyPopper className="w-8 h-8 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-100 mb-1" data-testid="text-success-title">Assessment Created Successfully!</h2>
-              <p className="text-sm text-slate-400">
+              <h2 className="text-xl font-bold text-foreground mb-1" data-testid="text-success-title">Assessment Created Successfully!</h2>
+              <p className="text-sm text-muted-foreground">
                 {lastSavedCount} question{lastSavedCount !== 1 ? "s" : ""} generated, audited, and saved to the database.
               </p>
             </div>

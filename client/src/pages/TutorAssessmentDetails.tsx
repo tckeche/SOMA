@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 import AssignmentStatusBadge from "@/components/tutor/AssignmentStatusBadge";
 import type { AssignmentStatus } from "@shared/assignmentStatus";
@@ -62,7 +63,7 @@ interface AdoptedStudent {
   displayName: string | null;
 }
 
-const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
+const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
 const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all";
 
 function formatDate(dateStr: string | null) {
@@ -217,7 +218,7 @@ export default function TutorAssessmentDetails() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 to-slate-900 px-6 py-8">
+      <div className="min-h-screen bg-gradient-to-br from-background to-background px-6 py-8">
         <div className="max-w-7xl mx-auto">
           <Link href="/tutor/assessments">
             <button className={`${STANDARD_ACTION_BUTTON_CLASS} mb-6`}>
@@ -235,7 +236,7 @@ export default function TutorAssessmentDetails() {
 
   if (!details) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 to-slate-900 px-6 py-8">
+      <div className="min-h-screen bg-gradient-to-br from-background to-background px-6 py-8">
         <div className="max-w-7xl mx-auto">
           <Link href="/tutor/assessments">
             <button className={`${STANDARD_ACTION_BUTTON_CLASS} mb-6`}>
@@ -244,7 +245,7 @@ export default function TutorAssessmentDetails() {
             </button>
           </Link>
           <div className={`${CARD_CLASS} text-center py-12`}>
-            <p className="text-slate-400">Quiz not found</p>
+            <p className="text-muted-foreground">Quiz not found</p>
           </div>
         </div>
       </div>
@@ -265,7 +266,7 @@ export default function TutorAssessmentDetails() {
   const availableForAssign = adoptedStudents.filter((s) => !alreadyAssignedIds.has(s.id));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 to-slate-900 px-6 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-background to-background px-6 py-8">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -275,6 +276,7 @@ export default function TutorAssessmentDetails() {
               Back to Assessments
             </button>
           </Link>
+          <ThemeToggle />
         </div>
 
         {/* Quiz Title & Controls */}
@@ -285,19 +287,19 @@ export default function TutorAssessmentDetails() {
                 <BookOpen className="w-6 h-6 text-violet-400" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-slate-100">{quiz.title}</h1>
-                <p className="text-sm text-slate-400">{quiz.topic}</p>
+                <h1 className="text-2xl font-bold text-foreground">{quiz.title}</h1>
+                <p className="text-sm text-muted-foreground">{quiz.topic}</p>
               </div>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="p-2 hover:bg-slate-800/50 rounded-lg transition-colors">
-                  <MoreVertical className="w-5 h-5 text-slate-400" />
+                <button className="p-2 hover:bg-muted/50 rounded-lg transition-colors">
+                  <MoreVertical className="w-5 h-5 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-slate-800 border-slate-700">
+              <DropdownMenuContent className="bg-muted border-border">
                 <DropdownMenuItem
-                  className="text-slate-300 cursor-pointer"
+                  className="text-foreground/80 cursor-pointer"
                   onClick={() => archiveMutation.mutate()}
                 >
                   {quiz.isArchived ? (
@@ -323,7 +325,7 @@ export default function TutorAssessmentDetails() {
                 setShowDueDatePicker(true);
                 setNewDueDate(currentDueDate ? new Date(currentDueDate).toISOString().slice(0, 16) : "");
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300 hover:bg-slate-700/60 transition-all text-sm"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/60 border border-border/50 text-foreground/80 hover:bg-slate-700/60 transition-all text-sm"
             >
               <CalendarDays className="w-4 h-4 text-violet-400" />
               {currentDueDate ? `Due: ${formatDate(currentDueDate)}` : "Set Due Date"}
@@ -347,21 +349,21 @@ export default function TutorAssessmentDetails() {
           </div>
 
           <div className="grid grid-cols-4 gap-4">
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <p className="text-2xl font-bold text-slate-200">{quiz.level || "—"}</p>
-              <p className="text-xs text-slate-400 mt-1">Level</p>
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
+              <p className="text-2xl font-bold text-foreground">{quiz.level || "—"}</p>
+              <p className="text-xs text-muted-foreground mt-1">Level</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
               <p className="text-2xl font-bold text-violet-300">{details.totalAssigned}</p>
-              <p className="text-xs text-slate-400 mt-1">Total Assigned</p>
+              <p className="text-xs text-muted-foreground mt-1">Total Assigned</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
               <p className="text-2xl font-bold text-emerald-300">{submittedCount}</p>
-              <p className="text-xs text-slate-400 mt-1">Submitted</p>
+              <p className="text-xs text-muted-foreground mt-1">Submitted</p>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+            <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
               <p className="text-2xl font-bold text-cyan-300">{avgGradePct !== null ? `${avgGradePct}%` : "—"}</p>
-              <p className="text-xs text-slate-400 mt-1">Avg Grade</p>
+              <p className="text-xs text-muted-foreground mt-1">Avg Grade</p>
             </div>
           </div>
         </div>
@@ -369,7 +371,7 @@ export default function TutorAssessmentDetails() {
         {/* Student Assignments Table */}
         <div className={CARD_CLASS}>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-slate-200 flex items-center gap-2">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <Users className="w-5 h-5" />
               Student Progress
             </h2>
@@ -378,20 +380,20 @@ export default function TutorAssessmentDetails() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-700/50">
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-border/50">
+                  <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Student
                   </th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Start Time
                   </th>
-                  <th className="text-right py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Grade
                   </th>
-                  <th className="text-center py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -399,21 +401,21 @@ export default function TutorAssessmentDetails() {
               <tbody>
                 {assignments.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-400">
+                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
                       No students assigned to this quiz yet
                     </td>
                   </tr>
                 ) : (
                   assignments.map((assignment) => (
-                    <tr key={assignment.studentId} className="border-b border-slate-700/30 hover:bg-slate-800/30 transition-colors">
+                    <tr key={assignment.studentId} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${getAvatarColor(assignment.studentId)}`}>
                             {getInitials(assignment.studentName)}
                           </div>
                           <div>
-                            <p className="font-medium text-slate-200">{toProperCase(assignment.studentName)}</p>
-                            <p className="text-xs text-slate-400">{assignment.studentEmail}</p>
+                            <p className="font-medium text-foreground">{toProperCase(assignment.studentName)}</p>
+                            <p className="text-xs text-muted-foreground">{assignment.studentEmail}</p>
                           </div>
                         </div>
                       </td>
@@ -423,7 +425,7 @@ export default function TutorAssessmentDetails() {
                           dueDate={assignment.dueDate}
                         />
                       </td>
-                      <td className="py-4 px-4 text-sm text-slate-300">
+                      <td className="py-4 px-4 text-sm text-foreground/80">
                         {formatDate(assignment.startTime)}
                       </td>
                       <td className="py-4 px-4 text-right">
@@ -436,13 +438,13 @@ export default function TutorAssessmentDetails() {
                                   <p className={`text-sm font-bold ${pct >= 70 ? "text-emerald-400" : pct >= 40 ? "text-amber-400" : "text-red-400"}`}>
                                     {pct}%
                                   </p>
-                                  <p className="text-[10px] text-slate-500">{assignment.finalGrade}/{assignment.maxGrade}</p>
+                                  <p className="text-[10px] text-muted-foreground">{assignment.finalGrade}/{assignment.maxGrade}</p>
                                 </>
                               );
                             })()}
                           </div>
                         ) : (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="py-4 px-4">
@@ -480,17 +482,17 @@ export default function TutorAssessmentDetails() {
 
       {/* Revoke Confirmation Dialog */}
       <AlertDialog open={revokeStudentId !== null} onOpenChange={(open) => { if (!open) setRevokeStudentId(null); }}>
-        <AlertDialogContent className="bg-slate-900 border-slate-700">
+        <AlertDialogContent className="bg-card border-border">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-red-300">Revoke Assignment</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-400">
+            <AlertDialogDescription className="text-muted-foreground">
               This will remove the student's access to this quiz. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={() => setRevokeStudentId(null)}
-              className="bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+              className="bg-muted text-foreground/80 border-border hover:bg-slate-700"
             >
               Cancel
             </AlertDialogCancel>
@@ -513,32 +515,32 @@ export default function TutorAssessmentDetails() {
 
       {/* Due Date Picker Modal */}
       {showDueDatePicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowDueDatePicker(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setShowDueDatePicker(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                 <CalendarDays className="w-5 h-5 text-violet-400" />
                 Change Due Date
               </h3>
-              <button onClick={() => setShowDueDatePicker(false)} className="text-slate-400 hover:text-slate-300 p-1">
+              <button onClick={() => setShowDueDatePicker(false)} className="text-muted-foreground hover:text-foreground/80 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-muted-foreground mb-4">
               Update the submission deadline for all {assignments.length} assigned student(s).
             </p>
             <input
               type="datetime-local"
               value={newDueDate}
               onChange={(e) => setNewDueDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg bg-slate-800/80 border border-slate-600/50 text-sm text-slate-200 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 [color-scheme:dark] mb-4"
+              className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 mb-4"
             />
             <div className="flex gap-3">
               {currentDueDate && (
                 <button
                   onClick={() => dueDateMutation.mutate("")}
                   disabled={dueDateMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-slate-800 text-slate-300 border border-slate-600 hover:bg-slate-700 transition-all"
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
                 >
                   Remove Date
                 </button>
@@ -561,17 +563,17 @@ export default function TutorAssessmentDetails() {
 
       {/* Add Students Modal */}
       {showAssignModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowAssignModal(false); setAssignSearch(""); }}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => { setShowAssignModal(false); setAssignSearch(""); }}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
-              <h3 className="text-lg font-bold text-slate-200">Add Students to Assessment</h3>
-              <button onClick={() => { setShowAssignModal(false); setAssignSearch(""); }} aria-label="Close dialog" className="text-slate-400 hover:text-slate-300 p-1">
+              <h3 className="text-lg font-bold text-foreground">Add Students to Assessment</h3>
+              <button onClick={() => { setShowAssignModal(false); setAssignSearch(""); }} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground/80 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 mb-3">Search your students and select who should receive this assessment:</p>
+            <p className="text-xs text-muted-foreground mb-3">Search your students and select who should receive this assessment:</p>
             {availableForAssign.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">
+              <p className="text-sm text-muted-foreground text-center py-8">
                 {adoptedStudents.length === 0
                   ? "You don't have any students yet. Go to the Students page to add students first."
                   : "All your students are already assigned to this assessment."}
@@ -579,13 +581,13 @@ export default function TutorAssessmentDetails() {
             ) : (
               <>
                 <div className="relative mb-3">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   <input
                     type="text"
                     value={assignSearch}
                     onChange={(e) => setAssignSearch(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-muted/60 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-emerald-500/40"
                     data-testid="input-search-assign-details"
                     autoFocus
                   />
@@ -613,7 +615,7 @@ export default function TutorAssessmentDetails() {
                   };
                   return (
                     <>
-                      <div className="flex items-center justify-between mb-2 text-[11px] text-slate-500 px-1">
+                      <div className="flex items-center justify-between mb-2 text-[11px] text-muted-foreground px-1">
                         <span>
                           {filtered.length} shown · {selectedStudentIds.size} selected
                         </span>
@@ -629,7 +631,7 @@ export default function TutorAssessmentDetails() {
                       </div>
                       <div className="space-y-2 max-h-[45vh] overflow-y-auto">
                         {filtered.length === 0 ? (
-                          <p className="text-xs text-slate-500 text-center py-6">No matches for "{assignSearch}"</p>
+                          <p className="text-xs text-muted-foreground text-center py-6">No matches for "{assignSearch}"</p>
                         ) : filtered.map((student) => (
                           <button
                             key={student.id}
@@ -637,7 +639,7 @@ export default function TutorAssessmentDetails() {
                             className={`w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
                               selectedStudentIds.has(student.id)
                                 ? "bg-emerald-500/20 border-2 border-emerald-500/60"
-                                : "bg-slate-800/40 border-2 border-slate-700/50 hover:bg-slate-800/60"
+                                : "bg-muted/40 border-2 border-border/50 hover:bg-muted/60"
                             }`}
                             data-testid={`assign-student-details-${student.id}`}
                             aria-pressed={selectedStudentIds.has(student.id)}
@@ -651,9 +653,9 @@ export default function TutorAssessmentDetails() {
                               {getInitials(student.displayName || student.email)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-100 truncate">{student.displayName || "Student"}</p>
+                              <p className="text-sm font-medium text-foreground truncate">{student.displayName || "Student"}</p>
                               {student.email && (
-                                <p className="flex items-center gap-1 text-[11px] text-slate-400 truncate">
+                                <p className="flex items-center gap-1 text-[11px] text-muted-foreground truncate">
                                   <Mail className="w-3 h-3 shrink-0" />
                                   <span className="truncate">{student.email}</span>
                                 </p>
@@ -665,16 +667,16 @@ export default function TutorAssessmentDetails() {
                     </>
                   );
                 })()}
-                <div className="mt-4 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-300 mb-2">
+                <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
+                  <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
                     <Clock className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date & Time <span className="text-slate-500">(optional)</span>
+                    Due Date & Time <span className="text-muted-foreground">(optional)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={assignDueDate}
                     onChange={(e) => setAssignDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-slate-900/80 border border-slate-600/50 text-sm text-slate-200 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 [color-scheme:dark]"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-card/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
                   />
                 </div>
                 <button

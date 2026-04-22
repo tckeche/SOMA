@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { formatDuration as baseFormatDuration } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 function formatDuration(
   startedAt: string | Date | null,
@@ -53,7 +54,7 @@ interface QuizAssignmentWithStudent {
   student: SomaUser;
 }
 
-const CARD_CLASS = "bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl";
+const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
 
 function formatDate(dateStr: string | Date | null): string {
   if (!dateStr) return "—";
@@ -63,7 +64,7 @@ function formatDate(dateStr: string | Date | null): string {
 }
 
 function scoreColor(score: number, max: number): string {
-  if (max === 0) return "text-slate-400";
+  if (max === 0) return "text-muted-foreground";
   const pct = (score / max) * 100;
   if (pct >= 80) return "text-emerald-400";
   if (pct >= 50) return "text-amber-400";
@@ -101,7 +102,7 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
 
   return (
     <div
-      className={`rounded-xl border p-4 transition-all hover:bg-slate-800/40 ${scoreBg(report.score, maxScore)}`}
+      className={`rounded-xl border p-4 transition-all hover:bg-muted/40 ${scoreBg(report.score, maxScore)}`}
       data-testid={`student-report-${report.id}`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -112,10 +113,10 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
             </span>
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-200 truncate" data-testid={`report-student-name-${report.id}`}>
+            <p className="text-sm font-medium text-foreground truncate" data-testid={`report-student-name-${report.id}`}>
               {studentName}
             </p>
-            <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-0.5">
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
               {startedDate !== "—" && (
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
@@ -170,19 +171,19 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
   const safeQuestions = questions ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-3xl w-full my-8" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between gap-3 p-6 border-b border-slate-800">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 backdrop-blur-sm p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full my-8" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 p-6 border-b border-card-border">
           <div>
-            <h3 className="text-lg font-bold text-slate-200" data-testid="modal-student-name">{studentName}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">{quizTitle}</p>
+            <h3 className="text-lg font-bold text-foreground" data-testid="modal-student-name">{studentName}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{quizTitle}</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className={`text-xl font-bold ${scoreColor(score, maxScore)}`}>{pct}%</p>
-              <p className="text-[10px] text-slate-400">{score}/{maxScore} marks</p>
+              <p className="text-[10px] text-muted-foreground">{score}/{maxScore} marks</p>
             </div>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-300 p-2 min-h-[44px] min-w-[44px]" data-testid="button-close-report">
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground/80 p-2 min-h-[44px] min-w-[44px]" data-testid="button-close-report">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -191,13 +192,13 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
         <div className="p-6 space-y-4">
           <div className="flex flex-wrap gap-3 text-xs">
             {report.startedAt && (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/60 border border-border/50 text-foreground/80">
+                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                 Started: {formatDate(report.startedAt)}
               </span>
             )}
             {report.completedAt && (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/60 border border-border/50 text-foreground/80">
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
                 Completed: {formatDate(report.completedAt)}
               </span>
@@ -211,12 +212,12 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
               <FileText className="w-4 h-4 text-violet-400" />
               Questions & Answers
             </h4>
             {safeQuestions.length === 0 && (
-              <p className="text-xs text-slate-500 italic">No questions are linked to this report.</p>
+              <p className="text-xs text-muted-foreground italic">No questions are linked to this report.</p>
             )}
             {safeQuestions.map((q, idx) => {
               const stem = q.stem ?? "";
@@ -236,16 +237,16 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
                       Q{idx + 1}
                     </span>
-                    <div className="text-sm text-slate-300 flex-1 min-w-0">
+                    <div className="text-sm text-foreground/80 flex-1 min-w-0">
                       <MarkdownRenderer content={stem} />
                     </div>
-                    <span className="text-[10px] text-slate-500 shrink-0">{marks} mark{marks !== 1 ? "s" : ""}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{marks} mark{marks !== 1 ? "s" : ""}</span>
                   </div>
                   <div className="ml-7 space-y-1.5">
                     <div className="text-xs flex flex-wrap items-baseline gap-1">
-                      <span className="text-slate-500">Student:</span>
+                      <span className="text-muted-foreground">Student:</span>
                       {studentAnswer === null ? (
-                        <span className="text-slate-500 italic">Not answered</span>
+                        <span className="text-muted-foreground italic">Not answered</span>
                       ) : (
                         <span className={`${isCorrect ? "text-emerald-400" : "text-red-400"} inline-block`}>
                           <MarkdownRenderer content={studentAnswer} />
@@ -254,14 +255,14 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
                     </div>
                     {!isCorrect && correctAnswer && (
                       <div className="text-xs flex flex-wrap items-baseline gap-1">
-                        <span className="text-slate-500">Correct:</span>
+                        <span className="text-muted-foreground">Correct:</span>
                         <span className="text-emerald-400 inline-block">
                           <MarkdownRenderer content={correctAnswer} />
                         </span>
                       </div>
                     )}
                     {explanation && (
-                      <div className="text-[11px] text-slate-400 mt-1 italic">
+                      <div className="text-[11px] text-muted-foreground mt-1 italic">
                         <MarkdownRenderer content={explanation} />
                       </div>
                     )}
@@ -273,12 +274,12 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
 
           {report.aiFeedbackHtml && (
             <div className="mt-4">
-              <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2 mb-3">
+              <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2 mb-3">
                 <Award className="w-4 h-4 text-violet-400" />
                 Diagnostic Report
               </h4>
               <div
-                className="prose prose-sm prose-invert max-w-none bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 text-slate-300 [&_h3]:text-violet-300 [&_strong]:text-slate-200 [&_li]:text-slate-300"
+                className="prose prose-sm prose-invert max-w-none bg-muted/40 rounded-xl p-4 border border-border/50 text-foreground/80 [&_h3]:text-violet-300 [&_strong]:text-foreground [&_li]:text-foreground/80"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(report.aiFeedbackHtml) }}
                 data-testid="modal-ai-feedback"
               />
@@ -567,14 +568,14 @@ export default function TutorAssessments() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-card-border/60 bg-background/80 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain" />
+              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain brightness-0 dark:brightness-100" />
               <div>
                 <h1 className="text-lg font-extrabold tracking-tight gradient-text leading-none">SOMA</h1>
-                <p className="text-[9px] text-slate-500 tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
+                <p className="text-[9px] text-muted-foreground tracking-[0.25em] uppercase font-semibold mt-0.5">Assessment Platform</p>
               </div>
             </div>
           </Link>
@@ -587,27 +588,28 @@ export default function TutorAssessments() {
                 {initials}
               </div>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-slate-200">{displayName}</p>
+                <p className="text-sm font-medium text-foreground">{displayName}</p>
                 <p className="text-[10px] text-violet-400 font-semibold uppercase tracking-wider">Tutor</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-slate-400 hover:text-slate-300 transition-colors p-2 min-h-[44px] min-w-[44px]" aria-label="Log out">
+            <ThemeToggle />
+            <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px]" aria-label="Log out">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
-      <nav className="border-b border-slate-800/40 bg-slate-950/40 backdrop-blur-md">
+      <nav className="border-b border-card-border/40 bg-background/40 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-6 flex gap-1">
           <Link href="/tutor">
-            <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-dashboard">
+            <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground/80 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-dashboard">
               <LayoutDashboard className="w-4 h-4" />
               Dashboard
             </span>
           </Link>
           <Link href="/tutor/students">
-            <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-students">
+            <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground/80 border-b-2 border-transparent transition-all cursor-pointer" data-testid="nav-students">
               <Users className="w-4 h-4" />
               Students
             </span>
@@ -622,8 +624,8 @@ export default function TutorAssessments() {
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-100">My Assessments</h2>
-            <p className="text-sm text-slate-400 mt-1">{filteredSortedQuizzes.length} of {tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""}</p>
+            <h2 className="text-2xl font-bold text-foreground">My Assessments</h2>
+            <p className="text-sm text-muted-foreground mt-1">{filteredSortedQuizzes.length} of {tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""}</p>
           </div>
           <Link href="/tutor/assessments/new">
             <span className="glow-button flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-semibold cursor-pointer" data-testid="button-create-new">
@@ -635,11 +637,11 @@ export default function TutorAssessments() {
 
         <div className={`${CARD_CLASS} flex flex-wrap items-end gap-3 p-4`}>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase tracking-wide text-slate-500">Subject</label>
+            <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Subject</label>
             <select
               value={subjectFilter}
               onChange={(e) => setSubjectFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[140px]"
+              className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[140px]"
               data-testid="filter-subject"
             >
               <option value="">All subjects</option>
@@ -647,11 +649,11 @@ export default function TutorAssessments() {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase tracking-wide text-slate-500">Level</label>
+            <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Level</label>
             <select
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[120px]"
+              className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[120px]"
               data-testid="filter-level"
             >
               <option value="">All levels</option>
@@ -659,11 +661,11 @@ export default function TutorAssessments() {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase tracking-wide text-slate-500">Student</label>
+            <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Student</label>
             <select
               value={studentFilter}
               onChange={(e) => setStudentFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[160px]"
+              className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[160px]"
               data-testid="filter-student"
             >
               <option value="">All students</option>
@@ -673,11 +675,11 @@ export default function TutorAssessments() {
             </select>
           </div>
           <div className="flex flex-col gap-1 ml-auto">
-            <label className="text-[10px] uppercase tracking-wide text-slate-500">Sort by</label>
+            <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Sort by</label>
             <select
               value={quizSortBy}
               onChange={(e) => setQuizSortBy(e.target.value as any)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 min-w-[180px]"
+              className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[180px]"
               data-testid="sort-quizzes"
             >
               <option value="latest_submission">Latest submission</option>
@@ -690,7 +692,7 @@ export default function TutorAssessments() {
             <button
               type="button"
               onClick={() => { setSubjectFilter(""); setLevelFilter(""); setStudentFilter(""); }}
-              className="text-xs text-slate-400 hover:text-slate-200 underline self-end pb-1"
+              className="text-xs text-muted-foreground hover:text-foreground underline self-end pb-1"
               data-testid="button-clear-filters"
             >
               Clear filters
@@ -704,13 +706,13 @@ export default function TutorAssessments() {
           </div>
         ) : tutorQuizzes.length === 0 ? (
           <div className={`${CARD_CLASS} text-center py-12`}>
-            <BookOpen className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-            <p className="text-sm text-slate-400">No assessments created yet</p>
+            <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-sm text-muted-foreground">No assessments created yet</p>
           </div>
         ) : filteredSortedQuizzes.length === 0 ? (
           <div className={`${CARD_CLASS} text-center py-12`}>
-            <BookOpen className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-            <p className="text-sm text-slate-400">No assessments match the current filters</p>
+            <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-sm text-muted-foreground">No assessments match the current filters</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -741,9 +743,9 @@ export default function TutorAssessments() {
               });
 
               return (
-                <div key={quiz.id} className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-xl overflow-hidden" data-testid={`quiz-card-${quiz.id}`}>
+                <div key={quiz.id} className="bg-card/60 backdrop-blur-md border border-card-border rounded-xl overflow-hidden" data-testid={`quiz-card-${quiz.id}`}>
                   <div
-                    className="px-5 py-4 cursor-pointer hover:bg-slate-800/30 transition-colors"
+                    className="px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
                     onClick={() => toggleExpand(quiz.id)}
                     data-testid={`quiz-tile-${quiz.id}`}
                   >
@@ -759,10 +761,10 @@ export default function TutorAssessments() {
                             </span>
                           )}
                         </div>
-                        <h3 className="text-sm font-medium text-slate-200 truncate">{quiz.title}</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">{quiz.topic} · {quiz.level}</p>
+                        <h3 className="text-sm font-medium text-foreground truncate">{quiz.title}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">{quiz.topic} · {quiz.level}</p>
                       </div>
-                      <div className="p-2 text-slate-400">
+                      <div className="p-2 text-muted-foreground">
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </div>
                     </div>
@@ -779,7 +781,7 @@ export default function TutorAssessments() {
                       <Link href={`/tutor/assessments/edit/${quiz.id}`}>
                         <span
                           onClick={(e) => e.stopPropagation()}
-                          className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-slate-400 hover:text-violet-300 hover:bg-violet-500/10 transition-all"
+                          className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-violet-300 hover:bg-violet-500/10 transition-all"
                           title="Edit assessment"
                         >
                           <Pencil className="w-3.5 h-3.5" />
@@ -787,7 +789,7 @@ export default function TutorAssessments() {
                       </Link>
                       <button
                         onClick={(e) => { e.stopPropagation(); setConfirmDelete({ quizId: quiz.id, title: quiz.title }); }}
-                        className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
                         title="Delete assessment"
                         data-testid={`button-delete-quiz-${quiz.id}`}
                       >
@@ -797,7 +799,7 @@ export default function TutorAssessments() {
                   </div>
 
                   {isExpanded && (
-                    <div className="border-t border-slate-800/60 px-5 py-4 space-y-5">
+                    <div className="border-t border-card-border/60 px-5 py-4 space-y-5">
                       {/* Assigned Students Section */}
                       {(() => {
                         const currentAssignments = expandedQuiz === quiz.id ? quizAssignments : [];
@@ -807,7 +809,7 @@ export default function TutorAssessments() {
                         return (
                           <div>
                             <div className="flex items-center justify-between mb-3">
-                              <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                              <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
                                 <Users className="w-4 h-4 text-violet-400" />
                                 Assigned Students
                               </h4>
@@ -822,30 +824,30 @@ export default function TutorAssessments() {
                                   <ClockArrowUp className="w-3 h-3" />
                                   {extendDeadlineMutation.isPending ? "Extending..." : "+24h"}
                                 </button>
-                                <span className="text-xs text-slate-400">
+                                <span className="text-xs text-muted-foreground">
                                   {pendingAssignments.length} pending
                                 </span>
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 mb-3">
-                              <select value={assignmentStudentFilter} onChange={(e) => setAssignmentStudentFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300">
+                              <select value={assignmentStudentFilter} onChange={(e) => setAssignmentStudentFilter(e.target.value)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80">
                                 <option value="all">All students</option>
                                 {currentAssignments.map((a) => (
                                   <option key={a.studentId} value={a.studentId}>{a.student.displayName || a.student.email}</option>
                                 ))}
                               </select>
-                              <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as any)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300">
+                              <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as any)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80">
                                 <option value="all">All statuses</option>
                                 <option value="submitted">Submitted</option>
                                 <option value="not_submitted">Not submitted</option>
                               </select>
-                              <input type="date" value={allocationDateFilter} onChange={(e) => setAllocationDateFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300" />
+                              <input type="date" value={allocationDateFilter} onChange={(e) => setAllocationDateFilter(e.target.value)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80" />
                             </div>
                             <div className="space-y-1.5">
                               {pendingAssignments.map(assignment => (
                                 <div
                                   key={assignment.id}
-                                  className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-slate-800/40 border border-slate-700/40"
+                                  className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-muted/40 border border-border/40"
                                   data-testid={`assignment-row-${assignment.id}`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
@@ -856,13 +858,13 @@ export default function TutorAssessments() {
                                       </span>
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="text-sm text-slate-200 truncate">{assignment.student.displayName || "Student"}</p>
-                                      <p className="text-[11px] text-slate-400 truncate">{assignment.student.email}</p>
+                                      <p className="text-sm text-foreground truncate">{assignment.student.displayName || "Student"}</p>
+                                      <p className="text-[11px] text-muted-foreground truncate">{assignment.student.email}</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {assignment.dueDate && (
-                                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                                         <Clock className="w-3 h-3" />
                                         Due {formatDate(assignment.dueDate)}
                                       </span>
@@ -888,7 +890,7 @@ export default function TutorAssessments() {
                       {/* Questions Section */}
                       {isExpanded && questions.length > 0 && (
                         <div>
-                          <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2 mb-3">
+                          <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2 mb-3">
                             <FileText className="w-4 h-4 text-violet-400" />
                             Questions ({questions.length})
                           </h4>
@@ -896,7 +898,7 @@ export default function TutorAssessments() {
                             {questions.map((q, idx) => (
                               <div
                                 key={q.id}
-                                className="flex items-start justify-between gap-3 px-4 py-3 rounded-lg bg-slate-800/40 border border-slate-700/40"
+                                className="flex items-start justify-between gap-3 px-4 py-3 rounded-lg bg-muted/40 border border-border/40"
                                 data-testid={`question-row-${q.id}`}
                               >
                                 <div className="flex items-start gap-2 min-w-0 flex-1">
@@ -904,13 +906,13 @@ export default function TutorAssessments() {
                                     Q{idx + 1}
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="text-sm text-slate-300 line-clamp-2">{q.stem}</p>
-                                    <p className="text-[10px] text-slate-500 mt-1">{q.marks} mark{q.marks !== 1 ? "s" : ""} · {(q.options as string[]).length} options</p>
+                                    <p className="text-sm text-foreground/80 line-clamp-2">{q.stem}</p>
+                                    <p className="text-[10px] text-muted-foreground mt-1">{q.marks} mark{q.marks !== 1 ? "s" : ""} · {(q.options as string[]).length} options</p>
                                   </div>
                                 </div>
                                 <button
                                   onClick={() => setConfirmDeleteQuestion({ questionId: q.id, stem: q.stem.slice(0, 60) })}
-                                  className="flex items-center justify-center p-1.5 min-h-[28px] min-w-[28px] rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0"
+                                  className="flex items-center justify-center p-1.5 min-h-[28px] min-w-[28px] rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0"
                                   title="Delete question"
                                   data-testid={`button-delete-question-${q.id}`}
                                 >
@@ -924,7 +926,7 @@ export default function TutorAssessments() {
 
                       {/* Student Submissions Section */}
                       <div>
-                        <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2 mb-3">
+                        <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2 mb-3">
                           <FileText className="w-4 h-4 text-violet-400" />
                           Student Submissions ({reports.length})
                         </h4>
@@ -933,7 +935,7 @@ export default function TutorAssessments() {
                             <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
                           </div>
                         ) : reports.length === 0 ? (
-                          <p className="text-xs text-slate-500 py-2">No submissions yet. Students will appear here once they complete this assessment.</p>
+                          <p className="text-xs text-muted-foreground py-2">No submissions yet. Students will appear here once they complete this assessment.</p>
                         ) : (
                           <div className="space-y-2">
                             {[...reports].sort((a, b) => {
@@ -970,27 +972,27 @@ export default function TutorAssessments() {
       </main>
 
       {showAssignModal !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowAssignModal(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setShowAssignModal(null)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
-              <h3 className="text-lg font-bold text-slate-200">Assign Assessment to Students</h3>
-              <button onClick={() => setShowAssignModal(null)} className="text-slate-400 hover:text-slate-300 p-1">
+              <h3 className="text-lg font-bold text-foreground">Assign Assessment to Students</h3>
+              <button onClick={() => setShowAssignModal(null)} className="text-muted-foreground hover:text-foreground/80 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 mb-3">Search your students and select who should receive this assessment:</p>
+            <p className="text-xs text-muted-foreground mb-3">Search your students and select who should receive this assessment:</p>
             {adoptedStudents.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">You don't have any students yet. Go to the Students page to add students first.</p>
+              <p className="text-sm text-muted-foreground text-center py-8">You don't have any students yet. Go to the Students page to add students first.</p>
             ) : (
               <>
                 <div className="relative mb-3">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   <input
                     type="text"
                     value={assignSearch}
                     onChange={(e) => setAssignSearch(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-muted/60 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-emerald-500/40"
                     data-testid="input-search-assign"
                     autoFocus
                   />
@@ -1018,7 +1020,7 @@ export default function TutorAssessments() {
                   };
                   return (
                     <>
-                      <div className="flex items-center justify-between mb-2 text-[11px] text-slate-500 px-1">
+                      <div className="flex items-center justify-between mb-2 text-[11px] text-muted-foreground px-1">
                         <span>
                           {filtered.length} shown · {selectedStudentIds.size} selected
                         </span>
@@ -1034,7 +1036,7 @@ export default function TutorAssessments() {
                       </div>
                       <div className="space-y-2 max-h-[40vh] overflow-y-auto">
                         {filtered.length === 0 ? (
-                          <p className="text-xs text-slate-500 text-center py-6">No matches for "{assignSearch}"</p>
+                          <p className="text-xs text-muted-foreground text-center py-6">No matches for "{assignSearch}"</p>
                         ) : filtered.map((student) => (
                           <button
                             key={student.id}
@@ -1042,7 +1044,7 @@ export default function TutorAssessments() {
                             className={`w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
                               selectedStudentIds.has(student.id)
                                 ? "bg-emerald-500/20 border-2 border-emerald-500/60"
-                                : "bg-slate-800/40 border-2 border-slate-700/50 hover:bg-slate-800/60"
+                                : "bg-muted/40 border-2 border-border/50 hover:bg-muted/60"
                             }`}
                             data-testid={`assign-student-${student.id}`}
                             aria-pressed={selectedStudentIds.has(student.id)}
@@ -1053,8 +1055,8 @@ export default function TutorAssessments() {
                               {selectedStudentIds.has(student.id) && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-100 truncate">{student.displayName || "Student"}</p>
-                              <p className="text-xs text-slate-400 truncate">{student.email}</p>
+                              <p className="text-sm font-medium text-foreground truncate">{student.displayName || "Student"}</p>
+                              <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                             </div>
                           </button>
                         ))}
@@ -1062,16 +1064,16 @@ export default function TutorAssessments() {
                     </>
                   );
                 })()}
-                <div className="mt-4 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-300 mb-2">
+                <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
+                  <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
                     <Clock className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date & Time <span className="text-slate-500">(optional)</span>
+                    Due Date & Time <span className="text-muted-foreground">(optional)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-slate-900/80 border border-slate-600/50 text-sm text-slate-200 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 [color-scheme:dark]"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-card/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
                     data-testid="input-due-date"
                   />
                 </div>
@@ -1094,18 +1096,18 @@ export default function TutorAssessments() {
       )}
 
       {assignResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setAssignResult(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setAssignResult(null)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-100">Assignment dispatched</h3>
-                <p className="text-xs text-slate-400 mt-1">
+                <h3 className="text-lg font-bold text-foreground">Assignment dispatched</h3>
+                <p className="text-xs text-muted-foreground mt-1">
                   {assignResult.assigned} newly assigned
                   {assignResult.alreadyAssigned > 0 ? ` · ${assignResult.alreadyAssigned} already had it` : ""}
                   {assignResult.failed > 0 ? ` · ${assignResult.failed} failed` : ""}
                 </p>
               </div>
-              <button onClick={() => setAssignResult(null)} className="text-slate-400 hover:text-slate-300 p-1" aria-label="Close">
+              <button onClick={() => setAssignResult(null)} className="text-muted-foreground hover:text-foreground/80 p-1" aria-label="Close">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1141,12 +1143,12 @@ export default function TutorAssessments() {
                 return (
                   <div
                     key={p.studentId}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-800/40 px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-card-border bg-muted/40 px-3 py-2"
                     data-testid={`assign-result-${p.studentId}`}
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-200 truncate">{p.name}</p>
-                      {p.email && <p className="text-[11px] text-slate-500 truncate">{p.email}</p>}
+                      <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
+                      {p.email && <p className="text-[11px] text-muted-foreground truncate">{p.email}</p>}
                     </div>
                     <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${pill}`}>{statusLabel}</span>
                   </div>
@@ -1178,7 +1180,7 @@ export default function TutorAssessments() {
               )}
               <button
                 onClick={() => setAssignResult(null)}
-                className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-slate-200 bg-slate-700 hover:bg-slate-600"
+                className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-foreground bg-slate-700 hover:bg-muted-foreground"
                 data-testid="button-close-assign-result"
               >
                 Done
@@ -1199,24 +1201,24 @@ export default function TutorAssessments() {
 
       {/* Delete Assessment Confirmation Dialog */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setConfirmDelete(null)}>
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-card border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-200">Delete Assessment</h3>
-                <p className="text-xs text-slate-400">This action cannot be undone</p>
+                <h3 className="text-lg font-bold text-foreground">Delete Assessment</h3>
+                <p className="text-xs text-muted-foreground">This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-slate-300 mb-1">Are you sure you want to permanently delete:</p>
+            <p className="text-sm text-foreground/80 mb-1">Are you sure you want to permanently delete:</p>
             <p className="text-sm font-semibold text-red-300 mb-4">"{confirmDelete.title}"</p>
-            <p className="text-xs text-slate-400 mb-6">This will remove the quiz, all questions, student submissions, and assignments.</p>
+            <p className="text-xs text-muted-foreground mb-6">This will remove the quiz, all questions, student submissions, and assignments.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
               >
                 Cancel
               </button>
@@ -1239,22 +1241,22 @@ export default function TutorAssessments() {
 
       {/* Delete Question Confirmation Dialog */}
       {confirmDeleteQuestion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setConfirmDeleteQuestion(null)}>
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setConfirmDeleteQuestion(null)}>
+          <div className="bg-card border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
                 <Trash2 className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-200">Delete Question</h3>
-                <p className="text-xs text-slate-400">This action cannot be undone</p>
+                <h3 className="text-lg font-bold text-foreground">Delete Question</h3>
+                <p className="text-xs text-muted-foreground">This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-slate-300 mb-4">"{confirmDeleteQuestion.stem}..."</p>
+            <p className="text-sm text-foreground/80 mb-4">"{confirmDeleteQuestion.stem}..."</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDeleteQuestion(null)}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
               >
                 Cancel
               </button>

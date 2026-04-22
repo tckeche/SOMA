@@ -25,7 +25,7 @@ export function AutosaveIndicator({
   if (status === "saving") {
     return (
       <span
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium bg-slate-800/60 text-slate-300 border-slate-700/60"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium bg-muted/60 text-foreground/80 border-border/60"
         role="status"
         aria-live="polite"
         data-testid="autosave-indicator"

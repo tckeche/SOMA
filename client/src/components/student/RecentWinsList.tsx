@@ -18,15 +18,15 @@ export default function RecentWinsList({ wins }: Props) {
   if (wins.length === 0) {
     return (
       <section
-        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-lg"
+        className="rounded-2xl border border-card-border bg-card/70 p-5 shadow-lg"
         aria-label="Recent wins"
         data-testid="panel-recent-wins"
       >
         <header className="flex items-center gap-2 mb-3">
           <Trophy className="w-5 h-5 text-amber-300" />
-          <h2 className="text-sm font-semibold text-slate-100">Recent wins</h2>
+          <h2 className="text-sm font-semibold text-foreground">Recent wins</h2>
         </header>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           Once you've completed a few assessments, your highlights will show up here. Onwards.
         </p>
       </section>
@@ -35,15 +35,15 @@ export default function RecentWinsList({ wins }: Props) {
 
   return (
     <section
-      className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-lg"
+      className="rounded-2xl border border-card-border bg-card/70 p-5 shadow-lg"
       aria-label="Recent wins"
       data-testid="panel-recent-wins"
     >
       <header className="flex items-center gap-2 mb-3">
         <Trophy className="w-5 h-5 text-amber-300" />
         <div>
-          <h2 className="text-sm font-semibold text-slate-100">Recent wins</h2>
-          <p className="text-[11px] text-slate-400">Worth pausing on</p>
+          <h2 className="text-sm font-semibold text-foreground">Recent wins</h2>
+          <p className="text-[11px] text-muted-foreground">Worth pausing on</p>
         </div>
       </header>
       <ul className="space-y-2.5">
@@ -51,12 +51,12 @@ export default function RecentWinsList({ wins }: Props) {
           const meta = TYPE_META[w.type];
           const Icon = meta.Icon;
           return (
-            <li key={i} className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/50 p-3" data-testid={`win-${w.type}-${i}`}>
+            <li key={i} className="flex items-start gap-3 rounded-xl border border-card-border bg-card/50 p-3" data-testid={`win-${w.type}-${i}`}>
               <Icon className={`w-4 h-4 mt-0.5 ${meta.tone} shrink-0`} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-100">{w.title}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{w.detail}</p>
-                <p className="text-[10px] text-slate-500 mt-1">{formatDistanceToNow(new Date(w.ts), { addSuffix: true })}</p>
+                <p className="text-sm font-medium text-foreground">{w.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{w.detail}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{formatDistanceToNow(new Date(w.ts), { addSuffix: true })}</p>
               </div>
             </li>
           );

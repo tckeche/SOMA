@@ -170,7 +170,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     <div className="glass-card p-4 md:p-5 space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <BookOpen className="w-4 h-4 text-violet-400" />
-        <h2 className="font-semibold text-slate-100 text-sm">Assessment Parameters</h2>
+        <h2 className="font-semibold text-foreground text-sm">Assessment Parameters</h2>
         {activeQuizId && (
           <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
             Live · ID {activeQuizId}
@@ -182,7 +182,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           className={`ml-auto text-[11px] rounded-md px-2 py-1 border transition-colors ${
             quickStart
               ? "border-violet-500/50 bg-violet-500/15 text-violet-200"
-              : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/5"
+              : "border-border/50 bg-foreground/[0.03] text-muted-foreground hover:text-foreground hover:bg-foreground/5"
           }`}
           title="Hide examining body and topics — let the Co-Pilot infer scope from your prompt"
           data-testid="button-toggle-quick-start"
@@ -198,7 +198,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
 
       {/* Title lives above the stepper — tutor can edit it at any step. */}
       <div className="space-y-1.5">
-        <Label className="text-slate-400 text-xs uppercase">Title</Label>
+        <Label className="text-muted-foreground text-xs uppercase">Title</Label>
         <Input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
@@ -210,7 +210,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
 
       <StepBar steps={visibleSteps} current={step} onStep={onStep} stepDone={stepDone} />
 
-      <div className="rounded-lg border border-white/5 bg-black/20 p-4 min-h-[160px]">
+      <div className="rounded-lg border border-border/30 bg-background/30 p-4 min-h-[160px]">
         {step === 0 && (
           <StepExaminingBody
             value={examiningBodySlug}
@@ -272,7 +272,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           <ChevronLeft className="w-3.5 h-3.5 mr-1" />
           Back
         </Button>
-        <p className="text-[11px] text-slate-500 flex-1 text-center">
+        <p className="text-[11px] text-muted-foreground flex-1 text-center">
           Step {step + 1} of {STEPS.length} · {STEPS[step].label}
         </p>
         {step < 4 ? (
@@ -292,7 +292,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         )}
       </div>
 
-      <div className="text-xs text-slate-500 flex items-start gap-2">
+      <div className="text-xs text-muted-foreground flex items-start gap-2">
         <AlertCircle className="w-3.5 h-3.5 mt-0.5 text-violet-400 shrink-0" />
         <span>To publish: complete every step, add at least one question, and stay within a 1–300 minute time limit.</span>
       </div>
@@ -348,7 +348,7 @@ function StepBar({
                   ? "border-violet-500/50 bg-violet-500/10 text-violet-200"
                   : isDone
                     ? "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-300 hover:bg-emerald-500/10"
-                    : "border-white/5 bg-white/[0.02] text-slate-500 hover:border-white/10"
+                    : "border-border/30 bg-foreground/[0.03] text-muted-foreground hover:border-border/50"
               } ${clickable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
               disabled={!clickable}
               data-testid={`wizard-step-${s.key}`}
@@ -378,13 +378,13 @@ function StepExaminingBody({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-muted-foreground">
         Pick the examining body that sets the syllabus. Cambridge Syllabus is the only option currently supported.
       </p>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading examining bodies…</p>
+        <p className="text-xs text-muted-foreground">Loading examining bodies…</p>
       ) : bodies.length === 0 ? (
-        <p className="text-xs text-slate-500">No examining bodies available.</p>
+        <p className="text-xs text-muted-foreground">No examining bodies available.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {bodies.map((b) => {
@@ -397,7 +397,7 @@ function StepExaminingBody({
                 className={`text-left rounded-lg border px-3 py-3 text-sm transition-colors ${
                   selected
                     ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/5"
+                    : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 }`}
                 data-testid={`wizard-body-${b.slug}`}
               >
@@ -425,17 +425,17 @@ function StepLevel({
   examiningBodyPicked: boolean;
 }) {
   if (!examiningBodyPicked) {
-    return <p className="text-xs text-slate-500">Pick an examining body first.</p>;
+    return <p className="text-xs text-muted-foreground">Pick an examining body first.</p>;
   }
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-muted-foreground">
         Choose the Cambridge level. Each level has its own syllabus paper map — AS and A2 share subject codes but assess different tiers.
       </p>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading levels…</p>
+        <p className="text-xs text-muted-foreground">Loading levels…</p>
       ) : levels.length === 0 ? (
-        <p className="text-xs text-slate-500">No levels available for this body.</p>
+        <p className="text-xs text-muted-foreground">No levels available for this body.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           {levels.map((l) => {
@@ -448,7 +448,7 @@ function StepLevel({
                 className={`rounded-lg border px-3 py-3 text-sm transition-colors text-left ${
                   selected
                     ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/5"
+                    : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 }`}
                 data-testid={`wizard-level-${l.code}`}
               >
@@ -478,17 +478,17 @@ function StepSubject({
   resolvedSyllabus: SyllabusDto | null;
 }) {
   if (!levelPicked) {
-    return <p className="text-xs text-slate-500">Pick a level first.</p>;
+    return <p className="text-xs text-muted-foreground">Pick a level first.</p>;
   }
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-muted-foreground">
         Subjects available for the chosen body and level. Picking a subject auto-resolves a syllabus code.
       </p>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading subjects…</p>
+        <p className="text-xs text-muted-foreground">Loading subjects…</p>
       ) : subjects.length === 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           No subjects have been ingested for this level yet.
         </p>
       ) : (
@@ -503,7 +503,7 @@ function StepSubject({
                 className={`text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                   selected
                     ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/5"
+                    : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 }`}
                 data-testid={`wizard-subject-${s.slug}`}
               >
@@ -518,7 +518,7 @@ function StepSubject({
           <Badge className="bg-violet-500/10 text-violet-200 border-violet-500/30 text-[10px]">
             Syllabus {resolvedSyllabus.syllabusCode}
           </Badge>
-          <span className="text-[11px] text-slate-500 truncate">{resolvedSyllabus.title}</span>
+          <span className="text-[11px] text-muted-foreground truncate">{resolvedSyllabus.title}</span>
         </div>
       )}
     </div>
@@ -550,7 +550,7 @@ function StepTopics({
 }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   if (!subjectPicked) {
-    return <p className="text-xs text-slate-500">Pick a subject first.</p>;
+    return <p className="text-xs text-muted-foreground">Pick a subject first.</p>;
   }
   const selectedTopicSet = new Set(selectedTopicIds);
   const selectedSubtopicSet = new Set(selectedSubtopicIds);
@@ -574,7 +574,7 @@ function StepTopics({
   return (
     <div className="space-y-2">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           Optional. Expand a topic to drill into its subtopics, or tick the topic header to ground the AI in the whole topic.
           Leave empty to target the full {resolvedSyllabus ? `syllabus ${resolvedSyllabus.syllabusCode}` : "subject"}.
         </p>
@@ -590,9 +590,9 @@ function StepTopics({
         )}
       </div>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading topics…</p>
+        <p className="text-xs text-muted-foreground">Loading topics…</p>
       ) : topics.length === 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           No topics have been parsed for this syllabus yet. Leave blank to target the whole subject.
         </p>
       ) : (
@@ -600,7 +600,7 @@ function StepTopics({
           {groups.map((g) => (
             <div key={g.strand || "__none__"}>
               {g.strand && (
-                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">{g.strand}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">{g.strand}</p>
               )}
               <div className="space-y-1.5">
                 {g.topics.map((t) => {
@@ -620,7 +620,7 @@ function StepTopics({
                       className={`rounded-md border ${
                         headerChecked || someSubsSelected
                           ? "border-violet-500/40 bg-violet-500/10"
-                          : "border-white/5 bg-white/[0.02]"
+                          : "border-border/30 bg-foreground/[0.03]"
                       }`}
                     >
                       <div className="flex items-center gap-2 px-2 py-1.5">
@@ -647,23 +647,23 @@ function StepTopics({
                           disabled={!hasSubs}
                           data-testid={`wizard-topic-toggle-${t.id}`}
                         >
-                          <span className="flex-1 text-slate-200">
+                          <span className="flex-1 text-foreground">
                             {t.topicNumber ? `${t.topicNumber} ` : ""}{t.title}
                             {t.levelTiers.length > 0 && (
-                              <span className="ml-1 text-[10px] text-slate-500">
+                              <span className="ml-1 text-[10px] text-muted-foreground">
                                 [{t.levelTiers.join("/")}]
                               </span>
                             )}
                           </span>
                           {hasSubs && (
                             <>
-                              <span className="text-[10px] text-slate-500">
+                              <span className="text-[10px] text-muted-foreground">
                                 {selectedSubsForTopic.length > 0
                                   ? `${selectedSubsForTopic.length}/${subIds.length}`
                                   : `${subIds.length} subtopics`}
                               </span>
                               <ChevronDown
-                                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                                className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
                               />
                             </>
                           )}
@@ -671,7 +671,7 @@ function StepTopics({
                       </div>
                       {hasSubs && isOpen && (
                         <div
-                          className="border-t border-white/5 px-2 py-1.5 grid grid-cols-1 md:grid-cols-2 gap-1"
+                          className="border-t border-border/30 px-2 py-1.5 grid grid-cols-1 md:grid-cols-2 gap-1"
                           data-testid={`wizard-subtopic-list-${t.id}`}
                         >
                           {t.subtopics.map((s) => {
@@ -680,7 +680,7 @@ function StepTopics({
                               <label
                                 key={s.id}
                                 className={`flex items-start gap-2 text-[11px] rounded px-2 py-1 cursor-pointer ${
-                                  checked ? "bg-violet-500/15" : "hover:bg-white/5"
+                                  checked ? "bg-violet-500/15" : "hover:bg-foreground/5"
                                 }`}
                               >
                                 <input
@@ -690,11 +690,11 @@ function StepTopics({
                                   className="mt-0.5 accent-violet-500"
                                   data-testid={`wizard-subtopic-checkbox-${s.id}`}
                                 />
-                                <span className="flex-1 text-slate-300">
-                                  <span className="text-slate-500">{s.subtopicNumber}</span>{" "}
+                                <span className="flex-1 text-foreground/80">
+                                  <span className="text-muted-foreground">{s.subtopicNumber}</span>{" "}
                                   {s.title}
                                   {s.coreOrExtended && (
-                                    <span className="ml-1 text-[10px] text-slate-500">
+                                    <span className="ml-1 text-[10px] text-muted-foreground">
                                       [{s.coreOrExtended}]
                                     </span>
                                   )}
@@ -725,7 +725,7 @@ function StepTimeLimit({
 }) {
   return (
     <div className="space-y-2 max-w-xs">
-      <Label className="text-slate-400 text-xs uppercase">Time Limit (minutes)</Label>
+      <Label className="text-muted-foreground text-xs uppercase">Time Limit (minutes)</Label>
       <Input
         type="number"
         min={1}
@@ -739,7 +739,7 @@ function StepTimeLimit({
         className="glass-input text-sm h-12"
         data-testid="input-quiz-time-limit"
       />
-      <p className="text-[11px] text-slate-500">Allowed range: 1 to 300 minutes.</p>
+      <p className="text-[11px] text-muted-foreground">Allowed range: 1 to 300 minutes.</p>
     </div>
   );
 }

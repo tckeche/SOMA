@@ -39,7 +39,7 @@ export default function RoleRouter({ studentComponent: StudentComp, tutorCompone
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
-          <p className="text-sm text-slate-400">Loading...</p>
+          <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );

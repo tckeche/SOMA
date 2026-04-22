@@ -4,6 +4,7 @@ import { AuthRequestError, supabase, authFetch, withTimeout } from "@/lib/supaba
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft, BookOpen, Hash, GraduationCap } from "lucide-react";
 import { Link } from "wouter";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type AuthMode = "login" | "signup" | "reset";
 
@@ -347,37 +348,40 @@ export default function StudentAuth() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center px-4 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(139,92,246,0.15),transparent)]">
+      <div className="fixed top-4 right-4 z-30">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <Link href="/">
-          <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-violet-400 transition-colors cursor-pointer mb-8 block" data-testid="link-back-home">
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-violet-400 transition-colors cursor-pointer mb-8 block" data-testid="link-back-home">
             <ArrowLeft className="w-4 h-4" />
             Back to home
           </span>
         </Link>
 
         <div className="text-center mb-8">
-          <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-16 w-auto object-contain mx-auto mb-4" />
+          <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-16 w-auto object-contain mx-auto mb-4 brightness-0 dark:brightness-100" />
           <h1 className="text-2xl font-bold gradient-text drop-shadow-[0_0_15px_rgba(139,92,246,0.5)]" data-testid="text-auth-title">
             SOMA
           </h1>
-          <p className="text-xs text-slate-400 mt-1 tracking-widest uppercase">Student &amp; Tutor Portal</p>
-          <p className="text-[11px] text-slate-500 mt-2">Same login for students and tutors — your role is set by your email.</p>
+          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">Student &amp; Tutor Portal</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Same login for students and tutors — your role is set by your email.</p>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <div className="bg-card/50 backdrop-blur-md border border-border/50 rounded-2xl p-8 shadow-xl">
           {mode === "reset" ? (
             <div className="mb-6 text-center">
-              <h2 className="text-lg font-semibold text-white">Reset Password</h2>
+              <h2 className="text-lg font-semibold text-foreground">Reset Password</h2>
             </div>
           ) : (
-            <div className="flex mb-6 bg-black/30 rounded-xl p-1 border border-white/5">
+            <div className="flex mb-6 bg-background/40 rounded-xl p-1 border border-border/30">
               <button
                 type="button"
                 onClick={() => switchMode("login")}
                 className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all ${
                   mode === "login"
                     ? "bg-violet-600/80 text-white shadow-lg shadow-violet-500/20"
-                    : "text-slate-400 hover:text-slate-300"
+                    : "text-muted-foreground hover:text-foreground/80"
                 }`}
                 data-testid="button-tab-login"
               >
@@ -389,7 +393,7 @@ export default function StudentAuth() {
                 className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all ${
                   mode === "signup"
                     ? "bg-violet-600/80 text-white shadow-lg shadow-violet-500/20"
-                    : "text-slate-400 hover:text-slate-300"
+                    : "text-muted-foreground hover:text-foreground/80"
                 }`}
                 data-testid="button-tab-signup"
               >
@@ -407,9 +411,9 @@ export default function StudentAuth() {
             {mode === "signup" && (
               <>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">Display Name</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Display Name</label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type="text"
                       value={displayName}
@@ -421,11 +425,11 @@ export default function StudentAuth() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Subject <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type="text"
                       value={subject}
@@ -438,11 +442,11 @@ export default function StudentAuth() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Exam Body / Syllabus <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <select
                       value={syllabus}
                       onChange={(e) => setSyllabus(e.target.value)}
@@ -462,11 +466,11 @@ export default function StudentAuth() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Syllabus Code <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type="text"
                       value={syllabusCode}
@@ -479,11 +483,11 @@ export default function StudentAuth() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block font-medium">
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Level <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <select
                       value={level}
                       onChange={(e) => setLevel(e.target.value)}
@@ -511,9 +515,9 @@ export default function StudentAuth() {
             )}
 
             <div>
-              <label className="text-xs text-slate-400 mb-1.5 block font-medium">Email</label>
+              <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
                   type="email"
                   value={email}
@@ -533,9 +537,9 @@ export default function StudentAuth() {
 
             {mode !== "reset" && (
               <div>
-                <label className="text-xs text-slate-400 mb-1.5 block font-medium">Password</label>
+                <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
                     type={showPassword ? "text" : "password"}
                     value={password}
@@ -553,7 +557,7 @@ export default function StudentAuth() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-300 transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-foreground/80 transition-colors"
                     data-testid="button-toggle-password"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -575,7 +579,7 @@ export default function StudentAuth() {
             )}
 
             {mode === "reset" && (
-              <p className="text-xs text-slate-400 -mt-1">
+              <p className="text-xs text-muted-foreground -mt-1">
                 Enter your email and we'll send you a link to reset your password.
               </p>
             )}
@@ -637,7 +641,7 @@ export default function StudentAuth() {
             )}
           </form>
 
-          <p className="text-center text-xs text-slate-400 mt-6">
+          <p className="text-center text-xs text-muted-foreground mt-6">
             {mode === "login" ? (
               <>
                 Don't have an account?{" "}

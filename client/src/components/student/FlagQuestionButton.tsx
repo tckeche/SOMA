@@ -108,11 +108,11 @@ export default function FlagQuestionButton({ questionId, quizId, reportId }: Pro
 
       {open && !isFlagged && (
         <div
-          className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-orange-500/30 bg-slate-900 p-3 shadow-2xl z-30"
+          className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-orange-500/30 bg-card p-3 shadow-2xl z-30"
           data-testid="flag-popover"
         >
           <p className="text-xs font-semibold text-orange-300 mb-1">Flag this question</p>
-          <p className="text-[11px] text-slate-400 mb-2">
+          <p className="text-[11px] text-muted-foreground mb-2">
             Optional: tell your tutor what's confusing. They'll review it after class.
           </p>
           <textarea
@@ -121,14 +121,14 @@ export default function FlagQuestionButton({ questionId, quizId, reportId }: Pro
             rows={3}
             maxLength={500}
             placeholder="e.g. Stem feels ambiguous, options seem similar…"
-            className="w-full rounded-lg bg-slate-950/60 border border-slate-700 text-xs text-slate-100 px-2 py-1.5 focus:outline-none focus:border-orange-500/40"
+            className="w-full rounded-lg bg-background/60 border border-border text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-orange-500/40"
             data-testid="textarea-flag-reason"
           />
           <div className="flex items-center justify-end gap-2 mt-2">
             <button
               type="button"
               onClick={() => { setOpen(false); setReason(""); }}
-              className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 px-2 py-1 rounded"
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded"
               data-testid="button-flag-cancel"
             >
               <X className="w-3 h-3" /> Cancel

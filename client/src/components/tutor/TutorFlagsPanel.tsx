@@ -91,7 +91,7 @@ export default function TutorFlagsPanel({ quizId }: Props) {
           {flags.map((f) => (
             <li
               key={f.id}
-              className={`rounded-xl border p-3 ${f.resolvedAt ? "border-slate-700 bg-slate-900/50 opacity-70" : "border-orange-500/30 bg-slate-900/60"}`}
+              className={`rounded-xl border p-3 ${f.resolvedAt ? "border-border bg-card/50 opacity-70" : "border-orange-500/30 bg-card/60"}`}
               data-testid={`flag-${f.id}`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -101,16 +101,16 @@ export default function TutorFlagsPanel({ quizId }: Props) {
                       Q{f.question.id}
                     </span>
                     {f.question.topicTag && (
-                      <span className="text-[10px] text-slate-300 px-2 py-0.5 rounded-full bg-slate-800/60">{f.question.topicTag}</span>
+                      <span className="text-[10px] text-foreground/80 px-2 py-0.5 rounded-full bg-muted/60">{f.question.topicTag}</span>
                     )}
                     {!quizId && (
-                      <span className="text-[10px] text-slate-400">{f.quiz.title}</span>
+                      <span className="text-[10px] text-muted-foreground">{f.quiz.title}</span>
                     )}
-                    <span className="text-[10px] text-slate-500">
+                    <span className="text-[10px] text-muted-foreground">
                       by {f.student.displayName || f.student.email} · {formatDistanceToNow(new Date(f.createdAt), { addSuffix: true })}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-200 mt-1.5 line-clamp-3">{f.question.stem}</p>
+                  <p className="text-xs text-foreground mt-1.5 line-clamp-3">{f.question.stem}</p>
                   {f.reason && (
                     <div className="flex items-start gap-1.5 mt-2 text-[11px] text-orange-200/90 bg-orange-500/5 border border-orange-500/20 rounded-lg p-2">
                       <MessageSquare className="w-3 h-3 mt-0.5 shrink-0" />

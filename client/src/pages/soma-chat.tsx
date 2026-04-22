@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { toProperCase } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface ReportWithQuiz {
   id: number;
@@ -220,10 +221,10 @@ export default function SomaChatPage() {
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-8 text-center max-w-md">
+        <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-8 text-center max-w-md">
           <Sparkles className="w-12 h-12 mx-auto text-emerald-400 mb-4" />
-          <h2 className="text-xl font-bold text-slate-100 mb-2">SOMA Tutor</h2>
-          <p className="text-sm text-slate-400 mb-6">Please log in to access your personalized analysis.</p>
+          <h2 className="text-xl font-bold text-foreground mb-2">SOMA Tutor</h2>
+          <p className="text-sm text-muted-foreground mb-6">Please log in to access your personalized analysis.</p>
           <Link href="/login">
             <Button className="glow-button">Log In</Button>
           </Link>
@@ -234,11 +235,11 @@ export default function SomaChatPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-card-border/60 bg-background/80 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/dashboard">
-              <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-200">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Dashboard
               </Button>
@@ -248,7 +249,10 @@ export default function SomaChatPage() {
               <h1 className="text-lg font-bold text-emerald-300">SOMA Tutor</h1>
             </div>
           </div>
-          <p className="text-sm text-slate-400">{displayName}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted-foreground">{displayName}</p>
+            <ThemeToggle size="sm" />
+          </div>
         </div>
       </header>
 
@@ -256,14 +260,14 @@ export default function SomaChatPage() {
         {/* Stats overview */}
         {!isDataLoading && hasData && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-5 text-center">
+            <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
               <BookOpen className="w-5 h-5 mx-auto text-violet-400 mb-2" />
-              <p className="text-2xl font-bold text-slate-100">{reports.length + submissions.length}</p>
-              <p className="text-xs text-slate-500 uppercase tracking-wider">Assessments</p>
+              <p className="text-2xl font-bold text-foreground">{reports.length + submissions.length}</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Assessments</p>
             </div>
-            <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-5 text-center">
+            <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
               <TrendingUp className="w-5 h-5 mx-auto text-emerald-400 mb-2" />
-              <p className="text-2xl font-bold text-slate-100">
+              <p className="text-2xl font-bold text-foreground">
                 {(() => {
                   const scores = [
                     ...submissions.map(s => s.maxPossibleScore > 0 ? Math.round((s.totalScore / s.maxPossibleScore) * 100) : 0),
@@ -272,37 +276,37 @@ export default function SomaChatPage() {
                   return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
                 })()}%
               </p>
-              <p className="text-xs text-slate-500 uppercase tracking-wider">Average</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Average</p>
             </div>
-            <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-5 text-center">
+            <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
               <CheckCircle2 className="w-5 h-5 mx-auto text-cyan-400 mb-2" />
-              <p className="text-2xl font-bold text-slate-100">
+              <p className="text-2xl font-bold text-foreground">
                 {reports.filter(r => r.aiFeedbackHtml && r.status !== "pending").length}
               </p>
-              <p className="text-xs text-slate-500 uppercase tracking-wider">SOMA Reports</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">SOMA Reports</p>
             </div>
-            <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-5 text-center">
+            <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
               <Target className="w-5 h-5 mx-auto text-amber-400 mb-2" />
-              <p className="text-2xl font-bold text-slate-100">
+              <p className="text-2xl font-bold text-foreground">
                 {new Set([
                   ...submissions.map(s => s.quiz.subject).filter(Boolean),
                   ...reports.map(r => r.quiz.topic).filter(Boolean),
                 ]).size}
               </p>
-              <p className="text-xs text-slate-500 uppercase tracking-wider">Subjects</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Subjects</p>
             </div>
           </div>
         )}
 
         {/* Generate button */}
-        <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6">
+        <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30 shrink-0">
               <Sparkles className="w-6 h-6 text-emerald-400" />
             </div>
             <div className="flex-1">
-              <h2 className="text-lg font-semibold text-slate-100 mb-1">Comprehensive Standing Analysis</h2>
-              <p className="text-sm text-slate-400 mb-4">
+              <h2 className="text-lg font-semibold text-foreground mb-1">Comprehensive Standing Analysis</h2>
+              <p className="text-sm text-muted-foreground mb-4">
                 Analyzing all your quiz results and individual feedback reports to build a comprehensive picture of your academic standing, strengths, and weak areas.
               </p>
               {!hasData && !isDataLoading ? (
@@ -334,12 +338,12 @@ export default function SomaChatPage() {
 
         {/* Analysis result */}
         {isDataLoading && (
-          <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-8">
+          <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-8">
             <div className="space-y-4">
-              <Skeleton className="h-6 w-1/2 bg-white/5" />
-              <Skeleton className="h-4 w-3/4 bg-white/5" />
-              <Skeleton className="h-4 w-2/3 bg-white/5" />
-              <Skeleton className="h-32 w-full bg-white/5 rounded-xl" />
+              <Skeleton className="h-6 w-1/2 bg-foreground/5" />
+              <Skeleton className="h-4 w-3/4 bg-foreground/5" />
+              <Skeleton className="h-4 w-2/3 bg-foreground/5" />
+              <Skeleton className="h-32 w-full bg-foreground/5 rounded-xl" />
             </div>
           </div>
         )}

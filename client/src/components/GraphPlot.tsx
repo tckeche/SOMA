@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useState } from "react";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { applyGraphPreset } from "@/lib/graphPresets";
+import { useTheme } from "next-themes";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const WIDTH  = 620;
@@ -15,7 +16,7 @@ const plotBottom = HEIGHT - M.bottom;
 const plotW      = plotRight - plotLeft;   // 492
 const plotH      = plotBottom - plotTop;   // 268
 
-const CURVE_COLORS = [
+const CURVE_COLORS_DARK = [
   "#38bdf8", // sky blue
   "#a78bfa", // violet
   "#34d399", // emerald
@@ -23,6 +24,57 @@ const CURVE_COLORS = [
   "#f87171", // rose
   "#facc15", // yellow
 ];
+
+const CURVE_COLORS_LIGHT = [
+  "#0369a1", // sky-700
+  "#6d28d9", // violet-700
+  "#047857", // emerald-700
+  "#c2410c", // orange-700
+  "#b91c1c", // red-700
+  "#a16207", // yellow-700
+];
+
+type PlotPalette = {
+  gridStroke: string;
+  tickStroke: string;
+  axisStroke: string;
+  arrowheadFill: string;
+  tickLabel: string;
+  axisLabel: string;
+  asymptote: string;
+  pointFill: string;
+  pointStroke: string;
+  pointLabel: string;
+  curves: string[];
+};
+
+const PLOT_DARK: PlotPalette = {
+  gridStroke: "rgba(148,163,184,0.14)",
+  tickStroke: "rgba(148,163,184,0.6)",
+  axisStroke: "rgba(226,232,240,0.70)",
+  arrowheadFill: "rgba(226,232,240,0.70)",
+  tickLabel: "#cbd5e1",
+  axisLabel: "#e2e8f0",
+  asymptote: "rgba(248,113,113,0.75)",
+  pointFill: "#a78bfa",
+  pointStroke: "#1e1b4b",
+  pointLabel: "#e2e8f0",
+  curves: CURVE_COLORS_DARK,
+};
+
+const PLOT_LIGHT: PlotPalette = {
+  gridStroke: "rgba(71,85,105,0.22)",
+  tickStroke: "rgba(30,41,59,0.60)",
+  axisStroke: "rgba(15,23,42,0.75)",
+  arrowheadFill: "rgba(15,23,42,0.75)",
+  tickLabel: "#334155",
+  axisLabel: "#0f172a",
+  asymptote: "rgba(185,28,28,0.75)",
+  pointFill: "#6d28d9",
+  pointStroke: "#f5f3ff",
+  pointLabel: "#0f172a",
+  curves: CURVE_COLORS_LIGHT,
+};
 
 // ── Nice tick interval ────────────────────────────────────────────────────────
 // Always produces 4–10 readable, "round number" ticks regardless of range size.
@@ -460,6 +512,11 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   const [pythonSvg, setPythonSvg] = useState<string | null>(null);
   const [pythonUnavailable, setPythonUnavailable] = useState(false);
   const specKey = useMemo(() => JSON.stringify(resolvedSpec), [resolvedSpec]);
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const palette: PlotPalette = mounted && resolvedTheme === "light" ? PLOT_LIGHT : PLOT_DARK;
+  const CURVE_COLORS = palette.curves;
 
   useEffect(() => {
     let cancelled = false;
@@ -503,10 +560,10 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
   if (!isValidSpec(resolvedSpec)) {
     return (
       <div
-        className="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-6 text-center"
+        className="rounded-2xl border border-border/50 bg-card/60 p-6 text-center"
         data-testid="graph-invalid"
       >
-        <p className="text-slate-400 text-sm">Graph specification is invalid or incomplete.</p>
+        <p className="text-muted-foreground text-sm">Graph specification is invalid or incomplete.</p>
       </div>
     );
   }
@@ -587,11 +644,11 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
   return (
     <div
-      className="rounded-2xl border border-cyan-500/20 bg-slate-950/70 p-3 md:p-4"
+      className="rounded-2xl border border-cyan-500/20 bg-background/70 p-3 md:p-4"
       data-testid="graph-plot"
     >
       {pythonUnavailable && (
-        <p className="mb-2 text-[11px] text-slate-400">Using browser graph fallback while Python renderer is unavailable.</p>
+        <p className="mb-2 text-[11px] text-muted-foreground">Using browser graph fallback while Python renderer is unavailable.</p>
       )}
       {resolvedSpec.equation && <span className="sr-only">Equation: {resolvedSpec.equation}</span>}
       {/*
@@ -628,7 +685,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             refX="8" refY="4"
             orient="auto"
           >
-            <path d="M0,1 L8,4 L0,7 z" fill="rgba(226,232,240,0.60)" />
+            <path d="M0,1 L8,4 L0,7 z" fill={palette.arrowheadFill} />
           </marker>
         </defs>
 
@@ -637,13 +694,13 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           {resolvedSpec.showGrid && xTicks.map((x) => (
             <line key={`vg-${x}`}
               x1={xToSvg(x)} x2={xToSvg(x)} y1={plotTop} y2={plotBottom}
-              stroke="rgba(148,163,184,0.10)" strokeWidth="1"
+              stroke={palette.gridStroke} strokeWidth="1"
             />
           ))}
           {resolvedSpec.showGrid && yTicks.map((y) => (
             <line key={`hg-${y}`}
               x1={plotLeft} x2={plotRight} y1={yToSvg(y)} y2={yToSvg(y)}
-              stroke="rgba(148,163,184,0.10)" strokeWidth="1"
+              stroke={palette.gridStroke} strokeWidth="1"
             />
           ))}
         </g>
@@ -652,7 +709,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         <line
           x1={plotLeft} x2={plotRight + 5}
           y1={xAxisY}   y2={xAxisY}
-          stroke="rgba(226,232,240,0.55)" strokeWidth="1.5"
+          stroke={palette.axisStroke} strokeWidth="1.5"
           markerEnd={`url(#${markerId})`}
         />
 
@@ -660,7 +717,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         <line
           x1={yAxisX} x2={yAxisX}
           y1={plotBottom} y2={plotTop - 5}
-          stroke="rgba(226,232,240,0.55)" strokeWidth="1.5"
+          stroke={palette.axisStroke} strokeWidth="1.5"
           markerEnd={`url(#${markerId})`}
         />
 
@@ -672,7 +729,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             <line key={`xtk-${x}`}
               x1={sx} x2={sx}
               y1={xAxisY - TICK_SIZE} y2={xAxisY + TICK_SIZE}
-              stroke="rgba(148,163,184,0.6)" strokeWidth="1"
+              stroke={palette.tickStroke} strokeWidth="1"
             />
           );
         })}
@@ -685,7 +742,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             <line key={`ytk-${y}`}
               x1={yAxisX - TICK_SIZE} x2={yAxisX + TICK_SIZE}
               y1={sy} y2={sy}
-              stroke="rgba(148,163,184,0.6)" strokeWidth="1"
+              stroke={palette.tickStroke} strokeWidth="1"
             />
           );
         })}
@@ -699,7 +756,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           return !skipOrigin ? (
             <text key={`xl-${x}`}
               x={sx} y={xAxisY + 16}
-              textAnchor="middle" fill="#94a3b8" fontSize="11"
+              textAnchor="middle" fill={palette.tickLabel} fontSize="11"
             >
               {x}
             </text>
@@ -714,7 +771,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
           return !skipOrigin ? (
             <text key={`yl-${y}`}
               x={yLabelX} y={sy + 4}
-              textAnchor="end" fill="#94a3b8" fontSize="11"
+              textAnchor="end" fill={palette.tickLabel} fontSize="11"
             >
               {y}
             </text>
@@ -725,7 +782,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         {/* X label: anchored at right SVG edge, grows leftward → never clips  */}
         <text
           x={WIDTH - 4} y={xAxisY + 4}
-          textAnchor="end" fill="#cbd5e1"
+          textAnchor="end" fill={palette.axisLabel}
           fontSize="12" fontWeight="600" fontStyle="italic"
         >
           {axisLabels.x}
@@ -733,7 +790,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
         {/* Y label: just above the arrowhead, anchored to left of axis line   */}
         <text
           x={yAxisX + 6} y={plotTop - 10}
-          textAnchor="start" fill="#cbd5e1"
+          textAnchor="start" fill={palette.axisLabel}
           fontSize="12" fontWeight="600" fontStyle="italic"
         >
           {axisLabels.y}
@@ -746,7 +803,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
               key={`asym-v-${x}-${i}`}
               x1={xToSvg(x)} x2={xToSvg(x)}
               y1={plotTop} y2={plotBottom}
-              stroke="rgba(248,113,113,0.75)"
+              stroke={palette.asymptote}
               strokeDasharray="7 5"
               strokeWidth="1.2"
             />
@@ -756,7 +813,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
               key={`asym-h-${y}-${i}`}
               x1={plotLeft} x2={plotRight}
               y1={yToSvg(y)} y2={yToSvg(y)}
-              stroke="rgba(248,113,113,0.75)"
+              stroke={palette.asymptote}
               strokeDasharray="7 5"
               strokeWidth="1.2"
             />
@@ -768,7 +825,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
                 key={`asym-o-${i}`}
                 d={d}
                 fill="none"
-                stroke="rgba(248,113,113,0.75)"
+                stroke={palette.asymptote}
                 strokeDasharray="7 5"
                 strokeWidth="1.2"
               />
@@ -853,12 +910,12 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
             <g key={`pt-${p.x}-${p.y}-${i}`}>
               <circle
                 cx={xToSvg(p.x)} cy={yToSvg(p.y)} r="4.5"
-                fill="#a78bfa" stroke="#1e1b4b" strokeWidth="1.2"
+                fill={palette.pointFill} stroke={palette.pointStroke} strokeWidth="1.2"
               />
               {p.label && (
                 <text
                   x={xToSvg(p.x) + 8} y={yToSvg(p.y) - 6}
-                  fill="#e2e8f0" fontSize="11"
+                  fill={palette.pointLabel} fontSize="11"
                 >
                   {p.label}
                 </text>
@@ -893,14 +950,14 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
       {/* ── Legend — HTML below the SVG (no in-plot overlap) ─────────────── */}
       {showLegend && legendEntries.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 mt-2 pt-2 border-t border-white/5">
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 mt-2 pt-2 border-t border-border/30">
           {legendEntries.map((c, i) => (
             <div key={i} className="flex items-center gap-2">
               <span
                 className="inline-block rounded-full flex-shrink-0"
                 style={{ width: 20, height: 2, background: c.color }}
               />
-              <span className="text-xs text-slate-300 italic whitespace-nowrap">{c.label}</span>
+              <span className="text-xs text-foreground/80 italic whitespace-nowrap">{c.label}</span>
             </div>
           ))}
         </div>

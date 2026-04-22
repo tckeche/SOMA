@@ -7,6 +7,7 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import { BarChart2 as BarChart2Icon } from "lucide-react";
+import { useChartPalette } from "@/lib/chartTheme";
 
 /* ────────────────────────────────────────────────────────
    Error Boundary — wraps any chart to prevent cascade crashes
@@ -26,7 +27,7 @@ class ChartErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+        <div className="flex items-center justify-center h-full text-muted-foreground text-xs font-medium">
           {this.props.label || "Chart unavailable"}
         </div>
       );
@@ -80,15 +81,9 @@ export interface DashboardStats {
    Constants
    ──────────────────────────────────────────────────────── */
 
-const STUDENT_COLORS = [
-  "#8B5CF6", "#FBBF24", "#34D399", "#60A5FA",
-  "#F43F5E", "#22D3EE", "#FB923C", "#6366F1",
-  "#A78BFA", "#F472B6", "#4ADE80", "#38BDF8",
-];
-
-function studentColor(name: string, allNames: string[]): string {
+function studentColor(name: string, allNames: string[], palette: string[]): string {
   const idx = allNames.indexOf(name);
-  return STUDENT_COLORS[Math.max(0, idx) % STUDENT_COLORS.length];
+  return palette[Math.max(0, idx) % palette.length];
 }
 
 /* ────────────────────────────────────────────────────────
@@ -96,16 +91,30 @@ function studentColor(name: string, allNames: string[]): string {
    ──────────────────────────────────────────────────────── */
 
 function ChartTooltipContent({ active, payload, label }: any) {
+  const palette = useChartPalette();
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl px-3.5 py-2.5 text-xs border border-white/[0.08] backdrop-blur-xl"
-      style={{ background: "rgba(15,23,42,0.95)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}>
-      {label && <p className="text-slate-400 font-semibold mb-1.5 text-[10px] uppercase tracking-wider">{label}</p>}
+    <div
+      className="rounded-xl px-3.5 py-2.5 text-xs backdrop-blur-xl"
+      style={{
+        background: palette.tooltipBg,
+        border: `1px solid ${palette.tooltipBorder}`,
+        boxShadow: palette.tooltipShadow,
+        color: palette.tooltipFg,
+      }}
+    >
+      {label && (
+        <p className="font-semibold mb-1.5 text-[10px] uppercase tracking-wider" style={{ color: palette.tooltipMuted }}>
+          {label}
+        </p>
+      )}
       {payload.map((entry: any, i: number) => (
         <div key={i} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
-          <span className="text-slate-400">{entry.name}:</span>
-          <span className="text-white font-bold tabular-nums">{typeof entry.value === "number" ? `${Math.round(entry.value)}%` : entry.value}</span>
+          <span style={{ color: palette.tooltipMuted }}>{entry.name}:</span>
+          <span className="font-bold tabular-nums" style={{ color: palette.tooltipFg }}>
+            {typeof entry.value === "number" ? `${Math.round(entry.value)}%` : entry.value}
+          </span>
         </div>
       ))}
     </div>
@@ -117,6 +126,7 @@ function ChartTooltipContent({ active, payload, label }: any) {
    ──────────────────────────────────────────────────────── */
 
 export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
   if (!stats) return null;
   const data = useMemo(() => {
     if (!stats.cohortAverages?.length) return [];
@@ -129,7 +139,7 @@ export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
 
   if (data.length < 2) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-xs font-medium">
         Need 2+ subjects for radar chart
       </div>
     );
@@ -138,10 +148,10 @@ export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <RadarChart data={data} cx="50%" cy="50%" outerRadius="72%">
-        <PolarGrid stroke="rgba(148,163,184,0.12)" />
-        <PolarAngleAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} />
-        <PolarRadiusAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} />
-        <Radar name="Cohort Avg" dataKey="cohortAvg" stroke="#8B5CF6" fill="rgba(139,92,246,0.25)" strokeWidth={2} dot={{ r: 3, fill: "#8B5CF6" }} />
+        <PolarGrid stroke={palette.gridStroke} />
+        <PolarAngleAxis dataKey="subject" tick={{ fill: palette.axisTick, fontSize: 10, fontWeight: 600 }} />
+        <PolarRadiusAxis domain={[0, 100]} tick={{ fill: palette.axisTickMuted, fontSize: 9 }} axisLine={false} />
+        <Radar name="Cohort Avg" dataKey="cohortAvg" stroke={palette.radarStroke} fill={palette.radarArea} strokeWidth={2} dot={{ r: 3, fill: palette.radarStroke }} />
         <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} />
       </RadarChart>
     </ResponsiveContainer>
@@ -153,6 +163,7 @@ export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
   if (!stats) return null;
   const data = useMemo(() => {
     return (stats.studentInsights || []).map((s) => {
@@ -171,15 +182,15 @@ export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} barCategoryGap="18%" barGap={3}>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
-        <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
-        <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
-        <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} cursor={{ fill: "rgba(139,92,246,0.06)" }} />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-        <ReferenceLine y={70} stroke="#EF4444" strokeDasharray="6 4" strokeWidth={1.5} label={{ value: "Threshold", fill: "#EF4444", fontSize: 9, position: "right" }} />
-        <Bar name="Avg Score" dataKey="avgScore" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-        <Bar name="Completion" dataKey="completionRate" fill="#34D399" radius={[4, 4, 0, 0]} />
-        <Bar name="Reliability" dataKey="reliability" fill="#FBBF24" radius={[4, 4, 0, 0]} />
+        <CartesianGrid strokeDasharray="3 3" stroke={palette.gridStroke} vertical={false} />
+        <XAxis dataKey="name" tick={{ fill: palette.axisTick, fontSize: 10, fontWeight: 600 }} axisLine={{ stroke: palette.axisLine }} tickLine={false} />
+        <YAxis domain={[0, 100]} tick={{ fill: palette.axisTickMuted, fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
+        <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} cursor={{ fill: palette.cursorFill }} />
+        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8, color: palette.axisTick }} />
+        <ReferenceLine y={70} stroke={palette.thresholdStroke} strokeDasharray="6 4" strokeWidth={1.5} label={{ value: "Threshold", fill: palette.thresholdStroke, fontSize: 9, position: "right" }} />
+        <Bar name="Avg Score" dataKey="avgScore" fill={palette.series[0]} radius={[4, 4, 0, 0]} />
+        <Bar name="Completion" dataKey="completionRate" fill={palette.series[2]} radius={[4, 4, 0, 0]} />
+        <Bar name="Reliability" dataKey="reliability" fill={palette.series[1]} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -252,6 +263,7 @@ function generateTrendData(stats: DashboardStats) {
 }
 
 export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
   if (!stats) return null;
   const { weeks, studentsWithData } = useMemo(() => generateTrendData(stats), [stats]);
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
@@ -261,20 +273,20 @@ export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) 
       <AreaChart data={weeks}>
         <defs>
           <linearGradient id="cohortGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0} />
+            <stop offset="0%" stopColor={palette.radarStroke} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={palette.radarStroke} stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
-        <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
-        <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
+        <CartesianGrid strokeDasharray="3 3" stroke={palette.gridStroke} vertical={false} />
+        <XAxis dataKey="week" tick={{ fill: palette.axisTick, fontSize: 10 }} axisLine={{ stroke: palette.axisLine }} tickLine={false} />
+        <YAxis domain={[0, 100]} tick={{ fill: palette.axisTickMuted, fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
         <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-        <Area name="Cohort Avg" dataKey="cohortAvg" type="monotone" stroke="#8B5CF6" fill="url(#cohortGrad)" strokeWidth={2.5} dot={{ r: 3, fill: "#8B5CF6", strokeWidth: 0 }} />
+        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8, color: palette.axisTick }} />
+        <Area name="Cohort Avg" dataKey="cohortAvg" type="monotone" stroke={palette.radarStroke} fill="url(#cohortGrad)" strokeWidth={2.5} dot={{ r: 3, fill: palette.radarStroke, strokeWidth: 0 }} />
         {studentsWithData.map((name) => (
           <Area key={name} name={name.split(" ")[0]} dataKey={name} type="monotone"
-            stroke={studentColor(name, allNames)} fill="transparent" strokeWidth={1.5} strokeDasharray="4 3"
-            dot={{ r: 2.5, fill: studentColor(name, allNames), strokeWidth: 0 }} />
+            stroke={studentColor(name, allNames, palette.series)} fill="transparent" strokeWidth={1.5} strokeDasharray="4 3"
+            dot={{ r: 2.5, fill: studentColor(name, allNames, palette.series), strokeWidth: 0 }} />
         ))}
       </AreaChart>
     </ResponsiveContainer>
@@ -286,6 +298,7 @@ export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) 
    ──────────────────────────────────────────────────────── */
 
 export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
   if (!stats) return null;
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
@@ -326,9 +339,9 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
   if (data.length === 0 || !hasEnoughData) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2">
-        <BarChart2Icon className="w-8 h-8 text-slate-700" />
-        <p className="text-slate-500 text-xs font-medium text-center px-4">More data needed to show score distribution</p>
-        <p className="text-slate-600 text-[10px]">Requires 5+ submissions per subject</p>
+        <BarChart2Icon className="w-8 h-8 text-muted-foreground" />
+        <p className="text-muted-foreground text-xs font-medium text-center px-4">More data needed to show score distribution</p>
+        <p className="text-muted-foreground text-[10px]">Requires 5+ submissions per subject</p>
       </div>
     );
   }
@@ -337,33 +350,18 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
     <ChartErrorBoundary label="Score distribution unavailable">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barCategoryGap="30%" barGap={2}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
-          <XAxis dataKey="subject" tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }}
-            axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
-          <YAxis domain={[0, 100]} tick={{ fill: "#475569", fontSize: 10 }}
+          <CartesianGrid strokeDasharray="3 3" stroke={palette.gridStroke} vertical={false} />
+          <XAxis dataKey="subject" tick={{ fill: palette.axisTick, fontSize: 10, fontWeight: 600 }}
+            axisLine={{ stroke: palette.axisLine }} tickLine={false} />
+          <YAxis domain={[0, 100]} tick={{ fill: palette.axisTickMuted, fontSize: 10 }}
             axisLine={false} tickLine={false} width={28} />
-          <Tooltip content={({ active, payload, label }: any) => {
-            if (!active || !payload?.length) return null;
-            return (
-              <div className="rounded-xl px-3 py-2 text-xs border border-white/[0.08] backdrop-blur-xl"
-                style={{ background: "rgba(15,23,42,0.95)" }}>
-                <p className="text-slate-400 font-semibold mb-1 text-[10px] uppercase tracking-wider">{label}</p>
-                {payload.map((p: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 py-0.5">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.fill }} />
-                    <span className="text-slate-400">{p.name}:</span>
-                    <span className="text-white font-bold">{p.value}%</span>
-                  </div>
-                ))}
-              </div>
-            );
-          }} />
+          <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} />
           {activeStudents.length > 0
             ? activeStudents.map((name, i) => (
                 <Bar key={name} name={name.split(" ")[0]} dataKey={name}
-                  fill={studentColor(name, allNames)} radius={[3, 3, 0, 0]} maxBarSize={18} />
+                  fill={studentColor(name, allNames, palette.series)} radius={[3, 3, 0, 0]} maxBarSize={18} />
               ))
-            : <Bar name="Avg" dataKey="avg" fill="#8B5CF6" radius={[3, 3, 0, 0]} maxBarSize={24} />
+            : <Bar name="Avg" dataKey="avg" fill={palette.series[0]} radius={[3, 3, 0, 0]} maxBarSize={24} />
           }
         </BarChart>
       </ResponsiveContainer>
@@ -376,7 +374,11 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
   if (!stats) return null;
+  const completedColor = "#16A34A";
+  const pendingColor = "#CA8A04";
+  const notStartedColor = palette.axisTickMuted;
   const { data, completedCount, total } = useMemo(() => {
     let completed = 0, awaiting = 0, notStarted = 0;
     for (const s of stats.studentInsights || []) {
@@ -386,25 +388,25 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
     }
     const total = completed + awaiting + notStarted;
     const data = [
-      { name: "Completed", value: completed, color: "#22C55E" },
-      { name: "Pending", value: awaiting, color: "#FBBF24" },
-      { name: "Not Started", value: notStarted, color: "#475569" },
+      { name: "Completed", value: completed, color: completedColor },
+      { name: "Pending", value: awaiting, color: pendingColor },
+      { name: "Not Started", value: notStarted, color: notStartedColor },
     ].filter((d) => d.value > 0);
     return { data, completedCount: completed, total };
-  }, [stats]);
+  }, [stats, notStartedColor]);
 
   if (total === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-xs font-medium">
         No assignment data
       </div>
     );
   }
 
   const ALL_SEGMENTS = [
-    { name: "Completed", color: "#22C55E" },
-    { name: "Pending", color: "#FBBF24" },
-    { name: "Not Started", color: "#475569" },
+    { name: "Completed", color: completedColor },
+    { name: "Pending", color: pendingColor },
+    { name: "Not Started", color: notStartedColor },
   ];
 
   return (
@@ -422,10 +424,18 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
               if (!active || !payload?.length) return null;
               const d = payload[0]?.payload;
               return (
-                <div className="rounded-xl px-3 py-2 text-xs border border-white/[0.08] backdrop-blur-xl"
-                  style={{ background: "rgba(15,23,42,0.95)" }}>
-                  <p className="text-white font-bold">{d?.name}</p>
-                  <p className="text-slate-400">{d?.value} tasks ({total > 0 ? Math.round((d?.value / total) * 100) : 0}%)</p>
+                <div
+                  className="rounded-xl px-3 py-2 text-xs backdrop-blur-xl"
+                  style={{
+                    background: palette.tooltipBg,
+                    border: `1px solid ${palette.tooltipBorder}`,
+                    boxShadow: palette.tooltipShadow,
+                  }}
+                >
+                  <p className="font-bold" style={{ color: palette.tooltipFg }}>{d?.name}</p>
+                  <p style={{ color: palette.tooltipMuted }}>
+                    {d?.value} tasks ({total > 0 ? Math.round((d?.value / total) * 100) : 0}%)
+                  </p>
                 </div>
               );
             }} />
@@ -434,8 +444,8 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
         {/* Center label */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="text-center">
-            <p className="text-xl font-bold text-white tabular-nums">{completedCount}<span className="text-sm text-slate-500 font-semibold"> / {total}</span></p>
-            <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">tasks done</p>
+            <p className="text-xl font-bold text-foreground tabular-nums">{completedCount}<span className="text-sm text-muted-foreground font-semibold"> / {total}</span></p>
+            <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">tasks done</p>
           </div>
         </div>
       </div>
@@ -446,7 +456,7 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
           return (
             <div key={seg.name} className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: seg.color }} />
-              <span className="text-[9px] text-slate-400 font-medium">{seg.name}{match ? ` (${match.value})` : ""}</span>
+              <span className="text-[9px] text-muted-foreground font-medium">{seg.name}{match ? ` (${match.value})` : ""}</span>
             </div>
           );
         })}
@@ -460,6 +470,8 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
+  const isLight = palette === undefined ? false : palette.tooltipFg === "#0f172a";
   if (!stats) return null;
   const { matrix, subjects, students } = useMemo(() => {
     const subjects = Array.from(new Set((stats.cohortAverages || []).map((c) => c.subject)));
@@ -488,25 +500,25 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
 
   if (subjects.length === 0 || students.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-xs font-medium">
         No data for heatmap
       </div>
     );
   }
 
   function cellColor(score: number | undefined): string {
-    if (score === undefined) return "rgba(51,65,85,0.3)";
-    if (score >= 80) return "rgba(34,197,94,0.5)";
-    if (score >= 70) return "rgba(34,197,94,0.3)";
+    if (score === undefined) return isLight ? "rgba(100,116,139,0.20)" : "rgba(51,65,85,0.3)";
+    if (score >= 80) return "rgba(34,197,94,0.40)";
+    if (score >= 70) return "rgba(34,197,94,0.25)";
     if (score >= 50) return "rgba(251,191,36,0.35)";
     return "rgba(239,68,68,0.35)";
   }
 
   function textColor(score: number | undefined): string {
-    if (score === undefined) return "#475569";
-    if (score >= 70) return "#4ADE80";
-    if (score >= 50) return "#FBBF24";
-    return "#F87171";
+    if (score === undefined) return palette.axisTickMuted;
+    if (score >= 70) return isLight ? "#166534" : "#4ADE80";
+    if (score >= 50) return isLight ? "#92400E" : "#FBBF24";
+    return isLight ? "#991B1B" : "#F87171";
   }
 
   return (
@@ -516,7 +528,7 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
         <div className="flex gap-1.5 mb-1.5 pl-[100px]">
           {subjects.map((subj) => (
             <div key={subj} className="flex-1 min-w-[60px] text-center">
-              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
                 {subj}
               </span>
             </div>
@@ -526,7 +538,7 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
         {students.map((name) => (
           <div key={name} className="flex items-center gap-1.5 mb-1.5">
             <div className="w-[100px] shrink-0 pr-2">
-              <span className="text-[10px] font-semibold text-slate-300 truncate block">
+              <span className="text-[10px] font-semibold text-foreground/80 truncate block">
                 {name.length > 12 ? name.split(" ")[0] : name}
               </span>
             </div>
@@ -539,12 +551,11 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
                     {cell ? `${cell.avg}%` : "No assignments"}
                   </span>
                   {/* Tooltip on hover */}
-                  {cell && (
+                      {cell && (
                     <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-10">
-                      <div className="rounded-lg px-2.5 py-1.5 text-[10px] border border-white/[0.08] whitespace-nowrap"
-                        style={{ background: "rgba(15,23,42,0.95)" }}>
-                        <span className="text-white font-bold">{cell.avg}%</span>
-                        <span className="text-slate-500 ml-1">({cell.count} attempts)</span>
+                      <div className="rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap bg-popover text-popover-foreground border border-border shadow-lg">
+                        <span className="font-bold">{cell.avg}%</span>
+                        <span className="text-muted-foreground ml-1">({cell.count} attempts)</span>
                       </div>
                     </div>
                   )}
@@ -556,15 +567,15 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
         {/* Legend */}
         <div className="flex items-center gap-3 mt-3 pl-[100px]">
           {[
-            { label: "≥80%", color: "rgba(34,197,94,0.5)" },
-            { label: "70–79%", color: "rgba(34,197,94,0.3)" },
-            { label: "50–69%", color: "rgba(251,191,36,0.35)" },
-            { label: "<50%", color: "rgba(239,68,68,0.35)" },
-            { label: "No data", color: "rgba(51,65,85,0.3)" },
+            { label: "≥80%", color: cellColor(85) },
+            { label: "70–79%", color: cellColor(75) },
+            { label: "50–69%", color: cellColor(55) },
+            { label: "<50%", color: cellColor(30) },
+            { label: "No data", color: cellColor(undefined) },
           ].map((item) => (
             <div key={item.label} className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded" style={{ background: item.color }} />
-              <span className="text-[9px] text-slate-500 font-medium">{item.label}</span>
+              <span className="text-[9px] text-muted-foreground font-medium">{item.label}</span>
             </div>
           ))}
         </div>
@@ -578,6 +589,7 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
    ──────────────────────────────────────────────────────── */
 
 export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
+  const palette = useChartPalette();
   if (!stats) return null;
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
@@ -613,7 +625,7 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
 
   if (activeStudents.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-600 text-xs font-medium">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-xs font-medium">
         No activity in the last 4 weeks
       </div>
     );
@@ -623,14 +635,14 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
     <ChartErrorBoundary label="Activity timeline unavailable">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barCategoryGap="25%">
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
-          <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={{ stroke: "rgba(148,163,184,0.1)" }} tickLine={false} />
-          <YAxis tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
-          <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} cursor={{ fill: "rgba(139,92,246,0.06)" }} />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+          <CartesianGrid strokeDasharray="3 3" stroke={palette.gridStroke} vertical={false} />
+          <XAxis dataKey="week" tick={{ fill: palette.axisTick, fontSize: 10 }} axisLine={{ stroke: palette.axisLine }} tickLine={false} />
+          <YAxis tick={{ fill: palette.axisTickMuted, fontSize: 10 }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
+          <Tooltip content={(props: any) => <ChartTooltipContent {...props} />} cursor={{ fill: palette.cursorFill }} />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8, color: palette.axisTick }} />
           {activeStudents.map((name, i) => (
             <Bar key={name} name={name.split(" ")[0]} dataKey={name} stackId="a"
-              fill={studentColor(name, allNames)} radius={i === activeStudents.length - 1 ? [4, 4, 0, 0] : undefined} />
+              fill={studentColor(name, allNames, palette.series)} radius={i === activeStudents.length - 1 ? [4, 4, 0, 0] : undefined} />
           ))}
         </BarChart>
       </ResponsiveContainer>

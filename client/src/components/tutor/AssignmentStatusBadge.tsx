@@ -14,7 +14,7 @@ import {
 } from "@shared/assignmentStatus";
 
 const TONE_CLASSES: Record<string, string> = {
-  neutral: "bg-slate-500/10 text-slate-300 border-slate-500/30",
+  neutral: "bg-slate-500/10 text-foreground/80 border-slate-500/30",
   info:    "bg-sky-500/10 text-sky-300 border-sky-500/30",
   active:  "bg-blue-500/10 text-blue-300 border-blue-500/30",
   success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
