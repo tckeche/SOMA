@@ -977,9 +977,14 @@ class DatabaseStorage implements IStorage {
 
     const recentSubmissions = recentRows
       .filter((r) => {
+        // Per-student gating: tutor only sees a student's submission for subjects
+        // they've actually assigned that specific student. Submissions with no
+        // subject (uncategorized) are also hidden — same policy.
         const subj = (r.subject || "").toLowerCase();
-        if (!subj) return true; // keep uncategorized submissions visible
-        return unionVisibleSubjects.has(subj);
+        if (!subj) return false;
+        const sid = r.studentId ?? "";
+        if (!sid) return false;
+        return visibleSubjectKeys(sid).has(subj);
       })
       .map((r) => ({
       reportId: r.reportId,
