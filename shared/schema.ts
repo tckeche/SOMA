@@ -224,6 +224,26 @@ export const tutorStudents = pgTable("tutor_students", {
   uniqueIndex("tutor_student_unique_idx").on(table.tutorId, table.studentId),
 ]);
 
+/**
+ * Email-based invitations that haven't been accepted yet. When a tutor types
+ * an email that isn't yet registered, we record it here so they can see who
+ * they've invited, resend (updates `lastSentAt`), or cancel. On signup the
+ * server looks up matching pending invites for the new user's email and auto-
+ * adopts them into the inviting tutor's cohort.
+ */
+export const tutorStudentInvites = pgTable("tutor_student_invites", {
+  id: serial("id").primaryKey(),
+  tutorId: uuid("tutor_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  status: text("status").notNull().default("pending"), // pending | accepted | cancelled
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastSentAt: timestamp("last_sent_at").defaultNow().notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  acceptedByStudentId: uuid("accepted_by_student_id").references(() => somaUsers.id, { onDelete: "set null" }),
+}, (table) => [
+  uniqueIndex("tutor_student_invite_unique_idx").on(table.tutorId, table.email),
+]);
+
 export const quizAssignments = pgTable("quiz_assignments", {
   id: serial("id").primaryKey(),
   quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }),
@@ -828,11 +848,14 @@ export type InsertSomaReport = z.infer<typeof insertSomaReportSchema>;
 
 export const insertTutorStudentSchema = createInsertSchema(tutorStudents).omit({ id: true, createdAt: true });
 export const insertQuizAssignmentSchema = createInsertSchema(quizAssignments).omit({ id: true, createdAt: true });
+export const insertTutorStudentInviteSchema = createInsertSchema(tutorStudentInvites).omit({ id: true, createdAt: true, lastSentAt: true, acceptedAt: true, acceptedByStudentId: true });
 
 export type TutorStudent = typeof tutorStudents.$inferSelect;
 export type InsertTutorStudent = z.infer<typeof insertTutorStudentSchema>;
 export type QuizAssignment = typeof quizAssignments.$inferSelect;
 export type InsertQuizAssignment = z.infer<typeof insertQuizAssignmentSchema>;
+export type TutorStudentInvite = typeof tutorStudentInvites.$inferSelect;
+export type InsertTutorStudentInvite = z.infer<typeof insertTutorStudentInviteSchema>;
 
 export const insertTutorCommentSchema = createInsertSchema(tutorComments).omit({ id: true, createdAt: true });
 export type TutorComment = typeof tutorComments.$inferSelect;

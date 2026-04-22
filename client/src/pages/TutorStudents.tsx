@@ -6,7 +6,10 @@ import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
   Users, UserPlus, X, Loader2, Check, ChevronRight,
   BookOpen, LogOut, LayoutDashboard, Search, RotateCcw, Mail, AlertTriangle,
+  Send, Clock,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface SomaUser {
@@ -33,6 +36,8 @@ export default function TutorStudents() {
   const [adoptSearchQuery, setAdoptSearchQuery] = useState("");
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [adoptFeedback, setAdoptFeedback] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const { toast } = useToast();
 
   const { session, userId, isLoading: authLoading } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
@@ -98,6 +103,76 @@ export default function TutorStudents() {
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/students/available"] });
       setPendingRemoveId(null);
+    },
+  });
+
+  // Pending email invitations — students who've been invited but haven't signed up yet.
+  interface PendingInvite {
+    id: number;
+    email: string;
+    status: "pending" | "accepted" | "cancelled";
+    createdAt: string;
+    lastSentAt: string;
+  }
+  const { data: invitesData } = useQuery<{ invites: PendingInvite[] }>({
+    queryKey: ["/api/tutor/invites", userId],
+    queryFn: async () => {
+      const res = await authFetch("/api/tutor/invites");
+      if (!res.ok) return { invites: [] };
+      return res.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 30_000,
+  });
+  const pendingInvites = (invitesData?.invites ?? []).filter((i) => i.status === "pending");
+
+  const inviteMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await authFetch("/api/tutor/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.message || "Failed to send invite");
+      return body as { kind: "invited" | "adopted"; invite?: PendingInvite; studentId?: string };
+    },
+    onSuccess: (data) => {
+      setInviteEmail("");
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/invites"] });
+      if (data.kind === "adopted") {
+        queryClient.invalidateQueries({ queryKey: ["/api/tutor/students"] });
+        toast({ title: "Student added", description: "They were already registered — added to your cohort." });
+      } else {
+        toast({ title: "Invite sent", description: "They'll be auto-adopted when they sign up." });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't send invite", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resendInviteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await authFetch(`/api/tutor/invites/${id}/resend`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to resend");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/invites"] });
+      toast({ title: "Invite resent" });
+    },
+  });
+
+  const cancelInviteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await authFetch(`/api/tutor/invites/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to cancel");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/invites"] });
+      toast({ title: "Invite cancelled" });
     },
   });
 
@@ -251,6 +326,94 @@ export default function TutorStudents() {
             )}
           </div>
         )}
+
+        {/* ── INVITE BY EMAIL ───────────────────────────────────────
+            A tutor enters a student's email. If the email is already a
+            registered student they're adopted immediately; otherwise an
+            invitation row is created and auto-accepted on signup. */}
+        <div className={`${GP} p-5`}>
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/15 border border-violet-500/20">
+              <Mail className="w-3.5 h-3.5 text-violet-400" />
+            </div>
+            <div>
+              <h3 className="text-[13px] font-bold text-foreground tracking-wide">Invite a student</h3>
+              <p className="text-[11px] text-muted-foreground">Already registered? They're added instantly. Otherwise we'll auto-adopt them on signup.</p>
+            </div>
+          </div>
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const email = inviteEmail.trim();
+              if (!email) return;
+              inviteMutation.mutate(email);
+            }}
+          >
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="student@example.com"
+              className="flex-1 h-11 px-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
+              data-testid="input-invite-email"
+              required
+            />
+            <button
+              type="submit"
+              disabled={inviteMutation.isPending || !inviteEmail.trim()}
+              className="flex items-center gap-2 px-4 h-11 rounded-xl text-sm font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/40 hover:bg-violet-500/30 disabled:opacity-50 transition-all"
+              data-testid="button-send-invite"
+            >
+              {inviteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-3.5 h-3.5" /> Invite</>}
+            </button>
+          </form>
+
+          {pendingInvites.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-border/60">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Pending invites ({pendingInvites.length})
+              </p>
+              <div className="space-y-1.5">
+                {pendingInvites.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="flex items-center gap-3 rounded-lg border border-border/60 bg-foreground/[0.03] px-3 py-2"
+                    data-testid={`invite-${inv.id}`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-medium text-foreground truncate">{inv.email}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Invited {formatDistanceToNow(new Date(inv.createdAt), { addSuffix: true })}
+                        {inv.lastSentAt !== inv.createdAt && <> · resent {formatDistanceToNow(new Date(inv.lastSentAt), { addSuffix: true })}</>}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => resendInviteMutation.mutate(inv.id)}
+                      disabled={resendInviteMutation.isPending}
+                      className="text-[11px] font-semibold text-violet-300 hover:text-violet-200 px-2 py-1 rounded hover:bg-violet-500/10 transition-all disabled:opacity-50"
+                      data-testid={`button-resend-${inv.id}`}
+                    >
+                      Resend
+                    </button>
+                    <button
+                      onClick={() => cancelInviteMutation.mutate(inv.id)}
+                      disabled={cancelInviteMutation.isPending}
+                      className="text-muted-foreground hover:text-red-400 p-1.5 rounded hover:bg-red-500/10 transition-all disabled:opacity-50"
+                      aria-label="Cancel invite"
+                      data-testid={`button-cancel-invite-${inv.id}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {authLoading || studentsLoading ? (
           <div className="flex justify-center py-16">

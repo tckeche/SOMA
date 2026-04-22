@@ -6,6 +6,7 @@ import {
   type TutorStudent, type InsertTutorStudent,
   type QuizAssignment, type InsertQuizAssignment,
   type TutorComment, type InsertTutorComment,
+  type TutorStudentInvite, type InsertTutorStudentInvite,
   type SyllabusDocument, type InsertSyllabusDocument,
   type SyllabusChunk, type InsertSyllabusChunk,
   type StudentSubject, type InsertStudentSubject,
@@ -17,7 +18,7 @@ import {
   type StudentNotification, type InsertStudentNotification,
   type FlaggedQuestion, type InsertFlaggedQuestion,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
-  tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
+  tutorStudents, tutorStudentInvites, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
   studentSubjects, tutorNotifications, studentTopicMastery, suggestedAssessments,
   examinerMisconceptions, syllabusTopicInventory,
   studentNotifications, flaggedQuestions,
@@ -102,6 +103,14 @@ export interface IStorage {
   getAdoptedStudents(tutorId: string): Promise<SomaUser[]>;
   getAvailableStudents(tutorId: string): Promise<SomaUser[]>;
 
+  // Pending email invitations (student hasn't registered yet, or is registered but
+  // not yet adopted by this tutor).
+  listTutorInvites(tutorId: string): Promise<TutorStudentInvite[]>;
+  upsertTutorInvite(invite: InsertTutorStudentInvite): Promise<TutorStudentInvite>;
+  touchTutorInviteSent(id: number, tutorId: string): Promise<TutorStudentInvite | undefined>;
+  cancelTutorInvite(id: number, tutorId: string): Promise<TutorStudentInvite | undefined>;
+  acceptInvitesForEmail(email: string, studentId: string): Promise<Array<{ tutorId: string }>>;
+
   createQuizAssignments(quizId: number, studentIds: string[], dueDate?: Date | null): Promise<QuizAssignment[]>;
   getQuizAssignmentsForStudent(studentId: string): Promise<(QuizAssignment & { quiz: SomaQuiz })[]>;
   getQuizAssignmentsForQuiz(quizId: number): Promise<(QuizAssignment & { student: SomaUser })[]>;
@@ -109,6 +118,9 @@ export interface IStorage {
     quizId: number;
     assignedStudentIds: string[];
     latestSubmissionAt: string | null;
+    nextDueDate: string | null;
+    overdueCount: number;
+    upcomingCount: number;
   }>>;
   /**
    * For each studentId, the set of subjects the student has been assigned a quiz in
@@ -169,6 +181,7 @@ export interface IStorage {
   createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification>;
   listTutorNotifications(tutorId: string): Promise<TutorNotification[]>;
   markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined>;
+  markAllTutorNotificationsRead(tutorId: string): Promise<number>;
   createSuggestedAssessment(suggestion: InsertSuggestedAssessment): Promise<SuggestedAssessment>;
   listSuggestedAssessments(tutorId: string, studentId: string): Promise<SuggestedAssessment[]>;
   updateSuggestedAssessmentStatus(id: number, tutorId: string, status: string, generatedQuizId?: number): Promise<SuggestedAssessment | undefined>;
@@ -416,6 +429,15 @@ class DatabaseStorage implements IStorage {
       .where(and(eq(tutorNotifications.id, notificationId), eq(tutorNotifications.tutorId, tutorId)))
       .returning();
     return row;
+  }
+
+  async markAllTutorNotificationsRead(tutorId: string): Promise<number> {
+    const rows = await this.database
+      .update(tutorNotifications)
+      .set({ readAt: new Date() })
+      .where(and(eq(tutorNotifications.tutorId, tutorId), isNull(tutorNotifications.readAt)))
+      .returning({ id: tutorNotifications.id });
+    return rows.length;
   }
 
   async createSuggestedAssessment(suggestion: InsertSuggestedAssessment): Promise<SuggestedAssessment> {
@@ -750,6 +772,56 @@ class DatabaseStorage implements IStorage {
     return available;
   }
 
+  async listTutorInvites(tutorId: string): Promise<TutorStudentInvite[]> {
+    return this.database
+      .select()
+      .from(tutorStudentInvites)
+      .where(eq(tutorStudentInvites.tutorId, tutorId))
+      .orderBy(desc(tutorStudentInvites.createdAt));
+  }
+
+  async upsertTutorInvite(invite: InsertTutorStudentInvite): Promise<TutorStudentInvite> {
+    const normalizedEmail = invite.email.trim().toLowerCase();
+    const [row] = await this.database
+      .insert(tutorStudentInvites)
+      .values({ ...invite, email: normalizedEmail, status: invite.status ?? "pending" })
+      .onConflictDoUpdate({
+        target: [tutorStudentInvites.tutorId, tutorStudentInvites.email],
+        // Resend path: bump lastSentAt and reactivate a cancelled invite.
+        set: { status: "pending", lastSentAt: new Date() },
+      })
+      .returning();
+    return row;
+  }
+
+  async touchTutorInviteSent(id: number, tutorId: string): Promise<TutorStudentInvite | undefined> {
+    const [row] = await this.database
+      .update(tutorStudentInvites)
+      .set({ lastSentAt: new Date(), status: "pending" })
+      .where(and(eq(tutorStudentInvites.id, id), eq(tutorStudentInvites.tutorId, tutorId)))
+      .returning();
+    return row;
+  }
+
+  async cancelTutorInvite(id: number, tutorId: string): Promise<TutorStudentInvite | undefined> {
+    const [row] = await this.database
+      .update(tutorStudentInvites)
+      .set({ status: "cancelled" })
+      .where(and(eq(tutorStudentInvites.id, id), eq(tutorStudentInvites.tutorId, tutorId)))
+      .returning();
+    return row;
+  }
+
+  async acceptInvitesForEmail(email: string, studentId: string): Promise<Array<{ tutorId: string }>> {
+    const normalized = email.trim().toLowerCase();
+    const rows = await this.database
+      .update(tutorStudentInvites)
+      .set({ status: "accepted", acceptedAt: new Date(), acceptedByStudentId: studentId })
+      .where(and(eq(tutorStudentInvites.email, normalized), eq(tutorStudentInvites.status, "pending")))
+      .returning({ tutorId: tutorStudentInvites.tutorId });
+    return rows;
+  }
+
   async createQuizAssignments(quizId: number, studentIds: string[], dueDate?: Date | null): Promise<QuizAssignment[]> {
     if (studentIds.length === 0) return [];
     const values = studentIds.map((studentId) => ({ quizId, studentId, status: "pending", dueDate: dueDate || null }));
@@ -836,6 +908,9 @@ class DatabaseStorage implements IStorage {
     quizId: number;
     assignedStudentIds: string[];
     latestSubmissionAt: string | null;
+    nextDueDate: string | null;
+    overdueCount: number;
+    upcomingCount: number;
   }>> {
     const quizRows = await this.database
       .select({ id: somaQuizzes.id })
@@ -845,7 +920,12 @@ class DatabaseStorage implements IStorage {
     if (quizIds.length === 0) return [];
 
     const assignmentRows = await this.database
-      .select({ quizId: quizAssignments.quizId, studentId: quizAssignments.studentId })
+      .select({
+        quizId: quizAssignments.quizId,
+        studentId: quizAssignments.studentId,
+        status: quizAssignments.status,
+        dueDate: quizAssignments.dueDate,
+      })
       .from(quizAssignments)
       .where(inArray(quizAssignments.quizId, quizIds));
 
@@ -859,9 +939,25 @@ class DatabaseStorage implements IStorage {
       .where(inArray(somaReports.quizId, quizIds));
 
     const studentMap = new Map<number, Set<string>>();
+    const nextDueMap = new Map<number, number>();
+    const overdueMap = new Map<number, number>();
+    const upcomingMap = new Map<number, number>();
+    const now = Date.now();
     for (const row of assignmentRows) {
       if (!studentMap.has(row.quizId)) studentMap.set(row.quizId, new Set());
       studentMap.get(row.quizId)!.add(row.studentId);
+      if (!row.dueDate) continue;
+      const dueAt = new Date(row.dueDate).getTime();
+      const completed = row.status === "completed";
+      if (completed) continue;
+      if (dueAt < now) {
+        overdueMap.set(row.quizId, (overdueMap.get(row.quizId) ?? 0) + 1);
+      } else {
+        upcomingMap.set(row.quizId, (upcomingMap.get(row.quizId) ?? 0) + 1);
+        // Track the earliest upcoming due-date per quiz.
+        const prev = nextDueMap.get(row.quizId);
+        if (prev === undefined || dueAt < prev) nextDueMap.set(row.quizId, dueAt);
+      }
     }
 
     const latestMap = new Map<number, number>();
@@ -877,6 +973,9 @@ class DatabaseStorage implements IStorage {
       quizId,
       assignedStudentIds: Array.from(studentMap.get(quizId) ?? []),
       latestSubmissionAt: latestMap.has(quizId) ? new Date(latestMap.get(quizId)!).toISOString() : null,
+      nextDueDate: nextDueMap.has(quizId) ? new Date(nextDueMap.get(quizId)!).toISOString() : null,
+      overdueCount: overdueMap.get(quizId) ?? 0,
+      upcomingCount: upcomingMap.get(quizId) ?? 0,
     }));
   }
 
@@ -1230,6 +1329,8 @@ class MemoryStorage implements IStorage {
   private somaUsersList: SomaUser[] = [];
   private somaReportsList: SomaReport[] = [];
   private tutorStudentsList: TutorStudent[] = [];
+  private tutorStudentInvitesList: TutorStudentInvite[] = [];
+  private tutorStudentInviteId = 1;
   private quizAssignmentsList: QuizAssignment[] = [];
   private tutorCommentsList: TutorComment[] = [];
   private syllabusDocumentsList: SyllabusDocument[] = [];
@@ -1440,6 +1541,65 @@ class MemoryStorage implements IStorage {
     return allStudents.filter((s) => s.id !== tutorId && !adoptedIds.has(s.id));
   }
 
+  async listTutorInvites(tutorId: string): Promise<TutorStudentInvite[]> {
+    return this.tutorStudentInvitesList
+      .filter((i) => i.tutorId === tutorId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async upsertTutorInvite(invite: InsertTutorStudentInvite): Promise<TutorStudentInvite> {
+    const email = invite.email.trim().toLowerCase();
+    const existing = this.tutorStudentInvitesList.find(
+      (i) => i.tutorId === invite.tutorId && i.email === email,
+    );
+    if (existing) {
+      existing.status = "pending";
+      existing.lastSentAt = new Date();
+      return existing;
+    }
+    const row: TutorStudentInvite = {
+      id: this.tutorStudentInviteId++,
+      tutorId: invite.tutorId,
+      email,
+      status: invite.status ?? "pending",
+      createdAt: new Date(),
+      lastSentAt: new Date(),
+      acceptedAt: null,
+      acceptedByStudentId: null,
+    };
+    this.tutorStudentInvitesList.push(row);
+    return row;
+  }
+
+  async touchTutorInviteSent(id: number, tutorId: string): Promise<TutorStudentInvite | undefined> {
+    const row = this.tutorStudentInvitesList.find((i) => i.id === id && i.tutorId === tutorId);
+    if (!row) return undefined;
+    row.status = "pending";
+    row.lastSentAt = new Date();
+    return row;
+  }
+
+  async cancelTutorInvite(id: number, tutorId: string): Promise<TutorStudentInvite | undefined> {
+    const row = this.tutorStudentInvitesList.find((i) => i.id === id && i.tutorId === tutorId);
+    if (!row) return undefined;
+    row.status = "cancelled";
+    return row;
+  }
+
+  async acceptInvitesForEmail(email: string, studentId: string): Promise<Array<{ tutorId: string }>> {
+    const normalized = email.trim().toLowerCase();
+    const accepted: Array<{ tutorId: string }> = [];
+    for (const row of this.tutorStudentInvitesList) {
+      if (row.email === normalized && row.status === "pending") {
+        row.status = "accepted";
+        row.acceptedAt = new Date();
+        row.acceptedByStudentId = studentId;
+        accepted.push({ tutorId: row.tutorId });
+      }
+    }
+    return accepted;
+  }
+
   async createQuizAssignments(quizId: number, studentIds: string[], dueDate?: Date | null): Promise<QuizAssignment[]> {
     const created: QuizAssignment[] = [];
     for (const studentId of studentIds) {
@@ -1499,12 +1659,15 @@ class MemoryStorage implements IStorage {
     quizId: number;
     assignedStudentIds: string[];
     latestSubmissionAt: string | null;
+    nextDueDate: string | null;
+    overdueCount: number;
+    upcomingCount: number;
   }>> {
     const quizzes = this.somaQuizzesList.filter((q) => q.authorId === tutorId);
+    const now = Date.now();
     return quizzes.map((quiz) => {
-      const assignedStudentIds = Array.from(
-        new Set(this.quizAssignmentsList.filter((a) => a.quizId === quiz.id).map((a) => a.studentId))
-      );
+      const assignments = this.quizAssignmentsList.filter((a) => a.quizId === quiz.id);
+      const assignedStudentIds = Array.from(new Set(assignments.map((a) => a.studentId)));
       const reports = this.somaReportsList.filter((r) => r.quizId === quiz.id);
       const latestTs = reports.reduce<number>((acc, r) => {
         const ts = r.completedAt ?? r.createdAt;
@@ -1512,10 +1675,26 @@ class MemoryStorage implements IStorage {
         const t = new Date(ts as any).getTime();
         return t > acc ? t : acc;
       }, 0);
+      let overdueCount = 0;
+      let upcomingCount = 0;
+      let nextDueTs: number | null = null;
+      for (const a of assignments) {
+        if (a.status === "completed" || !a.dueDate) continue;
+        const due = new Date(a.dueDate).getTime();
+        if (due < now) {
+          overdueCount++;
+        } else {
+          upcomingCount++;
+          if (nextDueTs === null || due < nextDueTs) nextDueTs = due;
+        }
+      }
       return {
         quizId: quiz.id,
         assignedStudentIds,
         latestSubmissionAt: latestTs > 0 ? new Date(latestTs).toISOString() : null,
+        nextDueDate: nextDueTs !== null ? new Date(nextDueTs).toISOString() : null,
+        overdueCount,
+        upcomingCount,
       };
     });
   }
@@ -1708,6 +1887,18 @@ class MemoryStorage implements IStorage {
 
   async listTutorNotifications(tutorId: string): Promise<TutorNotification[]> {
     return this.tutorNotificationsList.filter((n) => n.tutorId === tutorId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async markAllTutorNotificationsRead(tutorId: string): Promise<number> {
+    let count = 0;
+    const now = new Date();
+    for (const n of this.tutorNotificationsList) {
+      if (n.tutorId === tutorId && !n.readAt) {
+        n.readAt = now;
+        count++;
+      }
+    }
+    return count;
   }
 
   async markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined> {

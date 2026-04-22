@@ -35,6 +35,10 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/portal">{() => <RoleRouter studentComponent={StudentDashboard} tutorComponent={TutorDashboard} />}</Route>
+      {/* Student-facing dashboard at /student — complements /tutor.
+          Wraps StudentDashboard in RoleRouter so a tutor hitting /student
+          is redirected to their own dashboard (and vice versa). */}
+      <Route path="/student">{() => <RoleRouter studentComponent={StudentDashboard} tutorComponent={TutorDashboard} />}</Route>
       <Route path="/super-admin">{() => <ProtectedRoute component={SuperAdminDashboard} />}</Route>
       <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} />}</Route>
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>

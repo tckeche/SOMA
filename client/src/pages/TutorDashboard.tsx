@@ -15,6 +15,7 @@ import {
   FileText, Target, CheckCircle2,
   CalendarDays, ExternalLink,
   Radar, Grid3X3, BarChart2,
+  Sparkles, Award, Flag,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -194,6 +195,16 @@ function MiniSparkline({ scores }: { scores: number[] }) {
   );
 }
 
+function getNotificationIcon(type: string): { Icon: LucideIcon; color: string; bg: string; border: string } {
+  // Lookup table for notification types emitted by the server (see createTutorNotification calls).
+  if (type?.startsWith("ai_")) return { Icon: Sparkles, color: "text-violet-300", bg: "bg-violet-500/15", border: "border-violet-500/25" };
+  if (type === "student_submission" || type === "feedback_ready") return { Icon: FileText, color: "text-emerald-300", bg: "bg-emerald-500/15", border: "border-emerald-500/25" };
+  if (type === "assignment_new" || type === "assignment_assigned") return { Icon: Send, color: "text-indigo-300", bg: "bg-indigo-500/15", border: "border-indigo-500/25" };
+  if (type === "milestone_mastery") return { Icon: Award, color: "text-amber-300", bg: "bg-amber-500/15", border: "border-amber-500/25" };
+  if (type?.includes("flag")) return { Icon: Flag, color: "text-rose-300", bg: "bg-rose-500/15", border: "border-rose-500/25" };
+  return { Icon: Bell, color: "text-violet-300", bg: "bg-violet-500/15", border: "border-violet-500/25" };
+}
+
 function WorkloadBar({ assigned, completed, awaiting }: { assigned: number; completed: number; awaiting: number }) {
   const total = assigned || 1;
   const cPct = (completed / total) * 100;
@@ -223,6 +234,7 @@ export default function TutorDashboard() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "notifications">("overview");
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "unread">("all");
   // Student-first assign flow: pre-select a student and let the tutor pick a quiz.
   const [assignForStudent, setAssignForStudent] = useState<{ id: string; name: string } | null>(null);
   const [assignForStudentQuizId, setAssignForStudentQuizId] = useState<number | null>(null);
@@ -359,6 +371,18 @@ export default function TutorDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/notifications"] });
     },
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      const res = await authFetch("/api/tutor/notifications/read-all", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to mark all as read");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/notifications"] });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't mark all as read", description: err.message, variant: "destructive" }),
   });
 
   const assignMutation = useMutation({
@@ -648,55 +672,117 @@ export default function TutorDashboard() {
               </button>
             </div>
 
-            {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
+            {/* ── NOTIFICATIONS TAB ────────────────────────────────
+                Default view shows ALL notifications (not just unread) so the
+                panel is never blank after the tutor clears their unread list.
+                Filter toggle between "All" and "Unread only"; Mark all read
+                button clears the unread badge in one click. */}
             {activeTab === "notifications" && (() => {
-              const unreadItems = (notificationsData?.notifications ?? []).filter((n) => !n.readAt);
+              const allItems = notificationsData?.notifications ?? [];
+              const unreadItems = allItems.filter((n) => !n.readAt);
+              const itemsToShow = notificationFilter === "unread" ? unreadItems : allItems;
               return (
                 <FadeInSection>
-                  <SectionHeader
-                    icon={Bell}
-                    title="Notifications"
-                    subtitle={unreadItems.length > 0
-                      ? `${unreadItems.length} unread update${unreadItems.length === 1 ? "" : "s"}`
-                      : "You're all caught up"}
-                  />
-                  {unreadItems.length === 0 ? (
+                  <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                    <SectionHeader
+                      icon={Bell}
+                      title="Notifications"
+                      subtitle={unreadItems.length > 0
+                        ? `${unreadItems.length} unread · ${allItems.length} total`
+                        : `${allItems.length} total · you're caught up`}
+                    />
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-foreground/[0.04] rounded-lg p-1 border border-border/60">
+                        <button
+                          onClick={() => setNotificationFilter("all")}
+                          className={`px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors ${notificationFilter === "all" ? "bg-violet-500/15 text-violet-300 border border-violet-500/25" : "text-muted-foreground hover:text-foreground/80 border border-transparent"}`}
+                          data-testid="notifications-filter-all"
+                        >
+                          All
+                        </button>
+                        <button
+                          onClick={() => setNotificationFilter("unread")}
+                          className={`px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors ${notificationFilter === "unread" ? "bg-violet-500/15 text-violet-300 border border-violet-500/25" : "text-muted-foreground hover:text-foreground/80 border border-transparent"}`}
+                          data-testid="notifications-filter-unread"
+                        >
+                          Unread
+                          {unreadItems.length > 0 && (
+                            <span className="ml-1.5 text-[10px] tabular-nums bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-full">{unreadItems.length}</span>
+                          )}
+                        </button>
+                      </div>
+                      {unreadItems.length > 0 && (
+                        <button
+                          onClick={() => markAllReadMutation.mutate()}
+                          disabled={markAllReadMutation.isPending}
+                          className="text-[11px] font-semibold text-violet-400 hover:text-violet-300 px-2 py-1.5 rounded-md hover:bg-violet-500/10 transition-all disabled:opacity-50"
+                          data-testid="button-mark-all-read"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {itemsToShow.length === 0 ? (
                     <div className={`${GP} px-6 py-16 text-center`}>
                       <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-muted/60 mx-auto mb-4 border border-border/40">
                         <CheckCircle2 className="w-6 h-6 text-emerald-400/70" />
                       </div>
-                      <p className="text-sm text-foreground/80 font-semibold">All caught up</p>
-                      <p className="text-xs text-muted-foreground mt-1">New submissions and generation updates will appear here</p>
+                      <p className="text-sm text-foreground/80 font-semibold">
+                        {notificationFilter === "unread" ? "No unread notifications" : "No notifications yet"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {notificationFilter === "unread"
+                          ? "New unread alerts will land here."
+                          : "New submissions, AI generation updates, and assignment events will appear here."}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      {unreadItems.map((item) => {
+                      {itemsToShow.map((item) => {
+                        const isUnread = !item.readAt;
                         const reportId = Number(item.payload?.reportId || 0) || null;
                         const quizId = Number(item.payload?.quizId || 0) || null;
-                        const target = reportId ? `/soma/review/${reportId}` : quizId ? `/soma/quiz/${quizId}` : null;
-                        const handleOpen = () => markReadMutation.mutate(item.id);
+                        const studentId = item.payload?.studentId ? String(item.payload.studentId) : null;
+                        const target = reportId
+                          ? `/soma/review/${reportId}`
+                          : quizId
+                            ? `/tutor/assessment/${quizId}`
+                            : studentId
+                              ? `/tutor/students/${studentId}`
+                              : null;
+                        const handleOpen = () => { if (isUnread) markReadMutation.mutate(item.id); };
+                        const iconMeta = getNotificationIcon(item.type);
                         const inner = (
                           <div
-                            className={`${GP} w-full p-4 transition-all hover:bg-foreground/[0.04] hover:border-border hover:translate-x-0.5 cursor-pointer`}
+                            className={`${GP} w-full p-4 transition-all hover:bg-foreground/[0.04] hover:border-border hover:translate-x-0.5 cursor-pointer ${!isUnread ? "opacity-75" : ""}`}
                             data-testid={`notification-${item.id}`}
                           >
                             <div className="flex items-start gap-4">
                               <div className="relative shrink-0">
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-violet-500/15 border-violet-500/25">
-                                  <Bell className="w-5 h-5 text-violet-300" />
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${iconMeta.bg} ${iconMeta.border}`}>
+                                  <iconMeta.Icon className={`w-5 h-5 ${iconMeta.color}`} />
                                 </div>
-                                <span
-                                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-background shadow-[0_0_8px_rgba(244,63,94,0.6)]"
-                                  aria-label="Unread"
-                                  data-testid={`notification-dot-${item.id}`}
-                                />
+                                {isUnread && (
+                                  <span
+                                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-background shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                                    aria-label="Unread"
+                                    data-testid={`notification-dot-${item.id}`}
+                                  />
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-[14px] font-semibold text-foreground truncate">{item.title}</p>
+                                <p className={`text-[14px] truncate ${isUnread ? "font-semibold text-foreground" : "font-medium text-foreground/85"}`}>{item.title}</p>
                                 <p className="text-[12px] text-muted-foreground mt-1 line-clamp-2">{item.message}</p>
                                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium mt-2">
                                   <Clock className="w-3 h-3" />
                                   <span>{format(new Date(item.createdAt), "MMM d, h:mm a")}</span>
+                                  {!isUnread && item.readAt && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="text-muted-foreground/70">Read</span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-muted-foreground">
@@ -704,6 +790,8 @@ export default function TutorDashboard() {
                                   <><Eye className="w-3.5 h-3.5" /> Review</>
                                 ) : quizId ? (
                                   <><FileText className="w-3.5 h-3.5" /> Open</>
+                                ) : studentId ? (
+                                  <><Users className="w-3.5 h-3.5" /> View</>
                                 ) : null}
                               </div>
                             </div>

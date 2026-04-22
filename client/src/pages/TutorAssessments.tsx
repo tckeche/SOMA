@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { formatDuration as baseFormatDuration } from "@/lib/utils";
+import { format } from "date-fns";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 function formatDuration(
@@ -345,7 +346,7 @@ export default function TutorAssessments() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: assessmentsOverview = [] } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
+  const { data: assessmentsOverview = [] } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null; nextDueDate: string | null; overdueCount: number; upcomingCount: number }>>({
     queryKey: ["/api/tutor/assessments-overview", userId],
     queryFn: async () => {
       if (!userId) return [];
@@ -359,7 +360,7 @@ export default function TutorAssessments() {
   });
 
   const overviewByQuizId = useMemo(() => {
-    const map = new Map<number, { assignedStudentIds: string[]; latestSubmissionAt: string | null }>();
+    const map = new Map<number, { assignedStudentIds: string[]; latestSubmissionAt: string | null; nextDueDate: string | null; overdueCount: number; upcomingCount: number }>();
     for (const o of assessmentsOverview) map.set(o.quizId, o);
     return map;
   }, [assessmentsOverview]);
@@ -725,6 +726,14 @@ export default function TutorAssessments() {
               const maxScore = isExpanded && quizReportsData?.quiz?.id === quiz.id ? quizReportsData.maxScore : 0;
               const avgScore = reports.length > 0 ? Math.round(reports.reduce((s, r) => s + r.score, 0) / reports.length) : 0;
               const avgPct = reports.length > 0 && maxScore > 0 ? Math.round((avgScore / maxScore) * 100) : 0;
+              // Deadline indicator: earliest upcoming due date across all assignments of this quiz,
+              // plus badges for overdue / upcoming counts so tutors can see at a glance which
+              // quizzes need a nudge without expanding the row.
+              const overview = overviewByQuizId.get(quiz.id);
+              const nextDue = overview?.nextDueDate ? new Date(overview.nextDueDate) : null;
+              const overdueCount = overview?.overdueCount ?? 0;
+              const upcomingCount = overview?.upcomingCount ?? 0;
+              const hoursUntilDue = nextDue ? (nextDue.getTime() - Date.now()) / 3_600_000 : null;
               const currentAssignments = isExpanded ? quizAssignments : [];
               const filteredAssignments = currentAssignments.filter((a) => {
                 if (assignmentStudentFilter !== "all" && a.studentId !== assignmentStudentFilter) return false;
@@ -764,6 +773,31 @@ export default function TutorAssessments() {
                         <h3 className="text-sm font-medium text-foreground truncate">{quiz.title}</h3>
                         <p className="text-xs text-muted-foreground mt-0.5">{quiz.topic} · {quiz.level}</p>
                       </div>
+                      <div className="hidden md:flex items-center gap-2 shrink-0 text-right" data-testid={`quiz-deadline-${quiz.id}`}>
+                        {overdueCount > 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-rose-500/10 text-rose-300 border-rose-500/20">
+                            {overdueCount} overdue
+                          </span>
+                        )}
+                        {nextDue && (
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">Next due</span>
+                            <span className={`text-[11px] font-semibold tabular-nums ${hoursUntilDue !== null && hoursUntilDue < 24 ? "text-amber-300" : "text-foreground/85"}`}>
+                              {hoursUntilDue !== null && hoursUntilDue < 48
+                                ? hoursUntilDue < 24
+                                  ? `in ${Math.max(1, Math.round(hoursUntilDue))}h`
+                                  : format(nextDue, "EEE h:mma")
+                                : format(nextDue, "MMM d")}
+                            </span>
+                            {upcomingCount > 1 && (
+                              <span className="text-[9px] text-muted-foreground">{upcomingCount} upcoming</span>
+                            )}
+                          </div>
+                        )}
+                        {!nextDue && overdueCount === 0 && upcomingCount === 0 && (
+                          <span className="text-[10px] text-muted-foreground font-medium">No deadline</span>
+                        )}
+                      </div>
                       <div className="p-2 text-muted-foreground">
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </div>
@@ -778,6 +812,23 @@ export default function TutorAssessments() {
                         <UserPlus className="w-3.5 h-3.5" />
                         Assign to Students
                       </button>
+                      {adoptedStudents.length > 1 && (
+                        <button
+                          onClick={() => {
+                            // Bulk shortcut: opens the modal with every adopted student already
+                            // selected so the tutor just confirms (and optionally picks a due date).
+                            setShowAssignModal(quiz.id);
+                            setSelectedStudentIds(new Set(adoptedStudents.map((s) => s.id)));
+                            setDueDate("");
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-violet-600/15 text-violet-300 border border-violet-500/30 hover:bg-violet-600/25 transition-all"
+                          title={`Assign to all ${adoptedStudents.length} of your students`}
+                          data-testid={`button-assign-all-${quiz.id}`}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          Assign to All ({adoptedStudents.length})
+                        </button>
+                      )}
                       <Link href={`/tutor/assessments/edit/${quiz.id}`}>
                         <span
                           onClick={(e) => e.stopPropagation()}

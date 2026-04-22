@@ -1395,6 +1395,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           });
         }
       }
+
+      // Auto-adopt: if one or more tutors previously invited this email, mark
+      // those invites accepted and add the student to each tutor's cohort.
+      if (user.role === "student" || user.role === null) {
+        try {
+          const accepted = await storage.acceptInvitesForEmail(email, user.id);
+          for (const { tutorId } of accepted) {
+            const adopted = await storage.getAdoptedStudents(tutorId);
+            if (!adopted.some((s) => s.id === user.id)) {
+              await storage.adoptStudent(tutorId, user.id);
+            }
+          }
+        } catch (inviteErr: any) {
+          // Don't fail signup because of invite bookkeeping.
+          console.warn("[auth-sync] invite acceptance failed:", inviteErr?.message || inviteErr);
+        }
+      }
+
       res.json(user);
     } catch (err: any) {
       console.error("Auth sync error:", err);
@@ -1682,6 +1700,71 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to remove student" });
+    }
+  });
+
+  // ─── Pending Student Invites ──────────────────────────────────────
+  // A tutor invites a student by email. If the email is already registered
+  // as a student we adopt them immediately; otherwise we record a pending
+  // invite the tutor can resend or cancel. On signup the server calls
+  // `acceptInvitesForEmail` to auto-adopt into the inviting tutor's cohort.
+
+  app.get("/api/tutor/invites", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const invites = await storage.listTutorInvites(tutorId);
+      res.json({ invites });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch invites" });
+    }
+  });
+
+  app.post("/api/tutor/invites", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const parsed = z.object({ email: z.string().email() }).parse(req.body || {});
+      const email = parsed.email.trim().toLowerCase();
+
+      // If the email is already a registered student, adopt them immediately
+      // (no invite needed) and return the adoption so the UI can refresh.
+      const existingUser = await storage.getSomaUserByEmail(email);
+      if (existingUser && (existingUser.role === "student" || existingUser.role === null)) {
+        const adopted = await storage.getAdoptedStudents(tutorId);
+        if (!adopted.some((s) => s.id === existingUser.id)) {
+          await storage.adoptStudent(tutorId, existingUser.id);
+        }
+        return res.json({ kind: "adopted", studentId: existingUser.id });
+      }
+
+      const invite = await storage.upsertTutorInvite({ tutorId, email, status: "pending" });
+      res.json({ kind: "invited", invite });
+    } catch (err: any) {
+      if (err?.issues) return res.status(400).json({ message: "Invalid email", errors: err.issues });
+      res.status(500).json({ message: err.message || "Failed to create invite" });
+    }
+  });
+
+  app.post("/api/tutor/invites/:id/resend", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const id = Number(req.params.id);
+      const row = await storage.touchTutorInviteSent(id, tutorId);
+      if (!row) return res.status(404).json({ message: "Invite not found" });
+      res.json(row);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to resend invite" });
+    }
+  });
+
+  app.delete("/api/tutor/invites/:id", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const id = Number(req.params.id);
+      const row = await storage.cancelTutorInvite(id, tutorId);
+      if (!row) return res.status(404).json({ message: "Invite not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to cancel invite" });
     }
   });
 
@@ -2553,6 +2636,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(row);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to update notification" });
+    }
+  });
+
+  app.post("/api/tutor/notifications/read-all", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const count = await storage.markAllTutorNotificationsRead(tutorId);
+      res.json({ marked: count });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to mark notifications read" });
     }
   });
 
