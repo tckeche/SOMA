@@ -110,6 +110,13 @@ export interface IStorage {
     assignedStudentIds: string[];
     latestSubmissionAt: string | null;
   }>>;
+  /**
+   * For each studentId, the set of subjects the student has been assigned a quiz in
+   * (via quiz_assignments → soma_quizzes.subject). Subjects are normalized to the
+   * original casing; the returned `Set` membership is case-insensitive via lowercase keys.
+   * A tutor should only see cohort/student performance for these subjects.
+   */
+  getAssignedSubjectsForStudents(studentIds: string[]): Promise<Record<string, string[]>>;
   updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void>;
   deleteQuizAssignment(quizId: number, studentId: string): Promise<void>;
   extendQuizAssignmentDeadlines(quizId: number, hours: number): Promise<number>;
@@ -124,7 +131,7 @@ export interface IStorage {
     totalStudents: number;
     totalQuizzes: number;
     cohortAverages: { subject: string; average: number; count: number }[];
-    recentSubmissions: { reportId: number; studentName: string; score: number; quizTitle: string; subject: string | null; createdAt: string; startedAt: string | null; completedAt: string | null }[];
+    recentSubmissions: { reportId: number; studentId: string; studentName: string; score: number; quizTitle: string; subject: string | null; createdAt: string; startedAt: string | null; completedAt: string | null }[];
     pendingAssignments: { assignmentId: number; quizId: number; quizTitle: string; subject: string | null; studentId: string; studentName: string; dueDate: string | null; createdAt: string }[];
     studentInsights: { studentId: string; studentName: string; assigned: number; completed: number; awaiting: number; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[];
   }>;
@@ -767,6 +774,27 @@ class DatabaseStorage implements IStorage {
     return rows.map((r) => ({ ...r.assignment, student: r.student }));
   }
 
+  async getAssignedSubjectsForStudents(studentIds: string[]): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const id of studentIds) result[id] = [];
+    if (studentIds.length === 0) return result;
+    const rows = await this.database
+      .selectDistinct({
+        studentId: quizAssignments.studentId,
+        subject: somaQuizzes.subject,
+      })
+      .from(quizAssignments)
+      .innerJoin(somaQuizzes, eq(quizAssignments.quizId, somaQuizzes.id))
+      .where(inArray(quizAssignments.studentId, studentIds));
+    for (const row of rows) {
+      const subject = (row.subject || "").trim();
+      if (!subject) continue;
+      const list = result[row.studentId] ?? (result[row.studentId] = []);
+      if (!list.some((s) => s.toLowerCase() === subject.toLowerCase())) list.push(subject);
+    }
+    return result;
+  }
+
   async updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void> {
     await this.database.update(quizAssignments)
       .set({ status })
@@ -876,6 +904,16 @@ class DatabaseStorage implements IStorage {
       return { totalStudents: 0, totalQuizzes: tutorQuizzes.length, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [] };
     }
 
+    // Subject visibility: a tutor only sees a student's performance for subjects
+    // they've actually been assigned a quiz in. Build per-student and union sets.
+    const assignedSubjectsByStudent = await this.getAssignedSubjectsForStudents(adoptedIds);
+    const visibleSubjectKeys = (sid: string) =>
+      new Set((assignedSubjectsByStudent[sid] || []).map((s) => s.toLowerCase()));
+    const unionVisibleSubjects = new Set<string>();
+    for (const sid of adoptedIds) {
+      for (const s of assignedSubjectsByStudent[sid] || []) unionVisibleSubjects.add(s.toLowerCase());
+    }
+
     const [quizCountResult, subjectAvgRows, recentRows, pendingRows] = await Promise.all([
       this.database.select({ cnt: sql<number>`count(*)::int` }).from(somaQuizzes),
 
@@ -894,6 +932,7 @@ class DatabaseStorage implements IStorage {
       this.database
         .select({
           reportId: somaReports.id,
+          studentId: somaReports.studentId,
           studentName: sql<string>`coalesce(${somaUsers.displayName}, ${somaReports.studentName}, ${somaUsers.email})`,
           score: somaReports.score,
           quizTitle: somaQuizzes.title,
@@ -933,10 +972,19 @@ class DatabaseStorage implements IStorage {
 
     const cohortAverages = subjectAvgRows
       .filter((r) => r.totalMax > 0)
+      .filter((r) => unionVisibleSubjects.has((r.subject || "").toLowerCase()))
       .map((r) => ({ subject: r.subject, average: Math.round((r.totalScore / r.totalMax) * 100), count: r.cnt }));
 
-    const recentSubmissions = recentRows.map((r) => ({
+    const recentSubmissions = recentRows
+      .filter((r) => {
+        const subj = (r.subject || "").toLowerCase();
+        if (!subj) return true; // keep uncategorized submissions visible
+        return unionVisibleSubjects.has(subj);
+      })
+      .map((r) => ({
       reportId: r.reportId,
+      // Non-null here: the query's inArray(studentId, adoptedIds) already excludes rows with null studentId.
+      studentId: r.studentId ?? "",
       studentName: r.studentName,
       score: r.maxScore > 0 ? Math.round((r.score / r.maxScore) * 100) : 0,
       quizTitle: r.quizTitle,
@@ -978,6 +1026,7 @@ class DatabaseStorage implements IStorage {
       const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : recentAvg;
       const trend: "improving" | "declining" | "stable" = recentAvg - prevAvg > 5 ? "improving" : prevAvg - recentAvg > 5 ? "declining" : "stable";
 
+      const studentVisible = visibleSubjectKeys(sid);
       const weakTopics = Object.entries(reportRows.reduce<Record<string, { s: number; c: number }>>((acc, row) => {
         const k = row.subject || "General";
         if (!acc[k]) acc[k] = { s: 0, c: 0 };
@@ -987,6 +1036,8 @@ class DatabaseStorage implements IStorage {
       }, {}))
         .map(([topic, v]) => ({ topic, avg: v.c ? v.s / v.c : 0 }))
         .filter((x) => x.avg < 55)
+        // Only surface weaknesses in subjects the tutor has assigned this student.
+        .filter((x) => studentVisible.has(x.topic.toLowerCase()))
         .sort((a, b) => a.avg - b.avg)
         .map((x) => x.topic)
         .slice(0, 3);
@@ -1422,6 +1473,21 @@ class MemoryStorage implements IStorage {
         return { ...qa, student };
       })
       .filter(Boolean) as (QuizAssignment & { student: SomaUser })[];
+  }
+
+  async getAssignedSubjectsForStudents(studentIds: string[]): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const id of studentIds) result[id] = [];
+    const idSet = new Set(studentIds);
+    for (const qa of this.quizAssignmentsList) {
+      if (!idSet.has(qa.studentId)) continue;
+      const quiz = this.somaQuizzesList.find((q) => q.id === qa.quizId);
+      const subject = (quiz?.subject || "").trim();
+      if (!subject) continue;
+      const list = result[qa.studentId] ?? (result[qa.studentId] = []);
+      if (!list.some((s) => s.toLowerCase() === subject.toLowerCase())) list.push(subject);
+    }
+    return result;
   }
 
   async updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void> {

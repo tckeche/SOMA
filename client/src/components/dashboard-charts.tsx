@@ -555,7 +555,7 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
                     <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-10">
                       <div className="rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap bg-popover text-popover-foreground border border-border shadow-lg">
                         <span className="font-bold">{cell.avg}%</span>
-                        <span className="text-muted-foreground ml-1">({cell.count} attempts)</span>
+                        <span className="text-muted-foreground ml-1">({cell.count} {cell.count === 1 ? "attempt" : "attempts"})</span>
                       </div>
                     </div>
                   )}
