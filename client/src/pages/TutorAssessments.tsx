@@ -568,7 +568,7 @@ export default function TutorAssessments() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-card-border/60 bg-background/80 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-card-border/60 bg-background/95 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer">
