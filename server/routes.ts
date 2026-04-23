@@ -8,7 +8,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
-import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
+import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken, type AppRole } from "./auth";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
@@ -657,9 +657,9 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return getAuthorizedUserFromBearer(supaToken, ["tutor", "super_admin"])
       .then((user) => {
         if (!user) return res.status(401).json({ message: "Unauthorized" });
-        (req as any).tutorId = user.id;
-        (req as any).tutorUser = user;
-        (req as any).authUser = { id: user.id, email: user.email, role: user.role, displayName: user.displayName };
+        req.tutorId = user.id;
+        req.tutorUser = user;
+        req.authUser = { id: user.id, email: user.email, role: user.role, displayName: user.displayName };
         return next();
       })
       .catch(() => res.status(401).json({ message: "Unauthorized" }));
@@ -721,7 +721,7 @@ function requireSupabaseAuth(req: Request, res: Response, next: NextFunction) {
       if (!user) {
         return res.status(401).json({ message: "User not found" });
       }
-      (req as any).authUser = { id: user.id, email: user.email, role: user.role, displayName: user.displayName };
+      req.authUser = { id: user.id, email: user.email, role: user.role as AppRole, displayName: user.displayName };
       next();
     }).catch(() => {
       res.status(500).json({ message: "Failed to verify user identity" });
@@ -754,7 +754,7 @@ const somaAiLimiter = rateLimit({
 });
 
 
-function extractJsonArray(text: string): any[] | null {
+function extractJsonArray(text: string): unknown[] | null {
   const cleaned = text
     .replace(/```json\s*/gi, "")
     .replace(/```/g, "")
@@ -765,7 +765,7 @@ function extractJsonArray(text: string): any[] | null {
     // Support objects with a known question-list key
     for (const key of ["drafts", "questions", "items"]) {
       if (parsed && Array.isArray((parsed as Record<string, unknown>)[key])) {
-        return (parsed as Record<string, any[]>)[key];
+        return (parsed as Record<string, unknown[]>)[key];
       }
     }
     return null;
@@ -787,7 +787,7 @@ type CopilotActionType = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" |
 interface ParsedCopilotResponse {
   reply: string;
   action: CopilotActionType;
-  questions: any[];       // new/replacement question objects
+  questions: unknown[];   // new/replacement question objects; normalised downstream
   positions: number[];    // 1-based position numbers (for REPLACE_SELECTED, DELETE, REORDER)
 }
 
@@ -796,7 +796,7 @@ interface ParsedCopilotResponse {
  * Returns the parsed object or null if no valid JSON object found.
  * This handles AI responses where JSON is wrapped in prose or markdown.
  */
-function extractJsonObject(text: string): any | null {
+function extractJsonObject(text: string): unknown {
   let depth = 0;
   let start = -1;
   for (let i = 0; i < text.length; i++) {
@@ -819,27 +819,28 @@ function extractJsonObject(text: string): any | null {
   return null;
 }
 
-function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
+function parseCopilotObject(parsed: unknown): ParsedCopilotResponse | null {
   if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
   const VALID_ACTIONS: CopilotActionType[] = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED", "DELETE", "REORDER", "NONE"];
-  const rawAction = typeof parsed.action === "string" ? parsed.action.toUpperCase().trim() : "";
+  const rawAction = typeof obj.action === "string" ? obj.action.toUpperCase().trim() : "";
   const action: CopilotActionType = VALID_ACTIONS.includes(rawAction as CopilotActionType)
     ? (rawAction as CopilotActionType)
     : "ADD";
 
   const reply: string =
-    typeof parsed.reply === "string" && parsed.reply.trim()
-      ? parsed.reply.trim()
+    typeof obj.reply === "string" && obj.reply.trim()
+      ? obj.reply.trim()
       : "";
 
-  const questions: any[] = Array.isArray(parsed.questions)
-    ? parsed.questions
-    : Array.isArray(parsed.drafts)
-      ? parsed.drafts
+  const questions: unknown[] = Array.isArray(obj.questions)
+    ? obj.questions
+    : Array.isArray(obj.drafts)
+      ? obj.drafts
       : [];
 
-  const positions: number[] = Array.isArray(parsed.positions)
-    ? parsed.positions.map(Number).filter((n: number) => Number.isInteger(n) && n >= 1)
+  const positions: number[] = Array.isArray(obj.positions)
+    ? obj.positions.map(Number).filter((n: number) => Number.isInteger(n) && n >= 1)
     : [];
 
   // Accept as a structured response only if it has the key fields
@@ -1621,7 +1622,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get tutor's adopted students
   app.get("/api/tutor/students", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const students = await storage.getAdoptedStudents(tutorId);
       res.json(students);
     } catch (err: any) {
@@ -1632,7 +1633,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get students available for adoption
   app.get("/api/tutor/students/available", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const available = await storage.getAvailableStudents(tutorId);
       res.json(available);
     } catch (err: any) {
@@ -1643,7 +1644,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Adopt a student
   app.post("/api/tutor/students/adopt", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const { studentIds } = req.body;
       if (!Array.isArray(studentIds) || studentIds.length === 0) {
         return res.status(400).json({ message: "studentIds array required" });
@@ -1664,7 +1665,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Remove adopted student
   app.delete("/api/tutor/students/:studentId", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       await storage.removeAdoptedStudent(tutorId, String(req.params.studentId));
       res.json({ success: true });
     } catch (err: any) {
@@ -1675,7 +1676,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get tutor's quizzes
   app.get("/api/tutor/quizzes", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizzes = await storage.getSomaQuizzesByAuthor(tutorId);
       res.json(quizzes.filter((q) => !q.isArchived));
     } catch (err: any) {
@@ -1685,7 +1686,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/assessments-overview", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const overview = await storage.getTutorAssessmentsOverview(tutorId);
       res.json(overview);
     } catch (err: any) {
@@ -1696,7 +1697,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Assign quiz to students
   app.post("/api/tutor/quizzes/:quizId/assign", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(String(req.params.quizId));
       const studentIds = sanitizeStudentIds(req.body?.studentIds);
       const rawDueDate = req.body?.dueDate;
@@ -1784,7 +1785,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Unassign a student from a quiz
   app.delete("/api/tutor/quizzes/:quizId/unassign/:studentId", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(String(req.params.quizId));
       const studentId = String(req.params.studentId);
 
@@ -1806,7 +1807,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get comprehensive details for quiz management (including student progress)
   app.get("/api/tutor/quizzes/:quizId/details", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(req.params.quizId as string);
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz || quiz.authorId !== tutorId) {
@@ -1873,7 +1874,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Revoke a student's quiz assignment
   app.delete("/api/tutor/quizzes/:quizId/assignments/:studentId", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(req.params.quizId as string);
       const studentId = req.params.studentId as string;
 
@@ -1893,7 +1894,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Delete a quiz (tutor only)
   app.delete("/api/tutor/quizzes/:quizId", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(req.params.quizId as string);
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) {
@@ -1912,7 +1913,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Toggle archive status for a quiz
   app.patch("/api/tutor/quizzes/:quizId/archive", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
@@ -1927,7 +1928,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Update due date for all assignments on a quiz
   app.patch("/api/tutor/quizzes/:quizId/due-date", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(String(req.params.quizId));
       const { dueDate } = req.body;
       const quiz = await storage.getSomaQuiz(quizId);
@@ -1947,7 +1948,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Extend deadline by specified hours for all pending assignments on a quiz
   app.patch("/api/tutor/quizzes/:quizId/assignments/extend", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(String(req.params.quizId));
       const hours = Number(req.body.hours) || 24;
       const quiz = await storage.getSomaQuiz(quizId);
@@ -1981,7 +1982,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/quizzes/:quizId/reports", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) {
@@ -2001,7 +2002,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/students/:studentId/comments", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2014,7 +2015,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/tutor/students/:studentId/comments", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2029,7 +2030,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2042,7 +2043,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2061,7 +2062,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.put("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const subjectId = Number(req.params.subjectId);
       if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
@@ -2083,7 +2084,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const subjectId = Number(req.params.subjectId);
       if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
@@ -2234,7 +2235,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get student mastery data — filtered to subjects the tutor has assigned this student.
   app.get("/api/tutor/students/:studentId/mastery", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2258,7 +2259,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Only includes subjects the tutor has actually assigned (subject visibility gating).
   app.get("/api/tutor/cohort-weaknesses", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (adopted.length === 0) return res.json({ topics: [], studentCount: 0 });
 
@@ -2334,7 +2335,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Per-student syllabus insights: topic radar + paper readiness heatmap.
   app.get("/api/tutor/students/:studentId/syllabus-insights", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2348,7 +2349,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Spaced repetition: return topics due for review
   app.get("/api/tutor/students/:studentId/review-schedule", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2391,7 +2392,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/students/:studentId/performance", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2412,7 +2413,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Comprehensive student report: assignments joined with quizzes and reports
   app.get("/api/tutor/students/:studentId/report", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) {
@@ -2479,7 +2480,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/dashboard-stats", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const stats = await storage.getDashboardStatsForTutor(tutorId);
       res.json(stats);
     } catch (err: any) {
@@ -2490,7 +2491,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Tutor view of question-level flags raised by students on the tutor's quizzes
   app.get("/api/tutor/flagged-questions", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const quizIdRaw = req.query.quizId;
       const studentIdRaw = req.query.studentId;
       const unresolvedOnly = String(req.query.unresolvedOnly || "") === "true";
@@ -2509,7 +2510,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/tutor/flagged-questions/:id/resolve", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const id = parseInt(String(req.params.id), 10);
       if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid flag id" });
       const updated = await storage.resolveFlaggedQuestion(id, tutorId);
@@ -2522,7 +2523,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tutor/notifications", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const rows = await storage.listTutorNotifications(tutorId);
       const unreadCount = rows.filter((item) => !item.readAt).length;
       res.json({ notifications: rows, unreadCount });
@@ -2533,7 +2534,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/tutor/notifications/:id/read", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const id = Number(req.params.id);
       const row = await storage.markTutorNotificationRead(id, tutorId);
       if (!row) return res.status(404).json({ message: "Notification not found" });
@@ -2617,7 +2618,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   app.post("/api/tutor/students/:studentId/ai/suggested-assessments", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
@@ -2749,7 +2750,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   app.post("/api/tutor/students/:studentId/ai/publish-suggested", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const studentId = String(req.params.studentId);
       const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(50).default(30) }).parse(req.body || {});
       const subjects = await storage.listStudentSubjects(studentId);
@@ -2909,7 +2910,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   // Create a new quiz (sets authorId = tutorId)
   app.post("/api/tutor/quizzes", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const { title, syllabus, level, subject, topic, topics, timeLimitMinutes } = req.body;
       if (!title) return res.status(400).json({ message: "title is required" });
       if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
@@ -3150,7 +3151,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   app.get("/api/tutor/syllabus-documents", requireTutor, async (req, res) => {
     try {
-      const documents = await storage.listSyllabusDocuments((req as any).tutorId);
+      const documents = await storage.listSyllabusDocuments(req.tutorId!);
       res.json(documents.map((document) => ({
         id: document.id,
         board: document.board,
@@ -3225,7 +3226,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       const chunks = buildSyllabusChunks(extractedText);
       const created = await storage.createSyllabusDocument({
-        tutorId: (req as any).tutorId ?? null,
+        tutorId: req.tutorId! ?? null,
         board: String(board).trim(),
         level: String(level).trim(),
         syllabusCode: String(syllabusCode).trim(),
@@ -3334,7 +3335,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           board: String(syllabusSelection.board),
           level: String(syllabusSelection.level),
           syllabusCode: String(syllabusSelection.syllabusCode),
-          tutorId: (req as any).tutorId,
+          tutorId: req.tutorId!,
         });
         if (syllabusDocument) {
           syllabusContextLabel = `${syllabusDocument.board} ${syllabusDocument.level} ${syllabusDocument.syllabusCode}`;
@@ -3951,7 +3952,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/reports", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const reports = await storage.getSomaReportsByStudentId(studentId);
 
       // Bulk-compute maxScore map to avoid N+1 queries.
@@ -3979,7 +3980,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
   // Composite student dashboard payload — drives the redesigned student home page.
   app.get("/api/student/dashboard", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const student = await storage.getSomaUserById(studentId);
       if (!student) return res.status(404).json({ message: "Student not found" });
       const payload = await buildStudentDashboard({ storage, student });
@@ -3992,7 +3993,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/notifications", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const items = await storage.listStudentNotifications(studentId, { limit: 50 });
       const unreadCount = items.filter((n) => !n.readAt).length;
       res.json({ items, unreadCount });
@@ -4003,7 +4004,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.post("/api/student/notifications/:id/read", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const id = parseInt(String(req.params.id), 10);
       if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid notification id" });
       const updated = await storage.markStudentNotificationRead(id, studentId);
@@ -4016,7 +4017,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.post("/api/student/notifications/read-all", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const count = await storage.markAllStudentNotificationsRead(studentId);
       res.json({ updated: count });
     } catch (err: any) {
@@ -4026,7 +4027,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/syllabus-insights", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
@@ -4036,7 +4037,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/syllabus-coverage", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const student = await storage.getSomaUserById(studentId);
       if (!student) return res.status(404).json({ message: "Student not found" });
       const dashboard = await buildStudentDashboard({ storage, student });
@@ -4048,7 +4049,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/performance", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const student = await storage.getSomaUserById(studentId);
       if (!student) return res.status(404).json({ message: "Student not found" });
       const dashboard = await buildStudentDashboard({ storage, student });
@@ -4071,7 +4072,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/reminders", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const subjects = await storage.listStudentSubjects(studentId);
       const grouped = new Map<string, string[]>();
       for (const s of subjects) {
@@ -4112,7 +4113,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.post("/api/student/flags", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const parsed = flagSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid flag payload", errors: parsed.error.flatten() });
@@ -4133,7 +4134,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.delete("/api/student/flags/:questionId", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const questionId = parseInt(String(req.params.questionId), 10);
       if (!Number.isInteger(questionId)) return res.status(400).json({ message: "Invalid question id" });
       await storage.unflagQuestion(studentId, questionId);
@@ -4145,7 +4146,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/student/flags", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const flags = await storage.listFlaggedQuestionsForStudent(studentId);
       res.json({ flags });
     } catch (err: any) {
@@ -4155,7 +4156,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   app.get("/api/quizzes/available", requireSupabaseAuth, async (req, res) => {
     try {
-      const studentId = (req as any).authUser.id;
+      const studentId = req.authUser!.id;
       const allQuizzes = await storage.getSomaQuizzes();
       const assignments = await storage.getQuizAssignmentsForStudent(studentId);
 
@@ -4608,7 +4609,7 @@ ${JSON.stringify({
   // Tutor quiz generation — sets authorId and optionally assigns to students
   app.post("/api/tutor/quizzes/generate", requireTutor, async (req, res) => {
     try {
-      const tutorId = (req as any).tutorId;
+      const tutorId = req.tutorId!;
       const parsed = somaGenerateSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
@@ -4744,8 +4745,8 @@ ${JSON.stringify({
       const quizId = parseInt(String(req.params.id));
       if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
 
-      const authUser = (req as any).authUser as { id: string | string[]; displayName?: string | null };
-      const studentId = String(authUser.id);
+      const authUser = req.authUser!;
+      const studentId = authUser.id;
       const { studentName, answers, startedAt } = req.body;
       if (!answers) {
         return res.status(400).json({ message: "Missing answers" });
@@ -4840,7 +4841,7 @@ ${JSON.stringify({
       if (isNaN(quizId)) {
         return res.status(400).json({ message: "quizId required" });
       }
-      const studentId = String((req as any).authUser.id);
+      const studentId = String(req.authUser!.id);
       const exists = await storage.checkSomaSubmission(quizId, studentId);
       res.json({ submitted: exists });
     } catch (err: any) {
@@ -4857,7 +4858,7 @@ ${JSON.stringify({
       if (!report) return res.status(404).json({ message: "Report not found" });
 
       // Ownership check: student owns the report, OR tutor adopted the student, OR super_admin
-      const authUser = (req as any).authUser as { id: string | string[]; role: string };
+      const authUser = req.authUser!;
       const authUserId = String(authUser.id);
       const isOwner = report.studentId === authUserId;
       const isSuperAdmin = authUser.role === "super_admin";
@@ -4900,7 +4901,7 @@ ${JSON.stringify({
 
       const report = await storage.getSomaReportById(reportId);
       if (!report) return res.status(404).json({ message: "Report not found" });
-      const authUser = (req as any).authUser as { id: string | string[]; role: string };
+      const authUser = req.authUser!;
       const authUserId = String(authUser.id);
       const isOwner = report.studentId === authUserId;
       const isSuperAdmin = authUser.role === "super_admin";
@@ -4934,7 +4935,7 @@ ${JSON.stringify({
 
   app.post("/api/soma/global-tutor", requireSupabaseAuth, async (req, res) => {
     try {
-      const authUser = (req as any).authUser as { id: string; role: string };
+      const authUser = req.authUser!;
       const { message, studentId: requestedStudentId } = req.body;
       if (!message) return res.status(400).json({ message: "Message is required" });
       let studentId: string | null = null;

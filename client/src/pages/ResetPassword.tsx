@@ -113,8 +113,9 @@ export default function ResetPassword() {
       setPageState("success");
       toast({ title: "Password updated", description: "You can now log in with your new password." });
       setTimeout(() => setLocation("/login"), 2500);
-    } catch (err: any) {
-      toast({ title: "Error", description: err?.message || "Failed to update password.", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = (err instanceof Error && err.message) || "Failed to update password.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }

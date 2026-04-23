@@ -36,8 +36,8 @@ export default function ForgotPassword() {
       }
 
       setSent(true);
-    } catch (err: any) {
-      const msg = err?.message || "Something went wrong. Please try again.";
+    } catch (err: unknown) {
+      const msg = (err instanceof Error && err.message) || "Something went wrong. Please try again.";
       if (msg.includes("Too many")) {
         toast({ title: "Too many attempts", description: "Please wait 15 minutes before trying again.", variant: "destructive" });
       } else {

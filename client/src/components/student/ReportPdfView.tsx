@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -56,17 +56,23 @@ const INK = "#1a1a1a";
 const MUTED = "#6b6b6b";
 const RULE = "#d4d4d4";
 
+// ReactMarkdown passes loosely-typed props (node trees from rehype/remark) so
+// we declare the minimal shape we actually read. Kept local to this file
+// because the overrides force a print-friendly palette that has no reuse.
+type MdProps = { children?: ReactNode };
+type MdLinkProps = MdProps & { href?: string };
+
 // ReactMarkdown component overrides that force a light palette. Defined at
 // module scope so they are referentially stable across renders.
 const MD_COMPONENTS = {
-  p: ({ children }: any) => (
+  p: ({ children }: MdProps) => (
     <p style={{ margin: "0 0 6px 0", lineHeight: 1.55 }}>{children}</p>
   ),
-  strong: ({ children }: any) => (
+  strong: ({ children }: MdProps) => (
     <strong style={{ fontWeight: 700, color: INK }}>{children}</strong>
   ),
-  em: ({ children }: any) => <em style={{ fontStyle: "italic" }}>{children}</em>,
-  code: ({ children }: any) => (
+  em: ({ children }: MdProps) => <em style={{ fontStyle: "italic" }}>{children}</em>,
+  code: ({ children }: MdProps) => (
     <code
       style={{
         fontFamily: "Menlo, Consolas, monospace",
@@ -80,7 +86,7 @@ const MD_COMPONENTS = {
       {children}
     </code>
   ),
-  pre: ({ children }: any) => (
+  pre: ({ children }: MdProps) => (
     <pre
       style={{
         fontFamily: "Menlo, Consolas, monospace",
@@ -96,14 +102,14 @@ const MD_COMPONENTS = {
       {children}
     </pre>
   ),
-  ul: ({ children }: any) => (
+  ul: ({ children }: MdProps) => (
     <ul style={{ margin: "4px 0 6px 18px", padding: 0 }}>{children}</ul>
   ),
-  ol: ({ children }: any) => (
+  ol: ({ children }: MdProps) => (
     <ol style={{ margin: "4px 0 6px 18px", padding: 0 }}>{children}</ol>
   ),
-  li: ({ children }: any) => <li style={{ margin: "2px 0" }}>{children}</li>,
-  blockquote: ({ children }: any) => (
+  li: ({ children }: MdProps) => <li style={{ margin: "2px 0" }}>{children}</li>,
+  blockquote: ({ children }: MdProps) => (
     <blockquote
       style={{
         borderLeft: "3px solid " + RULE,
@@ -116,7 +122,7 @@ const MD_COMPONENTS = {
       {children}
     </blockquote>
   ),
-  table: ({ children }: any) => (
+  table: ({ children }: MdProps) => (
     <table
       style={{
         borderCollapse: "collapse",
@@ -128,15 +134,15 @@ const MD_COMPONENTS = {
       {children}
     </table>
   ),
-  th: ({ children }: any) => (
+  th: ({ children }: MdProps) => (
     <th style={{ border: "1px solid " + RULE, padding: "4px 6px", textAlign: "left", background: "#f8fafc" }}>
       {children}
     </th>
   ),
-  td: ({ children }: any) => (
+  td: ({ children }: MdProps) => (
     <td style={{ border: "1px solid " + RULE, padding: "4px 6px" }}>{children}</td>
   ),
-  a: ({ children, href }: any) => (
+  a: ({ children, href }: MdLinkProps) => (
     <a href={href} style={{ color: "#1d4ed8", textDecoration: "underline" }}>
       {children}
     </a>

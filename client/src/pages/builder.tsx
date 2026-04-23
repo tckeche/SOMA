@@ -58,30 +58,33 @@ function somaQuestionToDraft(q: SomaQuestion): DraftQuestion {
   };
 }
 
-function rawToDraftQuestion(raw: any): DraftQuestion | null {
-  let opts = raw.options;
+function rawToDraftQuestion(raw: unknown): DraftQuestion | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  let opts: unknown = r.options;
   if (opts && !Array.isArray(opts) && typeof opts === "object") {
-    const keys = Object.keys(opts);
+    const optObj = opts as Record<string, unknown>;
+    const keys = Object.keys(optObj);
     opts = keys.every((k) => /^[A-Z]$/i.test(k))
-      ? keys.sort().map((k) => opts[k])
-      : Object.values(opts);
+      ? keys.sort().map((k) => optObj[k])
+      : Object.values(optObj);
   }
   if (!Array.isArray(opts) || opts.length < 4) return null;
-  opts = (opts as any[]).map(String).slice(0, 4);
-  const stem = String(raw.prompt_text || raw.promptText || raw.stem || raw.question || "");
+  const normalisedOpts = opts.map(String).slice(0, 4);
+  const stem = String(r.prompt_text || r.promptText || r.stem || r.question || "");
   if (!stem) return null;
   return {
-    draftId: raw.draftId || makeDraftId(),
+    draftId: (typeof r.draftId === "string" && r.draftId) || makeDraftId(),
     stem,
-    options: opts,
-    correctAnswer: String(raw.correct_answer || raw.correctAnswer || opts[0] || ""),
-    explanation: String(raw.explanation || ""),
-    marks: Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1,
-    questionType: (raw.question_type === "graph" || raw.questionType === "graph") ? "graph" : "multiple_choice",
-    graphSpec: raw.graphSpec ?? raw.graph_spec ?? null,
-    topicTag: raw.topic_tag ? String(raw.topic_tag) : raw.topicTag ? String(raw.topicTag) : null,
-    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : raw.subtopicTag ? String(raw.subtopicTag) : null,
-    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : raw.difficultyTag ? String(raw.difficultyTag) : null,
+    options: normalisedOpts,
+    correctAnswer: String(r.correct_answer || r.correctAnswer || normalisedOpts[0] || ""),
+    explanation: String(r.explanation || ""),
+    marks: Number(r.marks_worth || r.marksWorth || r.marks || 1) || 1,
+    questionType: (r.question_type === "graph" || r.questionType === "graph") ? "graph" : "multiple_choice",
+    graphSpec: (r.graphSpec ?? r.graph_spec ?? null) as DraftQuestion["graphSpec"],
+    topicTag: r.topic_tag ? String(r.topic_tag) : r.topicTag ? String(r.topicTag) : null,
+    subtopicTag: r.subtopic_tag ? String(r.subtopic_tag) : r.subtopicTag ? String(r.subtopicTag) : null,
+    difficultyTag: r.difficulty_tag ? String(r.difficulty_tag) : r.difficultyTag ? String(r.difficultyTag) : null,
   };
 }
 

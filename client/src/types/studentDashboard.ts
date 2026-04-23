@@ -1,10 +1,12 @@
+import type { TopicStatus } from "@shared/schema";
+
 export type CurriculumLevel = "AS" | "A2" | "IGCSE";
 
 export interface StudentDashboardTopic {
   topic: string;
   subtopic?: string;
   description?: string;
-  status: "mastered" | "in_progress" | "needs_work" | "untested";
+  status: TopicStatus;
   understandingPercent: number;
   attempts: number;
 }

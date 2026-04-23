@@ -7,7 +7,7 @@ import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format, formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import type { SomaQuiz } from "@shared/schema";
+import type { SomaQuiz, SomaUser } from "@shared/schema";
 import {
   Shield, Users, BookOpen, Trash2, LogOut,
   Loader2, AlertTriangle, Search, UserX, X,
@@ -16,14 +16,6 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
-
-interface SomaUser {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: string;
-  createdAt: string;
-}
 
 interface AdminStats {
   totalUsers: number;

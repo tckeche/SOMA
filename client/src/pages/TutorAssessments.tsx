@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
-import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment } from "@shared/schema";
+import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment, SomaUser } from "@shared/schema";
 import {
   LogOut, Users, BookOpen, Plus, X, ChevronDown, ChevronUp,
   Loader2, Check, LayoutDashboard, Clock, Award, Timer,
@@ -26,12 +26,8 @@ function formatDuration(
 }
 
 
-interface SomaUser {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: string;
-}
+type QuizSortBy = "latest_submission" | "newest" | "title" | "subject";
+type AssignmentStatusFilter = "all" | "submitted" | "not_submitted";
 
 interface AssignmentWithStudent extends QuizAssignment {
   student: SomaUser;
@@ -313,8 +309,8 @@ export default function TutorAssessments() {
   const [subjectFilter, setSubjectFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
   const [studentFilter, setStudentFilter] = useState("");
-  const [quizSortBy, setQuizSortBy] = useState<"latest_submission" | "newest" | "title" | "subject">("latest_submission");
-  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
+  const [quizSortBy, setQuizSortBy] = useState<QuizSortBy>("latest_submission");
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<AssignmentStatusFilter>("all");
   const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
   const [allocationDateFilter, setAllocationDateFilter] = useState("");
   const [assignSearch, setAssignSearch] = useState("");
@@ -678,7 +674,7 @@ export default function TutorAssessments() {
             <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Sort by</label>
             <select
               value={quizSortBy}
-              onChange={(e) => setQuizSortBy(e.target.value as any)}
+              onChange={(e) => setQuizSortBy(e.target.value as QuizSortBy)}
               className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[180px]"
               data-testid="sort-quizzes"
             >
@@ -836,7 +832,7 @@ export default function TutorAssessments() {
                                   <option key={a.studentId} value={a.studentId}>{a.student.displayName || a.student.email}</option>
                                 ))}
                               </select>
-                              <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as any)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80">
+                              <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as AssignmentStatusFilter)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80">
                                 <option value="all">All statuses</option>
                                 <option value="submitted">Submitted</option>
                                 <option value="not_submitted">Not submitted</option>

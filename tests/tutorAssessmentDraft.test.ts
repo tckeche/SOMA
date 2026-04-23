@@ -193,7 +193,7 @@ describe("isMeaningfulDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
     title: "", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
-    syllabusCode: "", selectedTopicIds: [],
+    syllabusCode: "", selectedTopicIds: [], selectedSubtopicIds: [],
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 
@@ -228,7 +228,7 @@ describe("describeDraft", () => {
   const base: TutorAssessmentDraft = {
     version: TUTOR_DRAFT_VERSION,
     title: "", examiningBodySlug: "cambridge", levelCode: "", subjectSlug: "",
-    syllabusCode: "", selectedTopicIds: [],
+    syllabusCode: "", selectedTopicIds: [], selectedSubtopicIds: [],
     timeLimitMinutes: 60, prompt: "", savedAt: "2026-04-19T00:00:00Z",
   };
 

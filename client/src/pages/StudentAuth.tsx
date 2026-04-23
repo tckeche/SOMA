@@ -109,9 +109,9 @@ export default function StudentAuth() {
       }
 
       setLocation("/dashboard");
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (requestId !== activeRequestId.current) return;
-      const msg = err?.message || "";
+      const msg = err instanceof Error ? err.message : "";
       let friendly = "Something went wrong. Please try again.";
       if (msg.includes("Invalid login credentials")) {
         friendly = "Incorrect email or password. Please try again.";
@@ -222,9 +222,9 @@ export default function StudentAuth() {
         });
         setMode("login");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (requestId !== activeRequestId.current) return;
-      const msg = err?.message || "";
+      const msg = err instanceof Error ? err.message : "";
       let friendly = "Could not create account.";
       if (msg.includes("already registered") || msg.includes("already been registered")) {
         friendly = "An account with this email already exists. Try logging in instead.";
@@ -260,8 +260,9 @@ export default function StudentAuth() {
       if (!res.ok) throw new Error(data?.error?.message || data?.message || "Could not resend verification email.");
       setResendAttempts(data?.attemptCount ?? (resendAttempts + 1));
       toast({ title: "Verification email sent", description: "Check your inbox and spam folder." });
-    } catch (err: any) {
-      toast({ title: "Resend failed", description: err?.message || "Please try again shortly.", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = (err instanceof Error && err.message) || "Please try again shortly.";
+      toast({ title: "Resend failed", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -280,8 +281,9 @@ export default function StudentAuth() {
       if (!res.ok) throw new Error(data?.error?.message || data?.message || "Could not send fallback code.");
       setCodeSent(true);
       toast({ title: "Code sent", description: "A 7-digit verification code has been sent to your email." });
-    } catch (err: any) {
-      toast({ title: "Code send failed", description: err?.message || "Please try again.", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = (err instanceof Error && err.message) || "Please try again.";
+      toast({ title: "Code send failed", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -306,8 +308,9 @@ export default function StudentAuth() {
       setResendAttempts(0);
       setCodeSent(false);
       setCodeInput("");
-    } catch (err: any) {
-      toast({ title: "Verification failed", description: err?.message || "Invalid, expired, or already-used code.", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = (err instanceof Error && err.message) || "Invalid, expired, or already-used code.";
+      toast({ title: "Verification failed", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -331,11 +334,11 @@ export default function StudentAuth() {
       if (error) throw error;
       toast({ title: "Reset email sent", description: "Check your inbox for a password reset link." });
       switchMode("login");
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (requestId !== activeRequestId.current) return;
       const friendly = err instanceof AuthRequestError
         ? "Reset request timed out. Please try again."
-        : err?.message || "Something went wrong.";
+        : (err instanceof Error && err.message) || "Something went wrong.";
       setAuthError(friendly);
       toast({ title: "Reset failed", description: friendly, variant: "destructive" });
     } finally {

@@ -4,12 +4,27 @@ import { storage } from "./storage";
 
 export type AppRole = "student" | "tutor" | "super_admin";
 
-type RequestUser = {
+export type RequestUser = {
   id: string;
   email: string;
   role: AppRole;
   displayName: string | null;
 };
+
+// Custom properties that role middleware attaches to the Express Request.
+// Declared once here so the rest of the server can read req.tutorId et al.
+// without the `(req as any)` escape hatch scattered across routes.ts.
+declare global {
+  namespace Express {
+    interface Request {
+      authUser?: RequestUser;
+      tutorId?: string;
+      tutorUser?: RequestUser;
+      adminId?: string;
+      adminUser?: RequestUser;
+    }
+  }
+}
 
 type RoleMiddlewareConfig = {
   allowedRoles: AppRole[];
@@ -89,7 +104,7 @@ async function findAuthorizedUserByHeader(
 }
 
 function attachAuthenticatedUser(req: Request, user: RequestUser) {
-  (req as any).authUser = {
+  req.authUser = {
     id: user.id,
     email: user.email,
     role: user.role,
@@ -111,8 +126,8 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
 
       if (bearerUser) {
         attachAuthenticatedUser(req, bearerUser);
-        (req as any)[config.requestIdKey] = bearerUser.id;
-        (req as any)[config.requestUserKey] = bearerUser;
+        req[config.requestIdKey] = bearerUser.id;
+        req[config.requestUserKey] = bearerUser;
         return next();
       }
 
@@ -131,8 +146,8 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
       }
 
       attachAuthenticatedUser(req, headerUser);
-      (req as any)[config.requestIdKey] = headerUser.id;
-      (req as any)[config.requestUserKey] = headerUser;
+      req[config.requestIdKey] = headerUser.id;
+      req[config.requestUserKey] = headerUser;
       return next();
     } catch {
       return res.status(500).json({ message: "Failed to verify user identity" });

@@ -19,6 +19,7 @@ import type {
   StudentSubject,
   StudentTopicMastery,
   StudentNotification,
+  TopicStatus,
 } from "@shared/schema";
 import {
   composeReminders,
@@ -58,7 +59,7 @@ export interface SubjectSummary {
   averageScorePercent: number | null;
   recentTrend: "up" | "down" | "flat" | "new";
   topics: Array<CurriculumTopic & {
-    status: "mastered" | "in_progress" | "needs_work" | "untested";
+    status: TopicStatus;
     understandingPercent: number;
     attempts: number;
   }>;
@@ -204,7 +205,7 @@ function tonePerformanceMessage(stats: Omit<PerformanceStats, "message">): strin
   return `${bandLine} ${trendBit}${focusLine}${bestLine}`.trim();
 }
 
-function classifyMasteryStatus(m: StudentTopicMastery | undefined): "mastered" | "in_progress" | "needs_work" | "untested" {
+function classifyMasteryStatus(m: StudentTopicMastery | undefined): TopicStatus {
   if (!m || !m.tested) return "untested";
   if (m.masteryAchieved || m.understandingPercent >= 80) return "mastered";
   if (m.understandingPercent >= 50) return "in_progress";

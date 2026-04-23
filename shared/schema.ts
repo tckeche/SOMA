@@ -996,3 +996,8 @@ export type InsertQuiz = z.infer<typeof insertQuizSchema>;
 export type InsertQuestion = z.infer<typeof insertQuestionSchema>;
 export type InsertStudent = z.infer<typeof insertStudentSchema>;
 export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
+
+// Mastery bucket assigned to a syllabus topic/subtopic for a given student.
+// Kept as a shared union so client and server stay in lockstep — adding a new
+// bucket here surfaces TS errors in every switch that handles it.
+export type TopicStatus = "mastered" | "in_progress" | "needs_work" | "untested";
