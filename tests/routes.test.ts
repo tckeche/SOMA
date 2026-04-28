@@ -64,7 +64,7 @@ vi.mock("../server/services/aiPipeline", () => ({
     verifierModel: "openai/gpt-4o",
   })),
   parsePdfTextFromBuffer: vi.fn().mockResolvedValue("Cambridge Mathematics syllabus algebra functions geometry probability ".repeat(20)),
-  validateAndCorrectMcqAnswers: vi.fn((questions: any[]) => questions),
+  validateAndCorrectMcqAnswers: vi.fn((questions: any[]) => ({ questions, warnings: [] })),
   fetchPaperContext: vi.fn().mockResolvedValue("paper context"),
 }));
 

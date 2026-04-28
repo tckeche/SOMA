@@ -874,7 +874,7 @@ export default function BuilderPage() {
       if (data.needsClarification) {
         setPipelineActive(false);
         setGenerationState("generation_failed");
-        return { action: "NONE" as CopilotAction, questions: [], positions: [], reply: data.reply, metadata: data.metadata };
+        return { action: "NONE" as CopilotAction, questions: [], positions: [], reply: data.reply, metadata: data.metadata, warnings: data.warnings };
       }
 
       // Parse action from response
@@ -913,11 +913,11 @@ export default function BuilderPage() {
         }
 
         finishPipeline();
-        return { action, questions, positions, reply: data.reply, metadata: data.metadata, draftCount: newDraft.length, verification: data.verification };
+        return { action, questions, positions, reply: data.reply, metadata: data.metadata, draftCount: newDraft.length, verification: data.verification, warnings: data.warnings };
       }
 
       setPipelineActive(false);
-      return { action, questions, positions, reply: data.reply, metadata: data.metadata, verification: data.verification };
+      return { action, questions, positions, reply: data.reply, metadata: data.metadata, verification: data.verification, warnings: data.warnings };
     },
     onSuccess: (data, message) => {
       const verification = (data as any).verification;

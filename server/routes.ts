@@ -3117,7 +3117,16 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         };
       });
       const balanced = balanceAnswerOptions(rawMapped);
-      const validated = validateAndCorrectMcqAnswers(balanced);
+      const validatedResult = validateAndCorrectMcqAnswers(balanced);
+      const validated = validatedResult.questions;
+      if (validatedResult.warnings.length > 0) {
+        const critical = validatedResult.warnings.filter((w) => !w.autoFixed);
+        console.warn(
+          `[ADD_QUESTIONS] quizId=${quizId} validator emitted ${validatedResult.warnings.length} warning(s)` +
+            (critical.length > 0 ? ` (${critical.length} CRITICAL)` : ""),
+          validatedResult.warnings.map((w) => `Q${w.questionIndex} ${w.field}: ${w.issue}`),
+        );
+      }
       const mapped = validated.map((q, index) => ({
         quizId,
         stem: q.stem,
@@ -3132,7 +3141,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         difficultyTag: rawMapped[index].difficulty_tag,
       }));
       const saved = await storage.createSomaQuestions(mapped);
-      res.json(saved);
+      res.json({ saved, warnings: validatedResult.warnings });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to add questions" });
     }

@@ -118,8 +118,11 @@ function dedupeOptions(options: string[], preferred?: string): string[] {
   return out.slice(0, 4);
 }
 
-function applyDeterministicIntegrityGuards(questions: QuizResult["questions"]): QuizResult["questions"] {
-  return questions.map((q, idx) => {
+function applyDeterministicIntegrityGuards(
+  questions: QuizResult["questions"],
+): { questions: QuizResult["questions"]; warnings: PipelineWarning[] } {
+  const warnings: PipelineWarning[] = [];
+  const corrected = questions.map((q, idx) => {
     const normalizedStem = q.stem.trim();
     const normalizedCorrect = q.correct_answer.trim();
     const normalizedExplanation = q.explanation.trim() || "See worked method for the correct option.";
@@ -133,28 +136,47 @@ function applyDeterministicIntegrityGuards(questions: QuizResult["questions"]): 
       explanation: normalizedExplanation,
       marks,
     };
-    return guardedOptions.includes(cleaned.correct_answer)
-      ? cleaned
-      : { ...cleaned, correct_answer: guardedOptions[0] };
+    if (guardedOptions.includes(cleaned.correct_answer)) return cleaned;
+    warnings.push({
+      questionIndex: idx + 1,
+      field: "correct_answer",
+      issue: `Stored correct_answer "${cleaned.correct_answer}" did not survive option dedupe/normalisation; defaulted to "${guardedOptions[0]}". Verify the answer key manually.`,
+      autoFixed: false,
+    });
+    return { ...cleaned, correct_answer: guardedOptions[0] };
   });
+  return { questions: corrected, warnings };
 }
 
 /**
  * Snap correct_answer onto one of the options verbatim. If the maker returned
  * a letter ("A"/"B"), an answer with extra punctuation, or a paraphrase, we
- * try letter-mapping, then substring-matching, then fall back to options[0].
+ * try letter-mapping, then substring-matching. If nothing matches we still
+ * fall back to options[0] to keep the quiz savable, but emit a CRITICAL
+ * warning so the tutor must review the question before publishing — silent
+ * fallback is what was previously corrupting answer keys.
  */
 export function validateAndCorrectMcqAnswers(
   questions: Array<{ stem: string; options: string[]; correct_answer: string; explanation: string; marks: number }>,
-): Array<{ stem: string; options: string[]; correct_answer: string; explanation: string; marks: number }> {
-  return questions.map((q) => {
+): {
+  questions: Array<{ stem: string; options: string[]; correct_answer: string; explanation: string; marks: number }>;
+  warnings: PipelineWarning[];
+} {
+  const warnings: PipelineWarning[] = [];
+  const corrected = questions.map((q, idx) => {
     if (q.options.includes(q.correct_answer)) return q;
 
     const letterMatch = q.correct_answer.trim().match(/^([A-Da-d])\.?$/);
     if (letterMatch) {
-      const idx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
-      if (idx >= 0 && idx < q.options.length) {
-        return { ...q, correct_answer: q.options[idx] };
+      const letterIdx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+      if (letterIdx >= 0 && letterIdx < q.options.length) {
+        warnings.push({
+          questionIndex: idx + 1,
+          field: "correct_answer",
+          issue: `Verifier returned bare letter "${q.correct_answer}" instead of the option text; mapped to "${q.options[letterIdx]}".`,
+          autoFixed: true,
+        });
+        return { ...q, correct_answer: q.options[letterIdx] };
       }
     }
 
@@ -163,7 +185,15 @@ export function validateAndCorrectMcqAnswers(
     let bestScore = 0;
     for (let i = 0; i < q.options.length; i++) {
       const optNorm = q.options[i].trim().toLowerCase().replace(/\s+/g, " ");
-      if (optNorm === normalized) return { ...q, correct_answer: q.options[i] };
+      if (optNorm === normalized) {
+        warnings.push({
+          questionIndex: idx + 1,
+          field: "correct_answer",
+          issue: `Verifier's correct_answer differed only in whitespace/case from option "${q.options[i]}"; auto-normalised.`,
+          autoFixed: true,
+        });
+        return { ...q, correct_answer: q.options[i] };
+      }
       if (optNorm.includes(normalized) || normalized.includes(optNorm)) {
         const score = Math.min(optNorm.length, normalized.length) / Math.max(optNorm.length, normalized.length);
         if (score > bestScore) {
@@ -172,9 +202,24 @@ export function validateAndCorrectMcqAnswers(
         }
       }
     }
-    if (bestIdx >= 0 && bestScore > 0.5) return { ...q, correct_answer: q.options[bestIdx] };
+    if (bestIdx >= 0 && bestScore > 0.5) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "correct_answer",
+        issue: `Verifier's correct_answer "${q.correct_answer}" only partially matched option "${q.options[bestIdx]}" (${(bestScore * 100).toFixed(0)}% similarity); auto-snapped. Please verify before publishing.`,
+        autoFixed: true,
+      });
+      return { ...q, correct_answer: q.options[bestIdx] };
+    }
+    warnings.push({
+      questionIndex: idx + 1,
+      field: "correct_answer",
+      issue: `CRITICAL: verifier's correct_answer "${q.correct_answer}" does not match ANY of the 4 options. Defaulted to "${q.options[0]}" so the quiz is savable, but the answer key is unverifiable — REVIEW THIS QUESTION MANUALLY before publishing or students may be marked wrong on the right answer.`,
+      autoFixed: false,
+    });
     return { ...q, correct_answer: q.options[0] };
   });
+  return { questions: corrected, warnings };
 }
 
 /**
@@ -423,9 +468,10 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       lastTelemetry = batch.telemetry;
     }
 
+    const finalValidated = validateAndCorrectMcqAnswers(merged.slice(0, questionCount));
     return {
-      questions: validateAndCorrectMcqAnswers(merged.slice(0, questionCount)),
-      warnings: allWarnings,
+      questions: finalValidated.questions,
+      warnings: [...allWarnings, ...finalValidated.warnings],
       telemetry: { ...lastTelemetry, totalDurationMs: Date.now() - overallStart },
     };
   }
@@ -465,13 +511,19 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   }
 
   // ── STAGE 3: Deterministic guards ───────────────────────────────────────
-  let finalQuestions = validateAndCorrectMcqAnswers(applyDeterministicIntegrityGuards(verified.questions));
-  const mathCheck = applyMathValidatorCorrections(finalQuestions);
-  finalQuestions = mathCheck.questions;
+  const guarded = applyDeterministicIntegrityGuards(verified.questions);
+  const validated = validateAndCorrectMcqAnswers(guarded.questions);
+  const mathCheck = applyMathValidatorCorrections(validated.questions);
+  const finalQuestions = mathCheck.questions;
 
   return {
     questions: finalQuestions,
-    warnings: [...verified.warnings, ...mathCheck.warnings],
+    warnings: [
+      ...verified.warnings,
+      ...guarded.warnings,
+      ...validated.warnings,
+      ...mathCheck.warnings,
+    ],
     telemetry: {
       makerModel,
       checkerModel,
@@ -515,22 +567,24 @@ export async function runQuestionAudit(
 
   try {
     const verified = await pipelineStages.runOpenAIVerifier(draftQuestions, context);
-    const guarded = validateAndCorrectMcqAnswers(applyDeterministicIntegrityGuards(verified.questions));
-    const mathCheck = applyMathValidatorCorrections(guarded);
+    const guarded = applyDeterministicIntegrityGuards(verified.questions);
+    const validated = validateAndCorrectMcqAnswers(guarded.questions);
+    const mathCheck = applyMathValidatorCorrections(validated.questions);
     return {
       questions: mathCheck.questions,
-      warnings: [...verified.warnings, ...mathCheck.warnings],
+      warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings],
       verifierModel: "openai/gpt-4o",
     };
   } catch (err: any) {
     console.warn(`[COPILOT_AUDIT] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini.`);
     try {
       const verified = await pipelineStages.runGeminiVerifier(draftQuestions, context);
-      const guarded = validateAndCorrectMcqAnswers(applyDeterministicIntegrityGuards(verified.questions));
-      const mathCheck = applyMathValidatorCorrections(guarded);
+      const guarded = applyDeterministicIntegrityGuards(verified.questions);
+      const validated = validateAndCorrectMcqAnswers(guarded.questions);
+      const mathCheck = applyMathValidatorCorrections(validated.questions);
       return {
         questions: mathCheck.questions,
-        warnings: [...verified.warnings, ...mathCheck.warnings],
+        warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings],
         verifierModel: "google/gemini-2.5-flash",
       };
     } catch (err2: any) {
