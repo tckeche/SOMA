@@ -3141,7 +3141,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         difficultyTag: rawMapped[index].difficulty_tag,
       }));
       const saved = await storage.createSomaQuestions(mapped);
-      res.json({ saved, warnings: validatedResult.warnings });
+      res.json(saved);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to add questions" });
     }
