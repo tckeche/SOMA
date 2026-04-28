@@ -15,6 +15,7 @@ import {
   QuestionSchema,
   QuizResultSchema,
   pipelineStages,
+  validateAndCorrectMcqAnswers,
 } from "../server/services/aiPipeline";
 
 const validQuestion = {
@@ -236,6 +237,84 @@ describe("generateAuditedQuiz: batching", () => {
     // 30 questions → two batches of 15 → each batch = 1 maker + 1 verifier call
     expect(mockClaudeMaker).toHaveBeenCalledTimes(2);
     expect(mockOpenAIVerifier).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── Answer-key validator (the wrong-answer fix) ─────────────────────────────
+describe("validateAndCorrectMcqAnswers", () => {
+  const baseQ = {
+    stem: "Find the derivative of e^(2x) sin(x).",
+    options: [
+      "$2e^{2x}\\sin x + e^{2x}\\cos x$",
+      "$2e^{2x}\\sin x - e^{2x}\\cos x$",
+      "$e^{2x}\\sin x + e^{2x}\\cos x$",
+      "$2e^{2x}\\cos x$",
+    ],
+    correct_answer: "$2e^{2x}\\sin x + e^{2x}\\cos x$",
+    explanation: "Product rule on e^(2x) and sin x.",
+    marks: 2,
+  };
+
+  it("emits no warnings when correct_answer matches an option exactly", () => {
+    const result = validateAndCorrectMcqAnswers([baseQ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.questions[0].correct_answer).toBe(baseQ.correct_answer);
+  });
+
+  it("maps a bare letter ('B') to the correct option and emits an autoFixed warning", () => {
+    const result = validateAndCorrectMcqAnswers([{ ...baseQ, correct_answer: "B" }]);
+    expect(result.questions[0].correct_answer).toBe(baseQ.options[1]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({
+      questionIndex: 1,
+      field: "correct_answer",
+      autoFixed: true,
+    });
+    expect(result.warnings[0].issue).toMatch(/bare letter/i);
+  });
+
+  it("normalises whitespace/case differences and emits an autoFixed warning", () => {
+    const noisy = "  $2E^{2X}\\SIN X + E^{2X}\\COS X$  ";
+    const result = validateAndCorrectMcqAnswers([{ ...baseQ, correct_answer: noisy }]);
+    expect(result.questions[0].correct_answer).toBe(baseQ.options[0]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({ autoFixed: true });
+    expect(result.warnings[0].issue).toMatch(/whitespace\/case/i);
+  });
+
+  it("snaps a partial substring match and flags it for manual review (autoFixed)", () => {
+    const partial = "$2e^{2x}\\sin x + e^{2x}\\cos x$ (by product rule)";
+    const result = validateAndCorrectMcqAnswers([{ ...baseQ, correct_answer: partial }]);
+    expect(result.questions[0].correct_answer).toBe(baseQ.options[0]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({ autoFixed: true });
+    expect(result.warnings[0].issue).toMatch(/partially matched/i);
+  });
+
+  it("emits a CRITICAL non-autoFixed warning when correct_answer matches NO option", () => {
+    const garbage = "definitely not in the option list at all xyz123";
+    const result = validateAndCorrectMcqAnswers([{ ...baseQ, correct_answer: garbage }]);
+    expect(result.questions[0].correct_answer).toBe(baseQ.options[0]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({
+      questionIndex: 1,
+      field: "correct_answer",
+      autoFixed: false,
+    });
+    expect(result.warnings[0].issue).toMatch(/CRITICAL/);
+    expect(result.warnings[0].issue).toMatch(/REVIEW THIS QUESTION MANUALLY/);
+  });
+
+  it("preserves question indices when warnings span multiple questions", () => {
+    const q1 = { ...baseQ, correct_answer: baseQ.options[0] };
+    const q2 = { ...baseQ, correct_answer: "C" };
+    const q3 = { ...baseQ, correct_answer: "totally bogus" };
+    const result = validateAndCorrectMcqAnswers([q1, q2, q3]);
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings[0].questionIndex).toBe(2);
+    expect(result.warnings[0].autoFixed).toBe(true);
+    expect(result.warnings[1].questionIndex).toBe(3);
+    expect(result.warnings[1].autoFixed).toBe(false);
   });
 });
 
