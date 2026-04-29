@@ -166,6 +166,20 @@ export const somaQuestions = pgTable("soma_questions", {
   topicTag: text("topic_tag"),
   subtopicTag: text("subtopic_tag"),
   difficultyTag: text("difficulty_tag"),
+  // FK migration (Phase 1): nullable structural keys into the catalogue tree.
+  // Free-text *Tag columns above are retained during the dual-write window;
+  // backfill scripts populate these IDs over time. New code should prefer the
+  // ID columns and treat the tag columns as advisory only.
+  subtopicId: integer("subtopic_id").references(() => subtopics.id, { onDelete: "set null" }),
+  learningRequirementId: integer("learning_requirement_id").references(() => learningRequirements.id, { onDelete: "set null" }),
+  // Distractor → examiner-misconception link (jsonb int[]). Phase 2 quiz
+  // generation will populate this so marking can cite the matched insight.
+  targetMisconceptionIds: jsonb("target_misconception_ids").$type<number[]>(),
+  // Cached command word (e.g. "state", "explain", "evaluate") and AO label
+  // for command-word coaching and AO rollups. Populated at generation/import
+  // time; nullable so legacy questions don't block reads.
+  commandWord: text("command_word"),
+  assessmentObjective: text("assessment_objective"),
 });
 
 
@@ -266,6 +280,12 @@ export const studentTopicMastery = pgTable("student_topic_mastery", {
   subject: text("subject").notNull(),
   topic: text("topic").notNull(),
   subtopic: text("subtopic"),
+  // FK migration (Phase 1): structural keys into the catalogue tree.
+  // Nullable during the dual-write window; backfilled by
+  // scripts/backfillMasterySubtopicIds.ts. The free-text columns above
+  // remain authoritative until backfill is complete.
+  subtopicId: integer("subtopic_id").references(() => subtopics.id, { onDelete: "set null" }),
+  learningRequirementId: integer("learning_requirement_id").references(() => learningRequirements.id, { onDelete: "set null" }),
   understandingPercent: integer("understanding_percent").notNull().default(0),
   masteryAchieved: boolean("mastery_achieved").notNull().default(false),
   covered: boolean("covered").notNull().default(false),
@@ -308,7 +328,11 @@ export const suggestedAssessments = pgTable("suggested_assessments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Structured misconceptions extracted from examiner reports via AI
+// Structured misconceptions extracted from examiner reports via AI.
+// Phase 1 adds FK linkage into the catalogue + review-queue / provenance
+// fields. Existing rows remain valid: the new fields are nullable and
+// status defaults to "approved" so legacy data stays visible until a
+// review pass marks any of it as "pending".
 export const examinerMisconceptions = pgTable("examiner_misconceptions", {
   id: serial("id").primaryKey(),
   documentId: integer("document_id").notNull().references(() => syllabusDocuments.id, { onDelete: "cascade" }),
@@ -317,10 +341,27 @@ export const examinerMisconceptions = pgTable("examiner_misconceptions", {
   subject: text("subject"),
   topic: text("topic").notNull(),
   subtopic: text("subtopic"),
+  // FK linkage to the catalogue tree (nullable during dual-write).
+  subtopicId: integer("subtopic_id").references(() => subtopics.id, { onDelete: "set null" }),
+  learningRequirementId: integer("learning_requirement_id").references(() => learningRequirements.id, { onDelete: "set null" }),
   misconception: text("misconception").notNull(),
   studentError: text("student_error").notNull(),
   correctApproach: text("correct_approach").notNull(),
   frequency: text("frequency").notNull().default("common"),
+  // Phase 2 review queue. Default "approved" means existing rows stay
+  // visible to consumers; new AI-extracted rows will land as "pending".
+  status: text("status").notNull().default("approved"),
+  reviewedById: uuid("reviewed_by_id").references(() => somaUsers.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  // Provenance — verbatim quote and source page so the dashboard can show
+  // the evidence behind every insight. Populated by the new chunked
+  // extractor in Phase 2; nullable so legacy rows still load.
+  sourceQuote: text("source_quote"),
+  sourcePage: integer("source_page"),
+  // Self-confidence score from the extraction pass (0..1). Helps the
+  // queue auto-prioritise low-confidence rows.
+  confidence: integer("confidence_pct"),
   extractedAt: timestamp("extracted_at").defaultNow().notNull(),
 });
 
