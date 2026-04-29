@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
@@ -18,7 +18,20 @@ import RecentWinsList from "@/components/student/RecentWinsList";
 import CompletedAssessmentsTab from "@/components/student/CompletedAssessmentsTab";
 import AssignmentsList from "@/components/student/AssignmentsList";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
-import type { StudentDashboardPayload } from "@/types/studentDashboard";
+import type { DashboardReminder, StudentDashboardPayload } from "@/types/studentDashboard";
+
+interface StudyTipResponse {
+  tips: Array<{
+    id: string;
+    topic: string;
+    tip: string;
+    whyItMatters: string;
+    correctApproach: string;
+    frequency: "very_common" | "common" | "occasional";
+  }>;
+  cacheHit: boolean;
+  elapsedMs: number;
+}
 
 function DashboardSkeleton() {
   return (
@@ -93,6 +106,53 @@ export default function StudentDashboard() {
     },
     enabled: !!userId,
   });
+
+  // Examiner-driven study tips, fetched per subject. Each query is cached
+  // server-side for 10 minutes and client-side for 5; we merge the results
+  // into the reminders array so the carousel surfaces real, syllabus-grounded
+  // mistakes alongside the generic composed reminders.
+  const subjectsForTips = useMemo(
+    () => (data?.subjects ?? []).slice(0, 4),
+    [data?.subjects],
+  );
+  const tipQueries = useQueries({
+    queries: subjectsForTips.map((s) => ({
+      queryKey: ["/api/student/study-tips", s.subject],
+      queryFn: async (): Promise<StudyTipResponse> => {
+        const params = new URLSearchParams({ subject: s.subject, board: "Cambridge", top: "3" });
+        const res = await authFetch(`/api/student/study-tips?${params.toString()}`);
+        if (!res.ok) return { tips: [], cacheHit: false, elapsedMs: 0 };
+        return res.json();
+      },
+      enabled: !!userId && !!s.subject,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  const studyTipReminders: DashboardReminder[] = useMemo(() => {
+    const out: DashboardReminder[] = [];
+    tipQueries.forEach((q, idx) => {
+      const subject = subjectsForTips[idx]?.subject;
+      if (!q.data || !subject) return;
+      for (const tip of q.data.tips) {
+        out.push({
+          id: tip.id,
+          topic: tip.topic,
+          text: tip.tip,
+          whyItMatters: tip.whyItMatters,
+          correctApproach: tip.correctApproach,
+          frequency: tip.frequency,
+          subject,
+        });
+      }
+    });
+    return out;
+  }, [tipQueries, subjectsForTips]);
+  const mergedReminders: DashboardReminder[] = useMemo(() => {
+    const composed = data?.reminders ?? [];
+    // Surface the examiner tips first — they're more actionable than the
+    // generic composed reminders.
+    return [...studyTipReminders, ...composed];
+  }, [studyTipReminders, data?.reminders]);
 
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
   const formatUpdated = (d: Date | null) => {
@@ -204,7 +264,7 @@ export default function StudentDashboard() {
                 </div>
 
                 {/* 4. Reminders carousel */}
-                <RemindersCarousel reminders={data.reminders} />
+                <RemindersCarousel reminders={mergedReminders} />
 
                 {/* 5. Performance section */}
                 <PerformanceCard performance={data.performance} subjects={data.subjects} />
