@@ -4698,8 +4698,8 @@ ${JSON.stringify({
         isArchived: false,
       });
 
-      const targetMisconceptionIds = result.seedMisconceptionIds.length > 0
-        ? result.seedMisconceptionIds
+      const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
+        ? (result.seedMisconceptionIds ?? null)
         : null;
       const insertedQuestions = await storage.createSomaQuestions(
         result.questions.map((q) => ({
@@ -4793,8 +4793,8 @@ ${JSON.stringify({
       const adoptedIds = new Set(adopted.map((s) => s.id));
       const validAssignedStudentIds = requestedStudentIds.filter((id) => adoptedIds.has(id));
 
-      const targetMisconceptionIds = result.seedMisconceptionIds.length > 0
-        ? result.seedMisconceptionIds
+      const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
+        ? (result.seedMisconceptionIds ?? null)
         : null;
       const bundle = await storage.createSomaQuizBundle({
         quiz: {
@@ -5014,7 +5014,10 @@ ${JSON.stringify({
         }
       }
 
-      const questions = await storage.getSomaQuestionsByQuizId(report.quizId);
+      const [questions, diagnoses] = await Promise.all([
+        storage.getSomaQuestionsByQuizId(report.quizId),
+        (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
+      ]);
 
       res.json({
         report,
@@ -5026,6 +5029,10 @@ ${JSON.stringify({
           marks: q.marks,
           explanation: q.explanation,
         })),
+        // Phase 2C — per-question diagnoses, keyed by question id. The
+        // SomaQuizReview page renders an "Examiner-flagged" panel
+        // beneath any incorrect answer that matched a known misconception.
+        diagnoses,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
