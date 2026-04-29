@@ -976,22 +976,41 @@ ${textSlice}`;
 async function updateMasteryFromSubmission(
   studentId: string,
   quizSubject: string | null,
-  questions: { id: number; correctAnswer: string; marks: number; topicTag: string | null; subtopicTag: string | null }[],
+  questions: { id: number; correctAnswer: string; marks: number; topicTag: string | null; subtopicTag: string | null; subtopicId?: number | null; learningRequirementId?: number | null }[],
   studentAnswers: Record<string, string>,
 ): Promise<void> {
-  // Group by topic+subtopic
-  const groups: Record<string, { correct: number; total: number; marks: number; maxMarks: number }> = {};
+  // Group by (topic, subtopic, subtopicId, learningRequirementId). When a
+  // question is FK-linked to a learning requirement we roll up at that
+  // grain too — Phase 4.1 — so the mastery map can render
+  // sub-subtopic-level evidence.
+  interface Bucket {
+    correct: number;
+    total: number;
+    marks: number;
+    maxMarks: number;
+    topic: string;
+    subtopic: string;
+    subtopicId: number | null;
+    learningRequirementId: number | null;
+  }
+  const groups = new Map<string, Bucket>();
   for (const q of questions) {
     const topic = q.topicTag || "General";
     const subtopic = q.subtopicTag || "";
-    const key = `${topic}|||${subtopic}`;
-    if (!groups[key]) groups[key] = { correct: 0, total: 0, marks: 0, maxMarks: 0 };
-    groups[key].total += 1;
-    groups[key].maxMarks += q.marks;
+    const subtopicId = q.subtopicId ?? null;
+    const learningRequirementId = q.learningRequirementId ?? null;
+    const key = `${topic}|||${subtopic}|||${subtopicId ?? ""}|||${learningRequirementId ?? ""}`;
+    let bucket = groups.get(key);
+    if (!bucket) {
+      bucket = { correct: 0, total: 0, marks: 0, maxMarks: 0, topic, subtopic, subtopicId, learningRequirementId };
+      groups.set(key, bucket);
+    }
+    bucket.total += 1;
+    bucket.maxMarks += q.marks;
     const answered = studentAnswers[String(q.id)];
     if (answered === q.correctAnswer) {
-      groups[key].correct += 1;
-      groups[key].marks += q.marks;
+      bucket.correct += 1;
+      bucket.marks += q.marks;
     }
   }
 
@@ -1002,18 +1021,19 @@ async function updateMasteryFromSubmission(
   const priorByKey = new Map<string, { mastered: boolean; pct: number }>();
   for (const m of priorMastery) {
     if (m.subject !== subject) continue;
-    const k = `${m.topic}|||${m.subtopic ?? ""}`;
+    const k = `${m.topic}|||${m.subtopic ?? ""}|||${m.subtopicId ?? ""}|||${m.learningRequirementId ?? ""}`;
     priorByKey.set(k, { mastered: m.masteryAchieved || m.understandingPercent >= 80, pct: m.understandingPercent });
   }
 
-  for (const [key, stats] of Object.entries(groups)) {
-    const [topic, subtopic] = key.split("|||");
+  for (const [key, stats] of Array.from(groups.entries())) {
     const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
     await storage.upsertStudentTopicMastery({
       studentId,
       subject,
-      topic,
-      subtopic: subtopic || null,
+      topic: stats.topic,
+      subtopic: stats.subtopic || null,
+      subtopicId: stats.subtopicId,
+      learningRequirementId: stats.learningRequirementId,
       understandingPercent: pct,
       covered: true,
       tested: true,
@@ -1027,9 +1047,9 @@ async function updateMasteryFromSubmission(
       await storage.createStudentNotification({
         studentId,
         type: "milestone_mastery",
-        title: `Mastery in ${topic}`,
-        message: `Nice work — your accuracy on ${subject} → ${topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
-        payload: { subject, topic, subtopic: subtopic || null, percent: pct },
+        title: `Mastery in ${stats.topic}`,
+        message: `Nice work — your accuracy on ${subject} → ${stats.topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
+        payload: { subject, topic: stats.topic, subtopic: stats.subtopic || null, percent: pct },
       }).catch((err) => console.error("[Milestone Notification] failed:", err));
     }
   }
@@ -4973,11 +4993,22 @@ ${JSON.stringify({
         }
       })();
 
-      // Auto-update topic mastery from this submission
+      // Auto-update topic mastery from this submission. Threads the
+      // catalogue FKs (subtopicId, learningRequirementId) through so
+      // mastery rolls up at sub-subtopic grain when the question is
+      // linked to a learning requirement.
       updateMasteryFromSubmission(
         studentId,
         quiz?.subject || null,
-        allQuestions.map((q) => ({ id: q.id, correctAnswer: q.correctAnswer, marks: q.marks, topicTag: q.topicTag, subtopicTag: q.subtopicTag })),
+        allQuestions.map((q) => ({
+          id: q.id,
+          correctAnswer: q.correctAnswer,
+          marks: q.marks,
+          topicTag: q.topicTag,
+          subtopicTag: q.subtopicTag,
+          subtopicId: q.subtopicId ?? null,
+          learningRequirementId: q.learningRequirementId ?? null,
+        })),
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
