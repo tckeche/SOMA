@@ -362,6 +362,10 @@ export const examinerMisconceptions = pgTable("examiner_misconceptions", {
   // Self-confidence score from the extraction pass (0..1). Helps the
   // queue auto-prioritise low-confidence rows.
   confidence: integer("confidence_pct"),
+  // Year the source examiner report was published (e.g. 2024). Parsed
+  // from the document filename at extraction time. Used by the student
+  // review UI to render "Cambridge examiners flagged this in 2024."
+  examYear: integer("exam_year"),
   extractedAt: timestamp("extracted_at").defaultNow().notNull(),
 });
 

@@ -22,6 +22,7 @@ export interface QuestionDiagnosis {
     frequency: string;
     sourceQuote: string | null;
     sourcePage: number | null;
+    examYear: number | null;
   } | null;
 }
 
@@ -41,6 +42,7 @@ export async function getDiagnosesForReport(reportId: number): Promise<Record<nu
       frequency: examinerMisconceptions.frequency,
       sourceQuote: examinerMisconceptions.sourceQuote,
       sourcePage: examinerMisconceptions.sourcePage,
+      examYear: examinerMisconceptions.examYear,
     })
     .from(answerDiagnoses)
     .leftJoin(examinerMisconceptions, eq(examinerMisconceptions.id, answerDiagnoses.misconceptionId))
@@ -61,6 +63,7 @@ export async function getDiagnosesForReport(reportId: number): Promise<Record<nu
             frequency: r.frequency ?? "common",
             sourceQuote: r.sourceQuote ?? null,
             sourcePage: r.sourcePage ?? null,
+            examYear: r.examYear ?? null,
           }
         : null,
     };

@@ -1,0 +1,1 @@
+ALTER TABLE "examiner_misconceptions" ADD COLUMN "exam_year" integer;

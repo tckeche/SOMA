@@ -13,10 +13,11 @@ import {
   examinerMisconceptions,
   syllabusDocuments,
   somaUsers,
+  somaQuizzes,
   subtopics,
 } from "@shared/schema";
 import { invalidateExaminerMisconceptionsCache } from "./examinerMisconceptionsCache";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -150,6 +151,64 @@ export async function listQueue(options: QueueListOptions = {}): Promise<QueueLi
   };
 }
 
+/**
+ * Tutor scope: every (board, syllabusCode) pair derived from quizzes the
+ * tutor has authored. Returned as a deduped set so callers can scope
+ * queries by `(board, syllabusCode) IN scope` without joining quizzes
+ * on every request.
+ *
+ * Parsing rule mirrors `parseBoardAndSyllabusCode` in routes.ts: the
+ * first numeric block in `soma_quizzes.syllabus` is the syllabus code,
+ * the rest is the board. Quizzes with empty `syllabus` are ignored.
+ */
+export interface TutorScopePair {
+  board: string;
+  syllabusCode: string;
+}
+
+const SYLLABUS_CODE_RE = /\b(\d{3,6}[A-Za-z]?)\b/;
+
+function parseBoardAndCode(raw: string | null | undefined): TutorScopePair | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return null;
+  const m = trimmed.match(SYLLABUS_CODE_RE);
+  if (!m) return null;
+  const syllabusCode = m[1];
+  const board = trimmed.replace(syllabusCode, "").trim() || trimmed;
+  return { board, syllabusCode };
+}
+
+export async function listTutorScope(tutorId: string): Promise<TutorScopePair[]> {
+  if (!db) return [];
+  const rows = await db
+    .select({ syllabus: somaQuizzes.syllabus })
+    .from(somaQuizzes)
+    .where(eq(somaQuizzes.authorId, tutorId));
+  const out = new Map<string, TutorScopePair>();
+  for (const r of rows) {
+    const pair = parseBoardAndCode(r.syllabus);
+    if (!pair) continue;
+    out.set(`${pair.board.toLowerCase()}|${pair.syllabusCode}`, pair);
+  }
+  return Array.from(out.values());
+}
+
+/**
+ * True when the given misconception id falls inside `tutorId`'s scope.
+ * Used by approve/edit/reject endpoints to forbid cross-tutor mutations.
+ */
+export async function tutorOwnsInsight(tutorId: string, insightId: number): Promise<boolean> {
+  if (!db) return false;
+  const [row] = await db
+    .select({ board: examinerMisconceptions.board, syllabusCode: examinerMisconceptions.syllabusCode })
+    .from(examinerMisconceptions)
+    .where(eq(examinerMisconceptions.id, insightId));
+  if (!row) return false;
+  const scope = await listTutorScope(tutorId);
+  const key = `${row.board.toLowerCase()}|${row.syllabusCode}`;
+  return scope.some((p) => `${p.board.toLowerCase()}|${p.syllabusCode}` === key);
+}
+
 export interface CountsByStatus {
   pending: number;
   approved: number;
@@ -159,6 +218,130 @@ export interface CountsByStatus {
 export async function countsByStatus(): Promise<CountsByStatus> {
   if (!db) return { pending: 0, approved: 0, rejected: 0 };
   const rows = await db.select({ status: examinerMisconceptions.status }).from(examinerMisconceptions);
+  const counts: CountsByStatus = { pending: 0, approved: 0, rejected: 0 };
+  for (const r of rows) {
+    if (r.status === "pending") counts.pending++;
+    else if (r.status === "approved") counts.approved++;
+    else if (r.status === "rejected") counts.rejected++;
+  }
+  return counts;
+}
+
+/**
+ * Tutor-scoped queue listing — same shape as `listQueue` but scoped to
+ * (board, syllabusCode) pairs the tutor has authored quizzes on.
+ * Returns an empty list (not 403) when the tutor has authored no
+ * quizzes — UI shows an explanatory empty state.
+ */
+export async function listQueueForTutor(
+  tutorId: string,
+  options: QueueListOptions = {},
+): Promise<QueueListResult> {
+  const empty: QueueListResult = { rows: [], total: 0 };
+  if (!db) return empty;
+
+  const scope = await listTutorScope(tutorId);
+  if (scope.length === 0) return empty;
+
+  // Drizzle's `or(and(...), and(...))` constructs an `IN` over (board,
+  // syllabusCode) pairs. Postgres can't natively do row-value IN over
+  // joined string columns, so we OR them up.
+  const scopeConditions = scope.map((p) =>
+    and(eq(examinerMisconceptions.board, p.board), eq(examinerMisconceptions.syllabusCode, p.syllabusCode)),
+  );
+  const status = options.status ?? "pending";
+  const limit = Math.max(1, Math.min(200, options.limit ?? 50));
+  const offset = Math.max(0, options.offset ?? 0);
+
+  const baseConditions = [
+    eq(examinerMisconceptions.status, status),
+    or(...scopeConditions)!,
+  ];
+  if (options.board) baseConditions.push(eq(examinerMisconceptions.board, options.board));
+  if (options.syllabusCode) baseConditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
+
+  const rows = await db
+    .select({
+      id: examinerMisconceptions.id,
+      status: examinerMisconceptions.status,
+      board: examinerMisconceptions.board,
+      syllabusCode: examinerMisconceptions.syllabusCode,
+      subject: examinerMisconceptions.subject,
+      topic: examinerMisconceptions.topic,
+      subtopic: examinerMisconceptions.subtopic,
+      subtopicId: examinerMisconceptions.subtopicId,
+      subtopicTitle: subtopics.title,
+      misconception: examinerMisconceptions.misconception,
+      studentError: examinerMisconceptions.studentError,
+      correctApproach: examinerMisconceptions.correctApproach,
+      frequency: examinerMisconceptions.frequency,
+      sourceQuote: examinerMisconceptions.sourceQuote,
+      sourcePage: examinerMisconceptions.sourcePage,
+      confidencePct: examinerMisconceptions.confidence,
+      reviewedAt: examinerMisconceptions.reviewedAt,
+      reviewedById: examinerMisconceptions.reviewedById,
+      reviewedByDisplayName: REVIEWER_USERS.displayName,
+      reviewNotes: examinerMisconceptions.reviewNotes,
+      documentId: examinerMisconceptions.documentId,
+      documentFilename: syllabusDocuments.filename,
+      documentType: syllabusDocuments.documentType,
+      extractedAt: examinerMisconceptions.extractedAt,
+    })
+    .from(examinerMisconceptions)
+    .leftJoin(syllabusDocuments, eq(syllabusDocuments.id, examinerMisconceptions.documentId))
+    .leftJoin(REVIEWER_USERS, eq(REVIEWER_USERS.id, examinerMisconceptions.reviewedById))
+    .where(and(...baseConditions))
+    .orderBy(desc(examinerMisconceptions.extractedAt))
+    .limit(limit)
+    .offset(offset);
+
+  const totalRows = await db
+    .select({ count: examinerMisconceptions.id })
+    .from(examinerMisconceptions)
+    .where(and(...baseConditions));
+
+  return {
+    rows: rows.map((r) => ({
+      id: r.id,
+      status: (r.status ?? "pending") as ReviewStatus,
+      board: r.board,
+      syllabusCode: r.syllabusCode,
+      subject: r.subject,
+      topic: r.topic,
+      subtopic: r.subtopic,
+      subtopicId: r.subtopicId,
+      subtopicTitle: r.subtopicTitle,
+      misconception: r.misconception,
+      studentError: r.studentError,
+      correctApproach: r.correctApproach,
+      frequency: r.frequency,
+      sourceQuote: r.sourceQuote,
+      sourcePage: r.sourcePage,
+      confidencePct: r.confidencePct,
+      reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
+      reviewedById: r.reviewedById,
+      reviewedByDisplayName: r.reviewedByDisplayName ?? null,
+      reviewNotes: r.reviewNotes,
+      documentId: r.documentId,
+      documentFilename: r.documentFilename,
+      documentType: r.documentType,
+      extractedAt: r.extractedAt.toISOString(),
+    })),
+    total: totalRows.length,
+  };
+}
+
+export async function countsByStatusForTutor(tutorId: string): Promise<CountsByStatus> {
+  if (!db) return { pending: 0, approved: 0, rejected: 0 };
+  const scope = await listTutorScope(tutorId);
+  if (scope.length === 0) return { pending: 0, approved: 0, rejected: 0 };
+  const scopeConditions = scope.map((p) =>
+    and(eq(examinerMisconceptions.board, p.board), eq(examinerMisconceptions.syllabusCode, p.syllabusCode)),
+  );
+  const rows = await db
+    .select({ status: examinerMisconceptions.status })
+    .from(examinerMisconceptions)
+    .where(or(...scopeConditions)!);
   const counts: CountsByStatus = { pending: 0, approved: 0, rejected: 0 };
   for (const r of rows) {
     if (r.status === "pending") counts.pending++;

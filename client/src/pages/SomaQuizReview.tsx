@@ -55,6 +55,7 @@ interface QuestionDiagnosis {
     frequency: string;
     sourceQuote: string | null;
     sourcePage: number | null;
+    examYear: number | null;
   } | null;
 }
 
@@ -396,6 +397,7 @@ export default function SomaQuizReview() {
                   const diag = data.diagnoses ? data.diagnoses[String(q.id)] : null;
                   if (!diag || !diag.misconception || diag.correct) return null;
                   const m = diag.misconception;
+                  const yearLabel = m.examYear ? `in ${m.examYear}` : "before";
                   return (
                     <div
                       className="mt-5 p-4 rounded-xl border-l-4 bg-rose-500/10 border-l-rose-500"
@@ -403,27 +405,9 @@ export default function SomaQuizReview() {
                     >
                       <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-rose-400">
                         <Quote className="w-4 h-4" />
-                        examiner-flagged misconception
+                        Cambridge examiners flagged this {yearLabel}
                       </p>
-                      <p className="text-sm text-foreground font-medium mb-2">{m.misconception}</p>
-                      <div className="grid md:grid-cols-2 gap-3 mb-2">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Typical wrong working</p>
-                          <p className="text-xs text-foreground/90">{m.studentError || "—"}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Correct approach</p>
-                          <p className="text-xs text-foreground/90">{m.correctApproach || "—"}</p>
-                        </div>
-                      </div>
-                      {m.sourceQuote && (
-                        <div className="bg-muted/30 border border-border/50 rounded-lg px-3 py-2 mt-2">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                            From the examiner report{m.sourcePage ? ` (≈ p.${m.sourcePage})` : ""}
-                          </p>
-                          <p className="text-xs italic text-muted-foreground">"{m.sourceQuote}"</p>
-                        </div>
-                      )}
+                      <p className="text-sm text-foreground">{m.misconception}</p>
                     </div>
                   );
                 })()}

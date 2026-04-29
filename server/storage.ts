@@ -1804,6 +1804,7 @@ class MemoryStorage implements IStorage {
         sourceQuote: item.sourceQuote ?? null,
         sourcePage: item.sourcePage ?? null,
         confidence: item.confidence ?? null,
+        examYear: item.examYear ?? null,
       };
       this.examinerMisconceptionsList.push(row);
       return row;

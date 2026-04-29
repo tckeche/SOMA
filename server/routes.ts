@@ -900,7 +900,7 @@ function sanitizeSubmittedAnswers(
  * Runs after a syllabus/examiner report PDF is uploaded.
  */
 async function extractDocumentIntelligence(doc: {
-  id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null;
+  id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null; filename?: string | null;
 }): Promise<void> {
   const textSlice = doc.extractedText.slice(0, 6000);
 
@@ -912,6 +912,7 @@ async function extractDocumentIntelligence(doc: {
         syllabusCode: doc.syllabusCode,
         subject: doc.subject,
         extractedText: doc.extractedText,
+        filename: doc.filename ?? null,
       });
       if (skipped) {
         console.log(`[Doc Intelligence] Misconception extraction skipped for doc ${doc.id} (${reason})`);

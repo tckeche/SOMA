@@ -39,6 +39,37 @@ export interface ExtractInputDoc {
   syllabusCode: string;
   subject: string | null;
   extractedText: string;
+  /** Optional source filename — used to parse exam year for citations. */
+  filename?: string | null;
+}
+
+/**
+ * Parse a publication year from a Cambridge examiner-report filename.
+ *
+ * Handles three common patterns:
+ *   - `9702_w24_er.pdf` / `9702_s23_er.pdf` / `9702_m22_er.pdf` (season-code)
+ *   - `..._2024_...` (4-digit year anywhere)
+ *   - `9702-23-w-er.pdf` (variant separators)
+ *
+ * Returns null when nothing recognisable is present so downstream UI can
+ * fall back to "before" instead of inventing a year.
+ */
+export function parseExamYearFromFilename(filename: string | null | undefined): number | null {
+  if (!filename) return null;
+  const name = filename.toLowerCase();
+  // Cambridge season+year code — w24, s23, m22, j21, o20.
+  const seasonMatch = name.match(/(?:^|[^a-z])([wsmjo])(\d{2})(?:[^0-9]|$)/);
+  if (seasonMatch) {
+    const yy = Number(seasonMatch[2]);
+    if (Number.isFinite(yy)) return yy + (yy < 70 ? 2000 : 1900);
+  }
+  // Any 4-digit year between 1990 and 2099.
+  const fullMatch = name.match(/(?:^|[^0-9])((?:19[9]\d|20\d{2}))(?:[^0-9]|$)/);
+  if (fullMatch) {
+    const y = Number(fullMatch[1]);
+    if (Number.isFinite(y) && y >= 1990 && y <= 2099) return y;
+  }
+  return null;
 }
 
 export interface ExtractResult {
@@ -420,6 +451,7 @@ export async function extractAndStoreMisconceptions(
     return { count: 0, skipped: true, reason: "no-items", chunkCount: chunks.length, rawItemCount: rawCount, hallucinationDrops };
   }
 
+  const examYear = parseExamYearFromFilename(doc.filename ?? null);
   const rows: InsertExaminerMisconception[] = deduped.map((item) => ({
     documentId: doc.id,
     board: doc.board,
@@ -436,6 +468,7 @@ export async function extractAndStoreMisconceptions(
     sourceQuote: item.sourceQuote,
     sourcePage: item.approxPage,
     confidence: item.confidencePct,
+    examYear,
   }));
 
   await storage.createExaminerMisconceptions(rows);
