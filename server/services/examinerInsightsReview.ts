@@ -446,6 +446,44 @@ export async function rejectInsight(id: number, reviewerId: string, notes?: stri
 }
 
 /**
+ * Bulk approve / reject a caller-supplied list of insight ids. Used by
+ * the queue UI's "Approve N" / "Reject N" floating action bar where the
+ * reviewer hand-picks rows.
+ *
+ * Returns the number of rows actually updated (insights already in the
+ * target status, or simply not found, are silently skipped). Cache
+ * invalidation runs once per (board, syllabusCode) group at the end.
+ */
+export async function bulkActionInsights(
+  ids: number[],
+  action: "approve" | "reject",
+  reviewerId: string,
+  notes?: string | null,
+): Promise<{ updated: number }> {
+  if (!db) return { updated: 0 };
+  const uniqueIds = Array.from(new Set(ids.filter((n) => Number.isFinite(n) && n > 0)));
+  if (uniqueIds.length === 0) return { updated: 0 };
+  const targetStatus: ReviewStatus = action === "approve" ? "approved" : "rejected";
+  const updated = await db
+    .update(examinerMisconceptions)
+    .set({
+      status: targetStatus,
+      reviewedById: reviewerId,
+      reviewedAt: new Date(),
+      reviewNotes: notes ?? null,
+    })
+    .where(inArray(examinerMisconceptions.id, uniqueIds))
+    .returning({ board: examinerMisconceptions.board, syllabusCode: examinerMisconceptions.syllabusCode });
+  // Invalidate caches for each affected (board, syllabusCode) group exactly once.
+  const groups = Array.from(new Set(updated.map((r) => `${r.board}|${r.syllabusCode}`)));
+  for (const g of groups) {
+    const [board, syllabusCode] = g.split("|");
+    invalidateExaminerMisconceptionsCache({ board, syllabusCode });
+  }
+  return { updated: updated.length };
+}
+
+/**
  * Bulk-approve all pending rows whose source-quote matches a verbatim
  * substring in the syllabus document AND whose extractor confidence is
  * &gt;= the threshold. Used to clear high-quality bulk extractions

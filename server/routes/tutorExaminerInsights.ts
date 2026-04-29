@@ -12,6 +12,7 @@ import { z } from "zod";
 import { requireTutor } from "../middleware/roles";
 import {
   approveInsight,
+  bulkActionInsights,
   countsByStatusForTutor,
   listQueueForTutor,
   rejectInsight,
@@ -33,6 +34,12 @@ const updateSchema = z.object({
 });
 
 const reviewSchema = z.object({
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+const bulkActionSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(500),
+  action: z.enum(["approve", "reject"]),
   notes: z.string().max(1000).nullable().optional(),
 });
 
@@ -119,6 +126,32 @@ export function registerTutorExaminerInsightsRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Failed to approve insight" });
+    }
+  });
+
+  // ── Bulk action on a hand-picked selection (scoped) ────────────────
+  app.post("/api/tutor/examiner-insights/bulk-action", requireTutor, async (req, res) => {
+    try {
+      const tutorId = tutorIdFromReq(req);
+      if (!tutorId) return res.status(401).json({ message: "Tutor identity required" });
+      const parsed = bulkActionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid body", details: parsed.error.flatten() });
+      }
+      // Reject the entire batch if ANY id is outside the tutor's scope.
+      const ownership = await Promise.all(parsed.data.ids.map((id) => tutorOwnsInsight(tutorId, id)));
+      if (ownership.some((ok) => !ok)) {
+        return res.status(403).json({ message: "One or more insights are outside your assigned syllabi." });
+      }
+      const result = await bulkActionInsights(
+        parsed.data.ids,
+        parsed.data.action,
+        tutorId,
+        parsed.data.notes ?? null,
+      );
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Bulk action failed" });
     }
   });
 

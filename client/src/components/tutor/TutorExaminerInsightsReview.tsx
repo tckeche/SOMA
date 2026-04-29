@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/supabase";
 import {
@@ -14,6 +14,7 @@ import {
   BookOpen,
   Lightbulb,
   Gauge,
+  CheckSquare,
 } from "lucide-react";
 
 type ReviewStatus = "pending" | "approved" | "rejected";
@@ -211,7 +212,13 @@ export function TutorExaminerInsightsReview() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const queryClient = useQueryClient();
+
+  // Selection only makes sense on the "to check" tab; any other tab clears it.
+  useEffect(() => {
+    if (status !== "pending") setSelectedIds(new Set());
+  }, [status]);
 
   const counts = useQuery<Counts>({
     queryKey: ["/api/tutor/examiner-insights/counts"],
@@ -236,6 +243,16 @@ export function TutorExaminerInsightsReview() {
     queryClient.invalidateQueries({ queryKey: ["/api/tutor/examiner-insights/queue"] });
     queryClient.invalidateQueries({ queryKey: ["/api/tutor/examiner-insights/counts"] });
   };
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
 
   const visibleRows = useMemo(() => {
     const rows = queue.data?.rows ?? [];
@@ -309,7 +326,23 @@ export function TutorExaminerInsightsReview() {
     },
   });
 
-  const busy = approve.isPending || reject.isPending || update.isPending;
+  const bulkAction = useMutation({
+    mutationFn: async ({ action, ids }: { action: "approve" | "reject"; ids: number[] }) => {
+      const res = await authFetch(`/api/tutor/examiner-insights/bulk-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      if (!res.ok) throw new Error("Bulk action failed");
+      return res.json() as Promise<{ updated: number }>;
+    },
+    onSuccess: () => {
+      clearSelection();
+      refresh();
+    },
+  });
+
+  const busy = approve.isPending || reject.isPending || update.isPending || bulkAction.isPending;
 
   return (
     <section className="space-y-5" data-testid="tutor-insights-review">
@@ -440,7 +473,7 @@ export function TutorExaminerInsightsReview() {
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3 pb-24">
           {visibleRows.map((row) => (
             <ReviewCard
               key={row.id}
@@ -452,8 +485,55 @@ export function TutorExaminerInsightsReview() {
               onApprove={() => approve.mutate({ id: row.id })}
               onReject={() => reject.mutate({ id: row.id })}
               busy={busy}
+              selectable={status === "pending"}
+              isSelected={selectedIds.has(row.id)}
+              onToggleSelect={() => toggleSelected(row.id)}
             />
           ))}
+        </div>
+      )}
+
+      {selectedIds.size > 0 && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-card/95 backdrop-blur-md border border-border/60 rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap"
+          data-testid="tutor-bulk-action-bar"
+        >
+          <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+            <CheckSquare className="w-3.5 h-3.5 text-violet-300" />
+            <span data-testid="tutor-text-bulk-selection-count">
+              {selectedIds.size} selected
+            </span>
+          </span>
+          <button
+            onClick={() => bulkAction.mutate({ action: "approve", ids: Array.from(selectedIds) })}
+            disabled={bulkAction.isPending}
+            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+            data-testid="tutor-button-bulk-action-approve"
+          >
+            <CheckCircle2 className="w-3 h-3" /> Approve {selectedIds.size}
+            {bulkAction.isPending && bulkAction.variables?.action === "approve" && (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            )}
+          </button>
+          <button
+            onClick={() => bulkAction.mutate({ action: "reject", ids: Array.from(selectedIds) })}
+            disabled={bulkAction.isPending}
+            className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-rose-500/15 hover:border-rose-500/30 hover:text-rose-200 flex items-center gap-1 disabled:opacity-40"
+            data-testid="tutor-button-bulk-action-reject"
+          >
+            <XCircle className="w-3 h-3" /> Reject {selectedIds.size}
+            {bulkAction.isPending && bulkAction.variables?.action === "reject" && (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            )}
+          </button>
+          <button
+            onClick={clearSelection}
+            disabled={bulkAction.isPending}
+            className="text-xs px-2 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.08] text-muted-foreground flex items-center gap-1 disabled:opacity-40"
+            data-testid="tutor-button-bulk-clear-selection"
+          >
+            <X className="w-3 h-3" /> Clear
+          </button>
         </div>
       )}
     </section>
@@ -469,6 +549,9 @@ function ReviewCard({
   onApprove,
   onReject,
   busy,
+  selectable,
+  isSelected,
+  onToggleSelect,
 }: {
   row: QueueRow;
   isEditing: boolean;
@@ -478,6 +561,9 @@ function ReviewCard({
   onApprove: () => void;
   onReject: () => void;
   busy: boolean;
+  selectable: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
 }) {
   const [misconception, setMisconception] = useState(row.misconception);
   const [studentError, setStudentError] = useState(row.studentError);
@@ -485,10 +571,25 @@ function ReviewCard({
 
   return (
     <article
-      className="bg-foreground/[0.02] border border-border/60 rounded-2xl p-5"
+      className={`bg-foreground/[0.02] border rounded-2xl p-5 ${
+        isSelected ? "border-violet-500/40 ring-2 ring-violet-500/30" : "border-border/60"
+      }`}
       data-testid={`tutor-review-card-${row.id}`}
     >
       <div className="flex items-start justify-between gap-4 flex-wrap mb-3">
+        {selectable && !isEditing && (
+          <label className="flex items-center pt-1 cursor-pointer select-none shrink-0">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              disabled={busy}
+              className="w-4 h-4 rounded accent-violet-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              data-testid={`tutor-checkbox-select-${row.id}`}
+              aria-label={`Select insight ${row.id}`}
+            />
+          </label>
+        )}
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className={`px-2 py-0.5 rounded-full border text-[11px] ${FREQUENCY_BADGE[row.frequency] ?? FREQUENCY_BADGE.common}`}>
             {FREQUENCY_LABEL[row.frequency] ?? row.frequency}

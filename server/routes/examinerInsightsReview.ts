@@ -13,6 +13,7 @@ import { z } from "zod";
 import { requireSuperAdmin } from "../middleware/roles";
 import {
   approveInsight,
+  bulkActionInsights,
   bulkApproveHighConfidence,
   countsByStatus,
   listQueue,
@@ -41,6 +42,12 @@ const bulkApproveSchema = z.object({
   minConfidence: z.number().int().min(0).max(100).optional(),
   board: z.string().optional(),
   syllabusCode: z.string().optional(),
+});
+
+const bulkActionSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(500),
+  action: z.enum(["approve", "reject"]),
+  notes: z.string().max(1000).nullable().optional(),
 });
 
 function reviewerId(req: any): string | null {
@@ -148,6 +155,27 @@ export function registerExaminerInsightsReviewRoutes(app: Express): void {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Bulk approve failed" });
+    }
+  });
+
+  // ── Bulk action on a hand-picked selection of insight ids ──────────
+  app.post("/api/super-admin/examiner-insights/bulk-action", requireSuperAdmin, async (req, res) => {
+    try {
+      const parsed = bulkActionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid body", details: parsed.error.flatten() });
+      }
+      const userId = reviewerId(req);
+      if (!userId) return res.status(401).json({ message: "Reviewer identity required" });
+      const result = await bulkActionInsights(
+        parsed.data.ids,
+        parsed.data.action,
+        userId,
+        parsed.data.notes ?? null,
+      );
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Bulk action failed" });
     }
   });
 }
