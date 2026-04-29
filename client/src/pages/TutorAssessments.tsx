@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
-import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment } from "@shared/schema";
+import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment, SomaUser } from "@shared/schema";
 import {
   LogOut, Users, BookOpen, Plus, X, ChevronDown, ChevronUp,
   Loader2, Check, LayoutDashboard, Clock, Award, Timer,
@@ -25,13 +25,6 @@ function formatDuration(
   return baseFormatDuration(startedAt, completedAt, "—");
 }
 
-
-interface SomaUser {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: string;
-}
 
 interface AssignmentWithStudent extends QuizAssignment {
   student: SomaUser;

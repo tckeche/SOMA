@@ -8,13 +8,7 @@ import {
   BookOpen, LogOut, LayoutDashboard, Search, RotateCcw, Mail, AlertTriangle,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
-
-interface SomaUser {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: string;
-}
+import type { SomaUser } from "@shared/schema";
 
 function formatStudentName(student: SomaUser): string {
   const fromDisplay = (student.displayName || "").trim();
