@@ -11,9 +11,11 @@ import type { Express } from "express";
 import { registerSuperAdminAiUsageRoutes } from "./superAdminAiUsage";
 import { registerExaminerInsightsReviewRoutes } from "./examinerInsightsReview";
 import { registerTutorExaminerInsightsRoutes } from "./tutorExaminerInsights";
+import { registerMasteryMapRoutes } from "./masteryMap";
 
 export function registerDomainRoutes(app: Express): void {
   registerSuperAdminAiUsageRoutes(app);
   registerExaminerInsightsReviewRoutes(app);
   registerTutorExaminerInsightsRoutes(app);
+  registerMasteryMapRoutes(app);
 }

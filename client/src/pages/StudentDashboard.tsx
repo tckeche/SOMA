@@ -18,6 +18,7 @@ import RecentWinsList from "@/components/student/RecentWinsList";
 import CompletedAssessmentsTab from "@/components/student/CompletedAssessmentsTab";
 import AssignmentsList from "@/components/student/AssignmentsList";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
+import { SyllabusMasteryMap } from "@/components/SyllabusMasteryMap";
 import type { DashboardReminder, StudentDashboardPayload } from "@/types/studentDashboard";
 
 interface StudyTipResponse {
@@ -269,11 +270,15 @@ export default function StudentDashboard() {
                 {/* 5. Performance section */}
                 <PerformanceCard performance={data.performance} subjects={data.subjects} />
 
-                {/* 5b. Syllabus topic radar + paper readiness */}
+                {/* 5b. Syllabus mastery map (Phase 3.1) */}
+                <SyllabusMasteryMap />
+
+                {/* 5c. Topic-coverage radar + paper readiness (legacy view, kept
+                       alongside the mastery map for now). */}
                 <section className="space-y-3" data-testid="section-syllabus-insights">
                   <header>
-                    <h2 className="text-lg font-semibold text-foreground">Your syllabus shape</h2>
-                    <p className="text-xs text-muted-foreground">Topic mastery radar and end-of-year paper readiness for each subject.</p>
+                    <h2 className="text-lg font-semibold text-foreground">Topic coverage radar</h2>
+                    <p className="text-xs text-muted-foreground">Quick overview of which topics you've touched and where you stand.</p>
                   </header>
                   <SyllabusInsightsSection
                     insights={syllabusInsights}
