@@ -1,0 +1,135 @@
+I have a branch claude/soma-syllabus-parsing-VrGFd with significant new schema across 5 migration files (Phases 1–4 of the SOMA roadmap). The database hasn't been migrated yet. I need you to:
+
+Pull the branch so the working tree matches what's in git.
+Apply all pending Drizzle migrations so the live Postgres has every new table and column.
+Run the catalogue-FK backfill script so legacy rows pick up their syllabus IDs.
+Verify everything with explicit checks. Stop and tell me if anything fails.
+Step 0 — Working state
+Run from the repo root.
+
+git fetch origin
+git checkout claude/soma-syllabus-parsing-VrGFd
+git pull --ff-only origin claude/soma-syllabus-parsing-VrGFd
+npm install
+If git pull reports merge conflicts, stop and tell me — do not try to resolve them yourself.
+
+Step 1 — Confirm what's about to be applied
+There should be 5 migration files under migrations/:
+
+migrations/0000_catalogue.sql                          (existing)
+migrations/0001_phase1_fk_and_ai_usage.sql             (new)
+migrations/0002_phase2_examiner_loop.sql               (new)
+migrations/0003_phase2_misconception_year.sql          (new)
+migrations/0004_phase3_revision_plans.sql              (new)
+migrations/0005_phase4_command_word_performance.sql    (new)
+Run ls migrations/ and confirm all 6 files are present. If any are missing, stop and tell me — the branch wasn't pulled cleanly.
+
+Step 2 — Type-check before touching the database
+npx tsc --noEmit
+There are two known pre-existing errors in server/services/mathValidator.ts about Map iteration with the current TS target — those existed before this branch and are safe to ignore. Any other TS errors mean the pull went wrong; stop and tell me.
+
+Step 3 — Apply the schema changes to Postgres
+The project uses Drizzle with drizzle-kit push (declarative — it diffs the schema against the live DB and applies the difference). The db:push script is already configured:
+
+npm run db:push
+What this should do:
+
+Create new tables: ai_usage_logs, answer_diagnoses, student_misconceptions, revision_plans, command_word_performance.
+Add new columns to existing tables:
+soma_questions: subtopic_id, learning_requirement_id, target_misconception_ids, command_word, assessment_objective.
+student_topic_mastery: subtopic_id, learning_requirement_id.
+examiner_misconceptions: subtopic_id, learning_requirement_id, status, reviewed_by_id, reviewed_at, review_notes, source_quote, source_page, confidence_pct, exam_year.
+Add foreign-key constraints linking the new columns into the catalogue tables (subtopics, learning_requirements).
+Important rules during the push:
+
+All schema changes are additive. No existing column is being dropped or retyped.
+If drizzle-kit push prompts you with destructive options (drop a column, truncate data, rename), say no and stop. Tell me exactly what it asked. Do not let it nuke any data.
+If it errors out partway through, run npm run db:push once more — it's idempotent. If it errors twice with the same error, paste the full error and stop.
+Step 4 — Verify the schema actually landed
+Use the Replit DB shell (or psql $DATABASE_URL) and run:
+
+-- Should return 5 rows (the new tables)
+SELECT tablename FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename IN (
+    'ai_usage_logs', 'answer_diagnoses', 'student_misconceptions',
+    'revision_plans', 'command_word_performance'
+  )
+ORDER BY tablename;
+
+-- Should return 5 rows (the new columns on soma_questions)
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'soma_questions'
+  AND column_name IN (
+    'subtopic_id', 'learning_requirement_id', 'target_misconception_ids',
+    'command_word', 'assessment_objective'
+  )
+ORDER BY column_name;
+
+-- Should return 10 rows (the new columns on examiner_misconceptions)
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'examiner_misconceptions'
+  AND column_name IN (
+    'subtopic_id', 'learning_requirement_id', 'status', 'reviewed_by_id',
+    'reviewed_at', 'review_notes', 'source_quote', 'source_page',
+    'confidence_pct', 'exam_year'
+  )
+ORDER BY column_name;
+
+-- Should return 2 rows (the new columns on student_topic_mastery)
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'student_topic_mastery'
+  AND column_name IN ('subtopic_id', 'learning_requirement_id')
+ORDER BY column_name;
+If any of these return fewer rows than expected, tell me — db:push didn't fully apply.
+
+Step 5 — Backfill catalogue FKs on legacy rows
+There's an idempotent backfill script that maps existing free-text (subject, topic, subtopic) strings on legacy mastery / questions / examiner-misconceptions rows to their catalogue subtopic_id by case-insensitive title match.
+
+First do a dry run to see what would change:
+
+npm run db:backfill-catalogue-fks -- --dry-run
+You'll see output like:
+
+[backfill] mode=DRY RUN table=all
+[mastery] scanned=… matched=… would write=… ambiguous=… unmatched=… skipped=…
+[questions] scanned=… matched=… would write=… ambiguous=… unmatched=… skipped=…
+[misconceptions] scanned=… matched=… would write=… ambiguous=… unmatched=… skipped=…
+Show me that output.
+
+If unmatched and ambiguous are reasonable (the catalogue isn't ingested for every syllabus, so non-zero unmatched is expected — those rows just keep their legacy free-text and don't get an FK), then run it for real:
+
+npm run db:backfill-catalogue-fks
+The script is idempotent — rows that already have an FK are skipped, so it's safe to run multiple times.
+
+Step 6 — Sanity-check the running app
+npm run dev
+Then hit these endpoints and confirm each returns 200 (use the dev login / a real Bearer token as appropriate):
+
+GET /api/super-admin/ai-usage?days=30 — should return JSON with usage, historical, health, guardrails. Empty historical.recent is fine if no AI calls have been made.
+GET /api/super-admin/examiner-insights/counts — should return {pending, approved, rejected} (likely all zero if no examiner reports have been re-extracted yet).
+GET /api/tutor/examiner-insights/counts (with a tutor account) — same shape, scoped to that tutor's syllabi.
+GET /api/student/mastery-map (with a student account) — should return {subjects: [...]}. Empty list is fine for new students.
+GET /api/student/mark-loss-prediction — same.
+GET /api/student/revision-plans — should return {plans: []} until a plan is generated.
+GET /api/student/command-words — should return {subjects: []} until a quiz is taken.
+GET /api/tutor/cohort-misconceptions — should return {rows: [], cohortSize: N}.
+If any of these return 500, paste the server log line and stop.
+
+Step 7 — Re-extract examiner reports (optional, run when ready)
+The new chunked extractor only runs on documents that don't already have misconceptions. To make it process existing examiner-report PDFs that were extracted with the old 6,000-char extractor, you have two options:
+
+Re-upload any examiner report PDF through the existing tutor upload flow — the new extractor takes over automatically.
+Or delete the old misconception rows for that document and re-run extraction by re-running scripts/ingestCurriculumDocs.ts (or however your existing ingestion path is invoked). The extractor is idempotent per documentId so it'll skip docs that already have rows.
+Don't do this in this session unless I tell you to — it costs about $0.15–0.30 per report on gpt-4o.
+
+What "done" looks like
+When you're finished, post:
+
+The ls migrations/ output.
+The db:push final summary line.
+The 4 verification SQL query results.
+The dry-run output of the backfill.
+The actual backfill output (after I approve).
+Confirmation that all the GET endpoints in Step 6 return 200.
+If anything goes wrong at any step, stop, paste the error, and ask me before improvising. Don't try to fix schema drift yourself — show me the drift and I'll guide it.
