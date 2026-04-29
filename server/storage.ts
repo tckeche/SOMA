@@ -42,6 +42,12 @@ type SomaQuizBundleQuestionInput = {
   correctAnswer: string;
   explanation: string;
   marks?: number;
+  // Phase 2B optional fields — pass-through to soma_questions.
+  subtopicId?: number | null;
+  learningRequirementId?: number | null;
+  targetMisconceptionIds?: number[] | null;
+  commandWord?: string | null;
+  assessmentObjective?: string | null;
 };
 
 export interface TutorDashboardSummary {

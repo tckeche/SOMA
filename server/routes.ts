@@ -21,6 +21,7 @@ import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import { extractAndStoreMisconceptions } from "./services/extractAndStoreMisconceptions";
 import { cachedListExaminerMisconceptions } from "./services/examinerMisconceptionsCache";
+import { listApprovedSeeds, type ExaminerSeed } from "./services/examinerDistractorSeeds";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
@@ -4630,6 +4631,14 @@ ${JSON.stringify({
           : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
+      // Phase 2B — fetch approved examiner-misconception seeds for the
+      // selected subtopics (or fall back to the syllabus code).
+      const examinerSeeds: ExaminerSeed[] = await listApprovedSeeds({
+        subtopicIds: selectedSubtopicIds,
+        board,
+        syllabusCode,
+      });
+
       const result = await generateAuditedQuiz({
         topic,
         subject,
@@ -4641,6 +4650,7 @@ ${JSON.stringify({
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
         catalogueContext: catalogueContext ?? undefined,
+        examinerSeeds,
       });
 
       const quiz = await storage.createSomaQuiz({
@@ -4654,6 +4664,9 @@ ${JSON.stringify({
         isArchived: false,
       });
 
+      const targetMisconceptionIds = result.seedMisconceptionIds.length > 0
+        ? result.seedMisconceptionIds
+        : null;
       const insertedQuestions = await storage.createSomaQuestions(
         result.questions.map((q) => ({
           quizId: quiz.id,
@@ -4662,6 +4675,7 @@ ${JSON.stringify({
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
+          targetMisconceptionIds,
         }))
       );
 
@@ -4723,6 +4737,13 @@ ${JSON.stringify({
           : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
+      // Phase 2B — examiner-misconception seeds for distractor generation.
+      const examinerSeeds: ExaminerSeed[] = await listApprovedSeeds({
+        subtopicIds: selectedSubtopicIds,
+        board,
+        syllabusCode,
+      });
+
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
@@ -4731,12 +4752,16 @@ ${JSON.stringify({
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
         catalogueContext: catalogueContext ?? undefined,
+        examinerSeeds,
       });
 
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
       const validAssignedStudentIds = requestedStudentIds.filter((id) => adoptedIds.has(id));
 
+      const targetMisconceptionIds = result.seedMisconceptionIds.length > 0
+        ? result.seedMisconceptionIds
+        : null;
       const bundle = await storage.createSomaQuizBundle({
         quiz: {
           title: quizTitle,
@@ -4755,6 +4780,7 @@ ${JSON.stringify({
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
+          targetMisconceptionIds,
         })),
         assignedStudentIds: validAssignedStudentIds,
       });
