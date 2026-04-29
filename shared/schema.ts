@@ -756,6 +756,32 @@ export interface RevisionPlanBody {
   weakAreas: Array<{ topic: string; understandingPercent: number }>;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4.2 — Command-Word Coach.
+//
+// Per (student, subject, command word) accuracy. Cambridge marks are
+// won and lost on command-word literacy ("state" vs "explain" vs
+// "evaluate") and aggregating across subtopics shows where the
+// student's writing skill — independent of content — is weakest.
+//
+// We key on a NORMALISED command word (lowercased, trimmed) so e.g.
+// "Explain", "explain.", "Explain how" all roll up to "explain".
+// ─────────────────────────────────────────────────────────────────────────────
+export const commandWordPerformance = pgTable("command_word_performance", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  commandWord: text("command_word").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  correct: integer("correct").notNull().default(0),
+  marksAttempted: integer("marks_attempted").notNull().default(0),
+  marksAwarded: integer("marks_awarded").notNull().default(0),
+  lastAttemptedAt: timestamp("last_attempted_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("command_word_performance_unique_idx").on(t.studentId, t.subject, t.commandWord),
+]);
+
 export const revisionPlans = pgTable("revision_plans", {
   id: serial("id").primaryKey(),
   studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
@@ -1167,6 +1193,10 @@ export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
 export const insertRevisionPlanSchema = createInsertSchema(revisionPlans).omit({ id: true, generatedAt: true, updatedAt: true });
 export type RevisionPlan = typeof revisionPlans.$inferSelect;
 export type InsertRevisionPlan = z.infer<typeof insertRevisionPlanSchema>;
+
+export const insertCommandWordPerformanceSchema = createInsertSchema(commandWordPerformance).omit({ id: true, updatedAt: true });
+export type CommandWordPerformance = typeof commandWordPerformance.$inferSelect;
+export type InsertCommandWordPerformance = z.infer<typeof insertCommandWordPerformanceSchema>;
 
 export const insertAnswerDiagnosisSchema = createInsertSchema(answerDiagnoses).omit({ id: true, createdAt: true });
 export type AnswerDiagnosis = typeof answerDiagnoses.$inferSelect;

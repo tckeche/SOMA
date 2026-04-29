@@ -21,6 +21,7 @@ import { SyllabusInsightsSection, type SubjectInsight } from "@/components/Sylla
 import { SyllabusMasteryMap } from "@/components/SyllabusMasteryMap";
 import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
+import { CommandWordCoach } from "@/components/CommandWordCoach";
 import type { DashboardReminder, StudentDashboardPayload } from "@/types/studentDashboard";
 
 interface StudyTipResponse {
@@ -277,6 +278,9 @@ export default function StudentDashboard() {
 
                 {/* 5a2. Revision plan (Phase 3.3) */}
                 <RevisionPlanCard />
+
+                {/* 5a3. Command-word coach (Phase 4.2) */}
+                <CommandWordCoach />
 
                 {/* 5b. Syllabus mastery map (Phase 3.1) */}
                 <SyllabusMasteryMap />

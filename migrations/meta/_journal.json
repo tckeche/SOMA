@@ -36,6 +36,13 @@
       "when": 1777491200084,
       "tag": "0004_phase3_revision_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777491814474,
+      "tag": "0005_phase4_command_word_performance",
+      "breakpoints": true
     }
   ]
 }

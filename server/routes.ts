@@ -976,9 +976,43 @@ ${textSlice}`;
 async function updateMasteryFromSubmission(
   studentId: string,
   quizSubject: string | null,
-  questions: { id: number; correctAnswer: string; marks: number; topicTag: string | null; subtopicTag: string | null; subtopicId?: number | null; learningRequirementId?: number | null }[],
+  questions: {
+    id: number;
+    stem?: string;
+    correctAnswer: string;
+    marks: number;
+    topicTag: string | null;
+    subtopicTag: string | null;
+    subtopicId?: number | null;
+    learningRequirementId?: number | null;
+    commandWord?: string | null;
+  }[],
   studentAnswers: Record<string, string>,
 ): Promise<void> {
+  // Phase 4.2 — bump per-command-word counters in parallel with the
+  // topic mastery rollup. Each apply is independent and shouldn't
+  // block mastery if it errors.
+  const cwSubject = quizSubject || "General";
+  void (async () => {
+    try {
+      const { applyCommandWordResult, extractCommandWordFromStem, normaliseCommandWord } = await import("./services/commandWordPerformance");
+      for (const q of questions) {
+        const word = normaliseCommandWord(q.commandWord ?? null) ?? extractCommandWordFromStem(q.stem ?? "");
+        if (!word) continue;
+        const answered = studentAnswers[String(q.id)];
+        const correct = !!answered && answered === q.correctAnswer;
+        await applyCommandWordResult({
+          studentId,
+          subject: cwSubject,
+          commandWord: word,
+          correct,
+          marks: q.marks,
+        });
+      }
+    } catch (err: any) {
+      console.error("[CommandWord Coach] Failed:", err?.message ?? err);
+    }
+  })();
   // Group by (topic, subtopic, subtopicId, learningRequirementId). When a
   // question is FK-linked to a learning requirement we roll up at that
   // grain too — Phase 4.1 — so the mastery map can render
@@ -4996,18 +5030,21 @@ ${JSON.stringify({
       // Auto-update topic mastery from this submission. Threads the
       // catalogue FKs (subtopicId, learningRequirementId) through so
       // mastery rolls up at sub-subtopic grain when the question is
-      // linked to a learning requirement.
+      // linked to a learning requirement, plus the command word so the
+      // Command-Word Coach (Phase 4.2) can update its counters.
       updateMasteryFromSubmission(
         studentId,
         quiz?.subject || null,
         allQuestions.map((q) => ({
           id: q.id,
+          stem: q.stem,
           correctAnswer: q.correctAnswer,
           marks: q.marks,
           topicTag: q.topicTag,
           subtopicTag: q.subtopicTag,
           subtopicId: q.subtopicId ?? null,
           learningRequirementId: q.learningRequirementId ?? null,
+          commandWord: q.commandWord ?? null,
         })),
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
