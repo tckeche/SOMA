@@ -11,10 +11,11 @@ import type { SomaQuiz } from "@shared/schema";
 import {
   Shield, Users, BookOpen, Trash2, LogOut,
   Loader2, AlertTriangle, Search, UserX, X,
-  ShieldCheck, GraduationCap, UserCog, ChevronRight, Activity,
+  ShieldCheck, GraduationCap, UserCog, ChevronRight, Activity, ClipboardCheck,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SuperAdminAIUsage } from "@/components/SuperAdminAIUsage";
+import { SuperAdminExaminerInsightsReview } from "@/components/SuperAdminExaminerInsightsReview";
 
 const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
 
@@ -49,7 +50,7 @@ export default function SuperAdminDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"users" | "quizzes" | "tutors" | "ai">("tutors");
+  const [activeTab, setActiveTab] = useState<"users" | "quizzes" | "tutors" | "ai" | "insights">("tutors");
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: "user" | "quiz"; id: string | number; name: string } | null>(null);
   const [roleVerified, setRoleVerified] = useState(false);
@@ -303,6 +304,18 @@ export default function SuperAdminDashboard() {
               <Activity className="w-4 h-4" />
               AI Usage
             </button>
+            <button
+              onClick={() => { setActiveTab("insights"); setSearchQuery(""); }}
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+                activeTab === "insights"
+                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
+              }`}
+              data-testid="tab-insights"
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              Insights
+            </button>
           </div>
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -480,6 +493,7 @@ export default function SuperAdminDashboard() {
         )}
 
         {activeTab === "ai" && <SuperAdminAIUsage />}
+        {activeTab === "insights" && <SuperAdminExaminerInsightsReview />}
       </main>
 
       {deleteConfirm && (
