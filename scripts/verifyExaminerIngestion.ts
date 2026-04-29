@@ -9,6 +9,7 @@
 import { Pool } from "pg";
 import { storage } from "../server/storage";
 import { cachedListExaminerMisconceptions } from "../server/services/examinerMisconceptionsCache";
+import { connectDb, db as sharedDb } from "../server/db";
 
 function makePool(): Pool {
   const url = process.env.SUPABASE_URL;
@@ -24,13 +25,18 @@ function makePool(): Pool {
 }
 
 async function main() {
+  await connectDb();
+  if (!sharedDb) {
+    throw new Error("verifyExaminerIngestion: shared db handle is null after connectDb()");
+  }
   const pool = makePool();
 
   console.log("=== 1. Index check ===");
   const idx = await pool.query(
     `SELECT indexname FROM pg_indexes
      WHERE schemaname = 'public'
-       AND (indexname LIKE 'idx_examiner%' OR indexname LIKE 'idx_syllabus_documents%')
+       AND (indexname LIKE 'examiner_misconceptions_%' OR indexname LIKE 'syllabus_documents_%')
+       AND indexname NOT LIKE '%_pkey'
      ORDER BY indexname`,
   );
   for (const r of idx.rows) console.log("  ", r.indexname);
@@ -58,22 +64,22 @@ async function main() {
   const filter = { board: "Cambridge", syllabusCode: "9709", subject: "Mathematics" } as const;
 
   const t1 = process.hrtime.bigint();
-  const cold = await cachedListExaminerMisconceptions(filter, async () =>
+  const cold = await cachedListExaminerMisconceptions(filter, () =>
     storage.listExaminerMisconceptions(filter),
   );
   const tCold = Number(process.hrtime.bigint() - t1) / 1e6;
-  console.log(`  cold: ${cold.length} rows in ${tCold.toFixed(1)} ms`);
+  console.log(`  cold: ${cold.rows.length} rows in ${tCold.toFixed(1)} ms (cacheHit=${cold.cacheHit})`);
 
   const t2 = process.hrtime.bigint();
-  const warm = await cachedListExaminerMisconceptions(filter, async () =>
+  const warm = await cachedListExaminerMisconceptions(filter, () =>
     storage.listExaminerMisconceptions(filter),
   );
   const tWarm = Number(process.hrtime.bigint() - t2) / 1e6;
-  console.log(`  warm: ${warm.length} rows in ${tWarm.toFixed(1)} ms`);
+  console.log(`  warm: ${warm.rows.length} rows in ${tWarm.toFixed(1)} ms (cacheHit=${warm.cacheHit})`);
   console.log(`  speedup: ${(tCold / Math.max(tWarm, 0.01)).toFixed(0)}x`);
 
   console.log("\n=== 5. Cross-subject leakage check ===");
-  const distinct = new Set(cold.map((r) => (r.subject ?? "").toLowerCase().trim()));
+  const distinct = new Set(cold.rows.map((r) => (r.subject ?? "").toLowerCase().trim()));
   console.log("  distinct subjects in result:", Array.from(distinct).join(", ") || "(none)");
   if (distinct.size === 1 && distinct.has("mathematics")) {
     console.log("  PASS — all rows are Mathematics");
@@ -82,7 +88,7 @@ async function main() {
   }
 
   console.log("\n=== 6. Sample tips ===");
-  for (const m of cold.slice(0, 3)) {
+  for (const m of cold.rows.slice(0, 3)) {
     console.log(`  • [${m.topic}] ${m.misconception.slice(0, 90)}…`);
   }
 
