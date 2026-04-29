@@ -48,6 +48,13 @@ const BOOTSTRAP_QUERIES = [
   `CREATE TABLE IF NOT EXISTS syllabus_topic_inventory (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, description TEXT, extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   // Multi-topic selection: a quiz can cover one or more curriculum topics.
   `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS topics JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  // PR #74: indexes powering the student "Tips for your studies" carousel —
+  // the read path filters by (board, syllabusCode, subject) and occasionally
+  // narrows by topic; the second index is for subject-only sweeps used by
+  // tutor analytics; the third helps the ingestion script's existence check.
+  `CREATE INDEX IF NOT EXISTS examiner_misconceptions_board_code_topic_idx ON examiner_misconceptions (board, syllabus_code, topic)`,
+  `CREATE INDEX IF NOT EXISTS examiner_misconceptions_subject_idx ON examiner_misconceptions (subject)`,
+  `CREATE INDEX IF NOT EXISTS syllabus_documents_type_code_idx ON syllabus_documents (document_type, syllabus_code)`,
 ] as const;
 
 export async function applyBootstrapMigrations() {

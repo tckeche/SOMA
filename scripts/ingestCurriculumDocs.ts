@@ -12,37 +12,50 @@
  *
  * Usage:
  *   npx tsx scripts/ingestCurriculumDocs.ts
- *   (or via the npm script: npm run curriculum:ingest)
  *
  * Scans the /curriculum-docs folder recursively, classifies each PDF as
  * "syllabus" or "examiner_report" based on its folder path, parses text,
- * chunks it, and stores everything in the database.
+ * chunks it, and stores everything in the database. Examiner reports are
+ * then passed to the LLM-backed misconception extractor so the
+ * `examiner_misconceptions` table is populated in the same pass.
  *
- * Idempotent: files already ingested (detected by SHA-256 hash) are skipped.
+ * Idempotent: files already ingested (detected by SHA-256 hash) are skipped;
+ * documents whose misconceptions have already been extracted are skipped at
+ * the extractor's existence check.
+ *
+ * Concurrency: bounded by `min(8, os.cpus().length)`. PDF parsing is
+ * CPU-bound and the LLM provider rate limits make a higher cap unsafe.
  */
 
 import "dotenv/config";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import crypto from "crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import pLimit from "p-limit";
 import * as schema from "../shared/schema";
 import { eq } from "drizzle-orm";
 import { parsePdfTextFromBuffer } from "../server/services/aiPipeline";
 import { buildSyllabusChunks } from "../server/services/assessmentGeneration";
+import { extractAndStoreMisconceptions } from "../server/services/extractAndStoreMisconceptions";
 
 const { syllabusDocuments, syllabusChunks } = schema;
 
 const CURRICULUM_DOCS_ROOT = path.resolve(process.cwd(), "curriculum-docs");
+const ERRORS_LOG = path.resolve(process.cwd(), "ingestion-errors.log");
 const MIN_WORD_COUNT = 50;
+const CONCURRENCY = Math.min(8, Math.max(1, os.cpus().length));
 
 interface IngestResult {
   file: string;
-  status: "ingested" | "skipped" | "failed";
+  status: "ingested" | "skipped" | "failed" | "needs-ocr";
   reason?: string;
   docId?: number;
   chunkCount?: number;
+  misconceptionCount?: number;
+  misconceptionSkipReason?: string;
 }
 
 function createPool(): pg.Pool {
@@ -53,7 +66,7 @@ function createPool(): pg.Pool {
   return new pg.Pool({
     connectionString,
     ssl: useSsl ? { rejectUnauthorized: false } : undefined,
-    max: 3,
+    max: 8,
     connectionTimeoutMillis: 15000,
   });
 }
@@ -76,18 +89,11 @@ function collectPdfs(dir: string): string[] {
   return results;
 }
 
-/**
- * Infer document_type from folder path.
- * Paths containing "examiner-report" → "examiner_report", else → "syllabus".
- */
 function inferDocumentType(filePath: string): "syllabus" | "examiner_report" {
   const rel = filePath.replace(CURRICULUM_DOCS_ROOT, "").toLowerCase();
   return rel.includes("examiner-report") ? "examiner_report" : "syllabus";
 }
 
-/**
- * Infer board from path segment (e.g. "cambridge").
- */
 function inferBoard(filePath: string): string {
   const rel = filePath.replace(CURRICULUM_DOCS_ROOT, "");
   const parts = rel.split(path.sep).filter(Boolean);
@@ -95,50 +101,38 @@ function inferBoard(filePath: string): string {
   return board.charAt(0).toUpperCase() + board.slice(1);
 }
 
-/**
- * Infer level from path segment (igcse, as, a2, a_level, a-level) or filename.
- */
 function inferLevel(filePath: string): string {
   const rel = filePath.replace(CURRICULUM_DOCS_ROOT, "").toLowerCase();
   if (rel.includes("/igcse/") || rel.includes("_igcse_")) return "IGCSE";
   if (rel.includes("/a_level/") || rel.includes("/a-level/") || rel.includes("/alevel/")) return "A Level";
-  if (rel.includes("/a2/")    || rel.includes("_a2_"))    return "A2";
-  if (rel.includes("/as/")    || rel.includes("_as_"))    return "AS";
+  if (rel.includes("/a2/") || rel.includes("_a2_")) return "A2";
+  if (rel.includes("/as/") || rel.includes("_as_")) return "AS";
   return "Unknown";
 }
 
-/**
- * Infer syllabus code from filename.
- * Handles both "0580_maths.pdf" (code at start) and "Biology_9700_2028.pdf" (code in middle).
- * Falls back to a slug of the filename.
- */
 function inferSyllabusCode(filename: string): string {
-  // Try 4-digit code at start of filename
   const startMatch = filename.match(/^(\d{4})/);
   if (startMatch) return startMatch[1];
-  // Try 4-digit code anywhere (e.g. Biology_9700_2028-2030.pdf)
   const anyMatch = filename.match(/_(\d{4})[_\-.]/);
   if (anyMatch) return anyMatch[1];
   return path.basename(filename, ".pdf").replace(/[_\s]+/g, "-").toLowerCase();
 }
 
-/**
- * Infer subject from filename tokens.
- * Supports underscore-separated filenames like "Biology_9700_2028-2030.pdf".
- */
 function inferSubject(filename: string): string | undefined {
   const SUBJECTS = [
     "pure mathematics", "further mathematics", "mathematics",
     "additional mathematics", "statistics", "mechanics",
     "physics", "chemistry", "biology",
     "economics", "geography", "history",
-    "english language", "english literature", "english",
-    "literature", "french", "computer science",
+    "english language", "english literature", "english as a second language",
+    "english first language", "english",
+    "literature in english", "literature", "french foreign language", "french",
+    "computer science",
     "business studies", "business", "accounting",
     "design and technology", "design",
+    "information and communication technology",
   ];
   const lower = filename.toLowerCase();
-  // Try each subject — check underscored, hyphenated, and space variants
   return SUBJECTS.find((s) =>
     lower.includes(s.replace(/ /g, "_")) ||
     lower.includes(s.replace(/ /g, "-")) ||
@@ -146,10 +140,19 @@ function inferSubject(filename: string): string | undefined {
   );
 }
 
+interface DocRow {
+  id: number;
+  board: string;
+  syllabusCode: string;
+  subject: string | null;
+  extractedText: string;
+  documentType: "syllabus" | "examiner_report";
+}
+
 async function ingestFile(
   filePath: string,
   db: ReturnType<typeof drizzle<typeof schema>>,
-): Promise<IngestResult> {
+): Promise<{ result: IngestResult; doc?: DocRow }> {
   const filename = path.basename(filePath);
   const relPath = path.relative(process.cwd(), filePath);
 
@@ -157,27 +160,38 @@ async function ingestFile(
   try {
     buffer = fs.readFileSync(filePath);
   } catch (e: any) {
-    return { file: relPath, status: "failed", reason: `Cannot read file: ${e.message}` };
+    return { result: { file: relPath, status: "failed", reason: `Cannot read file: ${e.message}` } };
   }
 
   const hash = sha256(buffer);
 
-  const [existing] = await db.select({ id: syllabusDocuments.id })
+  const [existing] = await db.select({
+    id: syllabusDocuments.id,
+    board: syllabusDocuments.board,
+    syllabusCode: syllabusDocuments.syllabusCode,
+    subject: syllabusDocuments.subject,
+    extractedText: syllabusDocuments.extractedText,
+    documentType: syllabusDocuments.documentType,
+  })
     .from(syllabusDocuments)
     .where(eq(syllabusDocuments.contentHash, hash));
+
   if (existing) {
-    return { file: relPath, status: "skipped", reason: `Already ingested (id=${existing.id})` };
+    return {
+      result: { file: relPath, status: "skipped", reason: `Already ingested (id=${existing.id})`, docId: existing.id, chunkCount: 0 },
+      doc: { ...existing, documentType: existing.documentType as "syllabus" | "examiner_report" },
+    };
   }
 
   let extractedText: string;
   try {
     extractedText = await parsePdfTextFromBuffer(buffer);
   } catch (e: any) {
-    return { file: relPath, status: "failed", reason: `PDF parse failed: ${e.message}` };
+    return { result: { file: relPath, status: "failed", reason: `PDF parse failed: ${e.message}` } };
   }
 
   if (extractedText.split(/\s+/).filter(Boolean).length < MIN_WORD_COUNT) {
-    return { file: relPath, status: "failed", reason: "PDF appears to be image-only or has too little text." };
+    return { result: { file: relPath, status: "needs-ocr", reason: "PDF appears to be image-only or has too little text." } };
   }
 
   const chunks = buildSyllabusChunks(extractedText);
@@ -206,13 +220,33 @@ async function ingestFile(
     );
   }
 
-  return { file: relPath, status: "ingested", docId: doc.id, chunkCount: chunks.length };
+  return {
+    result: { file: relPath, status: "ingested", docId: doc.id, chunkCount: chunks.length },
+    doc: {
+      id: doc.id,
+      board: doc.board,
+      syllabusCode: doc.syllabusCode,
+      subject: doc.subject,
+      extractedText: doc.extractedText,
+      documentType: documentType,
+    },
+  };
+}
+
+function logError(payload: Record<string, unknown>) {
+  try {
+    fs.appendFileSync(ERRORS_LOG, JSON.stringify({ ts: new Date().toISOString(), ...payload }) + "\n");
+  } catch {
+    // best-effort — never abort the run on logger failure
+  }
 }
 
 async function main() {
   console.log("\n========================================");
   console.log("  SOMA Curriculum Document Ingestion");
   console.log("========================================\n");
+  console.log(`  Concurrency: ${CONCURRENCY} (min(8, ${os.cpus().length} cpus))`);
+  console.log(`  Errors log : ${path.relative(process.cwd(), ERRORS_LOG)}\n`);
 
   const pool = createPool();
   let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -228,45 +262,97 @@ async function main() {
   const pdfs = collectPdfs(CURRICULUM_DOCS_ROOT);
   if (pdfs.length === 0) {
     console.log(`No PDFs found under ${CURRICULUM_DOCS_ROOT}.`);
-    console.log("Place your PDFs in the curriculum-docs folder and re-run.\n");
     await pool.end();
     return;
   }
 
   console.log(`Found ${pdfs.length} PDF(s). Processing...\n`);
 
+  const limit = pLimit(CONCURRENCY);
   const results: IngestResult[] = [];
-  for (const filePath of pdfs) {
-    process.stdout.write(`  Processing: ${path.relative(process.cwd(), filePath)} ... `);
-    const result = await ingestFile(filePath, db);
-    results.push(result);
-    if (result.status === "ingested") {
-      console.log(`✓  ingested (id=${result.docId}, ${result.chunkCount} chunks)`);
-    } else if (result.status === "skipped") {
-      console.log(`—  skipped  (${result.reason})`);
-    } else {
-      console.log(`✗  failed   (${result.reason})`);
-    }
-  }
+  let done = 0;
+
+  await Promise.all(
+    pdfs.map((filePath) =>
+      limit(async () => {
+        const idx = ++done;
+        const rel = path.relative(process.cwd(), filePath);
+        const t0 = Date.now();
+        try {
+          const { result, doc } = await ingestFile(filePath, db);
+
+          // Examiner reports get a misconception extraction pass under the
+          // same limiter slot — i.e. a fresh slot is taken once parse+insert
+          // is done. We schedule it inline so we stay within CONCURRENCY for
+          // both CPU-bound parsing and the LLM call.
+          if (
+            (result.status === "ingested" || result.status === "skipped") &&
+            doc &&
+            doc.documentType === "examiner_report"
+          ) {
+            try {
+              const extracted = await extractAndStoreMisconceptions(doc);
+              if (extracted.skipped) {
+                result.misconceptionCount = 0;
+                result.misconceptionSkipReason = extracted.reason;
+              } else {
+                result.misconceptionCount = extracted.count;
+              }
+            } catch (e: any) {
+              result.misconceptionCount = 0;
+              result.misconceptionSkipReason = `extract-failed: ${e?.message ?? String(e)}`;
+              logError({ phase: "extract", file: rel, docId: doc.id, message: e?.message ?? String(e) });
+            }
+          }
+
+          results.push(result);
+          const ms = Date.now() - t0;
+          const tag =
+            result.status === "ingested" ? "OK   " :
+            result.status === "skipped"  ? "SKIP " :
+            result.status === "needs-ocr" ? "OCR  " : "FAIL ";
+          const extra =
+            result.misconceptionCount !== undefined
+              ? ` — ${result.misconceptionCount} misconceptions`
+              : result.chunkCount !== undefined && result.status === "ingested"
+                ? ` — ${result.chunkCount} chunks`
+                : "";
+          console.log(`[${idx}/${pdfs.length}] ${tag}${path.basename(filePath).padEnd(50)}${extra} (${ms}ms)`);
+        } catch (e: any) {
+          const result: IngestResult = { file: rel, status: "failed", reason: e?.message ?? String(e) };
+          results.push(result);
+          logError({ phase: "ingest", file: rel, message: result.reason });
+          console.log(`[${idx}/${pdfs.length}] FAIL ${path.basename(filePath)} — ${result.reason}`);
+        }
+      })
+    )
+  );
 
   await pool.end();
 
-  const ingested = results.filter((r) => r.status === "ingested");
-  const skipped  = results.filter((r) => r.status === "skipped");
-  const failed   = results.filter((r) => r.status === "failed");
+  const ingested  = results.filter((r) => r.status === "ingested");
+  const skipped   = results.filter((r) => r.status === "skipped");
+  const failed    = results.filter((r) => r.status === "failed");
+  const needsOcr  = results.filter((r) => r.status === "needs-ocr");
+  const totalMisc = results.reduce((acc, r) => acc + (r.misconceptionCount ?? 0), 0);
 
   console.log("\n========================================");
   console.log(`  Summary`);
   console.log("========================================");
-  console.log(`  Total found : ${results.length}`);
-  console.log(`  Ingested    : ${ingested.length}`);
-  console.log(`  Skipped     : ${skipped.length}`);
-  console.log(`  Failed      : ${failed.length}`);
+  console.log(`  Total found        : ${results.length}`);
+  console.log(`  Ingested           : ${ingested.length}`);
+  console.log(`  Skipped            : ${skipped.length}`);
+  console.log(`  Needs OCR          : ${needsOcr.length}`);
+  console.log(`  Failed             : ${failed.length}`);
+  console.log(`  Misconceptions     : ${totalMisc} (across ${results.filter(r => (r.misconceptionCount ?? 0) > 0).length} reports)`);
+
+  if (needsOcr.length > 0) {
+    console.log("\n  Files that need OCR (image-only PDFs):");
+    for (const f of needsOcr) console.log(`    - ${f.file}`);
+  }
   if (failed.length > 0) {
     console.log("\n  Failed files:");
-    for (const f of failed) {
-      console.log(`    - ${f.file}: ${f.reason}`);
-    }
+    for (const f of failed) console.log(`    - ${f.file}: ${f.reason}`);
   }
   console.log("========================================\n");
 }

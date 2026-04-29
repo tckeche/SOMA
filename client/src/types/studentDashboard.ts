@@ -75,6 +75,13 @@ export interface DashboardReminder {
   id: string;
   topic: string;
   text: string;
+  // Optional fields populated by the examiner-misconception study-tips
+  // path. Older composed reminders leave these undefined and continue to
+  // render exactly as before.
+  whyItMatters?: string;
+  correctApproach?: string;
+  frequency?: "very_common" | "common" | "occasional";
+  subject?: string;
 }
 
 export interface DashboardNotification {

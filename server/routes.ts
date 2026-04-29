@@ -17,6 +17,8 @@ import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilot
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
+import { extractAndStoreMisconceptions } from "./services/extractAndStoreMisconceptions";
+import { cachedListExaminerMisconceptions } from "./services/examinerMisconceptionsCache";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
@@ -947,42 +949,18 @@ async function extractDocumentIntelligence(doc: {
   const textSlice = doc.extractedText.slice(0, 6000);
 
   if (doc.documentType === "examiner_report") {
-    // Extract misconceptions from examiner reports
-    const prompt = `You are an educational data analyst. Extract structured misconceptions from the following examiner report.
-
-For each misconception, identify:
-- topic: the mathematical/subject topic
-- subtopic: specific subtopic (or null)
-- misconception: what students commonly get wrong
-- studentError: the typical incorrect approach
-- correctApproach: what students should do instead
-- frequency: "very_common", "common", or "occasional"
-
-Return a JSON array of objects. Extract up to 15 misconceptions. Only real observations from the text.
-
-EXAMINER REPORT TEXT:
-${textSlice}`;
-
     try {
-      const { data } = await generateWithFallback(prompt, "Extract misconceptions as JSON array.", undefined);
-      const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const items = JSON.parse(cleaned);
-      if (Array.isArray(items) && items.length > 0) {
-        await storage.createExaminerMisconceptions(
-          items.slice(0, 15).map((item: any) => ({
-            documentId: doc.id,
-            board: doc.board,
-            syllabusCode: doc.syllabusCode,
-            subject: doc.subject || item.subject || null,
-            topic: String(item.topic || "General"),
-            subtopic: item.subtopic || null,
-            misconception: String(item.misconception || ""),
-            studentError: String(item.studentError || item.student_error || ""),
-            correctApproach: String(item.correctApproach || item.correct_approach || ""),
-            frequency: item.frequency || "common",
-          }))
-        );
-        console.log(`[Doc Intelligence] Extracted ${items.length} misconceptions from examiner report ${doc.id}`);
+      const { count, skipped, reason } = await extractAndStoreMisconceptions({
+        id: doc.id,
+        board: doc.board,
+        syllabusCode: doc.syllabusCode,
+        subject: doc.subject,
+        extractedText: doc.extractedText,
+      });
+      if (skipped) {
+        console.log(`[Doc Intelligence] Misconception extraction skipped for doc ${doc.id} (${reason})`);
+      } else {
+        console.log(`[Doc Intelligence] Extracted ${count} misconceptions from examiner report ${doc.id}`);
       }
     } catch (e: any) {
       console.error(`[Doc Intelligence] Misconception extraction failed for doc ${doc.id}:`, e.message);
@@ -4075,6 +4053,73 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch performance" });
+    }
+  });
+
+  // Examiner-driven study tips for a single subject. Cached for 10 min so
+  // the dashboard's per-subject burst hits Postgres at most once per subject
+  // per cache window. Hard subject filter is applied after the cache lookup
+  // to guarantee no cross-subject leakage.
+  app.get("/api/student/study-tips", requireSupabaseAuth, async (req, res) => {
+    try {
+      const subject = String(req.query.subject ?? "").trim();
+      const syllabusCode = req.query.syllabusCode ? String(req.query.syllabusCode).trim() : undefined;
+      const board = req.query.board ? String(req.query.board).trim() : undefined;
+      const topN = Math.min(20, Math.max(1, Number.parseInt(String(req.query.top ?? "5"), 10) || 5));
+      if (!subject) return res.status(400).json({ message: "subject is required" });
+      if (!syllabusCode && !board) {
+        return res.status(400).json({ message: "syllabusCode or board is required" });
+      }
+
+      const filter = { board, syllabusCode, subject };
+      const t0 = performance.now();
+      const { rows, cacheHit, ms } = await cachedListExaminerMisconceptions(filter, () =>
+        storage.listExaminerMisconceptions(filter),
+      );
+      const elapsed = performance.now() - t0;
+
+      // Belt-and-suspenders subject guard: cache key already includes
+      // lowercased subject, but we double-check the row's own subject
+      // column matches before surfacing it to the student.
+      const subjectLc = subject.toLowerCase();
+      const guarded = rows.filter((r) => (r.subject ?? "").toLowerCase() === subjectLc);
+
+      const weight: Record<string, number> = { very_common: 3, common: 2, occasional: 1 };
+      const sorted = [...guarded].sort(
+        (a, b) =>
+          (weight[(b.frequency ?? "common").toLowerCase()] ?? 0) -
+          (weight[(a.frequency ?? "common").toLowerCase()] ?? 0),
+      );
+      const seen = new Set<string>();
+      const tips: Array<{
+        id: string;
+        topic: string;
+        tip: string;
+        whyItMatters: string;
+        correctApproach: string;
+        frequency: string;
+      }> = [];
+      for (const r of sorted) {
+        const topicKey = (r.topic ?? "").toLowerCase().trim();
+        if (!topicKey || seen.has(topicKey)) continue;
+        seen.add(topicKey);
+        tips.push({
+          id: `study-tip-${r.id}`,
+          topic: r.topic,
+          tip: r.misconception,
+          whyItMatters: r.studentError,
+          correctApproach: r.correctApproach,
+          frequency: r.frequency,
+        });
+        if (tips.length >= topN) break;
+      }
+
+      console.log(
+        `[study-tips] subject="${subject}" board="${board ?? "*"}" code="${syllabusCode ?? "*"}" cacheHit=${cacheHit} rows=${guarded.length} returned=${tips.length} elapsed=${elapsed.toFixed(1)}ms`,
+      );
+      res.json({ tips, cacheHit, elapsedMs: Math.round(elapsed * 10) / 10 });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch study tips" });
     }
   });
 

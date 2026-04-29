@@ -24,6 +24,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
+import { invalidateExaminerMisconceptionsCache } from "./services/examinerMisconceptionsCache";
 
 
 // Spaced repetition intervals: 7 days → 30 days → 90 days
@@ -177,7 +178,7 @@ export interface IStorage {
 
   // Examiner misconception storage
   createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]>;
-  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]>;
+  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]>;
 
   // Syllabus topic inventory
   createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]>;
@@ -448,13 +449,22 @@ class DatabaseStorage implements IStorage {
 
   async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {
     if (items.length === 0) return [];
-    return this.database.insert(examinerMisconceptions).values(items).returning();
+    const inserted = await this.database.insert(examinerMisconceptions).values(items).returning();
+    // Drop any in-memory cache entries for the (board, syllabusCode) groups
+    // we just wrote to so the next read sees the fresh rows.
+    const groups = Array.from(new Set(inserted.map((r) => `${r.board}|${r.syllabusCode}`)));
+    for (const g of groups) {
+      const [board, syllabusCode] = g.split("|");
+      invalidateExaminerMisconceptionsCache({ board, syllabusCode });
+    }
+    return inserted;
   }
 
-  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]> {
     const conditions = [];
     if (filter.board) conditions.push(eq(examinerMisconceptions.board, filter.board));
     if (filter.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, filter.syllabusCode));
+    if (filter.subject) conditions.push(sql`lower(${examinerMisconceptions.subject}) = lower(${filter.subject})`);
     if (filter.topic) conditions.push(eq(examinerMisconceptions.topic, filter.topic));
     if (conditions.length === 0) return this.database.select().from(examinerMisconceptions);
     return this.database.select().from(examinerMisconceptions).where(and(...conditions));
@@ -1755,17 +1765,24 @@ class MemoryStorage implements IStorage {
   }
 
   async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {
-    return items.map((item) => {
+    const inserted = items.map((item) => {
       const row: ExaminerMisconception = { id: this.examinerMisconceptionId++, extractedAt: new Date(), ...item, subject: item.subject ?? null, subtopic: item.subtopic ?? null, frequency: item.frequency ?? "common" };
       this.examinerMisconceptionsList.push(row);
       return row;
     });
+    const groups = Array.from(new Set(inserted.map((r) => `${r.board}|${r.syllabusCode}`)));
+    for (const g of groups) {
+      const [board, syllabusCode] = g.split("|");
+      invalidateExaminerMisconceptionsCache({ board, syllabusCode });
+    }
+    return inserted;
   }
 
-  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]> {
     return this.examinerMisconceptionsList.filter((m) =>
       (!filter.board || m.board === filter.board) &&
       (!filter.syllabusCode || m.syllabusCode === filter.syllabusCode) &&
+      (!filter.subject || (m.subject ?? "").toLowerCase() === filter.subject.toLowerCase()) &&
       (!filter.topic || m.topic === filter.topic)
     );
   }
