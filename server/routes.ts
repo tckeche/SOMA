@@ -8,7 +8,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
-import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
+import { getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
+import { requireTutor, requireSuperAdmin, requireSupabaseAuth } from "./middleware/roles";
+import { registerDomainRoutes } from "./routes/index";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
@@ -680,58 +682,10 @@ function determineRole(email: string): "tutor" | "student" | "super_admin" {
   return domain === TUTOR_EMAIL_DOMAIN.toLowerCase() ? "tutor" : "student";
 }
 
-const requireTutor = createRoleMiddleware({
-  allowedRoles: ["tutor", "super_admin"],
-  identityHeaderName: "x-tutor-id",
-  missingIdentityMessage: "Tutor ID required",
-  forbiddenMessage: "Access denied: tutor role required",
-  requestIdKey: "tutorId",
-  requestUserKey: "tutorUser",
-});
-
-const requireSuperAdmin = createRoleMiddleware({
-  allowedRoles: ["super_admin"],
-  identityHeaderName: "x-admin-id",
-  missingIdentityMessage: "Admin ID required",
-  forbiddenMessage: "Access denied: super_admin role required",
-  requestIdKey: "adminId",
-  requestUserKey: "adminUser",
-});
-
-/**
- * Supabase JWT authentication middleware.
- * Verifies the Bearer token from the Authorization header using the Supabase
- * JWT secret, extracts the user ID (sub claim), looks up the user in
- * soma_users, and attaches `req.authUser` with { id, email, role }.
- */
-
-function requireSupabaseAuth(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-
-  const token = authHeader.slice(7);
-
-  verifySupabaseToken(token).then((decoded) => {
-    if (!decoded) {
-      return res.status(401).json({ message: "Invalid or expired token" });
-    }
-
-    const userId = decoded.sub;
-    storage.getSomaUserById(userId).then((user) => {
-      if (!user) {
-        return res.status(401).json({ message: "User not found" });
-      }
-      (req as any).authUser = { id: user.id, email: user.email, role: user.role, displayName: user.displayName };
-      next();
-    }).catch(() => {
-      res.status(500).json({ message: "Failed to verify user identity" });
-    });
-  }).catch(() => {
-    res.status(401).json({ message: "Invalid or expired token" });
-  });
-}
+// Role middleware (requireTutor, requireSuperAdmin, requireSupabaseAuth) is
+// imported from `./middleware/roles` so the legacy monolith and the new
+// per-domain modules under `./routes/*` share the same middleware
+// instances. See server/routes/README.md.
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1304,6 +1258,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.use("/api/student", studentApiLimiter);
   app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
+
+  // Per-domain route modules (see server/routes/README.md). Registered
+  // before the legacy inline handlers below so any future domain takeover
+  // can shadow a route here without conflict.
+  registerDomainRoutes(app);
 
   app.post("/api/graph/render-svg", async (req, res) => {
     const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
@@ -3981,42 +3940,8 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
-  // ─── Super Admin AI usage / health observability ──────────────────
-  // Aggregated, privacy-safe counters only. Raw prompts, raw model output,
-  // and raw idempotency keys are intentionally not exposed.
-  app.get("/api/super-admin/ai-usage", requireSuperAdmin, async (req, res) => {
-    try {
-      const { report: usageReport } = await import("./services/aiUsageMetrics");
-      const { snapshot: healthSnapshot, currentHealthBackend } = await import("./services/aiHealth");
-      const { maxTokensTable } = await import("./services/aiCostGuards");
-      const { getHistoricalUsage } = await import("./services/aiUsageQueries");
-
-      // ?days=N (default 30, clamped 1..365). Historical view uses ai_usage_logs;
-      // the in-memory `usage` block remains the live counter snapshot.
-      const daysRaw = Number(req.query.days);
-      const days = Number.isFinite(daysRaw) ? Math.max(1, Math.min(365, Math.floor(daysRaw))) : 30;
-      const since = new Date();
-      since.setUTCDate(since.getUTCDate() - days);
-      since.setUTCHours(0, 0, 0, 0);
-
-      const historical = await getHistoricalUsage({ since });
-
-      res.json({
-        usage: usageReport(),
-        historical,
-        rangeDays: days,
-        health: {
-          backend: currentHealthBackend(),
-          providers: healthSnapshot(),
-        },
-        guardrails: {
-          maxTokensByTask: maxTokensTable(),
-        },
-      });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch AI usage" });
-    }
-  });
+  // /api/super-admin/ai-usage is registered by registerDomainRoutes(app) at
+  // the top of registerRoutes() — see server/routes/superAdminAiUsage.ts.
 
   // ─── Student Routes (Supabase JWT-protected) ────────────────────
 
