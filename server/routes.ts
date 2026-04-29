@@ -22,6 +22,7 @@ import { generateWithFallback } from "./services/aiOrchestrator";
 import { extractAndStoreMisconceptions } from "./services/extractAndStoreMisconceptions";
 import { cachedListExaminerMisconceptions } from "./services/examinerMisconceptionsCache";
 import { listApprovedSeeds, type ExaminerSeed } from "./services/examinerDistractorSeeds";
+import { buildAndPersistDiagnoses, renderDiagnosesForFeedback, type GradedAnswer } from "./services/answerDiagnosis";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
@@ -1035,7 +1036,7 @@ async function updateMasteryFromSubmission(
 
 async function runBackgroundGrading(
   reportId: number,
-  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number }[],
+  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number; targetMisconceptionIds?: number[] | null }[],
   studentAnswers: Record<string, string>,
   totalScore: number,
   maxPossibleScore: number,
@@ -1044,6 +1045,38 @@ async function runBackgroundGrading(
   const GRADING_TIMEOUT_MS = 180_000;
   try {
     console.log(`[SOMA Grading] Starting background AI grading for report ${reportId}`);
+
+    // Phase 2C — build per-answer diagnoses and roll up student
+    // misconceptions BEFORE prompting the AI grader, so we can hand the
+    // grader the matched examiner phrasing for any distractors that
+    // triggered a known misconception.
+    const gradedAnswers: GradedAnswer[] = questions.map((q) => {
+      const studentAnswer = studentAnswers[String(q.id)] || "";
+      const correctAnswer = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
+      return {
+        questionId: q.id,
+        studentAnswer,
+        correctAnswer,
+        targetMisconceptionIds: q.targetMisconceptionIds ?? [],
+      };
+    });
+    let diagnosisContext = "";
+    if (studentMeta?.studentId) {
+      try {
+        const diagResult = await buildAndPersistDiagnoses({
+          reportId,
+          studentId: studentMeta.studentId,
+          answers: gradedAnswers,
+        });
+        diagnosisContext = renderDiagnosesForFeedback(diagResult.diagnoses);
+        if (diagResult.matchedCount > 0) {
+          console.log(`[SOMA Grading] Report ${reportId} matched ${diagResult.matchedCount}/${diagResult.wrongCount} wrong answers to known examiner misconceptions.`);
+        }
+      } catch (err: any) {
+        // Diagnosis failures must never block the AI feedback.
+        console.warn(`[SOMA Grading] Diagnosis pass failed for report ${reportId}: ${err?.message ?? err}`);
+      }
+    }
 
     const breakdown = questions.map((q, idx) => {
       const questionNumber = idx + 1;
@@ -1068,12 +1101,13 @@ CRITICAL: When referencing specific questions, you MUST use the sequential quest
 Here is the question-by-question breakdown (numbered sequentially as they appear in the quiz):
 
 ${breakdown}
+${diagnosisContext}
 
 Provide:
 1. An overall performance summary
 2. Specific strengths demonstrated
 3. Areas needing improvement with concrete study suggestions — reference questions by their sequential number (e.g. "Question 3")
-4. For every incorrect response, include a 1-2 sentence explanation that starts with the exact label "Question X:" and briefly explains why the correct answer is right
+4. For every incorrect response, include a 1-2 sentence explanation that starts with the exact label "Question X:" and briefly explains why the correct answer is right. When the breakdown above flags an examiner-flagged misconception for that question, ALWAYS cite it explicitly (e.g. "Cambridge examiners have repeatedly flagged that students…") instead of writing a generic correction.
 5. Encouragement and next steps`;
 
     // Idempotency: a duplicate submission for the same report (e.g. browser
