@@ -10,6 +10,7 @@
  * function returns `{ skipped: true }` without burning an LLM call. Pass
  * `force: true` to re-extract regardless.
  */
+import OpenAI from "openai";
 import { storage } from "../storage";
 import { generateWithFallback } from "./aiOrchestrator";
 
@@ -25,6 +26,40 @@ export interface ExtractResult {
   count: number;
   skipped: boolean;
   reason?: string;
+}
+
+export interface ExtractOptions {
+  force?: boolean;
+  sliceLength?: number;
+  /** Force a specific provider instead of the orchestrator's fallback chain.
+   *  Currently only "openai" (model=gpt-4o) is supported as a single-provider
+   *  override; anything else falls back to `generateWithFallback`. */
+  preferredProvider?: "openai" | "default";
+}
+
+let openaiClient: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openaiClient) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
+    openaiClient = new OpenAI({ apiKey });
+  }
+  return openaiClient;
+}
+
+async function callOpenAIDirect(prompt: string, system: string): Promise<string> {
+  const client = getOpenAI();
+  const response = await client.chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0.1,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: prompt },
+    ],
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("gpt-4o returned empty response");
+  return content;
 }
 
 const PROMPT_HEADER = `You are an educational data analyst. Extract structured misconceptions from the following examiner report.
@@ -44,9 +79,9 @@ EXAMINER REPORT TEXT:
 
 export async function extractAndStoreMisconceptions(
   doc: ExtractInputDoc,
-  options: { force?: boolean; sliceLength?: number } = {},
+  options: ExtractOptions = {},
 ): Promise<ExtractResult> {
-  const { force = false, sliceLength = 6000 } = options;
+  const { force = false, sliceLength = 6000, preferredProvider = "default" } = options;
 
   if (!force) {
     const existing = await storage.listExaminerMisconceptions({
@@ -64,14 +99,15 @@ export async function extractAndStoreMisconceptions(
   }
 
   const prompt = PROMPT_HEADER + textSlice;
+  const system = "Extract misconceptions as JSON array.";
   let raw: string;
   try {
-    const { data } = await generateWithFallback(
-      prompt,
-      "Extract misconceptions as JSON array.",
-      undefined,
-    );
-    raw = data;
+    if (preferredProvider === "openai") {
+      raw = await callOpenAIDirect(prompt, system);
+    } else {
+      const { data } = await generateWithFallback(prompt, system, undefined);
+      raw = data;
+    }
   } catch (err: any) {
     throw new Error(`LLM call failed: ${err?.message ?? String(err)}`);
   }

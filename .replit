@@ -38,6 +38,10 @@ args = "Start application"
 task = "workflow.run"
 args = "Ingest Curriculum Docs"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Ingest Examiner Reports"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -54,6 +58,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "DATABASE_URL=\"$SUPABASE_DB_URL\" npx tsx scripts/ingestSyllabi/index.ts"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Ingest Examiner Reports"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx tsx scripts/ingestCurriculumDocs.ts"
 
 [workflows.workflow.metadata]
 outputType = "console"

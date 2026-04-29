@@ -291,7 +291,7 @@ async function main() {
             doc.documentType === "examiner_report"
           ) {
             try {
-              const extracted = await extractAndStoreMisconceptions(doc);
+              const extracted = await extractAndStoreMisconceptions(doc, { preferredProvider: "openai" });
               if (extracted.skipped) {
                 result.misconceptionCount = 0;
                 result.misconceptionSkipReason = extracted.reason;
