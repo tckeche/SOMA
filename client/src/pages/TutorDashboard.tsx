@@ -33,6 +33,7 @@ import {
 } from "@/components/dashboard-charts";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 import { TutorExaminerInsightsReview } from "@/components/tutor/TutorExaminerInsightsReview";
+import { CohortMisconceptionHeatmap } from "@/components/tutor/CohortMisconceptionHeatmap";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface AIInsight {
@@ -186,7 +187,7 @@ export default function TutorDashboard() {
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "notifications" | "insights">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "notifications" | "insights" | "cohort">("overview");
   // Student-first assign flow: pre-select a student and let the tutor pick a quiz.
   const [assignForStudent, setAssignForStudent] = useState<{ id: string; name: string } | null>(null);
   const [assignForStudentQuizId, setAssignForStudentQuizId] = useState<number | null>(null);
@@ -609,6 +610,17 @@ export default function TutorDashboard() {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setActiveTab("cohort")}
+                className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
+                  activeTab === "cohort"
+                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground/80 border border-transparent"
+                }`}
+                data-testid="tab-tutor-cohort"
+              >
+                <Users className="w-3.5 h-3.5" /> Cohort heatmap
+              </button>
             </div>
 
             {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
@@ -697,6 +709,13 @@ export default function TutorDashboard() {
             {activeTab === "insights" && (
               <FadeInSection>
                 <TutorExaminerInsightsReview />
+              </FadeInSection>
+            )}
+
+            {/* ── COHORT HEATMAP TAB (Phase 3.4) ─────────────────── */}
+            {activeTab === "cohort" && (
+              <FadeInSection>
+                <CohortMisconceptionHeatmap />
               </FadeInSection>
             )}
 

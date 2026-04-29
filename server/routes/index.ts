@@ -14,6 +14,7 @@ import { registerTutorExaminerInsightsRoutes } from "./tutorExaminerInsights";
 import { registerMasteryMapRoutes } from "./masteryMap";
 import { registerMarkLossPredictorRoutes } from "./markLossPredictor";
 import { registerRevisionPlanRoutes } from "./revisionPlan";
+import { registerCohortHeatmapRoutes } from "./cohortHeatmap";
 
 export function registerDomainRoutes(app: Express): void {
   registerSuperAdminAiUsageRoutes(app);
@@ -22,4 +23,5 @@ export function registerDomainRoutes(app: Express): void {
   registerMasteryMapRoutes(app);
   registerMarkLossPredictorRoutes(app);
   registerRevisionPlanRoutes(app);
+  registerCohortHeatmapRoutes(app);
 }
