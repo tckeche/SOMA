@@ -210,20 +210,53 @@ export async function tutorOwnsInsight(tutorId: string, insightId: number): Prom
   return scope.some((p) => `${p.board.toLowerCase()}|${p.syllabusCode}` === key);
 }
 
+export type ConfidenceBucket = "high" | "medium" | "low" | "unknown";
+
+export interface ConfidenceBreakdown {
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+}
+
 export interface CountsByStatus {
   pending: number;
   approved: number;
   rejected: number;
+  byConfidence: Record<ReviewStatus, ConfidenceBreakdown>;
+}
+
+function bucketOfConfidence(pct: number | null | undefined): ConfidenceBucket {
+  if (pct === null || pct === undefined) return "unknown";
+  if (pct >= 80) return "high";
+  if (pct >= 50) return "medium";
+  return "low";
+}
+
+function emptyCountsByStatus(): CountsByStatus {
+  return {
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    byConfidence: {
+      pending: { high: 0, medium: 0, low: 0, unknown: 0 },
+      approved: { high: 0, medium: 0, low: 0, unknown: 0 },
+      rejected: { high: 0, medium: 0, low: 0, unknown: 0 },
+    },
+  };
 }
 
 export async function countsByStatus(): Promise<CountsByStatus> {
-  if (!db) return { pending: 0, approved: 0, rejected: 0 };
-  const rows = await db.select({ status: examinerMisconceptions.status }).from(examinerMisconceptions);
-  const counts: CountsByStatus = { pending: 0, approved: 0, rejected: 0 };
+  const counts = emptyCountsByStatus();
+  if (!db) return counts;
+  const rows = await db
+    .select({ status: examinerMisconceptions.status, confidence: examinerMisconceptions.confidence })
+    .from(examinerMisconceptions);
   for (const r of rows) {
-    if (r.status === "pending") counts.pending++;
-    else if (r.status === "approved") counts.approved++;
-    else if (r.status === "rejected") counts.rejected++;
+    const s = r.status as ReviewStatus | null;
+    if (s !== "pending" && s !== "approved" && s !== "rejected") continue;
+    counts[s]++;
+    counts.byConfidence[s][bucketOfConfidence(r.confidence)]++;
   }
   return counts;
 }
@@ -334,21 +367,22 @@ export async function listQueueForTutor(
 }
 
 export async function countsByStatusForTutor(tutorId: string): Promise<CountsByStatus> {
-  if (!db) return { pending: 0, approved: 0, rejected: 0 };
+  const counts = emptyCountsByStatus();
+  if (!db) return counts;
   const scope = await listTutorScope(tutorId);
-  if (scope.length === 0) return { pending: 0, approved: 0, rejected: 0 };
+  if (scope.length === 0) return counts;
   const scopeConditions = scope.map((p) =>
     and(eq(examinerMisconceptions.board, p.board), eq(examinerMisconceptions.syllabusCode, p.syllabusCode)),
   );
   const rows = await db
-    .select({ status: examinerMisconceptions.status })
+    .select({ status: examinerMisconceptions.status, confidence: examinerMisconceptions.confidence })
     .from(examinerMisconceptions)
     .where(or(...scopeConditions)!);
-  const counts: CountsByStatus = { pending: 0, approved: 0, rejected: 0 };
   for (const r of rows) {
-    if (r.status === "pending") counts.pending++;
-    else if (r.status === "approved") counts.approved++;
-    else if (r.status === "rejected") counts.rejected++;
+    const s = r.status as ReviewStatus | null;
+    if (s !== "pending" && s !== "approved" && s !== "rejected") continue;
+    counts[s]++;
+    counts.byConfidence[s][bucketOfConfidence(r.confidence)]++;
   }
   return counts;
 }

@@ -51,10 +51,82 @@ interface QueueListResult {
   total: number;
 }
 
+interface ConfidenceBreakdown {
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+}
+
 interface Counts {
   pending: number;
   approved: number;
   rejected: number;
+  byConfidence?: Record<ReviewStatus, ConfidenceBreakdown>;
+}
+
+const PILL_BUCKET_META: Array<{ key: keyof ConfidenceBreakdown; label: string; dot: string }> = [
+  { key: "high", label: "High", dot: "bg-emerald-400" },
+  { key: "medium", label: "Medium", dot: "bg-amber-400" },
+  { key: "low", label: "Low", dot: "bg-rose-400" },
+];
+
+function PillConfidenceBreakdown({
+  breakdown,
+  statusKey,
+}: {
+  breakdown: ConfidenceBreakdown | undefined;
+  statusKey: ReviewStatus;
+}) {
+  if (!breakdown) return null;
+  const total = breakdown.high + breakdown.medium + breakdown.low + breakdown.unknown;
+  if (total === 0) return null;
+  const segments = [
+    { key: "high" as const, value: breakdown.high, color: "bg-emerald-500/70" },
+    { key: "medium" as const, value: breakdown.medium, color: "bg-amber-500/70" },
+    { key: "low" as const, value: breakdown.low, color: "bg-rose-500/70" },
+    { key: "unknown" as const, value: breakdown.unknown, color: "bg-muted-foreground/40" },
+  ];
+  const tooltip =
+    `High ${breakdown.high} · Medium ${breakdown.medium} · Low ${breakdown.low}` +
+    (breakdown.unknown > 0 ? ` · Unknown ${breakdown.unknown}` : "");
+  return (
+    <div className="mt-2 space-y-1.5" data-testid={`pill-confidence-breakdown-${statusKey}`}>
+      <div className="flex h-1 rounded-full overflow-hidden bg-muted/30" title={tooltip}>
+        {segments
+          .filter((s) => s.value > 0)
+          .map((s) => (
+            <div
+              key={s.key}
+              className={s.color}
+              style={{ flexGrow: s.value, flexBasis: 0 }}
+              data-testid={`pill-confidence-segment-${statusKey}-${s.key}`}
+            />
+          ))}
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+        {PILL_BUCKET_META.map((b) => (
+          <span
+            key={b.key}
+            className="inline-flex items-center gap-1"
+            data-testid={`pill-confidence-count-${statusKey}-${b.key}`}
+          >
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${b.dot}`} />
+            {b.label} {breakdown[b.key]}
+          </span>
+        ))}
+        {breakdown.unknown > 0 && (
+          <span
+            className="inline-flex items-center gap-1"
+            data-testid={`pill-confidence-count-${statusKey}-unknown`}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
+            ? {breakdown.unknown}
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const CARD = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
@@ -295,6 +367,7 @@ export function SuperAdminExaminerInsightsReview() {
           >
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.label}</p>
             <p className="text-2xl font-bold mt-1">{counts.data ? counts.data[t.key] : "—"}</p>
+            <PillConfidenceBreakdown breakdown={counts.data?.byConfidence?.[t.key]} statusKey={t.key} />
           </button>
         ))}
       </div>
