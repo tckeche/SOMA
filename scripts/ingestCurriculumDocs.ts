@@ -173,6 +173,7 @@ async function ingestFile(
     subject: syllabusDocuments.subject,
     extractedText: syllabusDocuments.extractedText,
     documentType: syllabusDocuments.documentType,
+    filename: syllabusDocuments.filename,
   })
     .from(syllabusDocuments)
     .where(eq(syllabusDocuments.contentHash, hash));
@@ -230,6 +231,7 @@ async function ingestFile(
       subject: doc.subject,
       extractedText: doc.extractedText,
       documentType: documentType,
+      filename: doc.filename,
     },
   };
 }

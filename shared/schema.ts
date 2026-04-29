@@ -166,6 +166,20 @@ export const somaQuestions = pgTable("soma_questions", {
   topicTag: text("topic_tag"),
   subtopicTag: text("subtopic_tag"),
   difficultyTag: text("difficulty_tag"),
+  // FK migration (Phase 1): nullable structural keys into the catalogue tree.
+  // Free-text *Tag columns above are retained during the dual-write window;
+  // backfill scripts populate these IDs over time. New code should prefer the
+  // ID columns and treat the tag columns as advisory only.
+  subtopicId: integer("subtopic_id").references(() => subtopics.id, { onDelete: "set null" }),
+  learningRequirementId: integer("learning_requirement_id").references(() => learningRequirements.id, { onDelete: "set null" }),
+  // Distractor → examiner-misconception link (jsonb int[]). Phase 2 quiz
+  // generation will populate this so marking can cite the matched insight.
+  targetMisconceptionIds: jsonb("target_misconception_ids").$type<number[]>(),
+  // Cached command word (e.g. "state", "explain", "evaluate") and AO label
+  // for command-word coaching and AO rollups. Populated at generation/import
+  // time; nullable so legacy questions don't block reads.
+  commandWord: text("command_word"),
+  assessmentObjective: text("assessment_objective"),
 });
 
 
@@ -266,6 +280,12 @@ export const studentTopicMastery = pgTable("student_topic_mastery", {
   subject: text("subject").notNull(),
   topic: text("topic").notNull(),
   subtopic: text("subtopic"),
+  // FK migration (Phase 1): structural keys into the catalogue tree.
+  // Nullable during the dual-write window; backfilled by
+  // scripts/backfillMasterySubtopicIds.ts. The free-text columns above
+  // remain authoritative until backfill is complete.
+  subtopicId: integer("subtopic_id").references(() => subtopics.id, { onDelete: "set null" }),
+  learningRequirementId: integer("learning_requirement_id").references(() => learningRequirements.id, { onDelete: "set null" }),
   understandingPercent: integer("understanding_percent").notNull().default(0),
   masteryAchieved: boolean("mastery_achieved").notNull().default(false),
   covered: boolean("covered").notNull().default(false),
@@ -308,7 +328,11 @@ export const suggestedAssessments = pgTable("suggested_assessments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Structured misconceptions extracted from examiner reports via AI
+// Structured misconceptions extracted from examiner reports via AI.
+// Phase 1 adds FK linkage into the catalogue + review-queue / provenance
+// fields. Existing rows remain valid: the new fields are nullable and
+// status defaults to "approved" so legacy data stays visible until a
+// review pass marks any of it as "pending".
 export const examinerMisconceptions = pgTable("examiner_misconceptions", {
   id: serial("id").primaryKey(),
   documentId: integer("document_id").notNull().references(() => syllabusDocuments.id, { onDelete: "cascade" }),
@@ -317,10 +341,31 @@ export const examinerMisconceptions = pgTable("examiner_misconceptions", {
   subject: text("subject"),
   topic: text("topic").notNull(),
   subtopic: text("subtopic"),
+  // FK linkage to the catalogue tree (nullable during dual-write).
+  subtopicId: integer("subtopic_id").references(() => subtopics.id, { onDelete: "set null" }),
+  learningRequirementId: integer("learning_requirement_id").references(() => learningRequirements.id, { onDelete: "set null" }),
   misconception: text("misconception").notNull(),
   studentError: text("student_error").notNull(),
   correctApproach: text("correct_approach").notNull(),
   frequency: text("frequency").notNull().default("common"),
+  // Phase 2 review queue. Default "approved" means existing rows stay
+  // visible to consumers; new AI-extracted rows will land as "pending".
+  status: text("status").notNull().default("approved"),
+  reviewedById: uuid("reviewed_by_id").references(() => somaUsers.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  // Provenance — verbatim quote and source page so the dashboard can show
+  // the evidence behind every insight. Populated by the new chunked
+  // extractor in Phase 2; nullable so legacy rows still load.
+  sourceQuote: text("source_quote"),
+  sourcePage: integer("source_page"),
+  // Self-confidence score from the extraction pass (0..1). Helps the
+  // queue auto-prioritise low-confidence rows.
+  confidence: integer("confidence_pct"),
+  // Year the source examiner report was published (e.g. 2024). Parsed
+  // from the document filename at extraction time. Used by the student
+  // review UI to render "Cambridge examiners flagged this in 2024."
+  examYear: integer("exam_year"),
   extractedAt: timestamp("extracted_at").defaultNow().notNull(),
 });
 
@@ -611,6 +656,194 @@ export type LevelTier = (typeof LEVEL_TIER_VALUES)[number];
 
 export const CORE_OR_EXTENDED_VALUES = ["core", "extended", "practical"] as const;
 export type CoreOrExtended = (typeof CORE_OR_EXTENDED_VALUES)[number];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — The Examiner Loop
+//
+// answer_diagnoses     : per-answer record written at grading time. When a
+//                        student's chosen distractor maps to a known
+//                        examiner misconception we record the link so the
+//                        feedback layer can cite the source. When it doesn't,
+//                        the row still exists with `misconceptionId = null`
+//                        so we can later analyse "we have no diagnosis for X%
+//                        of wrong answers — extend the misconception
+//                        library."
+//
+// student_misconceptions : rolled-up evidence per (student, misconception).
+//                        Incremented by the marker; not written by hand.
+//                        `resolvedAt` is set when the student answers N
+//                        consecutive questions on the same misconception
+//                        correctly (handled by the diagnosis service).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const answerDiagnoses = pgTable("answer_diagnoses", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").notNull().references(() => somaReports.id, { onDelete: "cascade" }),
+  questionId: integer("question_id").notNull().references(() => somaQuestions.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  // Numeric index of the chosen option (0..n-1). Nullable when the student
+  // skipped the question.
+  chosenOptionIndex: integer("chosen_option_index"),
+  chosenOptionText: text("chosen_option_text"),
+  correct: boolean("correct").notNull(),
+  // Linked examiner misconception when the chosen distractor was seeded
+  // from one (see soma_questions.target_misconception_ids). Nullable when
+  // there is no match.
+  misconceptionId: integer("misconception_id").references(() => examinerMisconceptions.id, { onDelete: "set null" }),
+  // Coarse classification: "careless" | "conceptual" | "procedural" |
+  // "command_word" | "unknown". Free-text for now to avoid an enum
+  // migration; tightened in Phase 4.
+  diagnosisCategory: text("diagnosis_category"),
+  // Short, examiner-style explanation written by the marker. Templated
+  // when misconceptionId is set, AI-written otherwise.
+  rationale: text("rationale"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("answer_diagnoses_unique_idx").on(t.reportId, t.questionId),
+]);
+
+export const studentMisconceptions = pgTable("student_misconceptions", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  misconceptionId: integer("misconception_id").notNull().references(() => examinerMisconceptions.id, { onDelete: "cascade" }),
+  evidenceCount: integer("evidence_count").notNull().default(0),
+  // Number of consecutive correct answers on questions targeting this
+  // misconception since it was last triggered. Used by the resolver to
+  // decide when to set resolvedAt.
+  consecutiveCorrect: integer("consecutive_correct").notNull().default(0),
+  firstSeenAt: timestamp("first_seen_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  // Foreign key into the most recent report that triggered an update —
+  // helps the UI link directly to the originating quiz.
+  lastReportId: integer("last_report_id").references(() => somaReports.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("student_misconception_unique_idx").on(t.studentId, t.misconceptionId),
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3.3 — Personal Revision Plan.
+//
+// One plan per (student, syllabus). The plan body lives in `weeks` as a
+// structured jsonb document; everything else is metadata so we can mark
+// the plan stale when the student submits a new quiz, and regenerate on
+// demand.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface RevisionPlanSession {
+  topic: string;
+  subtopic: string | null;
+  durationMinutes: number;
+  type: "drill" | "review" | "exam_practice" | "concept_recap" | "examiner_misconception";
+  rationale: string;
+  understandingPercent: number;
+  examinerInsightCount: number;
+}
+
+export interface RevisionPlanWeek {
+  weekNumber: number;
+  label: string;
+  focus: string;
+  sessions: RevisionPlanSession[];
+  totalMinutes: number;
+}
+
+export interface RevisionPlanBody {
+  examDate: string | null;
+  weekHours: number;
+  weeks: RevisionPlanWeek[];
+  summary: string;
+  weakAreas: Array<{ topic: string; understandingPercent: number }>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4.2 — Command-Word Coach.
+//
+// Per (student, subject, command word) accuracy. Cambridge marks are
+// won and lost on command-word literacy ("state" vs "explain" vs
+// "evaluate") and aggregating across subtopics shows where the
+// student's writing skill — independent of content — is weakest.
+//
+// We key on a NORMALISED command word (lowercased, trimmed) so e.g.
+// "Explain", "explain.", "Explain how" all roll up to "explain".
+// ─────────────────────────────────────────────────────────────────────────────
+export const commandWordPerformance = pgTable("command_word_performance", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  commandWord: text("command_word").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  correct: integer("correct").notNull().default(0),
+  marksAttempted: integer("marks_attempted").notNull().default(0),
+  marksAwarded: integer("marks_awarded").notNull().default(0),
+  lastAttemptedAt: timestamp("last_attempted_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("command_word_performance_unique_idx").on(t.studentId, t.subject, t.commandWord),
+]);
+
+export const revisionPlans = pgTable("revision_plans", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  examBody: text("exam_body").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  level: text("level").notNull(),
+  examDate: timestamp("exam_date"),
+  weekHours: integer("week_hours").notNull().default(6),
+  weeks: jsonb("weeks").$type<RevisionPlanWeek[]>().notNull().default([]),
+  summary: text("summary").notNull().default(""),
+  weakAreas: jsonb("weak_areas").$type<Array<{ topic: string; understandingPercent: number }>>().notNull().default([]),
+  // Stale flag — set whenever the student submits a new quiz. UI shows a
+  // "Refresh plan" prompt; user has to click it to regenerate.
+  stale: boolean("stale").notNull().default(false),
+  lastReportId: integer("last_report_id").references(() => somaReports.id, { onDelete: "set null" }),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("revision_plans_unique_idx").on(t.studentId, t.subject, t.syllabusCode, t.level),
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI usage log — durable per-call telemetry for the super-admin spend dashboard.
+//
+// One row per AI call (success or failure). The in-memory aggregator in
+// `server/services/aiUsageMetrics.ts` keeps live counters; this table is the
+// historical record so the super-admin dashboard can show spend by tutor /
+// student / day across process restarts.
+//
+// Privacy: we deliberately store ONLY counters and safe metadata. No raw
+// prompt, no raw response, no idempotency key, no request body. The
+// telemetry envelope already enforces a 200-char preview elsewhere; we drop
+// even that here.
+// ─────────────────────────────────────────────────────────────────────────────
+export const aiUsageLogs = pgTable("ai_usage_logs", {
+  id: serial("id").primaryKey(),
+  // SHA-256 prefix from aiTelemetry.recordCall for cross-referencing logs.
+  requestId: text("request_id"),
+  parentRequestId: text("parent_request_id"),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  taskType: text("task_type"),
+  promptVersion: text("prompt_version"),
+  // App-level operation (e.g. "quiz.generate", "report.grade", "examiner.extract").
+  route: text("route"),
+  // Owning user for spend attribution. NOT a hard FK — telemetry must never
+  // fail because a user row was deleted.
+  userId: uuid("user_id"),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  // Stored in micro-USD (1 USD = 1_000_000) to avoid float drift; convert in
+  // the read API. Nullable when the price table has no entry for the model.
+  costMicroUsd: integer("cost_micro_usd"),
+  latencyMs: integer("latency_ms").notNull().default(0),
+  success: boolean("success").notNull().default(true),
+  validationFailed: boolean("validation_failed").notNull().default(false),
+  parseFailed: boolean("parse_failed").notNull().default(false),
+  cached: boolean("cached").notNull().default(false),
+  retryCount: integer("retry_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // ── Relations ───────────────────────────────────────────────────────────────
 
@@ -952,6 +1185,26 @@ export type InsertAssessmentObjective = z.infer<typeof insertAssessmentObjective
 export const insertAssessmentObjectiveCompetencySchema = createInsertSchema(assessmentObjectiveCompetencies).omit({ id: true });
 export type AssessmentObjectiveCompetency = typeof assessmentObjectiveCompetencies.$inferSelect;
 export type InsertAssessmentObjectiveCompetency = z.infer<typeof insertAssessmentObjectiveCompetencySchema>;
+
+export const insertAiUsageLogSchema = createInsertSchema(aiUsageLogs).omit({ id: true, createdAt: true });
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
+export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
+
+export const insertRevisionPlanSchema = createInsertSchema(revisionPlans).omit({ id: true, generatedAt: true, updatedAt: true });
+export type RevisionPlan = typeof revisionPlans.$inferSelect;
+export type InsertRevisionPlan = z.infer<typeof insertRevisionPlanSchema>;
+
+export const insertCommandWordPerformanceSchema = createInsertSchema(commandWordPerformance).omit({ id: true, updatedAt: true });
+export type CommandWordPerformance = typeof commandWordPerformance.$inferSelect;
+export type InsertCommandWordPerformance = z.infer<typeof insertCommandWordPerformanceSchema>;
+
+export const insertAnswerDiagnosisSchema = createInsertSchema(answerDiagnoses).omit({ id: true, createdAt: true });
+export type AnswerDiagnosis = typeof answerDiagnoses.$inferSelect;
+export type InsertAnswerDiagnosis = z.infer<typeof insertAnswerDiagnosisSchema>;
+
+export const insertStudentMisconceptionSchema = createInsertSchema(studentMisconceptions).omit({ id: true, firstSeenAt: true, lastSeenAt: true, updatedAt: true });
+export type StudentMisconception = typeof studentMisconceptions.$inferSelect;
+export type InsertStudentMisconception = z.infer<typeof insertStudentMisconceptionSchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables.

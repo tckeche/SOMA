@@ -8,7 +8,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
-import { createRoleMiddleware, getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
+import { getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
+import { requireTutor, requireSuperAdmin, requireSupabaseAuth } from "./middleware/roles";
+import { registerDomainRoutes } from "./routes/index";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
@@ -19,6 +21,8 @@ import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import { extractAndStoreMisconceptions } from "./services/extractAndStoreMisconceptions";
 import { cachedListExaminerMisconceptions } from "./services/examinerMisconceptionsCache";
+import { listApprovedSeeds, type ExaminerSeed } from "./services/examinerDistractorSeeds";
+import { buildAndPersistDiagnoses, renderDiagnosesForFeedback, type GradedAnswer } from "./services/answerDiagnosis";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
@@ -680,58 +684,10 @@ function determineRole(email: string): "tutor" | "student" | "super_admin" {
   return domain === TUTOR_EMAIL_DOMAIN.toLowerCase() ? "tutor" : "student";
 }
 
-const requireTutor = createRoleMiddleware({
-  allowedRoles: ["tutor", "super_admin"],
-  identityHeaderName: "x-tutor-id",
-  missingIdentityMessage: "Tutor ID required",
-  forbiddenMessage: "Access denied: tutor role required",
-  requestIdKey: "tutorId",
-  requestUserKey: "tutorUser",
-});
-
-const requireSuperAdmin = createRoleMiddleware({
-  allowedRoles: ["super_admin"],
-  identityHeaderName: "x-admin-id",
-  missingIdentityMessage: "Admin ID required",
-  forbiddenMessage: "Access denied: super_admin role required",
-  requestIdKey: "adminId",
-  requestUserKey: "adminUser",
-});
-
-/**
- * Supabase JWT authentication middleware.
- * Verifies the Bearer token from the Authorization header using the Supabase
- * JWT secret, extracts the user ID (sub claim), looks up the user in
- * soma_users, and attaches `req.authUser` with { id, email, role }.
- */
-
-function requireSupabaseAuth(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-
-  const token = authHeader.slice(7);
-
-  verifySupabaseToken(token).then((decoded) => {
-    if (!decoded) {
-      return res.status(401).json({ message: "Invalid or expired token" });
-    }
-
-    const userId = decoded.sub;
-    storage.getSomaUserById(userId).then((user) => {
-      if (!user) {
-        return res.status(401).json({ message: "User not found" });
-      }
-      (req as any).authUser = { id: user.id, email: user.email, role: user.role, displayName: user.displayName };
-      next();
-    }).catch(() => {
-      res.status(500).json({ message: "Failed to verify user identity" });
-    });
-  }).catch(() => {
-    res.status(401).json({ message: "Invalid or expired token" });
-  });
-}
+// Role middleware (requireTutor, requireSuperAdmin, requireSupabaseAuth) is
+// imported from `./middleware/roles` so the legacy monolith and the new
+// per-domain modules under `./routes/*` share the same middleware
+// instances. See server/routes/README.md.
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -944,7 +900,7 @@ function sanitizeSubmittedAnswers(
  * Runs after a syllabus/examiner report PDF is uploaded.
  */
 async function extractDocumentIntelligence(doc: {
-  id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null;
+  id: number; board: string; syllabusCode: string; extractedText: string; documentType: string; subject: string | null; filename?: string | null;
 }): Promise<void> {
   const textSlice = doc.extractedText.slice(0, 6000);
 
@@ -956,6 +912,7 @@ async function extractDocumentIntelligence(doc: {
         syllabusCode: doc.syllabusCode,
         subject: doc.subject,
         extractedText: doc.extractedText,
+        filename: doc.filename ?? null,
       });
       if (skipped) {
         console.log(`[Doc Intelligence] Misconception extraction skipped for doc ${doc.id} (${reason})`);
@@ -1019,22 +976,75 @@ ${textSlice}`;
 async function updateMasteryFromSubmission(
   studentId: string,
   quizSubject: string | null,
-  questions: { id: number; correctAnswer: string; marks: number; topicTag: string | null; subtopicTag: string | null }[],
+  questions: {
+    id: number;
+    stem?: string;
+    correctAnswer: string;
+    marks: number;
+    topicTag: string | null;
+    subtopicTag: string | null;
+    subtopicId?: number | null;
+    learningRequirementId?: number | null;
+    commandWord?: string | null;
+  }[],
   studentAnswers: Record<string, string>,
 ): Promise<void> {
-  // Group by topic+subtopic
-  const groups: Record<string, { correct: number; total: number; marks: number; maxMarks: number }> = {};
+  // Phase 4.2 — bump per-command-word counters in parallel with the
+  // topic mastery rollup. Each apply is independent and shouldn't
+  // block mastery if it errors.
+  const cwSubject = quizSubject || "General";
+  void (async () => {
+    try {
+      const { applyCommandWordResult, extractCommandWordFromStem, normaliseCommandWord } = await import("./services/commandWordPerformance");
+      for (const q of questions) {
+        const word = normaliseCommandWord(q.commandWord ?? null) ?? extractCommandWordFromStem(q.stem ?? "");
+        if (!word) continue;
+        const answered = studentAnswers[String(q.id)];
+        const correct = !!answered && answered === q.correctAnswer;
+        await applyCommandWordResult({
+          studentId,
+          subject: cwSubject,
+          commandWord: word,
+          correct,
+          marks: q.marks,
+        });
+      }
+    } catch (err: any) {
+      console.error("[CommandWord Coach] Failed:", err?.message ?? err);
+    }
+  })();
+  // Group by (topic, subtopic, subtopicId, learningRequirementId). When a
+  // question is FK-linked to a learning requirement we roll up at that
+  // grain too — Phase 4.1 — so the mastery map can render
+  // sub-subtopic-level evidence.
+  interface Bucket {
+    correct: number;
+    total: number;
+    marks: number;
+    maxMarks: number;
+    topic: string;
+    subtopic: string;
+    subtopicId: number | null;
+    learningRequirementId: number | null;
+  }
+  const groups = new Map<string, Bucket>();
   for (const q of questions) {
     const topic = q.topicTag || "General";
     const subtopic = q.subtopicTag || "";
-    const key = `${topic}|||${subtopic}`;
-    if (!groups[key]) groups[key] = { correct: 0, total: 0, marks: 0, maxMarks: 0 };
-    groups[key].total += 1;
-    groups[key].maxMarks += q.marks;
+    const subtopicId = q.subtopicId ?? null;
+    const learningRequirementId = q.learningRequirementId ?? null;
+    const key = `${topic}|||${subtopic}|||${subtopicId ?? ""}|||${learningRequirementId ?? ""}`;
+    let bucket = groups.get(key);
+    if (!bucket) {
+      bucket = { correct: 0, total: 0, marks: 0, maxMarks: 0, topic, subtopic, subtopicId, learningRequirementId };
+      groups.set(key, bucket);
+    }
+    bucket.total += 1;
+    bucket.maxMarks += q.marks;
     const answered = studentAnswers[String(q.id)];
     if (answered === q.correctAnswer) {
-      groups[key].correct += 1;
-      groups[key].marks += q.marks;
+      bucket.correct += 1;
+      bucket.marks += q.marks;
     }
   }
 
@@ -1045,18 +1055,19 @@ async function updateMasteryFromSubmission(
   const priorByKey = new Map<string, { mastered: boolean; pct: number }>();
   for (const m of priorMastery) {
     if (m.subject !== subject) continue;
-    const k = `${m.topic}|||${m.subtopic ?? ""}`;
+    const k = `${m.topic}|||${m.subtopic ?? ""}|||${m.subtopicId ?? ""}|||${m.learningRequirementId ?? ""}`;
     priorByKey.set(k, { mastered: m.masteryAchieved || m.understandingPercent >= 80, pct: m.understandingPercent });
   }
 
-  for (const [key, stats] of Object.entries(groups)) {
-    const [topic, subtopic] = key.split("|||");
+  for (const [key, stats] of Array.from(groups.entries())) {
     const pct = stats.maxMarks > 0 ? Math.round((stats.marks / stats.maxMarks) * 100) : 0;
     await storage.upsertStudentTopicMastery({
       studentId,
       subject,
-      topic,
-      subtopic: subtopic || null,
+      topic: stats.topic,
+      subtopic: stats.subtopic || null,
+      subtopicId: stats.subtopicId,
+      learningRequirementId: stats.learningRequirementId,
       understandingPercent: pct,
       covered: true,
       tested: true,
@@ -1070,9 +1081,9 @@ async function updateMasteryFromSubmission(
       await storage.createStudentNotification({
         studentId,
         type: "milestone_mastery",
-        title: `Mastery in ${topic}`,
-        message: `Nice work — your accuracy on ${subject} → ${topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
-        payload: { subject, topic, subtopic: subtopic || null, percent: pct },
+        title: `Mastery in ${stats.topic}`,
+        message: `Nice work — your accuracy on ${subject} → ${stats.topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
+        payload: { subject, topic: stats.topic, subtopic: stats.subtopic || null, percent: pct },
       }).catch((err) => console.error("[Milestone Notification] failed:", err));
     }
   }
@@ -1080,7 +1091,7 @@ async function updateMasteryFromSubmission(
 
 async function runBackgroundGrading(
   reportId: number,
-  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number }[],
+  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number; targetMisconceptionIds?: number[] | null }[],
   studentAnswers: Record<string, string>,
   totalScore: number,
   maxPossibleScore: number,
@@ -1089,6 +1100,38 @@ async function runBackgroundGrading(
   const GRADING_TIMEOUT_MS = 180_000;
   try {
     console.log(`[SOMA Grading] Starting background AI grading for report ${reportId}`);
+
+    // Phase 2C — build per-answer diagnoses and roll up student
+    // misconceptions BEFORE prompting the AI grader, so we can hand the
+    // grader the matched examiner phrasing for any distractors that
+    // triggered a known misconception.
+    const gradedAnswers: GradedAnswer[] = questions.map((q) => {
+      const studentAnswer = studentAnswers[String(q.id)] || "";
+      const correctAnswer = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
+      return {
+        questionId: q.id,
+        studentAnswer,
+        correctAnswer,
+        targetMisconceptionIds: q.targetMisconceptionIds ?? [],
+      };
+    });
+    let diagnosisContext = "";
+    if (studentMeta?.studentId) {
+      try {
+        const diagResult = await buildAndPersistDiagnoses({
+          reportId,
+          studentId: studentMeta.studentId,
+          answers: gradedAnswers,
+        });
+        diagnosisContext = renderDiagnosesForFeedback(diagResult.diagnoses);
+        if (diagResult.matchedCount > 0) {
+          console.log(`[SOMA Grading] Report ${reportId} matched ${diagResult.matchedCount}/${diagResult.wrongCount} wrong answers to known examiner misconceptions.`);
+        }
+      } catch (err: any) {
+        // Diagnosis failures must never block the AI feedback.
+        console.warn(`[SOMA Grading] Diagnosis pass failed for report ${reportId}: ${err?.message ?? err}`);
+      }
+    }
 
     const breakdown = questions.map((q, idx) => {
       const questionNumber = idx + 1;
@@ -1113,12 +1156,13 @@ CRITICAL: When referencing specific questions, you MUST use the sequential quest
 Here is the question-by-question breakdown (numbered sequentially as they appear in the quiz):
 
 ${breakdown}
+${diagnosisContext}
 
 Provide:
 1. An overall performance summary
 2. Specific strengths demonstrated
 3. Areas needing improvement with concrete study suggestions — reference questions by their sequential number (e.g. "Question 3")
-4. For every incorrect response, include a 1-2 sentence explanation that starts with the exact label "Question X:" and briefly explains why the correct answer is right
+4. For every incorrect response, include a 1-2 sentence explanation that starts with the exact label "Question X:" and briefly explains why the correct answer is right. When the breakdown above flags an examiner-flagged misconception for that question, ALWAYS cite it explicitly (e.g. "Cambridge examiners have repeatedly flagged that students…") instead of writing a generic correction.
 5. Encouragement and next steps`;
 
     // Idempotency: a duplicate submission for the same report (e.g. browser
@@ -1304,6 +1348,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.use("/api/student", studentApiLimiter);
   app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
+
+  // Per-domain route modules (see server/routes/README.md). Registered
+  // before the legacy inline handlers below so any future domain takeover
+  // can shadow a route here without conflict.
+  registerDomainRoutes(app);
 
   app.post("/api/graph/render-svg", async (req, res) => {
     const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
@@ -2210,7 +2259,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // Get examiner misconceptions for a syllabus
+  // Get examiner misconceptions for a syllabus. Only approved insights are
+  // exposed to tutors — pending / rejected stay in the super-admin review
+  // queue (see server/routes/examinerInsightsReview.ts).
   app.get("/api/tutor/examiner-misconceptions", requireTutor, async (req, res) => {
     try {
       const { board, syllabusCode, topic } = req.query;
@@ -2218,6 +2269,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         board: board ? String(board) : undefined,
         syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
         topic: topic ? String(topic) : undefined,
+        status: "approved",
       });
       res.json(misconceptions);
     } catch (err: any) {
@@ -2794,7 +2846,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               board: subj.examBody, level: subj.level, syllabusCode: subj.syllabusCode, tutorId,
             });
             const misconceptions = await storage.listExaminerMisconceptions({
-              board: subj.examBody, syllabusCode: subj.syllabusCode,
+              board: subj.examBody, syllabusCode: subj.syllabusCode, status: "approved",
             });
             let examinerReportContext = "";
             if (misconceptions.length === 0) {
@@ -3981,28 +4033,8 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
-  // ─── Super Admin AI usage / health observability ──────────────────
-  // Aggregated, privacy-safe counters only. Raw prompts, raw model output,
-  // and raw idempotency keys are intentionally not exposed.
-  app.get("/api/super-admin/ai-usage", requireSuperAdmin, async (_req, res) => {
-    try {
-      const { report: usageReport } = await import("./services/aiUsageMetrics");
-      const { snapshot: healthSnapshot, currentHealthBackend } = await import("./services/aiHealth");
-      const { maxTokensTable } = await import("./services/aiCostGuards");
-      res.json({
-        usage: usageReport(),
-        health: {
-          backend: currentHealthBackend(),
-          providers: healthSnapshot(),
-        },
-        guardrails: {
-          maxTokensByTask: maxTokensTable(),
-        },
-      });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch AI usage" });
-    }
-  });
+  // /api/super-admin/ai-usage is registered by registerDomainRoutes(app) at
+  // the top of registerRoutes() — see server/routes/superAdminAiUsage.ts.
 
   // ─── Student Routes (Supabase JWT-protected) ────────────────────
 
@@ -4143,8 +4175,10 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
       const filter = { board, syllabusCode, subject };
       const t0 = performance.now();
+      // Only approved insights are visible to students. The fetcher passes
+      // status="approved" so the cache only ever holds vetted rows.
       const { rows, cacheHit, ms } = await cachedListExaminerMisconceptions(filter, () =>
-        storage.listExaminerMisconceptions(filter),
+        storage.listExaminerMisconceptions({ ...filter, status: "approved" }),
       );
       const elapsed = performance.now() - t0;
 
@@ -4608,6 +4642,7 @@ ${JSON.stringify({
         board: params.board,
         syllabusCode: params.syllabusCode,
         topic: params.topic,
+        status: "approved",
       });
 
       const topicInventory = await storage.listSyllabusTopicInventory({
@@ -4685,6 +4720,14 @@ ${JSON.stringify({
           : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
+      // Phase 2B — fetch approved examiner-misconception seeds for the
+      // selected subtopics (or fall back to the syllabus code).
+      const examinerSeeds: ExaminerSeed[] = await listApprovedSeeds({
+        subtopicIds: selectedSubtopicIds,
+        board,
+        syllabusCode,
+      });
+
       const result = await generateAuditedQuiz({
         topic,
         subject,
@@ -4696,6 +4739,7 @@ ${JSON.stringify({
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
         catalogueContext: catalogueContext ?? undefined,
+        examinerSeeds,
       });
 
       const quiz = await storage.createSomaQuiz({
@@ -4709,6 +4753,9 @@ ${JSON.stringify({
         isArchived: false,
       });
 
+      const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
+        ? (result.seedMisconceptionIds ?? null)
+        : null;
       const insertedQuestions = await storage.createSomaQuestions(
         result.questions.map((q) => ({
           quizId: quiz.id,
@@ -4717,6 +4764,7 @@ ${JSON.stringify({
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
+          targetMisconceptionIds,
         }))
       );
 
@@ -4778,6 +4826,13 @@ ${JSON.stringify({
           : [topic, subtopic, curriculumContext].filter(Boolean).join(" ").trim() || undefined,
       });
 
+      // Phase 2B — examiner-misconception seeds for distractor generation.
+      const examinerSeeds: ExaminerSeed[] = await listApprovedSeeds({
+        subtopicIds: selectedSubtopicIds,
+        board,
+        syllabusCode,
+      });
+
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
         copilotPrompt: curriculumContext,
@@ -4786,12 +4841,16 @@ ${JSON.stringify({
         difficultyDistribution: difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 },
         subtopic,
         catalogueContext: catalogueContext ?? undefined,
+        examinerSeeds,
       });
 
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
       const validAssignedStudentIds = requestedStudentIds.filter((id) => adoptedIds.has(id));
 
+      const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
+        ? (result.seedMisconceptionIds ?? null)
+        : null;
       const bundle = await storage.createSomaQuizBundle({
         quiz: {
           title: quizTitle,
@@ -4810,6 +4869,7 @@ ${JSON.stringify({
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
+          targetMisconceptionIds,
         })),
         assignedStudentIds: validAssignedStudentIds,
       });
@@ -4956,11 +5016,36 @@ ${JSON.stringify({
         quizSubject: quiz?.subject ?? null,
       }).catch(() => {});
 
-      // Auto-update topic mastery from this submission
+      // Phase 3.3 — mark any existing revision plans stale so the
+      // student is prompted to refresh after each new submission.
+      void (async () => {
+        try {
+          const { markPlansStale } = await import("./services/revisionPlanStore");
+          await markPlansStale(studentId, report.id);
+        } catch (err) {
+          /* never block submission on plan housekeeping */
+        }
+      })();
+
+      // Auto-update topic mastery from this submission. Threads the
+      // catalogue FKs (subtopicId, learningRequirementId) through so
+      // mastery rolls up at sub-subtopic grain when the question is
+      // linked to a learning requirement, plus the command word so the
+      // Command-Word Coach (Phase 4.2) can update its counters.
       updateMasteryFromSubmission(
         studentId,
         quiz?.subject || null,
-        allQuestions.map((q) => ({ id: q.id, correctAnswer: q.correctAnswer, marks: q.marks, topicTag: q.topicTag, subtopicTag: q.subtopicTag })),
+        allQuestions.map((q) => ({
+          id: q.id,
+          stem: q.stem,
+          correctAnswer: q.correctAnswer,
+          marks: q.marks,
+          topicTag: q.topicTag,
+          subtopicTag: q.subtopicTag,
+          subtopicId: q.subtopicId ?? null,
+          learningRequirementId: q.learningRequirementId ?? null,
+          commandWord: q.commandWord ?? null,
+        })),
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
@@ -5009,7 +5094,10 @@ ${JSON.stringify({
         }
       }
 
-      const questions = await storage.getSomaQuestionsByQuizId(report.quizId);
+      const [questions, diagnoses] = await Promise.all([
+        storage.getSomaQuestionsByQuizId(report.quizId),
+        (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
+      ]);
 
       res.json({
         report,
@@ -5021,6 +5109,10 @@ ${JSON.stringify({
           marks: q.marks,
           explanation: q.explanation,
         })),
+        // Phase 2C — per-question diagnoses, keyed by question id. The
+        // SomaQuizReview page renders an "Examiner-flagged" panel
+        // beneath any incorrect answer that matched a known misconception.
+        diagnoses,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

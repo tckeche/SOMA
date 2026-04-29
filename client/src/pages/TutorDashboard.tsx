@@ -14,7 +14,7 @@ import {
   TrendingDown, TrendingUp as TrendingUpIcon, Minus, Activity,
   FileText, Target, CheckCircle2,
   CalendarDays, ExternalLink,
-  Radar, Grid3X3, BarChart2,
+  Radar, Grid3X3, BarChart2, ClipboardCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -32,6 +32,8 @@ import {
   type DashboardStats,
 } from "@/components/dashboard-charts";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
+import { TutorExaminerInsightsReview } from "@/components/tutor/TutorExaminerInsightsReview";
+import { CohortMisconceptionHeatmap } from "@/components/tutor/CohortMisconceptionHeatmap";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface AIInsight {
@@ -185,7 +187,7 @@ export default function TutorDashboard() {
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "notifications">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "notifications" | "insights" | "cohort">("overview");
   // Student-first assign flow: pre-select a student and let the tutor pick a quiz.
   const [assignForStudent, setAssignForStudent] = useState<{ id: string; name: string } | null>(null);
   const [assignForStudentQuizId, setAssignForStudentQuizId] = useState<number | null>(null);
@@ -261,6 +263,18 @@ export default function TutorDashboard() {
     },
     enabled: !!userId,
     refetchInterval: 10000,
+  });
+
+  // Pending examiner-insight count for the "Insights" tab badge.
+  const { data: insightCounts } = useQuery<{ pending: number; approved: number; rejected: number }>({
+    queryKey: ["/api/tutor/examiner-insights/counts", userId],
+    queryFn: async () => {
+      const res = await authFetch("/api/tutor/examiner-insights/counts");
+      if (!res.ok) return { pending: 0, approved: 0, rejected: 0 };
+      return res.json();
+    },
+    enabled: !!userId,
+    refetchInterval: 60000,
   });
 
   const { data: cohortWeaknesses } = useQuery<{
@@ -580,6 +594,33 @@ export default function TutorDashboard() {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setActiveTab("insights")}
+                className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
+                  activeTab === "insights"
+                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground/80 border border-transparent"
+                }`}
+                data-testid="tab-tutor-insights"
+              >
+                <ClipboardCheck className="w-3.5 h-3.5" /> Insights to check
+                {(insightCounts?.pending ?? 0) > 0 && (
+                  <span className="text-[10px] font-bold tabular-nums bg-amber-500/20 text-amber-200 px-1.5 py-0.5 rounded-full border border-amber-500/25 leading-none">
+                    {insightCounts!.pending}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("cohort")}
+                className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
+                  activeTab === "cohort"
+                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground/80 border border-transparent"
+                }`}
+                data-testid="tab-tutor-cohort"
+              >
+                <Users className="w-3.5 h-3.5" /> Cohort heatmap
+              </button>
             </div>
 
             {/* ── NOTIFICATIONS TAB ──────────────────────────────── */}
@@ -663,6 +704,20 @@ export default function TutorDashboard() {
                 </FadeInSection>
               );
             })()}
+
+            {/* ── INSIGHTS TAB (tutor-scoped review queue) ───────── */}
+            {activeTab === "insights" && (
+              <FadeInSection>
+                <TutorExaminerInsightsReview />
+              </FadeInSection>
+            )}
+
+            {/* ── COHORT HEATMAP TAB (Phase 3.4) ─────────────────── */}
+            {activeTab === "cohort" && (
+              <FadeInSection>
+                <CohortMisconceptionHeatmap />
+              </FadeInSection>
+            )}
 
             {/* ── OVERVIEW TAB ───────────────────────────────────── */}
             {activeTab === "overview" && (<>

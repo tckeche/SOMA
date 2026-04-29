@@ -42,6 +42,12 @@ type SomaQuizBundleQuestionInput = {
   correctAnswer: string;
   explanation: string;
   marks?: number;
+  // Phase 2B optional fields — pass-through to soma_questions.
+  subtopicId?: number | null;
+  learningRequirementId?: number | null;
+  targetMisconceptionIds?: number[] | null;
+  commandWord?: string | null;
+  assessmentObjective?: string | null;
 };
 
 export interface TutorDashboardSummary {
@@ -159,6 +165,8 @@ export interface IStorage {
     subject: string;
     topic: string;
     subtopic?: string | null;
+    subtopicId?: number | null;
+    learningRequirementId?: number | null;
     understandingPercent: number;
     masteryAchieved?: boolean;
     covered?: boolean;
@@ -178,7 +186,7 @@ export interface IStorage {
 
   // Examiner misconception storage
   createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]>;
-  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]>;
+  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string; status?: string }): Promise<ExaminerMisconception[]>;
 
   // Syllabus topic inventory
   createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]>;
@@ -335,6 +343,8 @@ class DatabaseStorage implements IStorage {
     subject: string;
     topic: string;
     subtopic?: string | null;
+    subtopicId?: number | null;
+    learningRequirementId?: number | null;
     understandingPercent: number;
     masteryAchieved?: boolean;
     covered?: boolean;
@@ -356,6 +366,8 @@ class DatabaseStorage implements IStorage {
       subject: input.subject,
       topic: input.topic,
       subtopic: input.subtopic ?? null,
+      subtopicId: input.subtopicId ?? null,
+      learningRequirementId: input.learningRequirementId ?? null,
       understandingPercent: clampedPercent,
       masteryAchieved: mastered,
       covered: Boolean(input.covered),
@@ -460,12 +472,13 @@ class DatabaseStorage implements IStorage {
     return inserted;
   }
 
-  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string; status?: string }): Promise<ExaminerMisconception[]> {
     const conditions = [];
     if (filter.board) conditions.push(eq(examinerMisconceptions.board, filter.board));
     if (filter.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, filter.syllabusCode));
     if (filter.subject) conditions.push(sql`lower(${examinerMisconceptions.subject}) = lower(${filter.subject})`);
     if (filter.topic) conditions.push(eq(examinerMisconceptions.topic, filter.topic));
+    if (filter.status) conditions.push(eq(examinerMisconceptions.status, filter.status));
     if (conditions.length === 0) return this.database.select().from(examinerMisconceptions);
     return this.database.select().from(examinerMisconceptions).where(and(...conditions));
   }
@@ -1315,7 +1328,7 @@ class MemoryStorage implements IStorage {
   }
 
   async createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
-    const created = questionList.map((q) => ({
+    const created: SomaQuestion[] = questionList.map((q) => ({
       id: this.somaQuestionId++,
       quizId: q.quizId,
       stem: q.stem,
@@ -1328,6 +1341,11 @@ class MemoryStorage implements IStorage {
       topicTag: q.topicTag ?? null,
       subtopicTag: q.subtopicTag ?? null,
       difficultyTag: q.difficultyTag ?? null,
+      subtopicId: q.subtopicId ?? null,
+      learningRequirementId: q.learningRequirementId ?? null,
+      targetMisconceptionIds: (Array.isArray(q.targetMisconceptionIds) ? [...(q.targetMisconceptionIds as unknown as number[])] : null),
+      commandWord: q.commandWord ?? null,
+      assessmentObjective: q.assessmentObjective ?? null,
     }));
     this.somaQuestionsList.push(...created);
     return created;
@@ -1652,6 +1670,8 @@ class MemoryStorage implements IStorage {
     subject: string;
     topic: string;
     subtopic?: string | null;
+    subtopicId?: number | null;
+    learningRequirementId?: number | null;
     understandingPercent: number;
     masteryAchieved?: boolean;
     covered?: boolean;
@@ -1695,6 +1715,8 @@ class MemoryStorage implements IStorage {
       subject: input.subject,
       topic: input.topic,
       subtopic: input.subtopic || null,
+      subtopicId: input.subtopicId ?? null,
+      learningRequirementId: input.learningRequirementId ?? null,
       understandingPercent: clampedPercent,
       masteryAchieved: mastered,
       covered: Boolean(input.covered),
@@ -1766,7 +1788,24 @@ class MemoryStorage implements IStorage {
 
   async createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]> {
     const inserted = items.map((item) => {
-      const row: ExaminerMisconception = { id: this.examinerMisconceptionId++, extractedAt: new Date(), ...item, subject: item.subject ?? null, subtopic: item.subtopic ?? null, frequency: item.frequency ?? "common" };
+      const row: ExaminerMisconception = {
+        id: this.examinerMisconceptionId++,
+        extractedAt: new Date(),
+        ...item,
+        subject: item.subject ?? null,
+        subtopic: item.subtopic ?? null,
+        frequency: item.frequency ?? "common",
+        subtopicId: item.subtopicId ?? null,
+        learningRequirementId: item.learningRequirementId ?? null,
+        status: item.status ?? "approved",
+        reviewedById: item.reviewedById ?? null,
+        reviewedAt: item.reviewedAt ?? null,
+        reviewNotes: item.reviewNotes ?? null,
+        sourceQuote: item.sourceQuote ?? null,
+        sourcePage: item.sourcePage ?? null,
+        confidence: item.confidence ?? null,
+        examYear: item.examYear ?? null,
+      };
       this.examinerMisconceptionsList.push(row);
       return row;
     });
@@ -1778,12 +1817,13 @@ class MemoryStorage implements IStorage {
     return inserted;
   }
 
-  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string; status?: string }): Promise<ExaminerMisconception[]> {
     return this.examinerMisconceptionsList.filter((m) =>
       (!filter.board || m.board === filter.board) &&
       (!filter.syllabusCode || m.syllabusCode === filter.syllabusCode) &&
       (!filter.subject || (m.subject ?? "").toLowerCase() === filter.subject.toLowerCase()) &&
-      (!filter.topic || m.topic === filter.topic)
+      (!filter.topic || m.topic === filter.topic) &&
+      (!filter.status || m.status === filter.status)
     );
   }
 

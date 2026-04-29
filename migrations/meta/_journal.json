@@ -8,6 +8,41 @@
       "when": 1776727562195,
       "tag": "0000_catalogue",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777484305657,
+      "tag": "0001_phase1_fk_and_ai_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777485224337,
+      "tag": "0002_phase2_examiner_loop",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777490336013,
+      "tag": "0003_phase2_misconception_year",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777491200084,
+      "tag": "0004_phase3_revision_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777491814474,
+      "tag": "0005_phase4_command_word_performance",
+      "breakpoints": true
     }
   ]
 }

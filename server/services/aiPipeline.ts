@@ -11,6 +11,7 @@ import { validateMathQuestion } from "./mathValidator";
 import { recordCall, newRequestId } from "../utils/aiTelemetry";
 import * as health from "./aiHealth";
 import { clampMaxTokens } from "./aiCostGuards";
+import { renderSeedsForPrompt } from "./examinerDistractorSeeds";
 import { describePrompt, PromptIds } from "./aiPromptRegistry";
 import { validateAgainstSchema } from "./aiContracts";
 
@@ -84,6 +85,10 @@ export interface AuditedQuizResult {
   questions: QuizResult["questions"];
   warnings: PipelineWarning[];
   telemetry: PipelineTelemetry;
+  /** Examiner-misconception ids the batch was seeded against (Phase 2B).
+   *  Persist on each question's `target_misconception_ids` so the marker
+   *  can cite the matched insight. */
+  seedMisconceptionIds: number[];
 }
 
 export interface SomaGenerationContext {
@@ -97,6 +102,14 @@ export interface SomaGenerationContext {
   subtopic?: string;
   difficultyDistribution?: { easy: number; medium: number; hard: number };
   catalogueContext?: CatalogueCopilotContext;
+  /**
+   * Phase 2B — approved examiner-misconception seeds. When present, the
+   * maker prompt asks for distractors based on these known student
+   * errors. The ids are persisted as `target_misconception_ids` on every
+   * question in this batch so the marker can attribute wrong answers to
+   * specific misconceptions.
+   */
+  examinerSeeds?: import("./examinerDistractorSeeds").ExaminerSeed[];
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -281,7 +294,10 @@ Requirements:
 }
 
 function buildMakerUserPrompt(context: SomaGenerationContext): string {
-  return `Topic: ${context.topic}${catalogueBlock(context)}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
+  const seedsBlock = context.examinerSeeds && context.examinerSeeds.length > 0
+    ? "\n\n" + renderSeedsForPrompt(context.examinerSeeds)
+    : "";
+  return `Topic: ${context.topic}${catalogueBlock(context)}${seedsBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
 }
 
 function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
@@ -594,6 +610,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       questions: finalValidated.questions,
       warnings: [...allWarnings, ...finalValidated.warnings],
       telemetry: { ...lastTelemetry, totalDurationMs: Date.now() - overallStart },
+      seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
     };
   }
 
@@ -651,6 +668,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       polishModel: null,
       totalDurationMs: Date.now() - overallStart,
     },
+    seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
   };
 }
 

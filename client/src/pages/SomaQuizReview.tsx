@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
-  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check,
+  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check, Quote,
 } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ReportPdfView, { type ReportPdfData } from "@/components/student/ReportPdfView";
@@ -43,9 +43,28 @@ interface ReviewReport {
   };
 }
 
+interface QuestionDiagnosis {
+  category: string;
+  correct: boolean;
+  rationale: string | null;
+  misconception: {
+    id: number;
+    misconception: string;
+    studentError: string;
+    correctApproach: string;
+    frequency: string;
+    sourceQuote: string | null;
+    sourcePage: number | null;
+    examYear: number | null;
+  } | null;
+}
+
 interface ReviewData {
   report: ReviewReport;
   questions: ReviewQuestion[];
+  /** Phase 2C — per-question diagnoses keyed by question id. Optional so
+   *  reports created before Phase 2 still render. */
+  diagnoses?: Record<string, QuestionDiagnosis>;
 }
 
 export default function SomaQuizReview() {
@@ -373,6 +392,25 @@ export default function SomaQuizReview() {
                     );
                   })}
                 </div>
+
+                {(() => {
+                  const diag = data.diagnoses ? data.diagnoses[String(q.id)] : null;
+                  if (!diag || !diag.misconception || diag.correct) return null;
+                  const m = diag.misconception;
+                  const yearLabel = m.examYear ? `in ${m.examYear}` : "before";
+                  return (
+                    <div
+                      className="mt-5 p-4 rounded-xl border-l-4 bg-rose-500/10 border-l-rose-500"
+                      data-testid={`review-examiner-citation-${idx + 1}`}
+                    >
+                      <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-rose-400">
+                        <Quote className="w-4 h-4" />
+                        Cambridge examiners flagged this {yearLabel}
+                      </p>
+                      <p className="text-sm text-foreground">{m.misconception}</p>
+                    </div>
+                  );
+                })()}
 
                 {q.explanation && (
                   <div
