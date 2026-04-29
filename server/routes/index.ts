@@ -9,7 +9,9 @@
  */
 import type { Express } from "express";
 import { registerSuperAdminAiUsageRoutes } from "./superAdminAiUsage";
+import { registerExaminerInsightsReviewRoutes } from "./examinerInsightsReview";
 
 export function registerDomainRoutes(app: Express): void {
   registerSuperAdminAiUsageRoutes(app);
+  registerExaminerInsightsReviewRoutes(app);
 }

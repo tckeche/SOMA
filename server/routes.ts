@@ -2169,7 +2169,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // Get examiner misconceptions for a syllabus
+  // Get examiner misconceptions for a syllabus. Only approved insights are
+  // exposed to tutors — pending / rejected stay in the super-admin review
+  // queue (see server/routes/examinerInsightsReview.ts).
   app.get("/api/tutor/examiner-misconceptions", requireTutor, async (req, res) => {
     try {
       const { board, syllabusCode, topic } = req.query;
@@ -2177,6 +2179,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         board: board ? String(board) : undefined,
         syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
         topic: topic ? String(topic) : undefined,
+        status: "approved",
       });
       res.json(misconceptions);
     } catch (err: any) {
@@ -2753,7 +2756,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               board: subj.examBody, level: subj.level, syllabusCode: subj.syllabusCode, tutorId,
             });
             const misconceptions = await storage.listExaminerMisconceptions({
-              board: subj.examBody, syllabusCode: subj.syllabusCode,
+              board: subj.examBody, syllabusCode: subj.syllabusCode, status: "approved",
             });
             let examinerReportContext = "";
             if (misconceptions.length === 0) {
@@ -4082,8 +4085,10 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
       const filter = { board, syllabusCode, subject };
       const t0 = performance.now();
+      // Only approved insights are visible to students. The fetcher passes
+      // status="approved" so the cache only ever holds vetted rows.
       const { rows, cacheHit, ms } = await cachedListExaminerMisconceptions(filter, () =>
-        storage.listExaminerMisconceptions(filter),
+        storage.listExaminerMisconceptions({ ...filter, status: "approved" }),
       );
       const elapsed = performance.now() - t0;
 
@@ -4547,6 +4552,7 @@ ${JSON.stringify({
         board: params.board,
         syllabusCode: params.syllabusCode,
         topic: params.topic,
+        status: "approved",
       });
 
       const topicInventory = await storage.listSyllabusTopicInventory({

@@ -180,7 +180,7 @@ export interface IStorage {
 
   // Examiner misconception storage
   createExaminerMisconceptions(items: InsertExaminerMisconception[]): Promise<ExaminerMisconception[]>;
-  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]>;
+  listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string; status?: string }): Promise<ExaminerMisconception[]>;
 
   // Syllabus topic inventory
   createSyllabusTopicInventory(items: InsertSyllabusTopicInventoryItem[]): Promise<SyllabusTopicInventoryItem[]>;
@@ -466,12 +466,13 @@ class DatabaseStorage implements IStorage {
     return inserted;
   }
 
-  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string; status?: string }): Promise<ExaminerMisconception[]> {
     const conditions = [];
     if (filter.board) conditions.push(eq(examinerMisconceptions.board, filter.board));
     if (filter.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, filter.syllabusCode));
     if (filter.subject) conditions.push(sql`lower(${examinerMisconceptions.subject}) = lower(${filter.subject})`);
     if (filter.topic) conditions.push(eq(examinerMisconceptions.topic, filter.topic));
+    if (filter.status) conditions.push(eq(examinerMisconceptions.status, filter.status));
     if (conditions.length === 0) return this.database.select().from(examinerMisconceptions);
     return this.database.select().from(examinerMisconceptions).where(and(...conditions));
   }
@@ -1809,12 +1810,13 @@ class MemoryStorage implements IStorage {
     return inserted;
   }
 
-  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string }): Promise<ExaminerMisconception[]> {
+  async listExaminerMisconceptions(filter: { board?: string; syllabusCode?: string; subject?: string; topic?: string; status?: string }): Promise<ExaminerMisconception[]> {
     return this.examinerMisconceptionsList.filter((m) =>
       (!filter.board || m.board === filter.board) &&
       (!filter.syllabusCode || m.syllabusCode === filter.syllabusCode) &&
       (!filter.subject || (m.subject ?? "").toLowerCase() === filter.subject.toLowerCase()) &&
-      (!filter.topic || m.topic === filter.topic)
+      (!filter.topic || m.topic === filter.topic) &&
+      (!filter.status || m.status === filter.status)
     );
   }
 
