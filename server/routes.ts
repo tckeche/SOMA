@@ -3984,13 +3984,27 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
   // ─── Super Admin AI usage / health observability ──────────────────
   // Aggregated, privacy-safe counters only. Raw prompts, raw model output,
   // and raw idempotency keys are intentionally not exposed.
-  app.get("/api/super-admin/ai-usage", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/ai-usage", requireSuperAdmin, async (req, res) => {
     try {
       const { report: usageReport } = await import("./services/aiUsageMetrics");
       const { snapshot: healthSnapshot, currentHealthBackend } = await import("./services/aiHealth");
       const { maxTokensTable } = await import("./services/aiCostGuards");
+      const { getHistoricalUsage } = await import("./services/aiUsageQueries");
+
+      // ?days=N (default 30, clamped 1..365). Historical view uses ai_usage_logs;
+      // the in-memory `usage` block remains the live counter snapshot.
+      const daysRaw = Number(req.query.days);
+      const days = Number.isFinite(daysRaw) ? Math.max(1, Math.min(365, Math.floor(daysRaw))) : 30;
+      const since = new Date();
+      since.setUTCDate(since.getUTCDate() - days);
+      since.setUTCHours(0, 0, 0, 0);
+
+      const historical = await getHistoricalUsage({ since });
+
       res.json({
         usage: usageReport(),
+        historical,
+        rangeDays: days,
         health: {
           backend: currentHealthBackend(),
           providers: healthSnapshot(),

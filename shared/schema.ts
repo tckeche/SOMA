@@ -612,6 +612,47 @@ export type LevelTier = (typeof LEVEL_TIER_VALUES)[number];
 export const CORE_OR_EXTENDED_VALUES = ["core", "extended", "practical"] as const;
 export type CoreOrExtended = (typeof CORE_OR_EXTENDED_VALUES)[number];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AI usage log — durable per-call telemetry for the super-admin spend dashboard.
+//
+// One row per AI call (success or failure). The in-memory aggregator in
+// `server/services/aiUsageMetrics.ts` keeps live counters; this table is the
+// historical record so the super-admin dashboard can show spend by tutor /
+// student / day across process restarts.
+//
+// Privacy: we deliberately store ONLY counters and safe metadata. No raw
+// prompt, no raw response, no idempotency key, no request body. The
+// telemetry envelope already enforces a 200-char preview elsewhere; we drop
+// even that here.
+// ─────────────────────────────────────────────────────────────────────────────
+export const aiUsageLogs = pgTable("ai_usage_logs", {
+  id: serial("id").primaryKey(),
+  // SHA-256 prefix from aiTelemetry.recordCall for cross-referencing logs.
+  requestId: text("request_id"),
+  parentRequestId: text("parent_request_id"),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  taskType: text("task_type"),
+  promptVersion: text("prompt_version"),
+  // App-level operation (e.g. "quiz.generate", "report.grade", "examiner.extract").
+  route: text("route"),
+  // Owning user for spend attribution. NOT a hard FK — telemetry must never
+  // fail because a user row was deleted.
+  userId: uuid("user_id"),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  // Stored in micro-USD (1 USD = 1_000_000) to avoid float drift; convert in
+  // the read API. Nullable when the price table has no entry for the model.
+  costMicroUsd: integer("cost_micro_usd"),
+  latencyMs: integer("latency_ms").notNull().default(0),
+  success: boolean("success").notNull().default(true),
+  validationFailed: boolean("validation_failed").notNull().default(false),
+  parseFailed: boolean("parse_failed").notNull().default(false),
+  cached: boolean("cached").notNull().default(false),
+  retryCount: integer("retry_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ── Relations ───────────────────────────────────────────────────────────────
 
 export const examiningBodiesRelations = relations(examiningBodies, ({ many }) => ({
@@ -952,6 +993,10 @@ export type InsertAssessmentObjective = z.infer<typeof insertAssessmentObjective
 export const insertAssessmentObjectiveCompetencySchema = createInsertSchema(assessmentObjectiveCompetencies).omit({ id: true });
 export type AssessmentObjectiveCompetency = typeof assessmentObjectiveCompetencies.$inferSelect;
 export type InsertAssessmentObjectiveCompetency = z.infer<typeof insertAssessmentObjectiveCompetencySchema>;
+
+export const insertAiUsageLogSchema = createInsertSchema(aiUsageLogs).omit({ id: true, createdAt: true });
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
+export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables.
