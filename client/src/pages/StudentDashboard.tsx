@@ -20,6 +20,7 @@ import AssignmentsList from "@/components/student/AssignmentsList";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 import { SyllabusMasteryMap } from "@/components/SyllabusMasteryMap";
 import { MarkLossPredictor } from "@/components/MarkLossPredictor";
+import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import type { DashboardReminder, StudentDashboardPayload } from "@/types/studentDashboard";
 
 interface StudyTipResponse {
@@ -273,6 +274,9 @@ export default function StudentDashboard() {
 
                 {/* 5a. Mark-loss predictor (Phase 3.2) */}
                 <MarkLossPredictor />
+
+                {/* 5a2. Revision plan (Phase 3.3) */}
+                <RevisionPlanCard />
 
                 {/* 5b. Syllabus mastery map (Phase 3.1) */}
                 <SyllabusMasteryMap />

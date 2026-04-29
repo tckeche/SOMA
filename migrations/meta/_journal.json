@@ -29,6 +29,13 @@
       "when": 1777490336013,
       "tag": "0003_phase2_misconception_year",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777491200084,
+      "tag": "0004_phase3_revision_plans",
+      "breakpoints": true
     }
   ]
 }

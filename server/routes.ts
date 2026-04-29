@@ -4962,6 +4962,17 @@ ${JSON.stringify({
         quizSubject: quiz?.subject ?? null,
       }).catch(() => {});
 
+      // Phase 3.3 — mark any existing revision plans stale so the
+      // student is prompted to refresh after each new submission.
+      void (async () => {
+        try {
+          const { markPlansStale } = await import("./services/revisionPlanStore");
+          await markPlansStale(studentId, report.id);
+        } catch (err) {
+          /* never block submission on plan housekeeping */
+        }
+      })();
+
       // Auto-update topic mastery from this submission
       updateMasteryFromSubmission(
         studentId,

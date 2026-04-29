@@ -723,6 +723,62 @@ export const studentMisconceptions = pgTable("student_misconceptions", {
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 3.3 — Personal Revision Plan.
+//
+// One plan per (student, syllabus). The plan body lives in `weeks` as a
+// structured jsonb document; everything else is metadata so we can mark
+// the plan stale when the student submits a new quiz, and regenerate on
+// demand.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface RevisionPlanSession {
+  topic: string;
+  subtopic: string | null;
+  durationMinutes: number;
+  type: "drill" | "review" | "exam_practice" | "concept_recap" | "examiner_misconception";
+  rationale: string;
+  understandingPercent: number;
+  examinerInsightCount: number;
+}
+
+export interface RevisionPlanWeek {
+  weekNumber: number;
+  label: string;
+  focus: string;
+  sessions: RevisionPlanSession[];
+  totalMinutes: number;
+}
+
+export interface RevisionPlanBody {
+  examDate: string | null;
+  weekHours: number;
+  weeks: RevisionPlanWeek[];
+  summary: string;
+  weakAreas: Array<{ topic: string; understandingPercent: number }>;
+}
+
+export const revisionPlans = pgTable("revision_plans", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  examBody: text("exam_body").notNull(),
+  syllabusCode: text("syllabus_code").notNull(),
+  level: text("level").notNull(),
+  examDate: timestamp("exam_date"),
+  weekHours: integer("week_hours").notNull().default(6),
+  weeks: jsonb("weeks").$type<RevisionPlanWeek[]>().notNull().default([]),
+  summary: text("summary").notNull().default(""),
+  weakAreas: jsonb("weak_areas").$type<Array<{ topic: string; understandingPercent: number }>>().notNull().default([]),
+  // Stale flag — set whenever the student submits a new quiz. UI shows a
+  // "Refresh plan" prompt; user has to click it to regenerate.
+  stale: boolean("stale").notNull().default(false),
+  lastReportId: integer("last_report_id").references(() => somaReports.id, { onDelete: "set null" }),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("revision_plans_unique_idx").on(t.studentId, t.subject, t.syllabusCode, t.level),
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AI usage log — durable per-call telemetry for the super-admin spend dashboard.
 //
 // One row per AI call (success or failure). The in-memory aggregator in
@@ -1107,6 +1163,10 @@ export type InsertAssessmentObjectiveCompetency = z.infer<typeof insertAssessmen
 export const insertAiUsageLogSchema = createInsertSchema(aiUsageLogs).omit({ id: true, createdAt: true });
 export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
 export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
+
+export const insertRevisionPlanSchema = createInsertSchema(revisionPlans).omit({ id: true, generatedAt: true, updatedAt: true });
+export type RevisionPlan = typeof revisionPlans.$inferSelect;
+export type InsertRevisionPlan = z.infer<typeof insertRevisionPlanSchema>;
 
 export const insertAnswerDiagnosisSchema = createInsertSchema(answerDiagnoses).omit({ id: true, createdAt: true });
 export type AnswerDiagnosis = typeof answerDiagnoses.$inferSelect;
