@@ -2018,18 +2018,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  const studentSubjectPayloadSchema = z.object({
+    subject: z.string().min(1),
+    examBody: z.string().min(1),
+    syllabusCode: z.string().min(1),
+    level: z.string().min(1),
+  });
+
   app.post("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const payload = z.object({
-        subject: z.string().min(1),
-        examBody: z.string().min(1),
-        syllabusCode: z.string().min(1),
-        level: z.string().min(1),
-      }).parse(req.body || {});
+      const payload = studentSubjectPayloadSchema.parse(req.body || {});
       const row = await storage.addStudentSubject({ studentId, ...payload });
       res.status(201).json(row);
     } catch (err: any) {
@@ -2045,12 +2047,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
       const adopted = await storage.getAdoptedStudents(tutorId);
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const payload = z.object({
-        subject: z.string().min(1),
-        examBody: z.string().min(1),
-        syllabusCode: z.string().min(1),
-        level: z.string().min(1),
-      }).parse(req.body || {});
+      const payload = studentSubjectPayloadSchema.parse(req.body || {});
       const row = await storage.updateStudentSubject(subjectId, studentId, payload);
       if (!row) return res.status(404).json({ message: "Student subject not found" });
       res.json(row);

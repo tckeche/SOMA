@@ -31,7 +31,7 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useChartPalette } from "@/lib/chartTheme";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
-import { toProperCase, formatDuration } from "@/lib/utils";
+import { toProperCase, formatDuration, getInitials } from "@/lib/utils";
 
 const GP = "glass-panel-elite";
 
@@ -280,7 +280,7 @@ export default function TutorStudentDetail() {
   const stats = report?.stats;
   const assignments = report?.assignments || [];
   const displayName = toProperCase(student?.displayName || student?.email?.split("@")[0] || "Student");
-  const initials = displayName.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
+  const initials = getInitials(displayName);
 
   const topicPerformance = useMemo(() => {
     const map: Record<string, { score: number; max: number; count: number; scores: number[]; lastDate: string | null }> = {};

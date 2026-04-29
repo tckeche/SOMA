@@ -46,6 +46,7 @@ export interface DashboardStats {
   cohortAverages: { subject: string; average: number; count: number }[];
   recentSubmissions: {
     reportId: number;
+    studentId: string;
     studentName: string;
     score: number;
     quizTitle: string;

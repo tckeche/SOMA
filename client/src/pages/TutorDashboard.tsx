@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, getInitials } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import {
   LogOut, Users, BookOpen, Plus, X,
@@ -29,47 +29,10 @@ import {
   CompletionDonutChart,
   WorkloadHeatmap,
   ActivityTimelineChart,
+  type DashboardStats,
 } from "@/components/dashboard-charts";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
-
-interface DashboardStats {
-  totalStudents: number;
-  totalQuizzes: number;
-  cohortAverages: { subject: string; average: number; count: number }[];
-  recentSubmissions: {
-    reportId: number;
-    studentId: string;
-    studentName: string;
-    score: number;
-    quizTitle: string;
-    subject: string | null;
-    createdAt: string;
-    startedAt: string | null;
-    completedAt: string | null;
-  }[];
-  pendingAssignments: {
-    assignmentId: number;
-    quizId: number;
-    quizTitle: string;
-    subject: string | null;
-    studentId: string;
-    studentName: string;
-    dueDate: string | null;
-    createdAt: string;
-  }[];
-  studentInsights: {
-    studentId: string;
-    studentName: string;
-    assigned: number;
-    completed: number;
-    awaiting: number;
-    trend: "improving" | "declining" | "stable";
-    weakTopics: string[];
-  }[];
-  belowThresholdCount: number;
-  weakestTopic: string | null;
-}
 
 interface AIInsight {
   name: string;
@@ -229,7 +192,7 @@ export default function TutorDashboard() {
 
   const { session, userId } = useSupabaseSession();
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
-  const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+  const initials = getInitials(displayName);
 
   const { data: stats, isLoading, isError: statsError, dataUpdatedAt } = useQuery<DashboardStats>({
     queryKey: ["/api/tutor/dashboard-stats", userId],
@@ -1151,7 +1114,7 @@ export default function TutorDashboard() {
                   {adoptedStudents.map((student) => {
                     const nameOnly = (student.displayName || "").trim();
                     const studentLabel = nameOnly || "Student";
-                    const si = studentLabel.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
+                    const si = getInitials(studentLabel);
                     return (
                       <button
                         key={student.id}
@@ -1347,7 +1310,7 @@ function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: Pl
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFlipped((p) => !p); }
   }, []);
 
-  const si = s.studentName.split(" ").map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2);
+  const si = getInitials(s.studentName);
   const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
   const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
   const avatarGradient = AVATAR_GRADIENTS[index % AVATAR_GRADIENTS.length];

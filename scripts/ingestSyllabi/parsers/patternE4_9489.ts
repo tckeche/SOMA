@@ -35,7 +35,7 @@ import {
   matchDash,
   sliceBetween,
   toParsedSyllabus,
-} from "./patternE4";
+} from "./patternE4_helpers";
 import { collapseWhitespace } from "./shared";
 
 const SECTION_START = /^3\s+Subject content$/;
