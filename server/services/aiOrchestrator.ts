@@ -2,6 +2,15 @@ import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import {
+  newRequestId,
+  hashPayload,
+  recordCall,
+  approxTokens,
+} from "../utils/aiTelemetry";
+import * as health from "./aiHealth";
+import * as cache from "./aiCache";
+import { clampMaxTokens } from "./aiCostGuards";
 
 interface ModelConfig {
   provider: "google" | "openai" | "anthropic" | "deepseek";
@@ -181,11 +190,13 @@ async function callAnthropic(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  expectedSchema?: any
+  expectedSchema?: any,
+  maxTokens?: number,
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
   const client = new Anthropic({ apiKey });
+  const cappedMaxTokens = maxTokens && maxTokens > 0 ? maxTokens : 16384;
 
   if (expectedSchema) {
     const resolved = resolveJsonSchema(expectedSchema);
@@ -197,7 +208,7 @@ async function callAnthropic(
 
     const response = await client.messages.create({
       model,
-      max_tokens: 16384,
+      max_tokens: cappedMaxTokens,
       temperature: 0.1,
       system: systemPrompt,
       tools: [toolDef as any],
@@ -214,7 +225,7 @@ async function callAnthropic(
 
   const response = await client.messages.create({
     model,
-    max_tokens: 16384,
+    max_tokens: cappedMaxTokens,
     temperature: 0.1,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
@@ -264,11 +275,40 @@ export interface AIMetadata {
   provider: string;
   model: string;
   durationMs: number;
+  requestId?: string;
+  promptVersion?: string;
+  promptHash?: string;
+  retryCount?: number;
+  cached?: boolean;
+  taskType?: string;
 }
 
 export interface AIResult {
   data: string;
   metadata: AIMetadata;
+}
+
+/**
+ * Optional per-call controls. All fields are additive — omitting the options
+ * argument preserves existing behaviour exactly.
+ */
+export interface AICallOptions {
+  /** Idempotency key. If supplied, identical requests return the cached
+   *  result instead of re-running inference. */
+  idempotencyKey?: string;
+  /** Mark this call as deterministic and cacheable for `ttlMs` ms. */
+  cacheable?: boolean;
+  cacheTtlMs?: number;
+  /** Task type — drives cost guardrails (max_tokens caps). */
+  taskType?: string;
+  /** Stable identifier for the prompt; recorded in telemetry. */
+  promptVersion?: string;
+  /** Correlation id linking together AI calls within one request. */
+  parentRequestId?: string;
+  /** Prompt registry id for telemetry (e.g. "soma.maker"). */
+  promptId?: string;
+  /** Override max_tokens for providers that need it (clamped by guardrails). */
+  maxTokens?: number;
 }
 
 function getProviderTimeoutMs(provider: string): number {
@@ -298,11 +338,72 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 export async function generateWithFallback(
   systemPrompt: string,
   userPrompt: string,
-  expectedSchema?: any
+  expectedSchema?: any,
+  options?: AICallOptions,
 ): Promise<AIResult> {
-  for (const config of AI_FALLBACK_CHAIN) {
+  const parentRequestId = options?.parentRequestId ?? newRequestId();
+  const promptHash = hashPayload(systemPrompt, " ", userPrompt);
+  const taskType = options?.taskType;
+  const maxTokensCap = clampMaxTokens(options?.maxTokens, taskType);
+
+  // ── Idempotency: identical request_key returns the cached result. ──────
+  if (options?.idempotencyKey) {
+    const idemKey = cache.buildCacheKey({
+      scope: "idempotency",
+      inputHash: hashPayload(promptHash, " ", options.idempotencyKey),
+      promptVersion: options.promptVersion,
+      model: null,
+    });
+    const cached = cache.get<AIResult>(idemKey);
+    if (cached) {
+      return { ...cached, metadata: { ...cached.metadata, cached: true, requestId: parentRequestId } };
+    }
+    const fresh = await runChain(systemPrompt, userPrompt, expectedSchema, options, parentRequestId, promptHash, maxTokensCap);
+    cache.set(idemKey, fresh, options.cacheTtlMs ?? cache.CacheTTL.IDEMPOTENCY);
+    return fresh;
+  }
+
+  // ── Optional deterministic-subflow caching. ────────────────────────────
+  if (options?.cacheable) {
+    const cacheKey = cache.buildCacheKey({
+      scope: "subflow",
+      inputHash: promptHash,
+      promptVersion: options.promptVersion,
+      model: null,
+    });
+    const cached = cache.get<AIResult>(cacheKey);
+    if (cached) {
+      return { ...cached, metadata: { ...cached.metadata, cached: true, requestId: parentRequestId } };
+    }
+    const fresh = await runChain(systemPrompt, userPrompt, expectedSchema, options, parentRequestId, promptHash, maxTokensCap);
+    cache.set(cacheKey, fresh, options.cacheTtlMs ?? cache.CacheTTL.VERIFIER);
+    return fresh;
+  }
+
+  return runChain(systemPrompt, userPrompt, expectedSchema, options, parentRequestId, promptHash, maxTokensCap);
+}
+
+async function runChain(
+  systemPrompt: string,
+  userPrompt: string,
+  expectedSchema: any | undefined,
+  options: AICallOptions | undefined,
+  parentRequestId: string,
+  promptHash: string,
+  maxTokensCap: number,
+): Promise<AIResult> {
+  const orderedChain = health.reorderByHealth(AI_FALLBACK_CHAIN);
+  let attempt = 0;
+
+  for (const config of orderedChain) {
+    const requestId = newRequestId();
+    const startTime = Date.now();
+    let endTime = startTime;
+    let timedOut = false;
+    let raw: string | null = null;
+    let errorMessage: string | null = null;
+
     try {
-      const startTime = Date.now();
       let result: string;
       const timeoutLabel = `${config.provider}/${config.model}`;
       const timeoutMs = getProviderTimeoutMs(config.provider);
@@ -315,12 +416,13 @@ export async function generateWithFallback(
           break;
         case "anthropic": {
           const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+          const anthropicMaxTokens = Math.min(maxTokensCap || 4096, 4096);
 
           let anthropicResponse: any;
           if (expectedSchema) {
             const msg = await withTimeout(anthropic.messages.create({
               model: config.model,
-              max_tokens: 4096,
+              max_tokens: anthropicMaxTokens,
               temperature: 0.1,
               system: systemPrompt,
               messages: [{ role: "user", content: userPrompt }],
@@ -338,7 +440,7 @@ export async function generateWithFallback(
           } else {
             const msg = await withTimeout(anthropic.messages.create({
               model: config.model,
-              max_tokens: 4096,
+              max_tokens: anthropicMaxTokens,
               temperature: 0.1,
               system: systemPrompt,
               messages: [{ role: "user", content: userPrompt }],
@@ -347,8 +449,8 @@ export async function generateWithFallback(
             anthropicResponse = textBlock.type === "text" ? textBlock.text : "";
           }
 
-          const anthropicData = typeof anthropicResponse === "string" ? anthropicResponse : JSON.stringify(anthropicResponse);
-          return { data: anthropicData, metadata: { provider: config.provider, model: config.model, durationMs: Date.now() - startTime } };
+          result = typeof anthropicResponse === "string" ? anthropicResponse : JSON.stringify(anthropicResponse);
+          break;
         }
         case "deepseek":
           result = await withTimeout(callDeepSeek(config.model, systemPrompt, userPrompt, expectedSchema), timeoutMs, timeoutLabel);
@@ -356,13 +458,71 @@ export async function generateWithFallback(
         default:
           continue;
       }
-      const durationMs = Date.now() - startTime;
+      endTime = Date.now();
+      raw = result;
+      const durationMs = endTime - startTime;
+
+      health.recordSuccess(config.provider, config.model, durationMs);
+      recordCall({
+        requestId,
+        parentRequestId,
+        idempotencyKey: options?.idempotencyKey ?? null,
+        provider: config.provider,
+        model: config.model,
+        taskType: options?.taskType ?? null,
+        promptVersion: options?.promptVersion ?? null,
+        systemPrompt,
+        userPrompt,
+        startedAt: startTime,
+        endedAt: endTime,
+        retryCount: attempt,
+        timedOut: false,
+        rawResponse: result,
+        parse: { status: "skipped" },
+        validation: { status: "skipped" },
+        outputTokens: approxTokens(result),
+      });
+
       return {
         data: result,
-        metadata: { provider: config.provider, model: config.model, durationMs },
+        metadata: {
+          provider: config.provider,
+          model: config.model,
+          durationMs,
+          requestId,
+          promptVersion: options?.promptVersion,
+          promptHash,
+          retryCount: attempt,
+          taskType: options?.taskType,
+          cached: false,
+        },
       };
     } catch (error: any) {
-      console.warn(`[${config.provider} - ${config.model}] failed: ${error.message}. Attempting next model...`);
+      endTime = Date.now();
+      errorMessage = error?.message || String(error);
+      timedOut = /timed out/i.test(errorMessage || "");
+      health.recordFailure(config.provider, config.model, timedOut ? "timeout" : "other");
+      recordCall({
+        requestId,
+        parentRequestId,
+        idempotencyKey: options?.idempotencyKey ?? null,
+        provider: config.provider,
+        model: config.model,
+        taskType: options?.taskType ?? null,
+        promptVersion: options?.promptVersion ?? null,
+        systemPrompt,
+        userPrompt,
+        startedAt: startTime,
+        endedAt: endTime,
+        retryCount: attempt,
+        timedOut,
+        rawResponse: raw,
+        parse: { status: raw ? "skipped" : "skipped" },
+        validation: { status: "skipped" },
+        error: errorMessage,
+      });
+      console.warn(`[${config.provider} - ${config.model}] failed: ${errorMessage}. Attempting next model...`);
+      attempt++;
     }
   }
 

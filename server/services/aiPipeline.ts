@@ -8,6 +8,11 @@ import {
   type CatalogueCopilotContext,
 } from "./copilotContext";
 import { validateMathQuestion } from "./mathValidator";
+import { recordCall, newRequestId } from "../utils/aiTelemetry";
+import * as health from "./aiHealth";
+import { clampMaxTokens } from "./aiCostGuards";
+import { describePrompt, PromptIds } from "./aiPromptRegistry";
+import { validateAgainstSchema } from "./aiContracts";
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
@@ -303,6 +308,69 @@ function buildVerifierUserPrompt(
 
 // ─── Pipeline stages ────────────────────────────────────────────────────────
 
+/**
+ * Instrument a direct provider call: tracks health, emits a telemetry record,
+ * and runs the optional schema gate. Throws on failure so the caller's
+ * existing try/catch fallback logic runs unchanged.
+ */
+async function instrumentedCall<T>(
+  provider: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  promptId: string,
+  taskType: string,
+  parentRequestId: string,
+  run: () => Promise<{ raw: string; parsed: T }>,
+): Promise<T> {
+  const startedAt = Date.now();
+  const requestId = newRequestId();
+  const descriptor = describePrompt(promptId);
+  try {
+    const { raw, parsed } = await run();
+    const endedAt = Date.now();
+    health.recordSuccess(provider, model, endedAt - startedAt);
+    recordCall({
+      requestId,
+      parentRequestId,
+      provider,
+      model,
+      taskType,
+      promptVersion: descriptor?.version,
+      systemPrompt,
+      userPrompt,
+      startedAt,
+      endedAt,
+      rawResponse: raw,
+      parse: { status: "success" },
+      validation: { status: "pass" },
+    });
+    return parsed;
+  } catch (err: any) {
+    const endedAt = Date.now();
+    const message = err?.message || String(err);
+    const timedOut = /timed out/i.test(message);
+    health.recordFailure(provider, model, timedOut ? "timeout" : "other");
+    recordCall({
+      requestId,
+      parentRequestId,
+      provider,
+      model,
+      taskType,
+      promptVersion: descriptor?.version,
+      systemPrompt,
+      userPrompt,
+      startedAt,
+      endedAt,
+      timedOut,
+      parse: { status: "failure", error: message },
+      validation: { status: "fail", reason: message },
+      error: message,
+    });
+    throw err;
+  }
+}
+
 export async function runClaudeMakerSimple(
   context: SomaGenerationContext,
   questionCount: number,
@@ -318,25 +386,41 @@ export async function runClaudeMakerSimple(
   delete inputSchema.$schema;
   delete inputSchema.$ref;
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16_384,
-    temperature: 0,
-    system: buildMakerSystemPrompt(context, questionCount, distribution),
-    messages: [{ role: "user", content: buildMakerUserPrompt(context) }],
-    tools: [{
-      name: "return_quiz_draft",
-      description: "Return draft quiz JSON (no explanations).",
-      input_schema: inputSchema,
-    }],
-    tool_choice: { type: "tool", name: "return_quiz_draft" },
-  });
+  const systemPrompt = buildMakerSystemPrompt(context, questionCount, distribution);
+  const userPrompt = buildMakerUserPrompt(context);
 
-  const toolBlock = response.content.find((b: any) => b.type === "tool_use");
-  if (!toolBlock || toolBlock.type !== "tool_use") {
-    throw new Error("Claude maker returned no tool output");
-  }
-  return DraftQuizSchema.parse(toolBlock.input);
+  return instrumentedCall<DraftQuiz>(
+    "anthropic",
+    "claude-sonnet-4-6",
+    systemPrompt,
+    userPrompt,
+    PromptIds.SOMA_MAKER,
+    "generation",
+    newRequestId(),
+    async () => {
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: clampMaxTokens(16_384, "generation"),
+        temperature: 0,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+        tools: [{
+          name: "return_quiz_draft",
+          description: "Return draft quiz JSON (no explanations).",
+          input_schema: inputSchema,
+        }],
+        tool_choice: { type: "tool", name: "return_quiz_draft" },
+      });
+
+      const toolBlock = response.content.find((b: any) => b.type === "tool_use");
+      if (!toolBlock || toolBlock.type !== "tool_use") {
+        throw new Error("Claude maker returned no tool output");
+      }
+      const validated = validateAgainstSchema((toolBlock as any).input, DraftQuizSchema, { repair: false });
+      if (!validated.ok) throw new Error(`Claude maker schema gate failed: ${validated.reason}`);
+      return { raw: JSON.stringify((toolBlock as any).input), parsed: validated.value };
+    },
+  );
 }
 
 export async function runOpenAIMakerSimple(
@@ -348,20 +432,33 @@ export async function runOpenAIMakerSimple(
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
 
   const client = new OpenAI({ apiKey });
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: buildMakerSystemPrompt(context, questionCount, distribution) },
-      {
-        role: "user",
-        content: `${buildMakerUserPrompt(context)}\n\nReturn JSON with shape: { "questions": [{stem, options[4], correct_answer, marks, difficulty_tag?, topic_tag?, subtopic_tag?}, ...] }`,
-      },
-    ],
-  });
-  const raw = completion.choices[0]?.message?.content || "";
-  return DraftQuizSchema.parse(JSON.parse(raw));
+  const systemPrompt = buildMakerSystemPrompt(context, questionCount, distribution);
+  const userPrompt = `${buildMakerUserPrompt(context)}\n\nReturn JSON with shape: { "questions": [{stem, options[4], correct_answer, marks, difficulty_tag?, topic_tag?, subtopic_tag?}, ...] }`;
+
+  return instrumentedCall<DraftQuiz>(
+    "openai",
+    "gpt-4o",
+    systemPrompt,
+    userPrompt,
+    PromptIds.SOMA_MAKER,
+    "generation",
+    newRequestId(),
+    async () => {
+      const completion = await client.chat.completions.create({
+        model: "gpt-4o",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      });
+      const raw = completion.choices[0]?.message?.content || "";
+      const validated = validateAgainstSchema(raw, DraftQuizSchema);
+      if (!validated.ok) throw new Error(`OpenAI maker schema gate failed: ${validated.reason}`);
+      return { raw, parsed: validated.value };
+    },
+  );
 }
 
 export async function runOpenAIVerifier(
@@ -373,21 +470,33 @@ export async function runOpenAIVerifier(
 
   const schema = zodToJsonSchema(VerifierResponseSchema, "VerifierResponse");
   const client = new OpenAI({ apiKey });
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: buildVerifierSystemPrompt(context) },
-      {
-        role: "user",
-        content: `${buildVerifierUserPrompt(draftQuestions, context)}\n\nReturn JSON matching this schema only:\n${JSON.stringify(schema)}`,
-      },
-    ],
-  });
-  const raw = completion.choices[0]?.message?.content || "";
-  const parsed = VerifierResponseSchema.parse(JSON.parse(raw));
-  return { questions: parsed.questions, warnings: parsed.warnings };
+  const systemPrompt = buildVerifierSystemPrompt(context);
+  const userPrompt = `${buildVerifierUserPrompt(draftQuestions, context)}\n\nReturn JSON matching this schema only:\n${JSON.stringify(schema)}`;
+
+  return instrumentedCall(
+    "openai",
+    "gpt-4o",
+    systemPrompt,
+    userPrompt,
+    PromptIds.SOMA_VERIFIER,
+    "verification",
+    newRequestId(),
+    async () => {
+      const completion = await client.chat.completions.create({
+        model: "gpt-4o",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      });
+      const raw = completion.choices[0]?.message?.content || "";
+      const validated = validateAgainstSchema(raw, VerifierResponseSchema);
+      if (!validated.ok) throw new Error(`OpenAI verifier schema gate failed: ${validated.reason}`);
+      return { raw, parsed: { questions: validated.value.questions, warnings: validated.value.warnings ?? [] } };
+    },
+  );
 }
 
 export async function runGeminiVerifier(
@@ -398,14 +507,24 @@ export async function runGeminiVerifier(
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
 
   const schema = zodToJsonSchema(VerifierResponseSchema, "VerifierResponse");
-  const raw = await callGoogle(
+  const systemPrompt = buildVerifierSystemPrompt(context);
+  const userPrompt = buildVerifierUserPrompt(draftQuestions, context);
+
+  return instrumentedCall(
+    "google",
     "gemini-2.5-flash",
-    buildVerifierSystemPrompt(context),
-    buildVerifierUserPrompt(draftQuestions, context),
-    schema,
+    systemPrompt,
+    userPrompt,
+    PromptIds.SOMA_VERIFIER,
+    "verification",
+    newRequestId(),
+    async () => {
+      const raw = await callGoogle("gemini-2.5-flash", systemPrompt, userPrompt, schema);
+      const validated = validateAgainstSchema(raw, VerifierResponseSchema);
+      if (!validated.ok) throw new Error(`Gemini verifier schema gate failed: ${validated.reason}`);
+      return { raw, parsed: { questions: validated.value.questions, warnings: validated.value.warnings ?? [] } };
+    },
   );
-  const parsed = VerifierResponseSchema.parse(JSON.parse(raw));
-  return { questions: parsed.questions, warnings: parsed.warnings };
 }
 
 // Mutable indirection so tests can swap stages without module-level mocks.
