@@ -40,6 +40,7 @@ import { eq } from "drizzle-orm";
 import { parsePdfTextFromBuffer } from "../server/services/aiPipeline";
 import { buildSyllabusChunks } from "../server/services/assessmentGeneration";
 import { extractAndStoreMisconceptions } from "../server/services/extractAndStoreMisconceptions";
+import { connectDb, db as sharedDb } from "../server/db";
 
 const { syllabusDocuments, syllabusChunks } = schema;
 
@@ -253,7 +254,15 @@ async function main() {
   try {
     await pool.query("SELECT 1");
     db = drizzle(pool, { schema });
-    console.log("[db] Connected.\n");
+    // Also initialise the shared db used by the `storage` proxy so that
+    // extractAndStoreMisconceptions writes to PostgreSQL (DatabaseStorage)
+    // instead of the in-process MemoryStorage fallback.
+    await connectDb();
+    if (!sharedDb) {
+      console.error("[db] Shared db handle is null after connectDb() — aborting.");
+      process.exit(1);
+    }
+    console.log("[db] Connected (script pool + shared storage).\n");
   } catch (e: any) {
     console.error("[db] Connection failed:", e.message);
     process.exit(1);
