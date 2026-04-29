@@ -654,6 +654,71 @@ export const CORE_OR_EXTENDED_VALUES = ["core", "extended", "practical"] as cons
 export type CoreOrExtended = (typeof CORE_OR_EXTENDED_VALUES)[number];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — The Examiner Loop
+//
+// answer_diagnoses     : per-answer record written at grading time. When a
+//                        student's chosen distractor maps to a known
+//                        examiner misconception we record the link so the
+//                        feedback layer can cite the source. When it doesn't,
+//                        the row still exists with `misconceptionId = null`
+//                        so we can later analyse "we have no diagnosis for X%
+//                        of wrong answers — extend the misconception
+//                        library."
+//
+// student_misconceptions : rolled-up evidence per (student, misconception).
+//                        Incremented by the marker; not written by hand.
+//                        `resolvedAt` is set when the student answers N
+//                        consecutive questions on the same misconception
+//                        correctly (handled by the diagnosis service).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const answerDiagnoses = pgTable("answer_diagnoses", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").notNull().references(() => somaReports.id, { onDelete: "cascade" }),
+  questionId: integer("question_id").notNull().references(() => somaQuestions.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  // Numeric index of the chosen option (0..n-1). Nullable when the student
+  // skipped the question.
+  chosenOptionIndex: integer("chosen_option_index"),
+  chosenOptionText: text("chosen_option_text"),
+  correct: boolean("correct").notNull(),
+  // Linked examiner misconception when the chosen distractor was seeded
+  // from one (see soma_questions.target_misconception_ids). Nullable when
+  // there is no match.
+  misconceptionId: integer("misconception_id").references(() => examinerMisconceptions.id, { onDelete: "set null" }),
+  // Coarse classification: "careless" | "conceptual" | "procedural" |
+  // "command_word" | "unknown". Free-text for now to avoid an enum
+  // migration; tightened in Phase 4.
+  diagnosisCategory: text("diagnosis_category"),
+  // Short, examiner-style explanation written by the marker. Templated
+  // when misconceptionId is set, AI-written otherwise.
+  rationale: text("rationale"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("answer_diagnoses_unique_idx").on(t.reportId, t.questionId),
+]);
+
+export const studentMisconceptions = pgTable("student_misconceptions", {
+  id: serial("id").primaryKey(),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  misconceptionId: integer("misconception_id").notNull().references(() => examinerMisconceptions.id, { onDelete: "cascade" }),
+  evidenceCount: integer("evidence_count").notNull().default(0),
+  // Number of consecutive correct answers on questions targeting this
+  // misconception since it was last triggered. Used by the resolver to
+  // decide when to set resolvedAt.
+  consecutiveCorrect: integer("consecutive_correct").notNull().default(0),
+  firstSeenAt: timestamp("first_seen_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  // Foreign key into the most recent report that triggered an update —
+  // helps the UI link directly to the originating quiz.
+  lastReportId: integer("last_report_id").references(() => somaReports.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("student_misconception_unique_idx").on(t.studentId, t.misconceptionId),
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AI usage log — durable per-call telemetry for the super-admin spend dashboard.
 //
 // One row per AI call (success or failure). The in-memory aggregator in
@@ -1038,6 +1103,14 @@ export type InsertAssessmentObjectiveCompetency = z.infer<typeof insertAssessmen
 export const insertAiUsageLogSchema = createInsertSchema(aiUsageLogs).omit({ id: true, createdAt: true });
 export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
 export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
+
+export const insertAnswerDiagnosisSchema = createInsertSchema(answerDiagnoses).omit({ id: true, createdAt: true });
+export type AnswerDiagnosis = typeof answerDiagnoses.$inferSelect;
+export type InsertAnswerDiagnosis = z.infer<typeof insertAnswerDiagnosisSchema>;
+
+export const insertStudentMisconceptionSchema = createInsertSchema(studentMisconceptions).omit({ id: true, firstSeenAt: true, lastSeenAt: true, updatedAt: true });
+export type StudentMisconception = typeof studentMisconceptions.$inferSelect;
+export type InsertStudentMisconception = z.infer<typeof insertStudentMisconceptionSchema>;
 
 // Legacy schemas retained for compatibility with older admin flows and tests.
 // The current app stores quiz content in soma_* tables.
