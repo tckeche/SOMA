@@ -12,10 +12,12 @@ import { registerSuperAdminAiUsageRoutes } from "./superAdminAiUsage";
 import { registerExaminerInsightsReviewRoutes } from "./examinerInsightsReview";
 import { registerTutorExaminerInsightsRoutes } from "./tutorExaminerInsights";
 import { registerMasteryMapRoutes } from "./masteryMap";
+import { registerMarkLossPredictorRoutes } from "./markLossPredictor";
 
 export function registerDomainRoutes(app: Express): void {
   registerSuperAdminAiUsageRoutes(app);
   registerExaminerInsightsReviewRoutes(app);
   registerTutorExaminerInsightsRoutes(app);
   registerMasteryMapRoutes(app);
+  registerMarkLossPredictorRoutes(app);
 }
