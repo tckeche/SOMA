@@ -1,0 +1,60 @@
+Goal: Parse every Cambridge examiner report I've just uploaded, store them alongside the syllabi, extract the misconceptions / common student errors into structured rows, and surface them in the student-facing "Tips for your studies" section so the tips reflect the actual exam pitfalls for whichever subject the student has chosen. This must be fast to ingest (parallel) and fast to read (indexed + cached).
+
+1. Locate the uploads
+The PDFs are sitting in this Replit workspace — most likely in attached_assets/ (Replit's default upload location), but they could also be at the repo root or in a subfolder. Do this first:
+
+Run find . -maxdepth 4 -iname "*.pdf" -newer curriculum-docs/cambridge/syllabi/IGCSE/Mathematics_0580_2028-2030.pdf -not -path "./node_modules/*" -not -path "./.git/*" to list the freshly uploaded PDFs.
+For each PDF, infer level (AS, A2, or IGCSE) and syllabus code (4-digit number, e.g. 9709, 0580) from the filename. Cambridge examiner reports usually follow <code>_s<sess>_er.pdf or similar — handle both that pattern and free-form names. If a name is ambiguous, open the first page of the PDF to read the syllabus title.
+Move (don't copy) each file to:
+curriculum-docs/cambridge/examiner-reports/igcse/ for IGCSE codes (4-digit starting with 0)
+curriculum-docs/cambridge/examiner-reports/as/ for AS-only papers (papers 1–3 of A Level)
+curriculum-docs/cambridge/examiner-reports/a2/ for A2-only papers (papers 4–6)
+If a single report covers both AS and A2 (whole-syllabus report), put it in as/ and create a symlink in a2/.
+Rename to the same convention used for syllabi: <Subject>_<Code>_<Session>.pdf — e.g. Mathematics_9709_2024-Oct-Nov.pdf. Keep underscores, no spaces.
+List the final placement as a table in your response so I can sanity-check it before you run the heavy ingestion.
+2. What's already wired (do NOT rebuild this)
+shared/schema.ts:160–173 — syllabusDocuments already has documentType: "syllabus" | "examiner_report".
+shared/schema.ts:291–304 — examinerMisconceptions table already exists (board, syllabusCode, subject, topic, subtopic, misconception, studentError, correctApproach, frequency).
+scripts/ingestCurriculumDocs.ts:83–86 — already auto-classifies anything under examiner-reports/ as documentType="examiner_report". Idempotent via SHA-256 (contentHash).
+server/routes.ts ~ line 984 — there's already an LLM extraction snippet (generateWithFallback → JSON misconceptions → storage.createExaminerMisconceptions). It currently runs only on the doc-intelligence single-upload path; lift it into a reusable function extractAndStoreMisconceptions(doc) and call it from the bulk ingestion script.
+server/routes.ts:2233 — GET /api/tutor/examiner-misconceptions already exists with board / syllabusCode / topic filters.
+server/storage.ts:442–453, 1686–1700 — both DB and in-memory implementations of createExaminerMisconceptions / listExaminerMisconceptions exist.
+3. Make ingestion efficient
+Modify scripts/ingestCurriculumDocs.ts:
+
+Replace the sequential for (const filePath of pdfs) loop with a bounded-concurrency worker pool (use p-limit — already in node_modules likely; otherwise add it). Concurrency = min(8, os.cpus().length). PDF parsing is CPU-bound, so don't go higher.
+Hash & dedup-check before parsing (already done — keep it).
+After insertion, when documentType === "examiner_report", immediately call the new extractAndStoreMisconceptions(doc) so the misconceptions land in the same pass. Cap LLM calls with the same p-limit instance (LLM provider rate limits).
+Stream a progress bar (one line per file: [12/47] ✓ Mathematics_9709_2024-ON.pdf — 18 misconceptions).
+On extraction failure, keep the document row (text is still useful) and log the failure to ingestion-errors.log — do NOT abort the whole run.
+4. Make reads fast
+DB indexes. Add a migration that creates:
+CREATE INDEX IF NOT EXISTS examiner_misconceptions_board_code_topic_idx ON examiner_misconceptions (board, syllabus_code, topic);
+CREATE INDEX IF NOT EXISTS examiner_misconceptions_subject_idx ON examiner_misconceptions (subject);
+CREATE INDEX IF NOT EXISTS syllabus_documents_type_code_idx ON syllabus_documents (document_type, syllabus_code);
+Wire these into server/bootstrap.ts next to the existing CREATE TABLE IF NOT EXISTS examiner_misconceptions block (line ~47) so they self-apply on boot.
+In-memory cache. Add server/services/examinerMisconceptionsCache.ts — a small Map<string, ExaminerMisconception[]> keyed by ${board}|${syllabusCode}|${subject}, lazily populated, invalidated on insert. Wrap listExaminerMisconceptions reads through it. TTL: 10 minutes; or until next ingestion run (publish a "misconceptions-changed" event from the script that the server listens for; if that's overkill, just clear the cache on next call after a file mtime change in curriculum-docs/cambridge/examiner-reports/).
+Verify a cold read for one subject is < 50 ms and a warm read < 2 ms — log both in your final report.
+5. Wire into "Tips for your studies"
+The student-facing surface lives in client/src/components/student/RemindersCarousel.tsx (and possibly TutorStudentDetail.tsx on the tutor side). Do this:
+
+Add GET /api/student/study-tips?subject=<>&syllabusCode=<>&board=<>&level=<> — server-side: pull from examinerMisconceptions for that subject, group by topic, return the top N=5 highest-frequency misconceptions formatted as friendly tips: { topic, tip, whyItMatters, correctApproach, frequency }. Use the cache from step 4.
+The student already has subject / syllabusCode / board / level on their profile — pass these from the existing student context (look for where RemindersCarousel gets its student data).
+Render the tips in the carousel: title = topic, body = tip (rephrase the misconception field as second-person: "Watch out — many students…"), and a small "Common mistake" badge using frequency.
+Tips MUST be filtered to the student's chosen subject. No cross-subject leakage. Add a runtime guard.
+6. Acceptance criteria — verify all of these and report back
+Every uploaded PDF is in the right examiner-reports/<level>/ folder with the standard filename.
+npm run curriculum:ingest (or npx tsx scripts/ingestCurriculumDocs.ts) finishes with 0 failed, prints a summary table: per-file {docId, chunkCount, misconceptionCount}.
+SELECT COUNT(*) FROM examiner_misconceptions is non-zero and roughly proportional to PDFs ingested (≥ 5 per report on average).
+SELECT COUNT(*) FROM syllabus_documents WHERE document_type = 'examiner_report' matches the number of files moved.
+The new indexes exist (\d examiner_misconceptions shows them).
+Hitting GET /api/student/study-tips?subject=Mathematics&syllabusCode=9709&board=Cambridge&level=AS returns ≥ 1 tip, and a second hit is served from cache (log it).
+The student dashboard's "Tips for your studies" carousel renders subject-specific tips drawn from the misconceptions table — take a screenshot.
+Re-running the ingestion script is a no-op (all files skipped via SHA-256 dedup).
+7. Hard constraints
+Do not change the existing syllabi ingestion behaviour — only add to it.
+Do not introduce a new schema / migration for misconceptions; the table already exists.
+Do not call the LLM on PDFs that already have rows in examiner_misconceptions (re-use SHA-256 + a documentId existence check).
+Keep all changes on branch claude/ingest-examiner-reports-BcGmT. Commit in logical chunks: (a) file moves, (b) parallel ingestion + extraction, (c) indexes + cache, (d) student tips API + UI.
+If any PDF is image-only / un-OCR'd (the script's MIN_WORD_COUNT check will fail it), don't silently drop it — list it at the end of the run as "needs OCR" so I can decide whether to bring in tesseract.
+Report back with: file-placement table, ingestion summary, index/cache verification numbers, and the screenshot of the student tips carousel.
