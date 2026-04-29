@@ -242,6 +242,40 @@ function logError(payload: Record<string, unknown>) {
   }
 }
 
+let persistenceAsserted = false;
+/**
+ * Sanity check that misconception rows are actually being persisted to the
+ * database, not silently routed to in-process MemoryStorage. Runs exactly
+ * once, after the first file has had a chance to extract. If the row count
+ * is still zero, the script aborts to avoid burning hundreds more LLM calls
+ * on a broken persistence path.
+ */
+async function maybeAssertPersistence(pool: pg.Pool, idx: number) {
+  if (persistenceAsserted) return;
+  // Only check after enough files have completed for at least one extraction
+  // to have finished end-to-end (concurrency 4 → wait until file #5).
+  if (idx < 5) return;
+  persistenceAsserted = true;
+  try {
+    const r = await pool.query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM examiner_misconceptions",
+    );
+    const n = r.rows[0]?.n ?? 0;
+    if (n === 0) {
+      console.error(
+        "\n[FATAL] examiner_misconceptions has 0 rows after the first batch.\n" +
+          "        Misconceptions are not being persisted to PostgreSQL.\n" +
+          "        Aborting before more LLM tokens are wasted.",
+      );
+      process.exit(1);
+    }
+    console.log(`[persistence-check] OK — ${n} row(s) in examiner_misconceptions after ${idx} files.\n`);
+  } catch (e: any) {
+    console.error("[persistence-check] query failed:", e?.message ?? e);
+    process.exit(1);
+  }
+}
+
 async function main() {
   console.log("\n========================================");
   console.log("  SOMA Curriculum Document Ingestion");
@@ -289,6 +323,10 @@ async function main() {
         const t0 = Date.now();
         try {
           const { result, doc } = await ingestFile(filePath, db);
+          // Sanity check: after the very first examiner_report extraction
+          // completes, verify rows actually landed in the database. If they
+          // did not, abort before burning hundreds more LLM calls.
+          await maybeAssertPersistence(pool, idx);
 
           // Examiner reports get a misconception extraction pass under the
           // same limiter slot — i.e. a fresh slot is taken once parse+insert

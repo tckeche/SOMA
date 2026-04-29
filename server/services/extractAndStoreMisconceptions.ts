@@ -12,6 +12,7 @@
  */
 import OpenAI from "openai";
 import { storage } from "../storage";
+import { db as sharedDb } from "../db";
 import { generateWithFallback } from "./aiOrchestrator";
 
 export interface ExtractInputDoc {
@@ -82,6 +83,18 @@ export async function extractAndStoreMisconceptions(
   options: ExtractOptions = {},
 ): Promise<ExtractResult> {
   const { force = false, sliceLength = 6000, preferredProvider = "default" } = options;
+
+  // Hard guard against silent in-memory persistence. If SUPABASE_URL is set
+  // but the shared db handle is null, the storage proxy will lock itself into
+  // MemoryStorage and every "saved" row will vanish when the process exits.
+  // We refuse to run rather than burn LLM tokens that go nowhere.
+  if (process.env.SUPABASE_URL && !sharedDb) {
+    throw new Error(
+      "extractAndStoreMisconceptions: SUPABASE_URL is set but shared db handle is null. " +
+        "Call connectDb() from server/db.ts before invoking this function, " +
+        "otherwise inserts go to MemoryStorage and are lost on process exit.",
+    );
+  }
 
   if (!force) {
     const existing = await storage.listExaminerMisconceptions({
