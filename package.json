@@ -15,6 +15,7 @@
     "db:migrate": "drizzle-kit push",
     "db:check": "drizzle-kit check",
     "db:backfill-soma-authors": "tsx script/backfillSomaQuizAuthors.ts",
+    "db:backfill-catalogue-fks": "tsx scripts/backfillCatalogueFks.ts",
     "seed:syllabi": "tsx scripts/ingestSyllabi/index.ts"
   },
   "dependencies": {

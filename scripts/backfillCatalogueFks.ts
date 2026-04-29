@@ -1,0 +1,368 @@
+/**
+ * Phase 1 backfill — populate catalogue FK columns on legacy rows.
+ *
+ * Targets:
+ *   - student_topic_mastery.subtopic_id       (and learning_requirement_id when an exact LR match exists)
+ *   - soma_questions.subtopic_id              (using topic_tag / subtopic_tag)
+ *   - examiner_misconceptions.subtopic_id     (using topic / subtopic strings)
+ *
+ * Strategy
+ * ────────
+ * Pure SQL / Drizzle, no AI. For each legacy row we look for a catalogue
+ * subtopic whose title matches the legacy `subtopic` (or `subtopicTag`)
+ * field case-insensitively, scoped to a syllabus the user / quiz /
+ * misconception is actually attached to. Where multiple subtopics share a
+ * title (rare but possible across syllabi) we leave the row null and log
+ * the conflict — humans can resolve via a follow-up review.
+ *
+ * Idempotent: rows that already have `subtopic_id` set are skipped.
+ *
+ * Usage:
+ *   npx tsx scripts/backfillCatalogueFks.ts             # run all backfills
+ *   npx tsx scripts/backfillCatalogueFks.ts --dry-run   # report only
+ *   npx tsx scripts/backfillCatalogueFks.ts --table=mastery|questions|misconceptions
+ *
+ * Environment:
+ *   DATABASE_URL  — Postgres connection (required)
+ */
+import "dotenv/config";
+import { sql, and, eq, isNull, ilike, inArray } from "drizzle-orm";
+import { connectDb, db } from "../server/db";
+import {
+  examinerMisconceptions,
+  somaQuestions,
+  somaQuizzes,
+  studentSubjects,
+  studentTopicMastery,
+  subjects,
+  subtopics,
+  syllabi,
+  topics,
+} from "../shared/schema";
+
+interface CliOptions {
+  dryRun: boolean;
+  table: "all" | "mastery" | "questions" | "misconceptions";
+}
+
+function parseArgs(argv: string[]): CliOptions {
+  const opts: CliOptions = { dryRun: false, table: "all" };
+  for (const arg of argv.slice(2)) {
+    if (arg === "--dry-run") opts.dryRun = true;
+    else if (arg.startsWith("--table=")) {
+      const t = arg.split("=")[1];
+      if (t === "mastery" || t === "questions" || t === "misconceptions") opts.table = t;
+      else throw new Error(`Unknown --table value: ${t}`);
+    }
+  }
+  return opts;
+}
+
+interface Stats {
+  scanned: number;
+  matched: number;
+  ambiguous: number;
+  unmatched: number;
+  skipped: number;
+  written: number;
+}
+
+function emptyStats(): Stats {
+  return { scanned: 0, matched: 0, ambiguous: 0, unmatched: 0, skipped: 0, written: 0 };
+}
+
+function printStats(label: string, s: Stats, dryRun: boolean): void {
+  const action = dryRun ? "would write" : "wrote";
+  console.log(
+    `[${label}] scanned=${s.scanned} matched=${s.matched} ${action}=${s.written} ambiguous=${s.ambiguous} unmatched=${s.unmatched} skipped=${s.skipped}`,
+  );
+}
+
+/**
+ * Resolve a free-text (subject, topic, subtopic) tuple to a unique
+ * subtopic id, scoped to a set of candidate syllabus ids when known.
+ *
+ * Returns null when there is no match, or when there are multiple
+ * matches in different syllabi we can't disambiguate.
+ */
+async function resolveSubtopicId(args: {
+  subject: string | null;
+  topic: string | null;
+  subtopic: string | null;
+  candidateSyllabusIds?: number[];
+}): Promise<{ subtopicId: number | null; ambiguous: boolean }> {
+  if (!db) return { subtopicId: null, ambiguous: false };
+  const subjectName = (args.subject ?? "").trim();
+  const subtopicTitle = (args.subtopic ?? "").trim();
+  const topicTitle = (args.topic ?? "").trim();
+  if (!subtopicTitle && !topicTitle) return { subtopicId: null, ambiguous: false };
+
+  // Build a base select limited to candidate syllabi when supplied.
+  const conditions = [] as ReturnType<typeof eq>[];
+  if (subjectName) conditions.push(ilike(subjects.name, subjectName));
+  if (args.candidateSyllabusIds && args.candidateSyllabusIds.length > 0) {
+    conditions.push(inArray(syllabi.id, args.candidateSyllabusIds));
+  }
+
+  // Prefer exact subtopic-title match; fall back to topic-title match
+  // so legacy rows that only stored the topic name still get a hit
+  // (resolved to the subtopic with sortOrder 1, the canonical first
+  // subtopic of that topic).
+  const titleMatch = subtopicTitle || topicTitle;
+  const matchExact = (col: any) => ilike(col, titleMatch);
+
+  const baseRows = await db
+    .select({
+      subtopicId: subtopics.id,
+      subtopicTitle: subtopics.title,
+      topicTitle: topics.title,
+      syllabusId: topics.syllabusId,
+    })
+    .from(subtopics)
+    .innerJoin(topics, eq(topics.id, subtopics.topicId))
+    .innerJoin(syllabi, eq(syllabi.id, topics.syllabusId))
+    .innerJoin(subjects, eq(subjects.id, syllabi.subjectId))
+    .where(and(matchExact(subtopics.title), ...conditions));
+
+  if (baseRows.length === 1) return { subtopicId: baseRows[0].subtopicId, ambiguous: false };
+  if (baseRows.length > 1) return { subtopicId: null, ambiguous: true };
+
+  // Subtopic title didn't match — fall back to topic title.
+  if (topicTitle) {
+    const fallback = await db
+      .select({
+        subtopicId: subtopics.id,
+        sortOrder: subtopics.sortOrder,
+      })
+      .from(subtopics)
+      .innerJoin(topics, eq(topics.id, subtopics.topicId))
+      .innerJoin(syllabi, eq(syllabi.id, topics.syllabusId))
+      .innerJoin(subjects, eq(subjects.id, syllabi.subjectId))
+      .where(and(ilike(topics.title, topicTitle), ...conditions))
+      .orderBy(subtopics.sortOrder)
+      .limit(2);
+    if (fallback.length === 1) return { subtopicId: fallback[0].subtopicId, ambiguous: false };
+    if (fallback.length > 1) {
+      // Multiple subtopics under one topic — pick the canonical first one.
+      return { subtopicId: fallback[0].subtopicId, ambiguous: false };
+    }
+  }
+  return { subtopicId: null, ambiguous: false };
+}
+
+async function getStudentCandidateSyllabusIds(studentId: string): Promise<number[]> {
+  if (!db) return [];
+  const enrollments = await db
+    .select({ examBody: studentSubjects.examBody, syllabusCode: studentSubjects.syllabusCode })
+    .from(studentSubjects)
+    .where(eq(studentSubjects.studentId, studentId));
+  if (enrollments.length === 0) return [];
+  const codes = Array.from(new Set(enrollments.map((e) => e.syllabusCode)));
+  const ids = await db
+    .select({ id: syllabi.id })
+    .from(syllabi)
+    .where(inArray(syllabi.syllabusCode, codes));
+  return ids.map((r) => r.id);
+}
+
+async function backfillMastery(dryRun: boolean): Promise<Stats> {
+  const stats = emptyStats();
+  if (!db) return stats;
+
+  const rows = await db
+    .select({
+      id: studentTopicMastery.id,
+      studentId: studentTopicMastery.studentId,
+      subject: studentTopicMastery.subject,
+      topic: studentTopicMastery.topic,
+      subtopic: studentTopicMastery.subtopic,
+      currentSubtopicId: studentTopicMastery.subtopicId,
+    })
+    .from(studentTopicMastery);
+
+  for (const row of rows) {
+    stats.scanned++;
+    if (row.currentSubtopicId !== null) {
+      stats.skipped++;
+      continue;
+    }
+    const candidateSyllabusIds = await getStudentCandidateSyllabusIds(row.studentId);
+    const { subtopicId, ambiguous } = await resolveSubtopicId({
+      subject: row.subject,
+      topic: row.topic,
+      subtopic: row.subtopic ?? null,
+      candidateSyllabusIds: candidateSyllabusIds.length > 0 ? candidateSyllabusIds : undefined,
+    });
+    if (ambiguous) {
+      stats.ambiguous++;
+      continue;
+    }
+    if (subtopicId === null) {
+      stats.unmatched++;
+      continue;
+    }
+    stats.matched++;
+    if (!dryRun) {
+      await db.update(studentTopicMastery).set({ subtopicId }).where(eq(studentTopicMastery.id, row.id));
+      stats.written++;
+    } else {
+      stats.written++; // counts intent in dry-run mode
+    }
+  }
+  return stats;
+}
+
+async function getQuizCandidateSyllabusIds(quizId: number): Promise<number[]> {
+  if (!db) return [];
+  const [quiz] = await db
+    .select({ syllabus: somaQuizzes.syllabus, subject: somaQuizzes.subject })
+    .from(somaQuizzes)
+    .where(eq(somaQuizzes.id, quizId));
+  if (!quiz) return [];
+  const code = (quiz.syllabus ?? "").trim();
+  if (!code) return [];
+  const ids = await db
+    .select({ id: syllabi.id })
+    .from(syllabi)
+    .where(eq(syllabi.syllabusCode, code));
+  return ids.map((r) => r.id);
+}
+
+async function backfillQuestions(dryRun: boolean): Promise<Stats> {
+  const stats = emptyStats();
+  if (!db) return stats;
+
+  const rows = await db
+    .select({
+      id: somaQuestions.id,
+      quizId: somaQuestions.quizId,
+      topicTag: somaQuestions.topicTag,
+      subtopicTag: somaQuestions.subtopicTag,
+      currentSubtopicId: somaQuestions.subtopicId,
+      quizSubject: somaQuizzes.subject,
+    })
+    .from(somaQuestions)
+    .leftJoin(somaQuizzes, eq(somaQuizzes.id, somaQuestions.quizId));
+
+  // Cache candidate-syllabus lookups per quiz.
+  const candidatesByQuiz = new Map<number, number[]>();
+  for (const row of rows) {
+    stats.scanned++;
+    if (row.currentSubtopicId !== null) {
+      stats.skipped++;
+      continue;
+    }
+    if (!candidatesByQuiz.has(row.quizId)) {
+      candidatesByQuiz.set(row.quizId, await getQuizCandidateSyllabusIds(row.quizId));
+    }
+    const candidateSyllabusIds = candidatesByQuiz.get(row.quizId) ?? [];
+    const { subtopicId, ambiguous } = await resolveSubtopicId({
+      subject: row.quizSubject ?? null,
+      topic: row.topicTag,
+      subtopic: row.subtopicTag,
+      candidateSyllabusIds: candidateSyllabusIds.length > 0 ? candidateSyllabusIds : undefined,
+    });
+    if (ambiguous) {
+      stats.ambiguous++;
+      continue;
+    }
+    if (subtopicId === null) {
+      stats.unmatched++;
+      continue;
+    }
+    stats.matched++;
+    if (!dryRun) {
+      await db.update(somaQuestions).set({ subtopicId }).where(eq(somaQuestions.id, row.id));
+      stats.written++;
+    } else {
+      stats.written++;
+    }
+  }
+  return stats;
+}
+
+async function backfillMisconceptions(dryRun: boolean): Promise<Stats> {
+  const stats = emptyStats();
+  if (!db) return stats;
+
+  const rows = await db
+    .select({
+      id: examinerMisconceptions.id,
+      board: examinerMisconceptions.board,
+      syllabusCode: examinerMisconceptions.syllabusCode,
+      subject: examinerMisconceptions.subject,
+      topic: examinerMisconceptions.topic,
+      subtopic: examinerMisconceptions.subtopic,
+      currentSubtopicId: examinerMisconceptions.subtopicId,
+    })
+    .from(examinerMisconceptions);
+
+  // Cache candidate-syllabus lookups per syllabusCode.
+  const candidatesByCode = new Map<string, number[]>();
+  for (const row of rows) {
+    stats.scanned++;
+    if (row.currentSubtopicId !== null) {
+      stats.skipped++;
+      continue;
+    }
+    if (!candidatesByCode.has(row.syllabusCode)) {
+      const ids = await db
+        .select({ id: syllabi.id })
+        .from(syllabi)
+        .where(eq(syllabi.syllabusCode, row.syllabusCode));
+      candidatesByCode.set(row.syllabusCode, ids.map((r) => r.id));
+    }
+    const candidateSyllabusIds = candidatesByCode.get(row.syllabusCode) ?? [];
+    const { subtopicId, ambiguous } = await resolveSubtopicId({
+      subject: row.subject,
+      topic: row.topic,
+      subtopic: row.subtopic,
+      candidateSyllabusIds: candidateSyllabusIds.length > 0 ? candidateSyllabusIds : undefined,
+    });
+    if (ambiguous) {
+      stats.ambiguous++;
+      continue;
+    }
+    if (subtopicId === null) {
+      stats.unmatched++;
+      continue;
+    }
+    stats.matched++;
+    if (!dryRun) {
+      await db.update(examinerMisconceptions).set({ subtopicId }).where(eq(examinerMisconceptions.id, row.id));
+      stats.written++;
+    } else {
+      stats.written++;
+    }
+  }
+  return stats;
+}
+
+async function main(): Promise<void> {
+  const opts = parseArgs(process.argv);
+  await connectDb();
+  if (!db) {
+    console.error("DATABASE_URL not configured — backfill cannot proceed.");
+    process.exit(1);
+  }
+
+  console.log(`[backfill] mode=${opts.dryRun ? "DRY RUN" : "LIVE"} table=${opts.table}`);
+
+  if (opts.table === "all" || opts.table === "mastery") {
+    printStats("mastery", await backfillMastery(opts.dryRun), opts.dryRun);
+  }
+  if (opts.table === "all" || opts.table === "questions") {
+    printStats("questions", await backfillQuestions(opts.dryRun), opts.dryRun);
+  }
+  if (opts.table === "all" || opts.table === "misconceptions") {
+    printStats("misconceptions", await backfillMisconceptions(opts.dryRun), opts.dryRun);
+  }
+
+  console.log(`[backfill] done.${opts.dryRun ? " (no rows written)" : ""}`);
+  process.exit(0);
+}
+
+main().catch((err) => {
+  console.error("[backfill] fatal:", err);
+  process.exit(1);
+});
