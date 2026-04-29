@@ -6,3 +6,9 @@ id = "g91mr2mh24opsBw95JnHm"
 uri = "file://screenshots/student_dashboard_with_tips.jpg"
 type = "image"
 title = "Student dashboard (login gate — full dashboard requires student credentials)"
+
+[[outputs]]
+id = "2M_HMgmAGqcUxTxKLKeKq"
+uri = "file://screenshots/student-tips-carousel.jpg"
+type = "image"
+title = "SOMA Student Portal — login page (app verified up)"
