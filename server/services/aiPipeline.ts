@@ -350,7 +350,9 @@ async function instrumentedCall<T>(
     const endedAt = Date.now();
     const message = err?.message || String(err);
     const timedOut = /timed out/i.test(message);
-    health.recordFailure(provider, model, timedOut ? "timeout" : "other");
+    const validationFail = /schema gate failed/i.test(message);
+    const failureKind: "timeout" | "validation" | "other" = timedOut ? "timeout" : validationFail ? "validation" : "other";
+    health.recordFailure(provider, model, failureKind);
     recordCall({
       requestId,
       parentRequestId,

@@ -38,6 +38,45 @@ describe("aiHealth: success / failure tracking", () => {
   });
 });
 
+describe("aiHealth: pluggable storage backend", () => {
+  it("uses in-memory backend by default", () => {
+    expect(health.currentHealthBackend()).toBe("memory");
+  });
+
+  it("snapshot returns rich per-provider metrics", () => {
+    health.recordSuccess("openai", "gpt-4o", 100);
+    health.recordSuccess("openai", "gpt-4o", 200);
+    health.recordFailure("openai", "gpt-4o", "timeout");
+    health.recordFailure("openai", "gpt-4o", "validation");
+    const snap = health.snapshot();
+    const row = snap.find((r) => r.provider === "openai");
+    expect(row).toBeDefined();
+    if (!row) return;
+    expect(row.successes).toBe(2);
+    expect(row.failures).toBe(2);
+    expect(row.timeouts).toBe(1);
+    expect(row.validationFailures).toBe(1);
+    expect(row.successRate).toBeCloseTo(0.5, 5);
+    expect(row.p95LatencyMs).toBeGreaterThan(0);
+  });
+
+  it("setHealthStore swaps to a custom backend", () => {
+    const backing = new Map<string, any>();
+    const fakeStore: health.HealthStore = {
+      backend: "fake",
+      read: (k) => backing.get(k) ?? null,
+      write: (k, v) => { backing.set(k, v); },
+      keys: () => Array.from(backing.keys()),
+      clear: () => { backing.clear(); },
+    };
+    health.setHealthStore(fakeStore);
+    expect(health.currentHealthBackend()).toBe("fake");
+    health.recordSuccess("openai", "gpt-4o", 50);
+    expect(backing.size).toBeGreaterThan(0);
+    health._useMemoryStoreForTests();
+  });
+});
+
 describe("aiHealth: reorderByHealth", () => {
   it("preserves original order when no failures recorded", () => {
     const ordered = health.reorderByHealth(CHAIN);

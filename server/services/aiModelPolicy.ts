@@ -6,9 +6,21 @@
  * keeps cost low on the happy path without sacrificing correctness when
  * the cheap model gets it wrong.
  *
- * The policy is intentionally tiny: a static map from task-risk class to
- * an ordered list of (provider, model) tuples. Logic stays in the call
- * sites that opt in — we don't want a hidden global routing layer.
+ * Risk classes
+ * ────────────
+ *  - low      : formatting, simple classification, short helper ops,
+ *               JSON-shape repair, retrieval summarisation. Cheap-first.
+ *  - standard : ordinary tutor explanations, small draft generation,
+ *               non-critical feedback. Mid-tier first.
+ *  - high     : ANY task with academic consequences — quiz/assessment
+ *               generation, free-response grading, student-facing
+ *               educational content, long-form generation, anything
+ *               whose output is a "mark" or a fact a student will rely on.
+ *               Strong model first; escalation still allowed for resilience.
+ *
+ * IMPORTANT: quiz generation in SOMA is treated as high-risk regardless
+ * of input length. A short topic prompt produces a long graded artefact;
+ * the surface size is not a proxy for risk.
  */
 export type RiskClass = "low" | "standard" | "high";
 
@@ -29,6 +41,9 @@ const POLICY: Record<RiskClass, ModelChoice[]> = {
     { provider: "google", model: "gemini-2.5-flash" },
   ],
   high: [
+    // Strong models only. We pair Anthropic + OpenAI so an outage on one
+    // still leaves us a high-quality option without dropping to a flash
+    // model. We deliberately do NOT include the cheap tier in this chain.
     { provider: "anthropic", model: "claude-sonnet-4-6" },
     { provider: "openai", model: "gpt-4o" },
   ],
@@ -36,6 +51,55 @@ const POLICY: Record<RiskClass, ModelChoice[]> = {
 
 export function modelChain(risk: RiskClass): ModelChoice[] {
   return POLICY[risk];
+}
+
+/**
+ * Map a task type (and optional context) to a risk class.
+ *
+ * The mapping is intentionally explicit and conservative — when in doubt
+ * the task is treated as standard. Anything that affects a student's
+ * grade or facts they'll trust must be high-risk.
+ */
+export interface ClassifyContext {
+  /** Caller-provided risk override. Wins over the task-type default. */
+  forceRisk?: RiskClass;
+  /** True when the result will be shown to a student. Bumps risk floor to standard. */
+  studentFacing?: boolean;
+  /** True for grading / marking flows. Forces high. */
+  affectsMarks?: boolean;
+}
+
+const TASK_RISK: Record<string, RiskClass> = {
+  // Authoring / academic outputs — strong model first, no cheap escalation.
+  generation: "high",
+  "quiz.generation": "high",
+  "assessment.generation": "high",
+  verification: "high",
+  grading: "high",
+  marking: "high",
+
+  // Pedagogical replies — mid-tier first; escalation OK.
+  chat: "standard",
+  "tutor.chat": "standard",
+  "copilot.chat": "standard",
+  explanation: "standard",
+  feedback: "standard",
+  draft: "standard",
+
+  // Bounded helpers — cheap-first.
+  formatting: "low",
+  classification: "low",
+  repair: "low",
+  retrieval: "low",
+  extraction: "low",
+};
+
+export function classifyTask(taskType?: string | null, ctx?: ClassifyContext): RiskClass {
+  if (ctx?.forceRisk) return ctx.forceRisk;
+  if (ctx?.affectsMarks) return "high";
+  const base: RiskClass = (taskType && TASK_RISK[taskType]) || "standard";
+  if (ctx?.studentFacing && base === "low") return "standard";
+  return base;
 }
 
 /**

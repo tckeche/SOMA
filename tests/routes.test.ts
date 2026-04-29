@@ -2162,3 +2162,45 @@ describe("Student notifications", () => {
     expect(after.body.unreadCount).toBe(0);
   });
 });
+
+describe("GET /api/super-admin/ai-usage (access control)", () => {
+  it("rejects unauthenticated requests", async () => {
+    const res = await request.get("/api/super-admin/ai-usage");
+    expect([401, 403]).toContain(res.status);
+  });
+
+  it("rejects non-super-admin users", async () => {
+    const tutorToken = await getTutorToken();
+    const res = await request
+      .get("/api/super-admin/ai-usage")
+      .set("Authorization", `Bearer ${tutorToken}`);
+    expect([401, 403]).toContain(res.status);
+  });
+
+  it("returns aggregated metrics for a super admin", async () => {
+    // Sync a super-admin user (matches default SUPER_ADMIN_EMAIL fallback).
+    const adminUuid = "ffffffff-1111-2222-3333-555555555555";
+    await request.post("/api/auth/sync").send({
+      id: adminUuid,
+      email: "tckeche@gmail.com",
+      user_metadata: { display_name: "Super" },
+    });
+    const secret = process.env.JWT_SECRET || "test-jwt-secret-for-testing-only-32chars";
+    const token = jwt.sign({ sub: adminUuid, email: "tckeche@gmail.com", role: "authenticated" }, secret, { expiresIn: "1h" });
+
+    const res = await request
+      .get("/api/super-admin/ai-usage")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("usage");
+    expect(res.body).toHaveProperty("health");
+    expect(res.body).toHaveProperty("guardrails");
+    expect(res.body.usage).toHaveProperty("overall");
+    expect(res.body.usage).toHaveProperty("byProvider");
+    expect(res.body.usage).toHaveProperty("byUser");
+    expect(res.body.guardrails).toHaveProperty("maxTokensByTask");
+    // Privacy guarantee: response must not echo raw prompts/responses.
+    const dump = JSON.stringify(res.body);
+    expect(dump).not.toMatch(/raw_response/i);
+  });
+});

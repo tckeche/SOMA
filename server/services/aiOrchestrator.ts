@@ -309,6 +309,10 @@ export interface AICallOptions {
   promptId?: string;
   /** Override max_tokens for providers that need it (clamped by guardrails). */
   maxTokens?: number;
+  /** App-level operation label for the admin dashboard breakdown. */
+  route?: string;
+  /** Already-anonymised user id (e.g. internal user uuid) for per-user costs. */
+  userId?: string;
 }
 
 function getProviderTimeoutMs(provider: string): number {
@@ -416,7 +420,9 @@ async function runChain(
           break;
         case "anthropic": {
           const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-          const anthropicMaxTokens = Math.min(maxTokensCap || 4096, 4096);
+          // Cap is already clamped to the task-type ceiling by clampMaxTokens.
+          // Use 4096 only as a sane default when no task type was supplied.
+          const anthropicMaxTokens = maxTokensCap || 4096;
 
           let anthropicResponse: any;
           if (expectedSchema) {
@@ -471,6 +477,8 @@ async function runChain(
         model: config.model,
         taskType: options?.taskType ?? null,
         promptVersion: options?.promptVersion ?? null,
+        route: options?.route ?? null,
+        userId: options?.userId ?? null,
         systemPrompt,
         userPrompt,
         startedAt: startTime,
@@ -510,6 +518,8 @@ async function runChain(
         model: config.model,
         taskType: options?.taskType ?? null,
         promptVersion: options?.promptVersion ?? null,
+        route: options?.route ?? null,
+        userId: options?.userId ?? null,
         systemPrompt,
         userPrompt,
         startedAt: startTime,
