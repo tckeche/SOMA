@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/supabase";
 import {
@@ -14,6 +14,7 @@ import {
   Quote,
   Zap,
   FileText,
+  Gauge,
 } from "lucide-react";
 
 type ReviewStatus = "pending" | "approved" | "rejected";
@@ -70,9 +71,71 @@ const STATUS_TABS: Array<{ key: ReviewStatus; label: string }> = [
   { key: "rejected", label: "Rejected" },
 ];
 
+type ConfidenceBucket = "high" | "medium" | "low" | "unknown";
+type ConfidenceFilter = "all" | ConfidenceBucket;
+type SortMode = "newest" | "confidence_desc" | "confidence_asc";
+
+function bucketForConfidence(pct: number | null): ConfidenceBucket {
+  if (pct === null || pct === undefined) return "unknown";
+  if (pct >= 80) return "high";
+  if (pct >= 50) return "medium";
+  return "low";
+}
+
+const CONFIDENCE_BADGE: Record<ConfidenceBucket, { className: string; label: string }> = {
+  high: {
+    className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    label: "High",
+  },
+  medium: {
+    className: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+    label: "Medium",
+  },
+  low: {
+    className: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+    label: "Low",
+  },
+  unknown: {
+    className: "bg-muted/30 text-muted-foreground border-border/50",
+    label: "—",
+  },
+};
+
+const CONFIDENCE_FILTERS: Array<{ key: ConfidenceFilter; label: string }> = [
+  { key: "all", label: "All confidence" },
+  { key: "high", label: "High (≥ 80%)" },
+  { key: "medium", label: "Medium (50–79%)" },
+  { key: "low", label: "Low (< 50%)" },
+  { key: "unknown", label: "Unknown" },
+];
+
+const SORT_OPTIONS: Array<{ key: SortMode; label: string }> = [
+  { key: "newest", label: "Newest first" },
+  { key: "confidence_desc", label: "Confidence: high → low" },
+  { key: "confidence_asc", label: "Confidence: low → high" },
+];
+
+function ConfidenceBadge({ pct }: { pct: number | null }) {
+  const bucket = bucketForConfidence(pct);
+  const meta = CONFIDENCE_BADGE[bucket];
+  return (
+    <span
+      className={`px-2 py-0.5 rounded-full border text-[11px] inline-flex items-center gap-1 ${meta.className}`}
+      title={pct === null ? "Confidence not reported" : `${pct}% confidence (${meta.label})`}
+      data-testid={`confidence-badge-${bucket}`}
+    >
+      <Gauge className="w-3 h-3" />
+      {pct === null ? "?" : `${pct}%`}
+      <span className="opacity-70">· {meta.label}</span>
+    </span>
+  );
+}
+
 export function SuperAdminExaminerInsightsReview() {
   const [status, setStatus] = useState<ReviewStatus>("pending");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
   const queryClient = useQueryClient();
 
   const counts = useQuery<Counts>({
@@ -98,6 +161,36 @@ export function SuperAdminExaminerInsightsReview() {
     queryClient.invalidateQueries({ queryKey: ["/api/super-admin/examiner-insights/queue"] });
     queryClient.invalidateQueries({ queryKey: ["/api/super-admin/examiner-insights/counts"] });
   };
+
+  const visibleRows = useMemo(() => {
+    const rows = queue.data?.rows ?? [];
+    const filtered =
+      confidenceFilter === "all"
+        ? rows
+        : rows.filter((r) => bucketForConfidence(r.confidencePct) === confidenceFilter);
+    const sorted = [...filtered];
+    if (sortMode === "newest") {
+      sorted.sort((a, b) => (a.extractedAt < b.extractedAt ? 1 : -1));
+    } else {
+      const dir = sortMode === "confidence_desc" ? -1 : 1;
+      sorted.sort((a, b) => {
+        const aHas = a.confidencePct !== null;
+        const bHas = b.confidencePct !== null;
+        if (!aHas && !bHas) return 0;
+        if (!aHas) return 1;
+        if (!bHas) return -1;
+        return ((a.confidencePct ?? 0) - (b.confidencePct ?? 0)) * dir;
+      });
+    }
+    return sorted;
+  }, [queue.data?.rows, confidenceFilter, sortMode]);
+
+  const confidenceCounts = useMemo(() => {
+    const rows = queue.data?.rows ?? [];
+    const counts: Record<ConfidenceBucket, number> = { high: 0, medium: 0, low: 0, unknown: 0 };
+    for (const r of rows) counts[bucketForConfidence(r.confidencePct)]++;
+    return counts;
+  }, [queue.data?.rows]);
 
   const approve = useMutation({
     mutationFn: async ({ id, notes }: { id: number; notes?: string }) => {
@@ -206,6 +299,49 @@ export function SuperAdminExaminerInsightsReview() {
         ))}
       </div>
 
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="flex items-end gap-3 flex-wrap">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Filter by confidence</span>
+            <select
+              value={confidenceFilter}
+              onChange={(e) => setConfidenceFilter(e.target.value as ConfidenceFilter)}
+              className="mt-1 block bg-card/60 border border-border/60 rounded-lg text-xs px-2.5 py-1.5 text-foreground"
+              data-testid="select-confidence-filter"
+            >
+              {CONFIDENCE_FILTERS.map((opt) => {
+                const n = opt.key === "all" ? null : confidenceCounts[opt.key];
+                return (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label}
+                    {n !== null ? ` (${n})` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Sort</span>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="mt-1 block bg-card/60 border border-border/60 rounded-lg text-xs px-2.5 py-1.5 text-foreground"
+              data-testid="select-sort-mode"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="text-[11px] text-muted-foreground" data-testid="text-confidence-summary">
+          High {confidenceCounts.high} · Medium {confidenceCounts.medium} · Low {confidenceCounts.low}
+          {confidenceCounts.unknown > 0 ? ` · Unknown ${confidenceCounts.unknown}` : ""}
+        </div>
+      </div>
+
       {queue.isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-amber-400 animate-spin" /></div>
       ) : queue.isError || !queue.data ? (
@@ -218,9 +354,23 @@ export function SuperAdminExaminerInsightsReview() {
           <ClipboardCheck className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
           <p className="text-sm text-muted-foreground">No {status} insights right now.</p>
         </div>
+      ) : visibleRows.length === 0 ? (
+        <div className={`${CARD} text-center py-12`}>
+          <ClipboardCheck className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-sm text-muted-foreground">
+            No insights match the current confidence filter.
+          </p>
+          <button
+            onClick={() => setConfidenceFilter("all")}
+            className="mt-3 text-xs px-3 py-1.5 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60"
+            data-testid="button-clear-confidence-filter"
+          >
+            Clear filter
+          </button>
+        </div>
       ) : (
         <div className="space-y-3">
-          {queue.data.rows.map((row) => (
+          {visibleRows.map((row) => (
             <ReviewRow
               key={row.id}
               row={row}
@@ -272,16 +422,11 @@ function ReviewRow({
             <span className={`px-2 py-0.5 rounded-full border ${FREQUENCY_BADGE[row.frequency] ?? FREQUENCY_BADGE.common}`}>
               {row.frequency.replace("_", " ")}
             </span>
+            <ConfidenceBadge pct={row.confidencePct} />
             <span className="text-muted-foreground">{row.board}</span>
             <span className="text-muted-foreground">·</span>
             <span className="text-foreground"><code>{row.syllabusCode}</code></span>
             {row.subject && <><span className="text-muted-foreground">·</span><span>{row.subject}</span></>}
-            {row.confidencePct !== null && (
-              <>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-amber-300">{row.confidencePct}% confidence</span>
-              </>
-            )}
             {row.sourcePage !== null && (
               <>
                 <span className="text-muted-foreground">·</span>
