@@ -27,8 +27,13 @@ const DEST_BASE = path.join(ROOT, "examiner-reports");
 const SYLLABI_ROOT = path.join(ROOT, "syllabi");
 const FALLBACK_SUBJECTS: Record<string, string> = {
   "0417": "Information and Communication Technology",
-  "0510": "English as a Second Language",
 };
+
+// Cambridge codes we explicitly do NOT ingest. They will surface in the
+// unmapped list at the end of the dry-run rather than being silently
+// included via fallback. (0510 = English as a Second Language — not part
+// of the SOMA scope.)
+const EXCLUDED_CODES = new Set<string>(["0510"]);
 
 function buildCodeToSubject(): Map<string, string> {
   const map = new Map<string, string>();
@@ -114,6 +119,10 @@ function planMoves(): { plan: PlanEntry[]; unmapped: string[] } {
         const code = m[1];
         const sessionToken = m[2].toLowerCase();
         const session = translateSession(sessionToken);
+        if (EXCLUDED_CODES.has(code)) {
+          unmapped.push(`${full} — code ${code} is on the exclude list`);
+          continue;
+        }
         const subject = codeToSubject.get(code);
         if (!subject || !session) {
           unmapped.push(
