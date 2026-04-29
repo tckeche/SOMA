@@ -367,7 +367,9 @@ export function SuperAdminExaminerInsightsReview() {
           >
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.label}</p>
             <p className="text-2xl font-bold mt-1">{counts.data ? counts.data[t.key] : "—"}</p>
-            <PillConfidenceBreakdown breakdown={counts.data?.byConfidence?.[t.key]} statusKey={t.key} />
+            {t.key === "pending" && (
+              <PillConfidenceBreakdown breakdown={counts.data?.byConfidence?.[t.key]} statusKey={t.key} />
+            )}
           </button>
         ))}
       </div>

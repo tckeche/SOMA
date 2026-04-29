@@ -353,7 +353,9 @@ export function TutorExaminerInsightsReview() {
             >
               <p className={`text-[10px] uppercase tracking-wider ${active ? "text-violet-300" : "text-muted-foreground"}`}>{t.label}</p>
               <p className="text-2xl font-bold mt-0.5">{counts.data ? n : "—"}</p>
-              <TutorPillConfidenceBreakdown breakdown={counts.data?.byConfidence?.[t.key]} statusKey={t.key} />
+              {t.key === "pending" && (
+                <TutorPillConfidenceBreakdown breakdown={counts.data?.byConfidence?.[t.key]} statusKey={t.key} />
+              )}
             </button>
           );
         })}
