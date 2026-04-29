@@ -980,7 +980,16 @@ SYLLABUS TEXT:
 ${textSlice}`;
 
     try {
-      const { data } = await generateWithFallback(prompt, "Extract topic inventory as JSON array.", undefined);
+      // Topic inventory extraction is deterministic for a given syllabus
+      // document — cacheable and idempotent. Key includes the document id
+      // so repeats of the same ingestion don't re-run inference.
+      const { data } = await generateWithFallback(prompt, "Extract topic inventory as JSON array.", undefined, {
+        taskType: "extraction",
+        route: "syllabus.topic_inventory",
+        promptVersion: "topic.inventory:v1",
+        cacheable: true,
+        idempotencyKey: `syllabus.inventory:${doc.id}`,
+      });
       const cleaned = data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const items = JSON.parse(cleaned);
       if (Array.isArray(items) && items.length > 0) {
@@ -1112,7 +1121,17 @@ Provide:
 4. For every incorrect response, include a 1-2 sentence explanation that starts with the exact label "Question X:" and briefly explains why the correct answer is right
 5. Encouragement and next steps`;
 
-    const gradePromise = generateWithFallback(systemPrompt, userPrompt);
+    // Idempotency: a duplicate submission for the same report (e.g. browser
+    // retry, queue redelivery) returns the cached grading output instead of
+    // re-running an expensive AI grading call. The 10-minute default TTL
+    // covers the retry window without pinning stale outputs.
+    const gradePromise = generateWithFallback(systemPrompt, userPrompt, undefined, {
+      taskType: "grading",
+      route: "report.grade",
+      promptVersion: "tutor.grader:v1",
+      userId: studentMeta?.studentId,
+      idempotencyKey: `report.grade:${reportId}`,
+    });
 
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("AI grading timed out after 180 seconds")), GRADING_TIMEOUT_MS)
@@ -2537,7 +2556,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided metrics:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
 
       const { generateWithFallback } = await import("./services/aiOrchestrator.js");
-      const result = await generateWithFallback(systemPrompt, userPrompt);
+      const { hashPayload } = await import("./utils/aiTelemetry.js");
+      const tutorId = (req as any).tutorId as string | undefined;
+      const result = await generateWithFallback(systemPrompt, userPrompt, undefined, {
+        taskType: "extraction",
+        route: "tutor.intervention_insights",
+        userId: tutorId,
+        cacheable: true,
+        idempotencyKey: hashPayload(JSON.stringify(dataPayload)),
+      });
       let parsed: any[];
       try {
         const cleaned = result.data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -2575,7 +2602,15 @@ Recent Assignments (last 10): ${JSON.stringify((assignments || []).slice(0, 10).
 Return JSON object with fields: narrative, weaknesses, improvements, focusAreas, nextSteps`;
 
       const { generateWithFallback } = await import("./services/aiOrchestrator.js");
-      const result = await generateWithFallback(systemPrompt, userPrompt);
+      const { hashPayload } = await import("./utils/aiTelemetry.js");
+      const tutorId = (req as any).tutorId as string | undefined;
+      const result = await generateWithFallback(systemPrompt, userPrompt, undefined, {
+        taskType: "extraction",
+        route: "tutor.student_summary",
+        userId: tutorId,
+        cacheable: true,
+        idempotencyKey: hashPayload(studentName, "|", JSON.stringify(stats || {}), "|", JSON.stringify(topicPerformance || [])),
+      });
       let parsed: any;
       try {
         const cleaned = result.data.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -3577,7 +3612,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         `Supporting context:\n${supportingText || "No extra context."}`,
       ].filter(Boolean).join("\n\n");
 
-      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt);
+      // Copilot chat is interactive — do NOT idempotency-cache (the tutor
+      // may ask the same question twice intentionally). We still tag the
+      // call with a route + userId so it shows up in the admin dashboard.
+      const tutorIdForCopilot = (req as any).tutorId as string | undefined;
+      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, undefined, {
+        taskType: "chat",
+        route: "copilot.chat",
+        promptVersion: "copilot.system:v1",
+        userId: tutorIdForCopilot,
+      });
 
       const structured = extractStructuredCopilotResponse(data);
 
@@ -3617,7 +3661,13 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         // Some graph questions failed repairGraphSpec — retry with an explicit spec prompt
         const retryUserPrompt = `Generate exactly ${graphShortfall} graph question${graphShortfall !== 1 ? "s" : ""} on this topic: ${text}\n\nReturn a JSON object with key "questions" containing the graph questions.`;
         try {
-          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt);
+          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt, undefined, {
+            taskType: "generation",
+            route: "copilot.graph_retry",
+            promptVersion: "copilot.graph_retry:v1",
+            userId: tutorIdForCopilot,
+            maxTokens: 20_000,
+          });
           const retryStructured = extractStructuredCopilotResponse(retryData);
           const retryGraphQuestions: DraftQuestion[] = retryStructured.questions
             .map((q: any) => normaliseToDraftQuestion(q))
@@ -3928,6 +3978,29 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json(detail);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch tutor detail" });
+    }
+  });
+
+  // ─── Super Admin AI usage / health observability ──────────────────
+  // Aggregated, privacy-safe counters only. Raw prompts, raw model output,
+  // and raw idempotency keys are intentionally not exposed.
+  app.get("/api/super-admin/ai-usage", requireSuperAdmin, async (_req, res) => {
+    try {
+      const { report: usageReport } = await import("./services/aiUsageMetrics");
+      const { snapshot: healthSnapshot, currentHealthBackend } = await import("./services/aiHealth");
+      const { maxTokensTable } = await import("./services/aiCostGuards");
+      res.json({
+        usage: usageReport(),
+        health: {
+          backend: currentHealthBackend(),
+          providers: healthSnapshot(),
+        },
+        guardrails: {
+          maxTokensByTask: maxTokensTable(),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch AI usage" });
     }
   });
 
@@ -4362,6 +4435,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
+      const { hashPayload: hashPayloadAnalyze } = await import("./utils/aiTelemetry.js");
       const { data, metadata } = await generateWithFallback(
         "You are a mathematics assessment analyst. Return concise HTML feedback for a teacher about class performance.",
         `Analyze class performance for quiz "${quiz.title}". Focus on misconceptions and remediation recommendations.
@@ -4373,6 +4447,15 @@ ${JSON.stringify({
           submissionCount: reports.length,
           questionStats,
         })}`,
+        undefined,
+        {
+          taskType: "extraction",
+          route: "class.analyze",
+          // Class analysis is deterministic for a given quiz + submission set;
+          // safe to cache so repeated tutor refreshes don't re-bill inference.
+          cacheable: true,
+          idempotencyKey: hashPayloadAnalyze(`class.analyze:${quizId}:${reports.length}`, ":", JSON.stringify(questionStats)),
+        },
       );
 
       return res.json({ analysis: data, submissionCount: reports.length, metadata, questionStats });
@@ -5065,7 +5148,14 @@ Also answer any specific question the student asks, informed by their performanc
         userPrompt = `${dataSections.join("\n\n")}\n\nStudent's Question: ${message}`;
       }
 
-      const result = await generateWithFallback(systemPrompt, userPrompt);
+      // Student-facing tutor chat — interactive, do not idempotency-cache.
+      // Tag for the admin dashboard so per-student costs are visible.
+      const studentIdForChat = (req as any).authUser?.id as string | undefined;
+      const result = await generateWithFallback(systemPrompt, userPrompt, undefined, {
+        taskType: "chat",
+        route: "student.tutor_chat",
+        userId: studentIdForChat,
+      });
       res.json({ reply: result.data });
     } catch (err: any) {
       console.error("[Global Tutor] Error:", err.message);
