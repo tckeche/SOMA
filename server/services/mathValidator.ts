@@ -305,8 +305,8 @@ function tryStatistics(stem: string): Attempt {
     case "mode": {
       const freq = new Map<number, number>();
       for (const n of nums) freq.set(n, (freq.get(n) || 0) + 1);
-      const max = Math.max(...freq.values());
-      const modes = [...freq].filter(([_, c]) => c === max).map(([n]) => n);
+      const max = Math.max(...Array.from(freq.values()));
+      const modes = Array.from(freq.entries()).filter(([_, c]) => c === max).map(([n]) => n);
       if (modes.length === 1) computed = modes[0];
       break;
     }

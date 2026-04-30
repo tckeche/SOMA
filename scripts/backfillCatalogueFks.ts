@@ -38,6 +38,7 @@ import {
 } from "../shared/schema";
 import { resolveSubtopicId } from "../server/services/subtopicResolver";
 import { extractSyllabusCode } from "../server/services/syllabusNormalizer";
+import { normalizeQuestionTag } from "../server/services/questionTagNormalizer";
 
 interface CliOptions {
   dryRun: boolean;
@@ -189,8 +190,8 @@ async function backfillQuestions(dryRun: boolean): Promise<Stats> {
     const candidateSyllabusIds = candidatesByQuiz.get(row.quizId) ?? [];
     const { subtopicId, ambiguous } = await resolveSubtopicId({
       subject: row.quizSubject ?? null,
-      topic: row.topicTag,
-      subtopic: row.subtopicTag,
+      topic: normalizeQuestionTag(row.topicTag) ?? row.topicTag,
+      subtopic: normalizeQuestionTag(row.subtopicTag) ?? row.subtopicTag,
       candidateSyllabusIds: candidateSyllabusIds.length > 0 ? candidateSyllabusIds : undefined,
     });
     if (ambiguous) {

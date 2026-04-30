@@ -34,9 +34,6 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Ingest Curriculum Docs"
 
 [[workflows.workflow]]
 name = "Start application"
