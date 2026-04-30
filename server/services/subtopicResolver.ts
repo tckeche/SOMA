@@ -152,9 +152,14 @@ export async function resolveSubtopicId(args: ResolveSubtopicArgs): Promise<Reso
           similarity(LOWER(${subtopics.title}), LOWER(${titleMatch})),
           similarity(LOWER(${topics.title}), LOWER(${titleMatch}))
         ) DESC`,
-        subtopics.sortOrder,
+        // Deterministic tie-breaker: subtopics.id is unique and stable across
+        // runs, so two near-identical similarity scores will always rank in
+        // the same order. (Earlier this used sortOrder, which collides for
+        // subtopics belonging to different topics and made the "first vs
+        // second" comparison flap between runs.)
+        subtopics.id,
       )
-      .limit(3);
+      .limit(2);
 
     if (fuzzyRows.length === 0) return { subtopicId: null, ambiguous: false };
     if (fuzzyRows.length === 1) {
