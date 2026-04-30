@@ -17,7 +17,7 @@ import {
   subtopics,
 } from "@shared/schema";
 import { invalidateExaminerMisconceptionsCache } from "./examinerMisconceptionsCache";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -64,48 +64,87 @@ export interface QueueListResult {
 const REVIEWER_USERS = somaUsers; // alias for clarity in joins
 
 /**
- * Paginated listing for the queue UI. Defaults to status='pending' and
- * orders newest first.
+ * Single source of truth for the queue SELECT shape. Both `listQueue`
+ * and `listQueueForTutor` use this so adding a column is a one-line
+ * change instead of a four-place edit (which is exactly how the missing
+ * `subtopics` join slipped in originally).
  */
-export async function listQueue(options: QueueListOptions = {}): Promise<QueueListResult> {
-  const empty: QueueListResult = { rows: [], total: 0 };
-  if (!db) return empty;
+function buildQueueSelect() {
+  return {
+    id: examinerMisconceptions.id,
+    status: examinerMisconceptions.status,
+    board: examinerMisconceptions.board,
+    syllabusCode: examinerMisconceptions.syllabusCode,
+    subject: examinerMisconceptions.subject,
+    topic: examinerMisconceptions.topic,
+    subtopic: examinerMisconceptions.subtopic,
+    subtopicId: examinerMisconceptions.subtopicId,
+    subtopicTitle: subtopics.title,
+    misconception: examinerMisconceptions.misconception,
+    studentError: examinerMisconceptions.studentError,
+    correctApproach: examinerMisconceptions.correctApproach,
+    frequency: examinerMisconceptions.frequency,
+    sourceQuote: examinerMisconceptions.sourceQuote,
+    sourcePage: examinerMisconceptions.sourcePage,
+    confidencePct: examinerMisconceptions.confidence,
+    reviewedAt: examinerMisconceptions.reviewedAt,
+    reviewedById: examinerMisconceptions.reviewedById,
+    reviewedByDisplayName: REVIEWER_USERS.displayName,
+    reviewNotes: examinerMisconceptions.reviewNotes,
+    documentId: examinerMisconceptions.documentId,
+    documentFilename: syllabusDocuments.filename,
+    documentType: syllabusDocuments.documentType,
+    extractedAt: examinerMisconceptions.extractedAt,
+  } as const;
+}
 
-  const status = options.status ?? "pending";
-  const limit = Math.max(1, Math.min(200, options.limit ?? 50));
-  const offset = Math.max(0, options.offset ?? 0);
+/**
+ * Type-only helper: a phantom query expression we use solely to derive
+ * `RawQueueRow` from drizzle's inference of `buildQueueSelect()`. The
+ * function is never executed (the `as never` keeps it type-only and
+ * avoids needing a real `db` at module load), so there is no runtime
+ * cost. Keeping the row type derived means adding a column to
+ * `buildQueueSelect` automatically widens `RawQueueRow` instead of
+ * forcing a parallel hand-maintained interface.
+ */
+function _queueRowTypeProbe() {
+  const builder = (null as never as NonNullable<typeof db>)
+    .select(buildQueueSelect())
+    .from(examinerMisconceptions)
+    .leftJoin(syllabusDocuments, eq(syllabusDocuments.id, examinerMisconceptions.documentId))
+    .leftJoin(subtopics, eq(subtopics.id, examinerMisconceptions.subtopicId))
+    .leftJoin(REVIEWER_USERS, eq(REVIEWER_USERS.id, examinerMisconceptions.reviewedById));
+  return builder;
+}
+type RawQueueRow = Awaited<ReturnType<typeof _queueRowTypeProbe>>[number];
 
-  const conditions = [eq(examinerMisconceptions.status, status)];
-  if (options.board) conditions.push(eq(examinerMisconceptions.board, options.board));
-  if (options.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
+/**
+ * Maps the raw drizzle row (with Date objects and possibly-null status)
+ * into the public `QueueRow` shape returned to the API layer.
+ */
+function mapQueueRow(r: RawQueueRow): QueueRow {
+  return {
+    ...r,
+    status: (r.status ?? "pending") as ReviewStatus,
+    reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
+    reviewedByDisplayName: r.reviewedByDisplayName ?? null,
+    extractedAt: r.extractedAt.toISOString(),
+  };
+}
 
+/**
+ * Runs the shared queue query against any caller-supplied WHERE
+ * conditions. `listQueue` and `listQueueForTutor` differ only in what
+ * they pass here.
+ */
+async function runQueueQuery(
+  conditions: SQL[],
+  limit: number,
+  offset: number,
+): Promise<QueueListResult> {
+  if (!db) return { rows: [], total: 0 };
   const rows = await db
-    .select({
-      id: examinerMisconceptions.id,
-      status: examinerMisconceptions.status,
-      board: examinerMisconceptions.board,
-      syllabusCode: examinerMisconceptions.syllabusCode,
-      subject: examinerMisconceptions.subject,
-      topic: examinerMisconceptions.topic,
-      subtopic: examinerMisconceptions.subtopic,
-      subtopicId: examinerMisconceptions.subtopicId,
-      subtopicTitle: subtopics.title,
-      misconception: examinerMisconceptions.misconception,
-      studentError: examinerMisconceptions.studentError,
-      correctApproach: examinerMisconceptions.correctApproach,
-      frequency: examinerMisconceptions.frequency,
-      sourceQuote: examinerMisconceptions.sourceQuote,
-      sourcePage: examinerMisconceptions.sourcePage,
-      confidencePct: examinerMisconceptions.confidence,
-      reviewedAt: examinerMisconceptions.reviewedAt,
-      reviewedById: examinerMisconceptions.reviewedById,
-      reviewedByDisplayName: REVIEWER_USERS.displayName,
-      reviewNotes: examinerMisconceptions.reviewNotes,
-      documentId: examinerMisconceptions.documentId,
-      documentFilename: syllabusDocuments.filename,
-      documentType: syllabusDocuments.documentType,
-      extractedAt: examinerMisconceptions.extractedAt,
-    })
+    .select(buildQueueSelect())
     .from(examinerMisconceptions)
     .leftJoin(syllabusDocuments, eq(syllabusDocuments.id, examinerMisconceptions.documentId))
     .leftJoin(subtopics, eq(subtopics.id, examinerMisconceptions.subtopicId))
@@ -122,34 +161,27 @@ export async function listQueue(options: QueueListOptions = {}): Promise<QueueLi
     .where(and(...conditions));
 
   return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      status: (r.status ?? "pending") as ReviewStatus,
-      board: r.board,
-      syllabusCode: r.syllabusCode,
-      subject: r.subject,
-      topic: r.topic,
-      subtopic: r.subtopic,
-      subtopicId: r.subtopicId,
-      subtopicTitle: r.subtopicTitle,
-      misconception: r.misconception,
-      studentError: r.studentError,
-      correctApproach: r.correctApproach,
-      frequency: r.frequency,
-      sourceQuote: r.sourceQuote,
-      sourcePage: r.sourcePage,
-      confidencePct: r.confidencePct,
-      reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
-      reviewedById: r.reviewedById,
-      reviewedByDisplayName: r.reviewedByDisplayName ?? null,
-      reviewNotes: r.reviewNotes,
-      documentId: r.documentId,
-      documentFilename: r.documentFilename,
-      documentType: r.documentType,
-      extractedAt: r.extractedAt.toISOString(),
-    })),
+    rows: rows.map(mapQueueRow),
     total: totalRows.length,
   };
+}
+
+/**
+ * Paginated listing for the queue UI. Defaults to status='pending' and
+ * orders newest first.
+ */
+export async function listQueue(options: QueueListOptions = {}): Promise<QueueListResult> {
+  if (!db) return { rows: [], total: 0 };
+
+  const status = options.status ?? "pending";
+  const limit = Math.max(1, Math.min(200, options.limit ?? 50));
+  const offset = Math.max(0, options.offset ?? 0);
+
+  const conditions: SQL[] = [eq(examinerMisconceptions.status, status)];
+  if (options.board) conditions.push(eq(examinerMisconceptions.board, options.board));
+  if (options.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
+
+  return runQueueQuery(conditions, limit, offset);
 }
 
 /**
@@ -287,83 +319,14 @@ export async function listQueueForTutor(
   const limit = Math.max(1, Math.min(200, options.limit ?? 50));
   const offset = Math.max(0, options.offset ?? 0);
 
-  const baseConditions = [
+  const conditions: SQL[] = [
     eq(examinerMisconceptions.status, status),
     or(...scopeConditions)!,
   ];
-  if (options.board) baseConditions.push(eq(examinerMisconceptions.board, options.board));
-  if (options.syllabusCode) baseConditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
+  if (options.board) conditions.push(eq(examinerMisconceptions.board, options.board));
+  if (options.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
 
-  const rows = await db
-    .select({
-      id: examinerMisconceptions.id,
-      status: examinerMisconceptions.status,
-      board: examinerMisconceptions.board,
-      syllabusCode: examinerMisconceptions.syllabusCode,
-      subject: examinerMisconceptions.subject,
-      topic: examinerMisconceptions.topic,
-      subtopic: examinerMisconceptions.subtopic,
-      subtopicId: examinerMisconceptions.subtopicId,
-      subtopicTitle: subtopics.title,
-      misconception: examinerMisconceptions.misconception,
-      studentError: examinerMisconceptions.studentError,
-      correctApproach: examinerMisconceptions.correctApproach,
-      frequency: examinerMisconceptions.frequency,
-      sourceQuote: examinerMisconceptions.sourceQuote,
-      sourcePage: examinerMisconceptions.sourcePage,
-      confidencePct: examinerMisconceptions.confidence,
-      reviewedAt: examinerMisconceptions.reviewedAt,
-      reviewedById: examinerMisconceptions.reviewedById,
-      reviewedByDisplayName: REVIEWER_USERS.displayName,
-      reviewNotes: examinerMisconceptions.reviewNotes,
-      documentId: examinerMisconceptions.documentId,
-      documentFilename: syllabusDocuments.filename,
-      documentType: syllabusDocuments.documentType,
-      extractedAt: examinerMisconceptions.extractedAt,
-    })
-    .from(examinerMisconceptions)
-    .leftJoin(syllabusDocuments, eq(syllabusDocuments.id, examinerMisconceptions.documentId))
-    .leftJoin(subtopics, eq(subtopics.id, examinerMisconceptions.subtopicId))
-    .leftJoin(REVIEWER_USERS, eq(REVIEWER_USERS.id, examinerMisconceptions.reviewedById))
-    .where(and(...baseConditions))
-    .orderBy(desc(examinerMisconceptions.extractedAt))
-    .limit(limit)
-    .offset(offset);
-
-  const totalRows = await db
-    .select({ count: examinerMisconceptions.id })
-    .from(examinerMisconceptions)
-    .where(and(...baseConditions));
-
-  return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      status: (r.status ?? "pending") as ReviewStatus,
-      board: r.board,
-      syllabusCode: r.syllabusCode,
-      subject: r.subject,
-      topic: r.topic,
-      subtopic: r.subtopic,
-      subtopicId: r.subtopicId,
-      subtopicTitle: r.subtopicTitle,
-      misconception: r.misconception,
-      studentError: r.studentError,
-      correctApproach: r.correctApproach,
-      frequency: r.frequency,
-      sourceQuote: r.sourceQuote,
-      sourcePage: r.sourcePage,
-      confidencePct: r.confidencePct,
-      reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
-      reviewedById: r.reviewedById,
-      reviewedByDisplayName: r.reviewedByDisplayName ?? null,
-      reviewNotes: r.reviewNotes,
-      documentId: r.documentId,
-      documentFilename: r.documentFilename,
-      documentType: r.documentType,
-      extractedAt: r.extractedAt.toISOString(),
-    })),
-    total: totalRows.length,
-  };
+  return runQueueQuery(conditions, limit, offset);
 }
 
 export async function countsByStatusForTutor(tutorId: string): Promise<CountsByStatus> {
