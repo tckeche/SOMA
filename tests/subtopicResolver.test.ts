@@ -15,17 +15,19 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { responseQueue, sqlLog } = vi.hoisted(() => ({
+const { responseQueue, sqlLog, paramsLog } = vi.hoisted(() => ({
   responseQueue: [] as Array<{ rows: any[][] }>,
   sqlLog: [] as string[],
+  paramsLog: [] as any[][],
 }));
 
 vi.mock("../server/db", async () => {
   const { drizzle } = await import("drizzle-orm/pg-proxy");
   const schema = await import("@shared/schema");
   const db = drizzle(
-    async (sql, _params, _method) => {
+    async (sql, params, _method) => {
       sqlLog.push(sql);
+      paramsLog.push(params ?? []);
       // Default to empty rows when the test forgot to enqueue a response —
       // makes test failures point at the missing canned data rather than
       // hanging.
@@ -41,6 +43,7 @@ import { resolveSubtopicId, resolveSyllabusIdsForCode } from "../server/services
 beforeEach(() => {
   responseQueue.length = 0;
   sqlLog.length = 0;
+  paramsLog.length = 0;
 });
 
 describe("subtopicResolver.resolveSubtopicId", () => {
@@ -190,6 +193,130 @@ describe("subtopicResolver.resolveSubtopicId", () => {
     expect(result).toEqual({ subtopicId: null, ambiguous: false });
     expect(sqlLog.length).toBeGreaterThanOrEqual(originalLength + 2);
     warn.mockRestore();
+  });
+
+  it("disambiguates by topic title when subtopic title returns multiple rows", async () => {
+    // First SELECT (subtopic-title): two rows → would normally be
+    // ambiguous. The resolver re-queries with the topic title narrowed
+    // and gets a single hit.
+    responseQueue.push({ rows: [[682], [704]] });
+    responseQueue.push({ rows: [[682]] });
+    const result = await resolveSubtopicId({
+      subject: "Computer Science",
+      topic: "Algorithm Design and Problem-solving",
+      subtopic: "Algorithms",
+      candidateSyllabusIds: [9618],
+    });
+    expect(result).toEqual({ subtopicId: 682, ambiguous: false });
+    expect(sqlLog.length).toBe(2);
+  });
+
+  it("still reports ambiguous when topic-narrowed query also returns multiple rows", async () => {
+    responseQueue.push({ rows: [[1], [2]] });
+    responseQueue.push({ rows: [[1], [2]] });
+    const result = await resolveSubtopicId({
+      subject: "Mathematics",
+      topic: "Algebra",
+      subtopic: "Equations",
+      candidateSyllabusIds: [1],
+    });
+    expect(result).toEqual({ subtopicId: null, ambiguous: true });
+  });
+
+  it("retries with normalised tags after the raw pass misses (legacy noise)", async () => {
+    // Raw pass: subtopic-title "9.2 Algorithms" misses (empty), then
+    // topic-fallback "Algorithm Design and Problem-solving" misses too.
+    // Normalised pass: subtopic-title "Algorithms" hits.
+    responseQueue.push({ rows: [] }); // raw subtopic miss
+    responseQueue.push({ rows: [] }); // raw topic-fallback miss
+    responseQueue.push({ rows: [[7]] }); // normalised subtopic hit
+    const result = await resolveSubtopicId({
+      subject: "Computer Science",
+      topic: "Algorithm Design and Problem-solving",
+      subtopic: "9.2 Algorithms",
+      candidateSyllabusIds: [1],
+    });
+    expect(result).toEqual({ subtopicId: 7, ambiguous: false });
+    expect(sqlLog.length).toBe(3);
+    // The first call carries the raw legacy string verbatim — proves we
+    // never strip it before trying the catalogue.
+    expect(paramsLog[0]).toContain("9.2 Algorithms");
+    // The third call carries the cleaned subtopic title.
+    expect(paramsLog[2]).toContain("Algorithms");
+    expect(paramsLog[2]).not.toContain("9.2 Algorithms");
+  });
+
+  it("preserves clean catalogue titles that contain commas — the raw pass wins", async () => {
+    // "Motion, forces and energy" is a real catalogue topic title. The
+    // normaliser would strip it down to "energy" (last comma segment),
+    // which would be wrong. Because the raw pass tries the unmodified
+    // string first, the topic-fallback hits and we never run the
+    // destructive normalised pass.
+    responseQueue.push({ rows: [] }); // raw subtopic-title "Motion" miss
+    responseQueue.push({ rows: [[42, 1]] }); // raw topic-fallback hit
+    const result = await resolveSubtopicId({
+      subject: "Physics",
+      topic: "Motion, forces and energy",
+      subtopic: "Motion",
+      candidateSyllabusIds: [1],
+    });
+    expect(result).toEqual({ subtopicId: 42, ambiguous: false });
+    // Exactly two SQL calls — no normalised retry, no fuzzy.
+    expect(sqlLog.length).toBe(2);
+    // The topic-fallback parameters carry the literal comma-bearing
+    // title, not the mangled "energy" tail.
+    expect(paramsLog[1]).toContain("Motion, forces and energy");
+    expect(paramsLog[1]).not.toContain("energy");
+  });
+
+  it("falls through to the normalised pass when raw subtopic was ambiguous and topic is noisy", async () => {
+    // Real-world scenario: catalogue holds "Algorithms" twice in CS 9618
+    // under two different topics. Raw caller passes a *noisy* topic
+    // ("9.2 Algorithm Design and Problem-solving") whose narrowing query
+    // misses (catalogue topic title is "Algorithm Design and Problem-
+    // solving" without the "9.2 "). The resolver must NOT give up at
+    // ambiguous; it must retry with the normalised topic, which then
+    // narrows successfully.
+    responseQueue.push({ rows: [[682], [704]] }); // raw subtopic-title: 2 rows
+    responseQueue.push({ rows: [] });             // raw narrow with noisy topic: miss
+    responseQueue.push({ rows: [[682], [704]] }); // normalised subtopic-title: still 2
+    responseQueue.push({ rows: [[682]] });        // normalised narrow: hit
+    const result = await resolveSubtopicId({
+      subject: "Computer Science",
+      topic: "9.2 Algorithm Design and Problem-solving",
+      subtopic: "Algorithms",
+      candidateSyllabusIds: [9618],
+    });
+    expect(result).toEqual({ subtopicId: 682, ambiguous: false });
+    expect(sqlLog.length).toBe(4);
+    // Pass 1 narrow used the raw noisy topic verbatim.
+    expect(paramsLog[1]).toContain("9.2 Algorithm Design and Problem-solving");
+    // Pass 2 narrow used the cleaned topic (no leading "9.2 ").
+    expect(paramsLog[3]).toContain("Algorithm Design and Problem-solving");
+    expect(paramsLog[3]).not.toContain("9.2 Algorithm");
+  });
+
+  it("does not run the normalised retry when normalisation would not change the strings", async () => {
+    // Clean inputs (no leading codes / brackets / commas) → normalised
+    // output is identical to raw → resolver skips pass 2 and goes
+    // straight to fuzzy. We assert exactly 3 SQL calls (subtopic-title,
+    // topic-fallback, fuzzy) and that the first two parameters match the
+    // raw caller strings unchanged.
+    responseQueue.push({ rows: [] }); // raw subtopic miss
+    responseQueue.push({ rows: [] }); // raw topic-fallback miss
+    responseQueue.push({ rows: [] }); // fuzzy returns nothing
+    const result = await resolveSubtopicId({
+      subject: "Chemistry",
+      topic: "Stoichiometry & moles",
+      subtopic: "Mole calculations",
+      candidateSyllabusIds: [3],
+    });
+    expect(result).toEqual({ subtopicId: null, ambiguous: false });
+    expect(sqlLog.length).toBe(3);
+    expect(paramsLog[0]).toContain("Mole calculations");
+    expect(paramsLog[1]).toContain("Stoichiometry & moles");
+    // Third call is fuzzy — uses the same (unchanged) string.
+    expect(sqlLog[2]).toMatch(/similarity/i);
   });
 
   it("derives candidateSyllabusIds from syllabusCode when none were pre-resolved", async () => {

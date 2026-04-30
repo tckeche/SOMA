@@ -38,7 +38,6 @@ import {
 } from "../shared/schema";
 import { resolveSubtopicId } from "../server/services/subtopicResolver";
 import { extractSyllabusCode } from "../server/services/syllabusNormalizer";
-import { normalizeQuestionTag } from "../server/services/questionTagNormalizer";
 
 interface CliOptions {
   dryRun: boolean;
@@ -188,10 +187,15 @@ async function backfillQuestions(dryRun: boolean): Promise<Stats> {
       candidatesByQuiz.set(row.quizId, await getQuizCandidateSyllabusIds(row.quizId));
     }
     const candidateSyllabusIds = candidatesByQuiz.get(row.quizId) ?? [];
+    // Pass the raw legacy tags through unchanged. The resolver does its
+    // own raw-first lookup and only falls back to the destructive
+    // `normalizeQuestionTag` (which can split on commas) when the raw
+    // string misses. Pre-normalising here would mangle clean catalogue
+    // titles like "Motion, forces and energy".
     const { subtopicId, ambiguous } = await resolveSubtopicId({
       subject: row.quizSubject ?? null,
-      topic: normalizeQuestionTag(row.topicTag) ?? row.topicTag,
-      subtopic: normalizeQuestionTag(row.subtopicTag) ?? row.subtopicTag,
+      topic: row.topicTag,
+      subtopic: row.subtopicTag,
       candidateSyllabusIds: candidateSyllabusIds.length > 0 ? candidateSyllabusIds : undefined,
     });
     if (ambiguous) {
