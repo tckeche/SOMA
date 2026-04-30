@@ -55,6 +55,8 @@ interface CliOptions {
   keepExisting: boolean;
   reextractAll: boolean;
   docConcurrency: number;
+  chunkConcurrency: number;
+  requireCatalogue: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -67,11 +69,14 @@ function parseArgs(argv: string[]): CliOptions {
     keepExisting: false,
     reextractAll: false,
     docConcurrency: 3,
+    chunkConcurrency: 4,
+    requireCatalogue: false,
   };
   for (const raw of argv.slice(2)) {
     if (raw === "--dry-run") opts.dryRun = true;
     else if (raw === "--keep-existing") opts.keepExisting = true;
     else if (raw === "--reextract-all") opts.reextractAll = true;
+    else if (raw === "--require-catalogue") opts.requireCatalogue = true;
     else if (raw.startsWith("--board=")) opts.board = raw.slice("--board=".length);
     else if (raw.startsWith("--syllabus-code=")) opts.syllabusCode = raw.slice("--syllabus-code=".length);
     else if (raw.startsWith("--limit=")) {
@@ -82,6 +87,10 @@ function parseArgs(argv: string[]): CliOptions {
       const n = Number(raw.slice("--doc-concurrency=".length));
       if (!Number.isFinite(n) || n <= 0 || n > 10) throw new Error(`bad --doc-concurrency=${raw} (1..10)`);
       opts.docConcurrency = Math.floor(n);
+    } else if (raw.startsWith("--chunk-concurrency=")) {
+      const n = Number(raw.slice("--chunk-concurrency=".length));
+      if (!Number.isFinite(n) || n <= 0 || n > 10) throw new Error(`bad --chunk-concurrency=${raw} (1..10)`);
+      opts.chunkConcurrency = Math.floor(n);
     } else if (raw.startsWith("--model=")) {
       const v = raw.slice("--model=".length);
       if (v !== "mini" && v !== "default") throw new Error(`bad --model=${v} (mini|default)`);
@@ -174,6 +183,7 @@ async function processDocument(
       force: true,
       useStrictCatalogueConstraint: true,
       preferredProvider: opts.model === "mini" ? "openai-mini" : "default",
+      concurrency: opts.chunkConcurrency,
     });
     return { doc, result, error: null, durationMs: Date.now() - started };
   } catch (err: any) {
@@ -255,7 +265,9 @@ async function main(): Promise<void> {
   const queue = [...docs];
   function logOutcome(doc: SyllabusDocument, outcome: DocOutcome, deleted: number) {
     processed += 1;
-    const prefix = `[${processed}/${docs.length}] doc=${doc.id} ${doc.syllabusCode} ${doc.filename ?? ""}`;
+    const mem = process.memoryUsage();
+    const memTag = ` rss=${Math.round(mem.rss / 1024 / 1024)}MB heap=${Math.round(mem.heapUsed / 1024 / 1024)}/${Math.round(mem.heapTotal / 1024 / 1024)}MB`;
+    const prefix = `[${processed}/${docs.length}]${memTag} doc=${doc.id} ${doc.syllabusCode} ${doc.filename ?? ""}`;
     const wipedTag = deleted > 0 ? ` (wiped ${deleted})` : "";
     if (outcome.error) {
       console.log(`${prefix}${wipedTag} ERROR: ${outcome.error} (${outcome.durationMs}ms)`);
@@ -280,6 +292,12 @@ async function main(): Promise<void> {
       const outcome = await processDocument(doc, opts);
       outcomes.push(outcome);
       logOutcome(doc, outcome, deleted);
+      // Drop the heavy extracted_text reference and force GC so the
+      // openai SDK's response buffers don't accumulate across docs.
+      (doc as any).extractedText = null;
+      if (typeof (globalThis as any).gc === "function") {
+        try { (globalThis as any).gc(); } catch {}
+      }
     }
   }
   const workers = Array.from({ length: Math.min(opts.docConcurrency, docs.length) }, () => worker());

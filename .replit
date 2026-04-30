@@ -34,6 +34,10 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Reextract Misconceptions"
+
 
 [[workflows.workflow]]
 name = "Start application"
@@ -54,6 +58,17 @@ outputType = "console"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "DATABASE_URL=\"$SUPABASE_DB_URL\" npx tsx scripts/ingestCurriculumDocs.ts"
+
+[[workflows.workflow]]
+name = "Reextract Misconceptions"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "DATABASE_URL=\"$SUPABASE_DB_URL\" NODE_OPTIONS=\"--expose-gc --max-old-space-size=2048\" npx tsx scripts/reextractExaminerMisconceptions.ts --doc-concurrency=1 --chunk-concurrency=2 --model=mini"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [userenv]
 
