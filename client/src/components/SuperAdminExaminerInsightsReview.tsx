@@ -214,6 +214,8 @@ const SORT_OPTIONS: Array<{ key: SortMode; label: string }> = [
   { key: "confidence_asc", label: "Confidence: low → high" },
 ];
 
+const STORAGE_KEY = "soma_superadmin_insights_filters_v1";
+
 function ConfidenceBadge({ pct }: { pct: number | null }) {
   const bucket = bucketForConfidence(pct);
   const meta = CONFIDENCE_BADGE[bucket];
@@ -231,13 +233,62 @@ function ConfidenceBadge({ pct }: { pct: number | null }) {
 }
 
 export function SuperAdminExaminerInsightsReview() {
-  const [status, setStatus] = useState<ReviewStatus>("pending");
+  const [status, setStatus] = useState<ReviewStatus>(() => {
+    if (typeof window === "undefined") return "pending";
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return "pending";
+      const parsed = JSON.parse(raw) as { status?: ReviewStatus };
+      return parsed.status ?? "pending";
+    } catch {
+      return "pending";
+    }
+  });
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
-  const [unmatchedOnly, setUnmatchedOnly] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>(() => {
+    if (typeof window === "undefined") return "all";
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return "all";
+      const parsed = JSON.parse(raw) as { confidenceFilter?: ConfidenceFilter };
+      return parsed.confidenceFilter ?? "all";
+    } catch {
+      return "all";
+    }
+  });
+  const [unmatchedOnly, setUnmatchedOnly] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as { unmatchedOnly?: boolean };
+      return Boolean(parsed.unmatchedOnly);
+    } catch {
+      return false;
+    }
+  });
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    if (typeof window === "undefined") return "newest";
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return "newest";
+      const parsed = JSON.parse(raw) as { sortMode?: SortMode };
+      return parsed.sortMode ?? "newest";
+    } catch {
+      return "newest";
+    }
+  });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ status, confidenceFilter, unmatchedOnly, sortMode }));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [status, confidenceFilter, unmatchedOnly, sortMode]);
 
   // Selection only makes sense on the pending tab; any other tab clears it.
   useEffect(() => {

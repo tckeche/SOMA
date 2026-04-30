@@ -153,8 +153,8 @@ export function isMeaningfulDraft(draft: TutorAssessmentDraft | null): boolean {
   if (draft.levelCode.trim()) return true;
   if (draft.subjectSlug.trim()) return true;
   if (draft.syllabusCode.trim()) return true;
-  if (draft.selectedTopicIds.length > 0) return true;
-  if (draft.selectedSubtopicIds.length > 0) return true;
+  if ((draft.selectedTopicIds?.length ?? 0) > 0) return true;
+  if ((draft.selectedSubtopicIds?.length ?? 0) > 0) return true;
   if (draft.prompt.trim()) return true;
   return false;
 }
