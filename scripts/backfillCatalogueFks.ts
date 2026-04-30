@@ -26,7 +26,7 @@
  *   DATABASE_URL  — Postgres connection (required)
  */
 import "dotenv/config";
-import { sql, and, eq, isNull, ilike, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { connectDb, db } from "../server/db";
 import {
   examinerMisconceptions,
@@ -34,11 +34,9 @@ import {
   somaQuizzes,
   studentSubjects,
   studentTopicMastery,
-  subjects,
-  subtopics,
   syllabi,
-  topics,
 } from "../shared/schema";
+import { resolveSubtopicId } from "../server/services/subtopicResolver";
 
 interface CliOptions {
   dryRun: boolean;
@@ -76,78 +74,6 @@ function printStats(label: string, s: Stats, dryRun: boolean): void {
   console.log(
     `[${label}] scanned=${s.scanned} matched=${s.matched} ${action}=${s.written} ambiguous=${s.ambiguous} unmatched=${s.unmatched} skipped=${s.skipped}`,
   );
-}
-
-/**
- * Resolve a free-text (subject, topic, subtopic) tuple to a unique
- * subtopic id, scoped to a set of candidate syllabus ids when known.
- *
- * Returns null when there is no match, or when there are multiple
- * matches in different syllabi we can't disambiguate.
- */
-async function resolveSubtopicId(args: {
-  subject: string | null;
-  topic: string | null;
-  subtopic: string | null;
-  candidateSyllabusIds?: number[];
-}): Promise<{ subtopicId: number | null; ambiguous: boolean }> {
-  if (!db) return { subtopicId: null, ambiguous: false };
-  const subjectName = (args.subject ?? "").trim();
-  const subtopicTitle = (args.subtopic ?? "").trim();
-  const topicTitle = (args.topic ?? "").trim();
-  if (!subtopicTitle && !topicTitle) return { subtopicId: null, ambiguous: false };
-
-  // Build a base select limited to candidate syllabi when supplied.
-  const conditions = [] as ReturnType<typeof eq>[];
-  if (subjectName) conditions.push(ilike(subjects.name, subjectName));
-  if (args.candidateSyllabusIds && args.candidateSyllabusIds.length > 0) {
-    conditions.push(inArray(syllabi.id, args.candidateSyllabusIds));
-  }
-
-  // Prefer exact subtopic-title match; fall back to topic-title match
-  // so legacy rows that only stored the topic name still get a hit
-  // (resolved to the subtopic with sortOrder 1, the canonical first
-  // subtopic of that topic).
-  const titleMatch = subtopicTitle || topicTitle;
-  const matchExact = (col: any) => ilike(col, titleMatch);
-
-  const baseRows = await db
-    .select({
-      subtopicId: subtopics.id,
-      subtopicTitle: subtopics.title,
-      topicTitle: topics.title,
-      syllabusId: topics.syllabusId,
-    })
-    .from(subtopics)
-    .innerJoin(topics, eq(topics.id, subtopics.topicId))
-    .innerJoin(syllabi, eq(syllabi.id, topics.syllabusId))
-    .innerJoin(subjects, eq(subjects.id, syllabi.subjectId))
-    .where(and(matchExact(subtopics.title), ...conditions));
-
-  if (baseRows.length === 1) return { subtopicId: baseRows[0].subtopicId, ambiguous: false };
-  if (baseRows.length > 1) return { subtopicId: null, ambiguous: true };
-
-  // Subtopic title didn't match — fall back to topic title.
-  if (topicTitle) {
-    const fallback = await db
-      .select({
-        subtopicId: subtopics.id,
-        sortOrder: subtopics.sortOrder,
-      })
-      .from(subtopics)
-      .innerJoin(topics, eq(topics.id, subtopics.topicId))
-      .innerJoin(syllabi, eq(syllabi.id, topics.syllabusId))
-      .innerJoin(subjects, eq(subjects.id, syllabi.subjectId))
-      .where(and(ilike(topics.title, topicTitle), ...conditions))
-      .orderBy(subtopics.sortOrder)
-      .limit(2);
-    if (fallback.length === 1) return { subtopicId: fallback[0].subtopicId, ambiguous: false };
-    if (fallback.length > 1) {
-      // Multiple subtopics under one topic — pick the canonical first one.
-      return { subtopicId: fallback[0].subtopicId, ambiguous: false };
-    }
-  }
-  return { subtopicId: null, ambiguous: false };
 }
 
 async function getStudentCandidateSyllabusIds(studentId: string): Promise<number[]> {

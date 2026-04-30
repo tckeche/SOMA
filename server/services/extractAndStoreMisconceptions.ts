@@ -31,6 +31,7 @@ import pLimit from "p-limit";
 import { storage } from "../storage";
 import { db as sharedDb } from "../db";
 import { generateWithFallback } from "./aiOrchestrator";
+import { resolveSubtopicId, resolveSyllabusIdsForCode } from "./subtopicResolver";
 import type { InsertExaminerMisconception } from "@shared/schema";
 
 export interface ExtractInputDoc {
@@ -452,24 +453,50 @@ export async function extractAndStoreMisconceptions(
   }
 
   const examYear = parseExamYearFromFilename(doc.filename ?? null);
-  const rows: InsertExaminerMisconception[] = deduped.map((item) => ({
-    documentId: doc.id,
-    board: doc.board,
-    syllabusCode: doc.syllabusCode,
-    subject: doc.subject ?? null,
-    topic: item.topic,
-    subtopic: item.subtopic,
-    misconception: item.misconception,
-    studentError: item.studentError,
-    correctApproach: item.correctApproach,
-    frequency: item.frequency,
-    // Phase 2: every freshly-extracted row enters the review queue.
-    status: "pending",
-    sourceQuote: item.sourceQuote,
-    sourcePage: item.approxPage,
-    confidence: item.confidencePct,
-    examYear,
-  }));
+
+  // Resolve catalogue FK at insert time so the review queue's join on
+  // `subtopics.title` hydrates immediately. We share the candidate
+  // syllabus-id lookup across every row of this document because all
+  // rows live under the same (board, syllabusCode) pair.
+  const candidateSyllabusIds = await resolveSyllabusIdsForCode(doc.syllabusCode);
+
+  const rows: InsertExaminerMisconception[] = await Promise.all(
+    deduped.map(async (item) => {
+      let subtopicId: number | null = null;
+      try {
+        const resolved = await resolveSubtopicId({
+          subject: doc.subject ?? null,
+          topic: item.topic,
+          subtopic: item.subtopic,
+          candidateSyllabusIds,
+        });
+        if (!resolved.ambiguous) subtopicId = resolved.subtopicId;
+      } catch (err: any) {
+        // Resolver issues must never block the insert — the backfill
+        // script can sweep up unmatched rows later.
+        console.warn(`[examinerExtract] subtopic resolve failed: ${err?.message ?? err}`);
+      }
+      return {
+        documentId: doc.id,
+        board: doc.board,
+        syllabusCode: doc.syllabusCode,
+        subject: doc.subject ?? null,
+        topic: item.topic,
+        subtopic: item.subtopic,
+        subtopicId,
+        misconception: item.misconception,
+        studentError: item.studentError,
+        correctApproach: item.correctApproach,
+        frequency: item.frequency,
+        // Phase 2: every freshly-extracted row enters the review queue.
+        status: "pending",
+        sourceQuote: item.sourceQuote,
+        sourcePage: item.approxPage,
+        confidence: item.confidencePct,
+        examYear,
+      } satisfies InsertExaminerMisconception;
+    }),
+  );
 
   await storage.createExaminerMisconceptions(rows);
 
