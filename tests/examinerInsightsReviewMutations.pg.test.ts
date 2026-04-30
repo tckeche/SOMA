@@ -31,30 +31,23 @@ import {
   beforeEach,
   vi,
 } from "vitest";
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { eq } from "drizzle-orm";
-import * as schema from "@shared/schema";
 import {
-  applyMigrations,
+  createTestDb,
+  mockServerDb,
   setupBaseFixtures,
   type BaseFixtureIds,
+  type TestDbHarness,
 } from "./helpers/examinerInsightsReviewPgHarness";
 
-let pglite: PGlite | null = null;
-let testDb: PgliteDatabase<typeof schema> | null = null;
+let harness: TestDbHarness | null = null;
 let base: BaseFixtureIds | null = null;
 
 // Live-binding mock so the service under test sees our PGlite-backed
-// `db`. The getter returns whatever `testDb` points to at call time,
-// which lets the async beforeAll build the db before any test runs.
-vi.mock("../server/db", () => ({
-  get db() {
-    return testDb;
-  },
-  pool: null,
-  connectDb: async () => {},
-}));
+// `db`. The getter returns whatever `harness.db` points to at call
+// time, which lets the async beforeAll build the db before any test
+// runs.
+vi.mock("../server/db", () => mockServerDb(() => harness?.db ?? null));
 
 // Wrap the cache invalidator with a spy. We re-export the real
 // implementation untouched so behaviour matches production; the spy
@@ -85,16 +78,13 @@ import {
 const REVIEWER_ID = "00000000-0000-0000-0000-000000000020";
 
 beforeAll(async () => {
-  pglite = new PGlite();
-  await applyMigrations(pglite);
-  testDb = drizzlePglite(pglite, { schema });
-  base = await setupBaseFixtures(testDb, { reviewerId: REVIEWER_ID });
+  harness = await createTestDb();
+  base = await setupBaseFixtures(harness.db, { reviewerId: REVIEWER_ID });
 }, 60_000);
 
 afterAll(async () => {
-  if (pglite) await pglite.close();
-  pglite = null;
-  testDb = null;
+  await harness?.teardown();
+  harness = null;
   base = null;
 });
 
@@ -102,8 +92,8 @@ beforeEach(async () => {
   // Each write test starts from a clean slate: drop any rows the
   // previous test inserted, then reset the cache spy. The base
   // catalogue/users/documents seeded in beforeAll stay.
-  if (testDb) {
-    await testDb.delete(examinerMisconceptions);
+  if (harness) {
+    await harness.db.delete(examinerMisconceptions);
   }
   vi.mocked(invalidateExaminerMisconceptionsCache).mockClear();
 });
@@ -116,8 +106,8 @@ beforeEach(async () => {
 async function insertMisconception(
   overrides: Partial<typeof examinerMisconceptions.$inferInsert> = {},
 ): Promise<number> {
-  if (!testDb || !base) throw new Error("harness not initialised");
-  const [row] = await testDb
+  if (!harness || !base) throw new Error("harness not initialised");
+  const [row] = await harness.db
     .insert(examinerMisconceptions)
     .values({
       documentId: base.documentId,
@@ -143,8 +133,8 @@ async function insertMisconception(
  * routing through `listQueue`.
  */
 async function readMisconception(id: number) {
-  if (!testDb) throw new Error("testDb not initialised");
-  const [row] = await testDb
+  if (!harness) throw new Error("harness not initialised");
+  const [row] = await harness.db
     .select()
     .from(examinerMisconceptions)
     .where(eq(examinerMisconceptions.id, id));

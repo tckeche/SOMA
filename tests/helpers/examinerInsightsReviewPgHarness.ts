@@ -1,65 +1,40 @@
 /**
- * Shared PGlite harness for examiner-insights review-queue integration tests.
+ * Shared PGlite harness for examiner-insights review-queue integration
+ * tests.
  *
  * Both `examinerInsightsReviewQueue.pg.test.ts` (read path) and
- * `examinerInsightsReviewMutations.pg.test.ts` (write path) use the same
- * in-process Postgres setup: apply the project drizzle migrations, then
- * seed the catalogue chain (body → level → subject → syllabus →
- * strand → topic → subtopic), the user accounts, a tutor-owned quiz,
- * and the source documents the queue rows reference.
+ * `examinerInsightsReviewMutations.pg.test.ts` (write path) need the
+ * same world: the catalogue chain (body → … → subtopic), three users
+ * (one tutor, one reviewer, one out-of-scope tutor), a tutor-owned
+ * quiz on syllabus 0580, and two source documents (one in-scope on
+ * 0580, one out-of-scope on 0625).
  *
- * Test files insert their own `examiner_misconceptions` rows on top of
- * this base — the read tests use a fixed seed so ordering can be
- * asserted, the write tests insert per-test rows and mutate them.
- *
- * A future task (see `Make the in-process Postgres test setup reusable
- * across other services`) will generalise this further; for now the
- * scope is just the review-queue tests.
+ * The generic in-process-Postgres bits (migrations, db creation, the
+ * server/db mock, and the catalogue chain itself) live in
+ * `./pglite.ts`. This file is just the review-queue-specific seeding
+ * on top.
  */
-import { PGlite } from "@electric-sql/pglite";
 import { type PgliteDatabase } from "drizzle-orm/pglite";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import * as schema from "@shared/schema";
 import {
-  examiningBodies,
-  levels,
-  subjects,
-  syllabi,
-  syllabusStrands,
-  topics,
-  subtopics,
   somaUsers,
   somaQuizzes,
   syllabusDocuments,
 } from "@shared/schema";
+import { seedCatalogue } from "./pglite";
 
-/**
- * Migration files applied in order. Mirrors what `drizzle-kit push`
- * would run against a fresh database.
- */
-export const MIGRATIONS = [
-  "0000_catalogue.sql",
-  "0001_phase1_fk_and_ai_usage.sql",
-  "0002_phase2_examiner_loop.sql",
-  "0003_phase2_misconception_year.sql",
-  "0004_phase3_revision_plans.sql",
-  "0005_phase4_command_word_performance.sql",
-];
-
-export async function applyMigrations(client: PGlite): Promise<void> {
-  for (const file of MIGRATIONS) {
-    const sql = readFileSync(
-      path.join(import.meta.dirname, "..", "..", "migrations", file),
-      "utf8",
-    );
-    if (!sql.trim()) continue;
-    // PGlite accepts the whole file at once; drizzle's
-    // `--> statement-breakpoint` markers are SQL line comments and are
-    // simply ignored by Postgres.
-    await client.exec(sql);
-  }
-}
+// Re-exported so existing call sites (and any new ones) can keep
+// importing migrations and db creation from this file. New tests
+// should prefer importing directly from `./pglite`.
+export {
+  applyMigrations,
+  createTestDb,
+  mockServerDb,
+  seedCatalogue,
+  MIGRATIONS,
+  type TestDbHarness,
+  type TestDrizzleDb,
+} from "./pglite";
 
 export interface BaseFixtureOptions {
   tutorId?: string;
@@ -96,53 +71,7 @@ export async function setupBaseFixtures(
   const otherTutorId = opts.otherTutorId ?? "00000000-0000-0000-0000-000000000030";
 
   // ---- Catalogue chain so a real subtopic row can exist ----
-  const [body] = await testDb
-    .insert(examiningBodies)
-    .values({ slug: "cambridge", displayName: "Cambridge" })
-    .returning();
-  await testDb
-    .insert(levels)
-    .values({ code: "IGCSE", displayName: "IGCSE", topBand: "IGCSE" });
-  const [subj] = await testDb
-    .insert(subjects)
-    .values({
-      examiningBodyId: body.id,
-      name: "Mathematics",
-      slug: "mathematics",
-    })
-    .returning();
-  const [syl] = await testDb
-    .insert(syllabi)
-    .values({
-      examiningBodyId: body.id,
-      subjectId: subj.id,
-      topBand: "IGCSE",
-      syllabusCode: "0580",
-      title: "Cambridge IGCSE Mathematics",
-    })
-    .returning();
-  const [strand] = await testDb
-    .insert(syllabusStrands)
-    .values({ syllabusId: syl.id, name: "Number" })
-    .returning();
-  const [topic] = await testDb
-    .insert(topics)
-    .values({
-      syllabusId: syl.id,
-      strandId: strand.id,
-      topicNumber: "1",
-      title: "Number basics",
-    })
-    .returning();
-  const [sub] = await testDb
-    .insert(subtopics)
-    .values({
-      topicId: topic.id,
-      subtopicNumber: "1.1",
-      title: "Place value",
-      levelTier: "IGCSE",
-    })
-    .returning();
+  const { subtopicId } = await seedCatalogue(testDb);
 
   // ---- Users (reviewer + two tutors) ----
   await testDb.insert(somaUsers).values([
@@ -206,7 +135,7 @@ export async function setupBaseFixtures(
     tutorId,
     reviewerId,
     otherTutorId,
-    subtopicId: sub.id,
+    subtopicId,
     documentId: doc.id,
     otherDocumentId: otherDoc.id,
   };

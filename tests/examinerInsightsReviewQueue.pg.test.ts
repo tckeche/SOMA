@@ -19,29 +19,21 @@
  * Postgres and tests do not flake on shared state.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { eq } from "drizzle-orm";
-import * as schema from "@shared/schema";
 import {
-  applyMigrations,
+  createTestDb,
+  mockServerDb,
   setupBaseFixtures,
+  type TestDbHarness,
 } from "./helpers/examinerInsightsReviewPgHarness";
 
-let pglite: PGlite | null = null;
-let testDb: PgliteDatabase<typeof schema> | null = null;
+let harness: TestDbHarness | null = null;
 
 // Live-binding mock: the service accesses `db` inside each call, so the
-// getter returns whatever `testDb` points to at call time. This lets us
-// build the PGlite-backed db asynchronously in beforeAll and still have
-// the service pick it up.
-vi.mock("../server/db", () => ({
-  get db() {
-    return testDb;
-  },
-  pool: null,
-  connectDb: async () => {},
-}));
+// getter returns whatever `harness.db` points to at call time. This
+// lets us build the PGlite-backed db asynchronously in beforeAll and
+// still have the service pick it up.
+vi.mock("../server/db", () => mockServerDb(() => harness?.db ?? null));
 
 import { examinerMisconceptions } from "@shared/schema";
 
@@ -68,9 +60,8 @@ let REJECTED_ID = 0;
 let OUT_OF_SCOPE_PENDING_ID = 0;
 
 beforeAll(async () => {
-  pglite = new PGlite();
-  await applyMigrations(pglite);
-  testDb = drizzlePglite(pglite, { schema });
+  harness = await createTestDb();
+  const testDb = harness.db;
 
   const base = await setupBaseFixtures(testDb, {
     tutorId: TUTOR_ID,
@@ -193,9 +184,8 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  if (pglite) await pglite.close();
-  pglite = null;
-  testDb = null;
+  await harness?.teardown();
+  harness = null;
 });
 
 describe("listQueue — executed against PGlite", () => {
@@ -380,7 +370,8 @@ describe("listSubtopicOptionsForInsight — executed against PGlite", () => {
   });
 
   it("allows unlinking (subtopicId: null) without syllabus checks", async () => {
-    if (!testDb) throw new Error("testDb not initialised");
+    if (!harness) throw new Error("harness not initialised");
+    const testDb = harness.db;
     // Sanity check: PENDING_LINKED_ID starts linked.
     const before = await testDb
       .select({ subtopicId: examinerMisconceptions.subtopicId })
@@ -406,7 +397,8 @@ describe("listSubtopicOptionsForInsight — executed against PGlite", () => {
   it("surfaces the resolver's best guess when the free-text matches a catalogue title", async () => {
     // Insert a fresh row whose free-text subtopic exactly matches the
     // seeded catalogue entry — the resolver should pick "Place value".
-    if (!testDb) throw new Error("testDb not initialised");
+    if (!harness) throw new Error("harness not initialised");
+    const testDb = harness.db;
     const [row] = await testDb
       .insert(examinerMisconceptions)
       .values({

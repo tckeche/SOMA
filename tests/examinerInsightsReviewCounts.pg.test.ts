@@ -25,22 +25,15 @@
  * threshold or status-filter drift in either function is caught.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import * as schema from "@shared/schema";
+import {
+  createTestDb,
+  mockServerDb,
+  type TestDbHarness,
+} from "./helpers/pglite";
 
-let pglite: PGlite | null = null;
-let testDb: PgliteDatabase<typeof schema> | null = null;
+let harness: TestDbHarness | null = null;
 
-vi.mock("../server/db", () => ({
-  get db() {
-    return testDb;
-  },
-  pool: null,
-  connectDb: async () => {},
-}));
+vi.mock("../server/db", () => mockServerDb(() => harness?.db ?? null));
 
 import {
   examinerMisconceptions,
@@ -56,26 +49,6 @@ import {
 
 const TUTOR_ID = "00000000-0000-0000-0000-000000000110";
 const OTHER_TUTOR_ID = "00000000-0000-0000-0000-000000000111";
-
-const MIGRATIONS = [
-  "0000_catalogue.sql",
-  "0001_phase1_fk_and_ai_usage.sql",
-  "0002_phase2_examiner_loop.sql",
-  "0003_phase2_misconception_year.sql",
-  "0004_phase3_revision_plans.sql",
-  "0005_phase4_command_word_performance.sql",
-];
-
-async function applyMigrations(client: PGlite): Promise<void> {
-  for (const file of MIGRATIONS) {
-    const sql = readFileSync(
-      path.join(import.meta.dirname, "..", "migrations", file),
-      "utf8",
-    );
-    if (!sql.trim()) continue;
-    await client.exec(sql);
-  }
-}
 
 /**
  * Seed plan, designed so each status has a different total *and* each
@@ -118,9 +91,8 @@ const EXPECTED = {
 } as const;
 
 beforeAll(async () => {
-  pglite = new PGlite();
-  await applyMigrations(pglite);
-  testDb = drizzlePglite(pglite, { schema });
+  harness = await createTestDb();
+  const testDb = harness.db;
 
   await testDb.insert(somaUsers).values([
     {
@@ -193,9 +165,8 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  if (pglite) await pglite.close();
-  pglite = null;
-  testDb = null;
+  await harness?.teardown();
+  harness = null;
 });
 
 function sumBuckets(b: { high: number; medium: number; low: number; unknown: number }): number {
