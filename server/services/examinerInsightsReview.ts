@@ -19,7 +19,7 @@ import {
   syllabi,
 } from "@shared/schema";
 import { invalidateExaminerMisconceptionsCache } from "./examinerMisconceptionsCache";
-import { and, asc, desc, eq, inArray, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { resolveSubtopicId, resolveSyllabusIdsForCode } from "./subtopicResolver";
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
@@ -57,6 +57,25 @@ export interface QueueListOptions {
   syllabusCode?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Restrict the result to "unmatched orphans": rows whose AI-extracted
+   * free-text `subtopic` is non-empty but couldn't be auto-mapped to a
+   * canonical `subtopics.id`. Pushed into the SQL WHERE so reviewers
+   * can sweep orphans even when total pending exceeds the page limit.
+   */
+  unmatchedOnly?: boolean;
+}
+
+/**
+ * Shared SQL predicate for "unmatched orphan": non-empty trimmed
+ * free-text `subtopic` AND null `subtopicId`. Built once so the
+ * counts pass and the queue filter use the exact same definition.
+ */
+function unmatchedSqlCondition(): SQL {
+  return and(
+    sql`length(trim(coalesce(${examinerMisconceptions.subtopic}, ''))) > 0`,
+    isNull(examinerMisconceptions.subtopicId),
+  )!;
 }
 
 export interface QueueListResult {
@@ -183,6 +202,7 @@ export async function listQueue(options: QueueListOptions = {}): Promise<QueueLi
   const conditions: SQL[] = [eq(examinerMisconceptions.status, status)];
   if (options.board) conditions.push(eq(examinerMisconceptions.board, options.board));
   if (options.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
+  if (options.unmatchedOnly) conditions.push(unmatchedSqlCondition());
 
   return runQueueQuery(conditions, limit, offset);
 }
@@ -259,6 +279,13 @@ export interface CountsByStatus {
   approved: number;
   rejected: number;
   byConfidence: Record<ReviewStatus, ConfidenceBreakdown>;
+  /**
+   * Per-status count of rows whose free-text `subtopic` is non-empty
+   * but couldn't be auto-mapped to a canonical `subtopics.id`. Powers
+   * the "Show only unmatched (N)" reviewer toggle so the count reflects
+   * the entire status (not just the current page of `listQueue`).
+   */
+  unmatched: Record<ReviewStatus, number>;
 }
 
 function bucketOfConfidence(pct: number | null | undefined): ConfidenceBucket {
@@ -266,6 +293,10 @@ function bucketOfConfidence(pct: number | null | undefined): ConfidenceBucket {
   if (pct >= 80) return "high";
   if (pct >= 50) return "medium";
   return "low";
+}
+
+function isUnmatched(subtopic: string | null | undefined, subtopicId: number | null | undefined): boolean {
+  return (subtopic ?? "").trim() !== "" && (subtopicId === null || subtopicId === undefined);
 }
 
 function emptyCountsByStatus(): CountsByStatus {
@@ -278,6 +309,7 @@ function emptyCountsByStatus(): CountsByStatus {
       approved: { high: 0, medium: 0, low: 0, unknown: 0 },
       rejected: { high: 0, medium: 0, low: 0, unknown: 0 },
     },
+    unmatched: { pending: 0, approved: 0, rejected: 0 },
   };
 }
 
@@ -285,13 +317,19 @@ export async function countsByStatus(): Promise<CountsByStatus> {
   const counts = emptyCountsByStatus();
   if (!db) return counts;
   const rows = await db
-    .select({ status: examinerMisconceptions.status, confidence: examinerMisconceptions.confidence })
+    .select({
+      status: examinerMisconceptions.status,
+      confidence: examinerMisconceptions.confidence,
+      subtopic: examinerMisconceptions.subtopic,
+      subtopicId: examinerMisconceptions.subtopicId,
+    })
     .from(examinerMisconceptions);
   for (const r of rows) {
     const s = r.status as ReviewStatus | null;
     if (s !== "pending" && s !== "approved" && s !== "rejected") continue;
     counts[s]++;
     counts.byConfidence[s][bucketOfConfidence(r.confidence)]++;
+    if (isUnmatched(r.subtopic, r.subtopicId)) counts.unmatched[s]++;
   }
   return counts;
 }
@@ -328,6 +366,7 @@ export async function listQueueForTutor(
   ];
   if (options.board) conditions.push(eq(examinerMisconceptions.board, options.board));
   if (options.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, options.syllabusCode));
+  if (options.unmatchedOnly) conditions.push(unmatchedSqlCondition());
 
   return runQueueQuery(conditions, limit, offset);
 }
@@ -341,7 +380,12 @@ export async function countsByStatusForTutor(tutorId: string): Promise<CountsByS
     and(eq(examinerMisconceptions.board, p.board), eq(examinerMisconceptions.syllabusCode, p.syllabusCode)),
   );
   const rows = await db
-    .select({ status: examinerMisconceptions.status, confidence: examinerMisconceptions.confidence })
+    .select({
+      status: examinerMisconceptions.status,
+      confidence: examinerMisconceptions.confidence,
+      subtopic: examinerMisconceptions.subtopic,
+      subtopicId: examinerMisconceptions.subtopicId,
+    })
     .from(examinerMisconceptions)
     .where(or(...scopeConditions)!);
   for (const r of rows) {
@@ -349,6 +393,7 @@ export async function countsByStatusForTutor(tutorId: string): Promise<CountsByS
     if (s !== "pending" && s !== "approved" && s !== "rejected") continue;
     counts[s]++;
     counts.byConfidence[s][bucketOfConfidence(r.confidence)]++;
+    if (isUnmatched(r.subtopic, r.subtopicId)) counts.unmatched[s]++;
   }
   return counts;
 }

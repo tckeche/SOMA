@@ -85,6 +85,7 @@ interface Counts {
   approved: number;
   rejected: number;
   byConfidence?: Record<ReviewStatus, ConfidenceBreakdown>;
+  unmatched?: Record<ReviewStatus, number>;
 }
 
 const TUTOR_PILL_BUCKET_META: Array<{ key: keyof ConfidenceBreakdown; label: string; dot: string }> = [
@@ -237,6 +238,7 @@ export function TutorExaminerInsightsReview() {
   const [status, setStatus] = useState<ReviewStatus>("pending");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
+  const [unmatchedOnly, setUnmatchedOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const queryClient = useQueryClient();
@@ -257,9 +259,10 @@ export function TutorExaminerInsightsReview() {
   });
 
   const queue = useQuery<QueueListResult>({
-    queryKey: ["/api/tutor/examiner-insights/queue", status],
+    queryKey: ["/api/tutor/examiner-insights/queue", status, unmatchedOnly],
     queryFn: async () => {
-      const res = await authFetch(`/api/tutor/examiner-insights/queue?status=${status}&limit=100`);
+      const url = `/api/tutor/examiner-insights/queue?status=${status}&limit=100${unmatchedOnly ? "&unmatchedOnly=1" : ""}`;
+      const res = await authFetch(url);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -280,12 +283,14 @@ export function TutorExaminerInsightsReview() {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
+  // `unmatchedOnly` is applied server-side (it's part of the queue
+  // query key and request URL); rows arrive pre-filtered.
   const visibleRows = useMemo(() => {
     const rows = queue.data?.rows ?? [];
-    const filtered =
-      confidenceFilter === "all"
-        ? rows
-        : rows.filter((r) => bucketForConfidence(r.confidencePct) === confidenceFilter);
+    let filtered = rows;
+    if (confidenceFilter !== "all") {
+      filtered = filtered.filter((r) => bucketForConfidence(r.confidencePct) === confidenceFilter);
+    }
     const sorted = [...filtered];
     if (sortMode === "newest") {
       sorted.sort((a, b) => (a.extractedAt < b.extractedAt ? 1 : -1));
@@ -309,6 +314,14 @@ export function TutorExaminerInsightsReview() {
     for (const r of rows) counts[bucketForConfidence(r.confidencePct)]++;
     return counts;
   }, [queue.data?.rows]);
+
+  // Server count is canonical (whole status). When the older counts
+  // payload is cached without `unmatched`, fall back to the loaded
+  // row count when the toggle is on (every row is unmatched in that
+  // case because the server pre-filters), else 0.
+  const unmatchedCount =
+    counts.data?.unmatched?.[status]
+    ?? (unmatchedOnly ? queue.data?.rows.length ?? 0 : 0);
 
   const approve = useMutation({
     mutationFn: async ({ id }: { id: number }) => {
@@ -456,6 +469,22 @@ export function TutorExaminerInsightsReview() {
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            onClick={() => setUnmatchedOnly((v) => !v)}
+            aria-pressed={unmatchedOnly}
+            className={`mt-[18px] inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition ${
+              unmatchedOnly
+                ? "bg-amber-500/20 border-amber-500/40 text-amber-200"
+                : "bg-foreground/[0.04] border-border/60 text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground"
+            }`}
+            title="Only show items where SOMA couldn't pick a subtopic — perfect for an orphan-sweep."
+            data-testid="tutor-button-toggle-unmatched-only"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            Show only unmatched
+            <span className="opacity-70">({unmatchedCount})</span>
+          </button>
         </div>
         <div className="text-[11px] text-muted-foreground" data-testid="tutor-text-confidence-summary">
           Pretty sure {confidenceCounts.high} · Worth a look {confidenceCounts.medium} · Not sure {confidenceCounts.low}
@@ -489,14 +518,33 @@ export function TutorExaminerInsightsReview() {
       ) : visibleRows.length === 0 ? (
         <div className="bg-foreground/[0.02] border border-border/60 rounded-2xl text-center py-12 px-4">
           <ClipboardCheck className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-          <p className="text-sm text-foreground font-medium">No insights match this confidence filter.</p>
-          <button
-            onClick={() => setConfidenceFilter("all")}
-            className="mt-3 text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.08]"
-            data-testid="tutor-button-clear-confidence-filter"
-          >
-            Show all
-          </button>
+          <p className="text-sm text-foreground font-medium" data-testid="tutor-text-empty-filtered">
+            {unmatchedOnly && confidenceFilter !== "all"
+              ? `No unmatched items match this confidence filter (${unmatchedCount} unmatched in ${status === "pending" ? "“to check”" : status}).`
+              : unmatchedOnly
+                ? `No unmatched items in ${status === "pending" ? "“to check”" : status}.`
+                : "No insights match this confidence filter."}
+          </p>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            {confidenceFilter !== "all" && (
+              <button
+                onClick={() => setConfidenceFilter("all")}
+                className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.08]"
+                data-testid="tutor-button-clear-confidence-filter"
+              >
+                Show all confidence
+              </button>
+            )}
+            {unmatchedOnly && (
+              <button
+                onClick={() => setUnmatchedOnly(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-foreground/[0.08]"
+                data-testid="tutor-button-clear-unmatched-filter"
+              >
+                Show all subtopic states
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="space-y-3 pb-24">

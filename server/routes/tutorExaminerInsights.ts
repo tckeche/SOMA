@@ -76,13 +76,14 @@ export function registerTutorExaminerInsightsRoutes(app: Express): void {
         ? (String(req.query.status) as ReviewStatus)
         : "pending";
       const board = typeof req.query.board === "string" && req.query.board.trim() ? req.query.board.trim() : undefined;
+      const unmatchedOnly = req.query.unmatchedOnly === "1" || req.query.unmatchedOnly === "true";
       const syllabusCode =
         typeof req.query.syllabusCode === "string" && req.query.syllabusCode.trim()
           ? req.query.syllabusCode.trim()
           : undefined;
       const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 50;
       const offset = Number.isFinite(Number(req.query.offset)) ? Number(req.query.offset) : 0;
-      const result = await listQueueForTutor(tutorId, { status, board, syllabusCode, limit, offset });
+      const result = await listQueueForTutor(tutorId, { status, board, syllabusCode, limit, offset, unmatchedOnly });
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err?.message || "Failed to fetch queue" });

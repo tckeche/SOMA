@@ -45,6 +45,8 @@ import {
 import {
   countsByStatus,
   countsByStatusForTutor,
+  listQueue,
+  listQueueForTutor,
 } from "../server/services/examinerInsightsReview";
 
 const TUTOR_ID = "00000000-0000-0000-0000-000000000110";
@@ -65,29 +67,36 @@ const OTHER_TUTOR_ID = "00000000-0000-0000-0000-000000000111";
  *   49  → low    (just below medium)
  *   0   → low    (lowest non-null value)
  *   null→ unknown
+ *
+ * `subtopic` markers cover the `unmatched` count: rows with a non-empty
+ * free-text subtopic AND null `subtopicId` (whitespace must NOT count).
  */
-const SEED: Array<{ status: "pending" | "approved" | "rejected"; confidence: number | null }> = [
-  // pending — 5 rows, totals: high 2, medium 1, low 1, unknown 1
-  { status: "pending", confidence: 100 },
+const SEED: Array<{
+  status: "pending" | "approved" | "rejected";
+  confidence: number | null;
+  subtopic?: string;
+}> = [
+  // pending — unmatched: 2 (rows with non-empty subtopic + null subtopicId)
+  { status: "pending", confidence: 100, subtopic: "1.1 Atoms" },
   { status: "pending", confidence: 80 },
-  { status: "pending", confidence: 79 },
+  { status: "pending", confidence: 79, subtopic: "Pythagoras" },
   { status: "pending", confidence: 49 },
   { status: "pending", confidence: null },
-  // approved — 4 rows, totals: high 1, medium 2, low 0, unknown 1
-  { status: "approved", confidence: 90 },
+  // approved — unmatched: 1
+  { status: "approved", confidence: 90, subtopic: "Forces" },
   { status: "approved", confidence: 65 },
   { status: "approved", confidence: 50 },
   { status: "approved", confidence: null },
-  // rejected — 3 rows, totals: high 0, medium 0, low 2, unknown 1
-  { status: "rejected", confidence: 30 },
+  // rejected — unmatched: 0 (whitespace-only must NOT count)
+  { status: "rejected", confidence: 30, subtopic: "   " },
   { status: "rejected", confidence: 0 },
   { status: "rejected", confidence: null },
 ];
 
 const EXPECTED = {
-  pending: { total: 5, high: 2, medium: 1, low: 1, unknown: 1 },
-  approved: { total: 4, high: 1, medium: 2, low: 0, unknown: 1 },
-  rejected: { total: 3, high: 0, medium: 0, low: 2, unknown: 1 },
+  pending: { total: 5, high: 2, medium: 1, low: 1, unknown: 1, unmatched: 2 },
+  approved: { total: 4, high: 1, medium: 2, low: 0, unknown: 1, unmatched: 1 },
+  rejected: { total: 3, high: 0, medium: 0, low: 2, unknown: 1, unmatched: 0 },
 } as const;
 
 beforeAll(async () => {
@@ -136,6 +145,8 @@ beforeAll(async () => {
       board: "Cambridge IGCSE",
       syllabusCode: "0580",
       topic: "Algebra",
+      subtopic: row.subtopic ?? null,
+      // subtopicId stays null: that is the whole point of "unmatched".
       misconception: `seed-${idx}`,
       studentError: `error-${idx}`,
       correctApproach: `approach-${idx}`,
@@ -149,11 +160,14 @@ beforeAll(async () => {
   // One out-of-scope row that the tutor-scoped query must ignore but
   // the unscoped admin query must count. It's a confidence-bucket
   // value that, if leaked, would shift the medium count for pending.
+  // Also carries an unmatched subtopic so we can prove the admin's
+  // unmatched count picks it up while the tutor-scoped one ignores it.
   await testDb.insert(examinerMisconceptions).values({
     documentId: doc.id,
     board: "Cambridge IGCSE",
     syllabusCode: "0625",
     topic: "Forces",
+    subtopic: "Newton's third law",
     misconception: "out-of-scope",
     studentError: "noise",
     correctApproach: "n/a",
@@ -210,6 +224,16 @@ describe("countsByStatus — bucket totals match status totals", () => {
     expect(c.byConfidence.rejected.low).toBe(EXPECTED.rejected.low); // 0 + 30
     expect(c.byConfidence.rejected.unknown).toBe(EXPECTED.rejected.unknown);
   });
+
+  it("counts unmatched per status (non-empty subtopic + null subtopicId)", async () => {
+    const c = await countsByStatus();
+    // pending = 2 in-scope unmatched + 1 out-of-scope unmatched (admin sees both).
+    expect(c.unmatched.pending).toBe(EXPECTED.pending.unmatched + 1);
+    expect(c.unmatched.approved).toBe(EXPECTED.approved.unmatched);
+    // The rejected seed has a whitespace-only subtopic that must be
+    // treated as "no subtopic text" — so unmatched.rejected stays at 0.
+    expect(c.unmatched.rejected).toBe(EXPECTED.rejected.unmatched);
+  });
 });
 
 describe("countsByStatusForTutor — bucket totals match status totals", () => {
@@ -250,6 +274,13 @@ describe("countsByStatusForTutor — bucket totals match status totals", () => {
     });
   });
 
+  it("counts unmatched per status, excluding the out-of-scope unmatched row", async () => {
+    const c = await countsByStatusForTutor(TUTOR_ID);
+    expect(c.unmatched.pending).toBe(EXPECTED.pending.unmatched);
+    expect(c.unmatched.approved).toBe(EXPECTED.approved.unmatched);
+    expect(c.unmatched.rejected).toBe(EXPECTED.rejected.unmatched);
+  });
+
   it("returns all-zero counts (with zero buckets) for a tutor with no quizzes", async () => {
     const c = await countsByStatusForTutor(OTHER_TUTOR_ID);
     expect(c.pending).toBe(0);
@@ -258,5 +289,49 @@ describe("countsByStatusForTutor — bucket totals match status totals", () => {
     expect(sumBuckets(c.byConfidence.pending)).toBe(0);
     expect(sumBuckets(c.byConfidence.approved)).toBe(0);
     expect(sumBuckets(c.byConfidence.rejected)).toBe(0);
+    expect(c.unmatched.pending).toBe(0);
+    expect(c.unmatched.approved).toBe(0);
+    expect(c.unmatched.rejected).toBe(0);
+  });
+});
+
+// Server-side `unmatchedOnly` filter. Confirms that the same predicate
+// the counts use is also applied in the queue listing, so the toggle
+// returns matching rows (not just a matching count).
+describe("listQueue / listQueueForTutor — unmatchedOnly filter", () => {
+  it("admin queue with unmatchedOnly returns only rows with non-empty subtopic + null subtopicId", async () => {
+    const res = await listQueue({ status: "pending", unmatchedOnly: true, limit: 200 });
+    // Out-of-scope row + 2 in-scope unmatched pending rows = 3.
+    expect(res.total).toBe(EXPECTED.pending.unmatched + 1);
+    expect(res.rows.length).toBe(EXPECTED.pending.unmatched + 1);
+    for (const r of res.rows) {
+      expect(r.subtopicId).toBeNull();
+      expect((r.subtopic ?? "").trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("admin queue with unmatchedOnly excludes the whitespace-only rejected row", async () => {
+    const res = await listQueue({ status: "rejected", unmatchedOnly: true, limit: 200 });
+    expect(res.total).toBe(EXPECTED.rejected.unmatched); // 0
+    expect(res.rows.length).toBe(0);
+  });
+
+  it("tutor queue with unmatchedOnly is scoped (out-of-scope unmatched row is excluded)", async () => {
+    const res = await listQueueForTutor(TUTOR_ID, {
+      status: "pending",
+      unmatchedOnly: true,
+      limit: 200,
+    });
+    expect(res.total).toBe(EXPECTED.pending.unmatched);
+    expect(res.rows.length).toBe(EXPECTED.pending.unmatched);
+    for (const r of res.rows) {
+      expect(r.subtopicId).toBeNull();
+      expect((r.subtopic ?? "").trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("admin queue without the flag still returns all matching rows for the status", async () => {
+    const res = await listQueue({ status: "pending", limit: 200 });
+    expect(res.total).toBe(EXPECTED.pending.total + 1); // +1 out-of-scope
   });
 });
