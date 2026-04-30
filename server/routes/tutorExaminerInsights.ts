@@ -15,7 +15,9 @@ import {
   bulkActionInsights,
   countsByStatusForTutor,
   listQueueForTutor,
+  listSubtopicOptionsForInsight,
   rejectInsight,
+  SubtopicLinkValidationError,
   tutorOwnsInsight,
   updateInsight,
   type ReviewStatus,
@@ -87,6 +89,24 @@ export function registerTutorExaminerInsightsRoutes(app: Express): void {
     }
   });
 
+  // ── Subtopic options for the inline picker (scoped) ────────────────
+  app.get("/api/tutor/examiner-insights/:id/subtopic-options", requireTutor, async (req, res) => {
+    try {
+      const tutorId = tutorIdFromReq(req);
+      if (!tutorId) return res.status(401).json({ message: "Tutor identity required" });
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
+      if (!(await tutorOwnsInsight(tutorId, id))) {
+        return res.status(403).json({ message: "This insight is outside your assigned syllabi." });
+      }
+      const result = await listSubtopicOptionsForInsight(id);
+      if (!result) return res.status(404).json({ message: "Insight not found" });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Failed to fetch subtopic options" });
+    }
+  });
+
   // ── Edit (scoped) ──────────────────────────────────────────────────
   app.patch("/api/tutor/examiner-insights/:id", requireTutor, async (req, res) => {
     try {
@@ -104,6 +124,9 @@ export function registerTutorExaminerInsightsRoutes(app: Express): void {
       await updateInsight(id, parsed.data);
       res.json({ ok: true });
     } catch (err: any) {
+      if (err instanceof SubtopicLinkValidationError) {
+        return res.status(400).json({ message: err.message });
+      }
       res.status(500).json({ message: err?.message || "Failed to update insight" });
     }
   });

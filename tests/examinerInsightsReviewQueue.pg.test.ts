@@ -21,6 +21,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
+import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import * as schema from "@shared/schema";
@@ -57,6 +58,9 @@ import {
 import {
   listQueue,
   listQueueForTutor,
+  listSubtopicOptionsForInsight,
+  SubtopicLinkValidationError,
+  updateInsight,
 } from "../server/services/examinerInsightsReview";
 
 const TUTOR_ID = "00000000-0000-0000-0000-000000000010";
@@ -456,5 +460,114 @@ describe("listQueueForTutor — executed against PGlite", () => {
     });
     expect(total).toBe(1);
     expect(rows[0].id).toBe(REJECTED_ID);
+  });
+});
+
+describe("listSubtopicOptionsForInsight — executed against PGlite", () => {
+  it("returns the catalogue scoped to the row's syllabus and the resolver's best guess", async () => {
+    // PENDING_LINKED_ID has free-text subtopic "Linear equations" but
+    // the seeded catalogue only contains "Place value" — the resolver
+    // can't match it, so suggestion is null. Options must still be
+    // returned so the reviewer can pick from the syllabus catalogue.
+    const result = await listSubtopicOptionsForInsight(PENDING_LINKED_ID);
+    expect(result).not.toBeNull();
+    expect(result!.insight.id).toBe(PENDING_LINKED_ID);
+    expect(result!.insight.subtopicId).toBe(SUBTOPIC_ID);
+    expect(result!.options).toHaveLength(1);
+    expect(result!.options[0]).toMatchObject({
+      id: SUBTOPIC_ID,
+      title: "Place value",
+      subtopicNumber: "1.1",
+      topicNumber: "1",
+      topicTitle: "Number basics",
+    });
+    // Suggestion is null when the free-text doesn't match any catalogue
+    // title — the reviewer is asked to pick manually.
+    expect(result!.suggestion).toBeNull();
+  });
+
+  it("returns an empty options list when the syllabus has no catalogue entries", async () => {
+    // OUT_OF_SCOPE_PENDING_ID is on syllabus 0625 which we never seeded
+    // catalogue rows for. The endpoint must still respond cleanly so
+    // the picker UI can render an empty-state message.
+    const result = await listSubtopicOptionsForInsight(OUT_OF_SCOPE_PENDING_ID);
+    expect(result).not.toBeNull();
+    expect(result!.options).toEqual([]);
+    expect(result!.suggestion).toBeNull();
+  });
+
+  it("returns null for an unknown insight id", async () => {
+    const result = await listSubtopicOptionsForInsight(999_999);
+    expect(result).toBeNull();
+  });
+
+  it("rejects PATCH attempts that link an insight to an out-of-syllabus subtopic", async () => {
+    // OUT_OF_SCOPE_PENDING_ID is on syllabus 0625; SUBTOPIC_ID belongs
+    // to syllabus 0580. The PATCH layer should refuse this even though
+    // the picker UI never offers it, so a hand-crafted request can't
+    // quietly corrupt the catalogue link.
+    await expect(
+      updateInsight(OUT_OF_SCOPE_PENDING_ID, { subtopicId: SUBTOPIC_ID }),
+    ).rejects.toBeInstanceOf(SubtopicLinkValidationError);
+  });
+
+  it("allows unlinking (subtopicId: null) without syllabus checks", async () => {
+    if (!testDb) throw new Error("testDb not initialised");
+    // Sanity check: PENDING_LINKED_ID starts linked.
+    const before = await testDb
+      .select({ subtopicId: examinerMisconceptions.subtopicId })
+      .from(examinerMisconceptions)
+      .where(eq(examinerMisconceptions.id, PENDING_LINKED_ID));
+    expect(before[0].subtopicId).toBe(SUBTOPIC_ID);
+    try {
+      await updateInsight(PENDING_LINKED_ID, { subtopicId: null });
+      const after = await testDb
+        .select({ subtopicId: examinerMisconceptions.subtopicId })
+        .from(examinerMisconceptions)
+        .where(eq(examinerMisconceptions.id, PENDING_LINKED_ID));
+      expect(after[0].subtopicId).toBeNull();
+    } finally {
+      // Restore so other tests in this file see the original linked state.
+      await testDb
+        .update(examinerMisconceptions)
+        .set({ subtopicId: SUBTOPIC_ID })
+        .where(eq(examinerMisconceptions.id, PENDING_LINKED_ID));
+    }
+  });
+
+  it("surfaces the resolver's best guess when the free-text matches a catalogue title", async () => {
+    // Insert a fresh row whose free-text subtopic exactly matches the
+    // seeded catalogue entry — the resolver should pick "Place value".
+    if (!testDb) throw new Error("testDb not initialised");
+    const [row] = await testDb
+      .insert(examinerMisconceptions)
+      .values({
+        documentId: DOCUMENT_ID,
+        board: "Cambridge IGCSE",
+        syllabusCode: "0580",
+        subject: "Mathematics",
+        topic: "Number basics",
+        subtopic: "Place value",
+        subtopicId: null,
+        misconception: "Mixes units and tens",
+        studentError: "Reads 12 as 21",
+        correctApproach: "Identify each digit's place",
+        frequency: "common",
+        status: "pending",
+        extractedAt: new Date("2026-04-15T10:00:00Z"),
+      })
+      .returning();
+    try {
+      const result = await listSubtopicOptionsForInsight(row.id);
+      expect(result).not.toBeNull();
+      expect(result!.suggestion).toEqual({
+        id: SUBTOPIC_ID,
+        title: "Place value",
+      });
+    } finally {
+      await testDb
+        .delete(examinerMisconceptions)
+        .where(eq(examinerMisconceptions.id, row.id));
+    }
   });
 });

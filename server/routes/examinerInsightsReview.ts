@@ -17,7 +17,9 @@ import {
   bulkApproveHighConfidence,
   countsByStatus,
   listQueue,
+  listSubtopicOptionsForInsight,
   rejectInsight,
+  SubtopicLinkValidationError,
   updateInsight,
   type ReviewStatus,
 } from "../services/examinerInsightsReview";
@@ -90,6 +92,19 @@ export function registerExaminerInsightsReviewRoutes(app: Express): void {
     }
   });
 
+  // ── Subtopic options for the inline picker ─────────────────────────
+  app.get("/api/super-admin/examiner-insights/:id/subtopic-options", requireSuperAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
+      const result = await listSubtopicOptionsForInsight(id);
+      if (!result) return res.status(404).json({ message: "Insight not found" });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Failed to fetch subtopic options" });
+    }
+  });
+
   // ── Edit a row (any status) ────────────────────────────────────────
   app.patch("/api/super-admin/examiner-insights/:id", requireSuperAdmin, async (req, res) => {
     try {
@@ -102,6 +117,9 @@ export function registerExaminerInsightsReviewRoutes(app: Express): void {
       await updateInsight(id, parsed.data);
       res.json({ ok: true });
     } catch (err: any) {
+      if (err instanceof SubtopicLinkValidationError) {
+        return res.status(400).json({ message: err.message });
+      }
       res.status(500).json({ message: err?.message || "Failed to update insight" });
     }
   });

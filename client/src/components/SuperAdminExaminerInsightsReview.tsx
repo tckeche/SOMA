@@ -16,7 +16,32 @@ import {
   FileText,
   Gauge,
   CheckSquare,
+  Link2,
+  HelpCircle,
 } from "lucide-react";
+
+interface SubtopicOption {
+  id: number;
+  subtopicNumber: string;
+  title: string;
+  topicId: number;
+  topicNumber: string;
+  topicTitle: string;
+}
+
+interface SubtopicOptionsResult {
+  insight: {
+    id: number;
+    board: string;
+    syllabusCode: string;
+    subject: string | null;
+    topic: string;
+    subtopic: string | null;
+    subtopicId: number | null;
+  };
+  options: SubtopicOption[];
+  suggestion: { id: number; title: string } | null;
+}
 
 type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -615,7 +640,7 @@ function ReviewRow({
             <FileText className="w-3 h-3" />
             <span>{row.documentFilename ?? `Document ${row.documentId}`}</span>
             <span>·</span>
-            <span>{row.subtopicTitle ? `Linked to: ${row.subtopicTitle}` : "Not linked to a catalogue subtopic"}</span>
+            <SubtopicLinkBadge row={row} />
           </div>
         </div>
 
@@ -657,6 +682,14 @@ function ReviewRow({
           <Field label="Subtopic (free-text)">
             <input value={subtopic} onChange={(e) => setSubtopic(e.target.value)} className="input-field" />
           </Field>
+          {((row.subtopic ?? "").trim() || row.subtopicId) ? (
+            <SubtopicPickerInline
+              row={row}
+              onPick={(subtopicId) => onSave({ subtopicId })}
+              busy={busy}
+              testIdPrefix=""
+            />
+          ) : null}
           <Field label="Misconception">
             <textarea value={misconception} onChange={(e) => setMisconception(e.target.value)} rows={2} className="input-field font-medium" />
           </Field>
@@ -746,5 +779,169 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         .input-field:focus { outline: none; border-color: rgba(239, 68, 68, 0.4); }
       `}</style>
     </label>
+  );
+}
+
+/**
+ * Three-state subtopic-link badge:
+ *  - Linked to a canonical subtopic (green-ish "Linked to: …")
+ *  - Free-text subtopic exists but couldn't be auto-mapped (amber
+ *    "Unmatched" badge so reviewers can fix orphans during their pass)
+ *  - No free-text subtopic at all (existing muted "Not linked" state)
+ */
+function SubtopicLinkBadge({ row }: { row: QueueRow }) {
+  if (row.subtopicId && row.subtopicTitle) {
+    return (
+      <span className="inline-flex items-center gap-1" data-testid={`subtopic-link-badge-linked-${row.id}`}>
+        <Link2 className="w-3 h-3 text-emerald-400" />
+        Linked to: <span className="text-foreground/80">{row.subtopicTitle}</span>
+      </span>
+    );
+  }
+  if ((row.subtopic ?? "").trim()) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/15 text-amber-200"
+        title={`Free-text subtopic "${row.subtopic}" couldn't be auto-mapped to the catalogue. Edit this row to pick the right one.`}
+        data-testid={`subtopic-link-badge-unmatched-${row.id}`}
+      >
+        <AlertTriangle className="w-3 h-3" />
+        Unmatched: <span className="font-medium">{row.subtopic}</span> — pick a subtopic
+      </span>
+    );
+  }
+  return (
+    <span data-testid={`subtopic-link-badge-empty-${row.id}`}>Not linked to a catalogue subtopic</span>
+  );
+}
+
+/**
+ * Inline picker rendered inside the edit form. Lazy-loads the subtopic
+ * catalogue for the row's syllabus on mount, surfaces the resolver's
+ * best guess, and saves via the existing PATCH endpoint with
+ * `subtopicId`.
+ */
+function SubtopicPickerInline({
+  row,
+  onPick,
+  busy,
+  testIdPrefix,
+}: {
+  row: QueueRow;
+  onPick: (subtopicId: number | null) => void;
+  busy: boolean;
+  testIdPrefix: string;
+}) {
+  const [selectedId, setSelectedId] = useState<number | "">(row.subtopicId ?? "");
+  const options = useQuery<SubtopicOptionsResult>({
+    queryKey: ["/api/super-admin/examiner-insights", row.id, "subtopic-options"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/super-admin/examiner-insights/${row.id}/subtopic-options`);
+      if (!res.ok) throw new Error("Failed to load subtopic options");
+      return res.json();
+    },
+  });
+
+  const grouped = useMemo(() => {
+    const opts = options.data?.options ?? [];
+    const map = new Map<number, { topicTitle: string; topicNumber: string; items: SubtopicOption[] }>();
+    for (const o of opts) {
+      const g = map.get(o.topicId) ?? { topicTitle: o.topicTitle, topicNumber: o.topicNumber, items: [] };
+      g.items.push(o);
+      map.set(o.topicId, g);
+    }
+    return Array.from(map.values());
+  }, [options.data]);
+
+  const tid = (suffix: string) => `${testIdPrefix}${suffix}`;
+
+  return (
+    <div
+      className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2"
+      data-testid={tid(`subtopic-picker-${row.id}`)}
+    >
+      <div className="flex items-start gap-2">
+        <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+        <div className="flex-1 text-xs">
+          <p className="text-amber-100 font-medium">Catalogue subtopic</p>
+          <p className="text-muted-foreground mt-0.5">
+            {row.subtopicId
+              ? "This row is currently linked to a catalogue subtopic. Pick a different one to re-link."
+              : (row.subtopic ?? "").trim()
+                ? `Free-text "${row.subtopic}" couldn't be auto-mapped. Pick the right canonical subtopic so it shows up in tutor / student views.`
+                : "Optional: link this row to a canonical subtopic from the syllabus catalogue."}
+          </p>
+        </div>
+      </div>
+
+      {options.isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="w-3 h-3 animate-spin" /> Loading catalogue…
+        </div>
+      ) : options.isError ? (
+        <p className="text-xs text-rose-300">Couldn't load subtopic options.</p>
+      ) : (options.data?.options.length ?? 0) === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No catalogue subtopics found for syllabus <code>{row.syllabusCode}</code>.
+        </p>
+      ) : (
+        <>
+          {options.data?.suggestion && (
+            <div className="text-[11px] text-emerald-300 flex items-center gap-2 flex-wrap">
+              Best guess: <span className="text-foreground/90 font-medium">{options.data.suggestion.title}</span>
+              {options.data.suggestion.id !== selectedId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(options.data!.suggestion!.id)}
+                  className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200"
+                  data-testid={tid(`button-accept-suggestion-${row.id}`)}
+                >
+                  Use suggestion
+                </button>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={selectedId === "" ? "" : String(selectedId)}
+              onChange={(e) => setSelectedId(e.target.value === "" ? "" : Number(e.target.value))}
+              className="flex-1 min-w-[200px] bg-black/20 border border-white/10 rounded-lg text-xs px-2.5 py-1.5 text-foreground"
+              data-testid={tid(`select-subtopic-${row.id}`)}
+            >
+              <option value="">— Choose a subtopic —</option>
+              {grouped.map((g) => (
+                <optgroup key={g.topicNumber} label={`${g.topicNumber} ${g.topicTitle}`}>
+                  {g.items.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.subtopicNumber} {o.title}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => onPick(selectedId === "" ? null : Number(selectedId))}
+              disabled={busy || selectedId === "" || selectedId === row.subtopicId}
+              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              data-testid={tid(`button-save-subtopic-${row.id}`)}
+            >
+              <Link2 className="w-3 h-3" /> Link subtopic
+            </button>
+            {row.subtopicId && (
+              <button
+                type="button"
+                onClick={() => onPick(null)}
+                disabled={busy}
+                className="text-xs px-2 py-1.5 rounded-lg bg-muted/40 border border-border/50 hover:bg-muted/60 text-muted-foreground flex items-center gap-1 disabled:opacity-40"
+                data-testid={tid(`button-unlink-subtopic-${row.id}`)}
+              >
+                <X className="w-3 h-3" /> Unlink
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

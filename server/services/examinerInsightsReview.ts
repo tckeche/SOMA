@@ -15,9 +15,12 @@ import {
   somaUsers,
   somaQuizzes,
   subtopics,
+  topics,
+  syllabi,
 } from "@shared/schema";
 import { invalidateExaminerMisconceptionsCache } from "./examinerMisconceptionsCache";
-import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, type SQL } from "drizzle-orm";
+import { resolveSubtopicId, resolveSyllabusIdsForCode } from "./subtopicResolver";
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -361,6 +364,18 @@ export interface UpdatePatch {
 }
 
 /**
+ * Thrown when a PATCH tries to link an insight to a `subtopicId` that
+ * doesn't belong to the insight's syllabus. Routes catch this to return
+ * a 400 instead of a generic 500.
+ */
+export class SubtopicLinkValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SubtopicLinkValidationError";
+  }
+}
+
+/**
  * Edit a row in the queue (any status). Used by reviewers to fix
  * AI-extracted text before approving.
  */
@@ -369,7 +384,43 @@ export async function updateInsight(id: number, patch: UpdatePatch): Promise<voi
   const update: Record<string, unknown> = {};
   if (patch.topic !== undefined) update.topic = patch.topic;
   if (patch.subtopic !== undefined) update.subtopic = patch.subtopic;
-  if (patch.subtopicId !== undefined) update.subtopicId = patch.subtopicId;
+  if (patch.subtopicId !== undefined) {
+    // Validate that the submitted subtopic actually belongs to one of
+    // the syllabi this insight is scoped to. The picker UI only offers
+    // in-syllabus options, but we re-check on the server so a crafted
+    // PATCH can't quietly link an insight to an unrelated subtopic.
+    if (patch.subtopicId !== null) {
+      const [insight] = await db
+        .select({ syllabusCode: examinerMisconceptions.syllabusCode })
+        .from(examinerMisconceptions)
+        .where(eq(examinerMisconceptions.id, id));
+      if (!insight) {
+        throw new SubtopicLinkValidationError(`Insight ${id} not found`);
+      }
+      const candidateSyllabusIds = await resolveSyllabusIdsForCode(insight.syllabusCode);
+      if (candidateSyllabusIds.length === 0) {
+        throw new SubtopicLinkValidationError(
+          `Cannot link insight ${id}: no syllabus matches code "${insight.syllabusCode}"`,
+        );
+      }
+      const [match] = await db
+        .select({ id: subtopics.id })
+        .from(subtopics)
+        .innerJoin(topics, eq(topics.id, subtopics.topicId))
+        .where(
+          and(
+            eq(subtopics.id, patch.subtopicId),
+            inArray(topics.syllabusId, candidateSyllabusIds),
+          ),
+        );
+      if (!match) {
+        throw new SubtopicLinkValidationError(
+          `Subtopic ${patch.subtopicId} does not belong to syllabus "${insight.syllabusCode}"`,
+        );
+      }
+    }
+    update.subtopicId = patch.subtopicId;
+  }
   if (patch.misconception !== undefined) update.misconception = patch.misconception;
   if (patch.studentError !== undefined) update.studentError = patch.studentError;
   if (patch.correctApproach !== undefined) update.correctApproach = patch.correctApproach;
@@ -490,4 +541,108 @@ export async function bulkApproveHighConfidence(
     invalidateExaminerMisconceptionsCache({ board, syllabusCode });
   }
   return { approved: eligible.length };
+}
+
+// ── Subtopic picker support ──────────────────────────────────────────
+//
+// Powers the reviewer "pick a subtopic" affordance on queue rows whose
+// free-text `subtopic` couldn't be auto-mapped to a canonical
+// `subtopics.id`. Returns the subtopic catalogue scoped to the row's
+// syllabus plus a best-guess suggestion from `resolveSubtopicId` so
+// the picker can pre-select a sensible default.
+
+export interface SubtopicOption {
+  id: number;
+  subtopicNumber: string;
+  title: string;
+  topicId: number;
+  topicNumber: string;
+  topicTitle: string;
+}
+
+export interface SubtopicOptionsResult {
+  insight: {
+    id: number;
+    board: string;
+    syllabusCode: string;
+    subject: string | null;
+    topic: string;
+    subtopic: string | null;
+    subtopicId: number | null;
+  };
+  options: SubtopicOption[];
+  suggestion: { id: number; title: string } | null;
+}
+
+export async function listSubtopicOptionsForInsight(
+  insightId: number,
+): Promise<SubtopicOptionsResult | null> {
+  if (!db) return null;
+  const [insight] = await db
+    .select({
+      id: examinerMisconceptions.id,
+      board: examinerMisconceptions.board,
+      syllabusCode: examinerMisconceptions.syllabusCode,
+      subject: examinerMisconceptions.subject,
+      topic: examinerMisconceptions.topic,
+      subtopic: examinerMisconceptions.subtopic,
+      subtopicId: examinerMisconceptions.subtopicId,
+    })
+    .from(examinerMisconceptions)
+    .where(eq(examinerMisconceptions.id, insightId));
+  if (!insight) return null;
+
+  const candidateSyllabusIds = await resolveSyllabusIdsForCode(insight.syllabusCode);
+
+  // Pull every subtopic under the candidate syllabi so the reviewer
+  // can browse the full catalogue. Joined with topic so the picker can
+  // group "1.1 Atoms / 1.2 Molecules" under their parent topic.
+  const optionRows =
+    candidateSyllabusIds.length > 0
+      ? await db
+          .select({
+            id: subtopics.id,
+            subtopicNumber: subtopics.subtopicNumber,
+            title: subtopics.title,
+            topicId: topics.id,
+            topicNumber: topics.topicNumber,
+            topicTitle: topics.title,
+          })
+          .from(subtopics)
+          .innerJoin(topics, eq(topics.id, subtopics.topicId))
+          .innerJoin(syllabi, eq(syllabi.id, topics.syllabusId))
+          .where(inArray(syllabi.id, candidateSyllabusIds))
+          .orderBy(asc(topics.sortOrder), asc(topics.topicNumber), asc(subtopics.sortOrder), asc(subtopics.subtopicNumber))
+      : [];
+
+  // Best-guess suggestion (only meaningful when there is free-text to
+  // match against). Re-uses the same resolver the extractor runs at
+  // insert time so the suggestion logic stays in lock-step.
+  let suggestion: { id: number; title: string } | null = null;
+  if ((insight.subtopic ?? "").trim() || (insight.topic ?? "").trim()) {
+    const r = await resolveSubtopicId({
+      subject: insight.subject,
+      topic: insight.topic,
+      subtopic: insight.subtopic,
+      candidateSyllabusIds,
+    });
+    if (r.subtopicId) {
+      const hit = optionRows.find((o) => o.id === r.subtopicId);
+      if (hit) suggestion = { id: hit.id, title: hit.title };
+    }
+  }
+
+  return {
+    insight: {
+      id: insight.id,
+      board: insight.board,
+      syllabusCode: insight.syllabusCode,
+      subject: insight.subject,
+      topic: insight.topic,
+      subtopic: insight.subtopic,
+      subtopicId: insight.subtopicId,
+    },
+    options: optionRows,
+    suggestion,
+  };
 }
