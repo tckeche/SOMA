@@ -34,10 +34,6 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Reextract Misconceptions"
-
 
 [[workflows.workflow]]
 name = "Start application"
@@ -47,17 +43,6 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Reextract Misconceptions"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "DATABASE_URL=\"$SUPABASE_DB_URL\" NODE_OPTIONS=\"--expose-gc --max-old-space-size=4096\" npx tsx scripts/reextractExaminerMisconceptions.ts --doc-concurrency=2 --chunk-concurrency=4 --model=mini --require-catalogue"
 
 [userenv]
 
