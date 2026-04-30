@@ -53,6 +53,8 @@ interface CliOptions {
   model: "mini" | "default";
   dryRun: boolean;
   keepExisting: boolean;
+  reextractAll: boolean;
+  docConcurrency: number;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -63,16 +65,23 @@ function parseArgs(argv: string[]): CliOptions {
     model: "mini",
     dryRun: false,
     keepExisting: false,
+    reextractAll: false,
+    docConcurrency: 3,
   };
   for (const raw of argv.slice(2)) {
     if (raw === "--dry-run") opts.dryRun = true;
     else if (raw === "--keep-existing") opts.keepExisting = true;
+    else if (raw === "--reextract-all") opts.reextractAll = true;
     else if (raw.startsWith("--board=")) opts.board = raw.slice("--board=".length);
     else if (raw.startsWith("--syllabus-code=")) opts.syllabusCode = raw.slice("--syllabus-code=".length);
     else if (raw.startsWith("--limit=")) {
       const n = Number(raw.slice("--limit=".length));
       if (!Number.isFinite(n) || n <= 0) throw new Error(`bad --limit=${raw}`);
       opts.limit = Math.floor(n);
+    } else if (raw.startsWith("--doc-concurrency=")) {
+      const n = Number(raw.slice("--doc-concurrency=".length));
+      if (!Number.isFinite(n) || n <= 0 || n > 10) throw new Error(`bad --doc-concurrency=${raw} (1..10)`);
+      opts.docConcurrency = Math.floor(n);
     } else if (raw.startsWith("--model=")) {
       const v = raw.slice("--model=".length);
       if (v !== "mini" && v !== "default") throw new Error(`bad --model=${v} (mini|default)`);
@@ -82,6 +91,19 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
   return opts;
+}
+
+/** A doc is "already re-extracted" iff at least one of its rows has source_quote populated. Legacy hallucinations all have source_quote NULL; the new closed-set extractor always populates it from a verbatim chunk substring. */
+async function listAlreadyReextractedDocIds(docIds: number[]): Promise<Set<number>> {
+  if (!sharedDb || docIds.length === 0) return new Set();
+  const rows = await sharedDb
+    .selectDistinct({ documentId: examinerMisconceptions.documentId })
+    .from(examinerMisconceptions)
+    .where(and(
+      inArray(examinerMisconceptions.documentId, docIds),
+      isNotNull(examinerMisconceptions.sourceQuote),
+    ));
+  return new Set(rows.map((r) => r.documentId).filter((x): x is number => x != null));
 }
 
 function formatNumber(n: number): string {
@@ -177,18 +199,35 @@ async function main(): Promise<void> {
   console.log(`model:           ${opts.model === "mini" ? "gpt-4o-mini (direct)" : "orchestrator chain (gpt-4o → fallbacks)"}`);
   console.log(`dry-run:         ${opts.dryRun}`);
   console.log(`keep-existing:   ${opts.keepExisting}`);
+  console.log(`reextract-all:   ${opts.reextractAll}`);
+  console.log(`doc-concurrency: ${opts.docConcurrency}`);
   console.log("");
 
-  const docs = await listTargetDocuments(opts);
-  if (docs.length === 0) {
+  const allDocs = await listTargetDocuments(opts);
+  if (allDocs.length === 0) {
     console.log("No matching examiner-report documents found. Exiting.");
     return;
   }
-  console.log(`Found ${docs.length} matching examiner-report document(s).`);
+  console.log(`Found ${allDocs.length} matching examiner-report document(s).`);
+
+  // Resumable-skip: a doc whose rows already have source_quote populated has
+  // already been re-extracted by the new closed-set pipeline. Skip it unless
+  // --reextract-all was passed. Legacy hallucinated rows have NULL source_quote
+  // and so will not be skipped.
+  let docs = allDocs;
+  if (!opts.reextractAll && !opts.keepExisting) {
+    const allIds = allDocs.map((d) => d.id);
+    const alreadyDone = await listAlreadyReextractedDocIds(allIds);
+    if (alreadyDone.size > 0) {
+      docs = allDocs.filter((d) => !alreadyDone.has(d.id));
+      console.log(`Resumable-skip: ${alreadyDone.size} doc(s) already re-extracted (have source_quote). Pass --reextract-all to force a redo.`);
+      console.log(`Documents to process this run: ${docs.length}`);
+    }
+  }
 
   const docIds = docs.map((d) => d.id);
   const before = await countExistingMisconceptions(docIds);
-  console.log(`Existing rows for those docs: ${formatNumber(before.total)} total, ${formatNumber(before.linked)} linked to a subtopic.`);
+  console.log(`Existing rows for THESE-RUN docs: ${formatNumber(before.total)} total, ${formatNumber(before.linked)} linked to a subtopic.`);
 
   if (opts.dryRun) {
     console.log("\nDry run — no DELETE, no extraction performed.");
@@ -204,33 +243,47 @@ async function main(): Promise<void> {
     throw new Error("OPENAI_API_KEY is required (set it in Replit Secrets) to run a non-dry extraction.");
   }
 
-  if (!opts.keepExisting) {
-    const deleted = await deleteExistingForDocs(docIds);
-    console.log(`Deleted ${formatNumber(deleted)} legacy row(s) for those documents.`);
+  if (opts.keepExisting) {
+    console.log("--keep-existing set: skipping per-doc wipe. New rows will be inserted alongside legacy ones.");
   } else {
-    console.log("--keep-existing set: skipping the wipe step. New rows will be inserted alongside legacy ones.");
+    console.log("Per-doc wipe + re-extract: each doc's legacy rows are deleted immediately before its re-extraction, so an interrupted run only loses one doc's rows (the one in flight).");
   }
 
   const outcomes: DocOutcome[] = [];
   let processed = 0;
-  for (const doc of docs) {
+  let totalDeleted = 0;
+  const queue = [...docs];
+  function logOutcome(doc: SyllabusDocument, outcome: DocOutcome, deleted: number) {
     processed += 1;
-    process.stdout.write(`[${processed}/${docs.length}] doc=${doc.id} ${doc.syllabusCode} ${doc.filename ?? ""} … `);
-    const outcome = await processDocument(doc, opts);
-    outcomes.push(outcome);
+    const prefix = `[${processed}/${docs.length}] doc=${doc.id} ${doc.syllabusCode} ${doc.filename ?? ""}`;
+    const wipedTag = deleted > 0 ? ` (wiped ${deleted})` : "";
     if (outcome.error) {
-      console.log(`ERROR: ${outcome.error} (${outcome.durationMs}ms)`);
-      continue;
+      console.log(`${prefix}${wipedTag} ERROR: ${outcome.error} (${outcome.durationMs}ms)`);
+      return;
     }
     const r = outcome.result!;
     if (r.skipped) {
-      console.log(`skipped (${r.reason}) closedSet=${r.closedSetTopicCount ?? "?"} (${outcome.durationMs}ms)`);
-      continue;
+      console.log(`${prefix}${wipedTag} skipped (${r.reason}) closedSet=${r.closedSetTopicCount ?? "?"} (${outcome.durationMs}ms)`);
+      return;
     }
-    console.log(
-      `inserted=${r.count} chunks=${r.chunkCount ?? "?"} raw=${r.rawItemCount ?? "?"} taxonomyDrops=${r.taxonomyDrops ?? 0} closedSet=${r.closedSetTopicCount ?? "?"} (${outcome.durationMs}ms)`,
-    );
+    console.log(`${prefix}${wipedTag} inserted=${r.count} chunks=${r.chunkCount ?? "?"} raw=${r.rawItemCount ?? "?"} taxonomyDrops=${r.taxonomyDrops ?? 0} closedSet=${r.closedSetTopicCount ?? "?"} (${outcome.durationMs}ms)`);
   }
+  async function worker() {
+    while (queue.length > 0) {
+      const doc = queue.shift();
+      if (!doc) break;
+      let deleted = 0;
+      if (!opts.keepExisting) {
+        deleted = await deleteExistingForDocs([doc.id]);
+        totalDeleted += deleted;
+      }
+      const outcome = await processDocument(doc, opts);
+      outcomes.push(outcome);
+      logOutcome(doc, outcome, deleted);
+    }
+  }
+  const workers = Array.from({ length: Math.min(opts.docConcurrency, docs.length) }, () => worker());
+  await Promise.all(workers);
 
   const after = await countExistingMisconceptions(docIds);
   console.log("");
