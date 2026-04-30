@@ -22,9 +22,11 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { eq } from "drizzle-orm";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import * as schema from "@shared/schema";
+import {
+  applyMigrations,
+  setupBaseFixtures,
+} from "./helpers/examinerInsightsReviewPgHarness";
 
 let pglite: PGlite | null = null;
 let testDb: PgliteDatabase<typeof schema> | null = null;
@@ -41,19 +43,7 @@ vi.mock("../server/db", () => ({
   connectDb: async () => {},
 }));
 
-import {
-  examinerMisconceptions,
-  syllabusDocuments,
-  somaUsers,
-  somaQuizzes,
-  subtopics,
-  topics,
-  syllabusStrands,
-  syllabi,
-  subjects,
-  examiningBodies,
-  levels,
-} from "@shared/schema";
+import { examinerMisconceptions } from "@shared/schema";
 
 import {
   listQueue,
@@ -77,141 +67,19 @@ let APPROVED_ID = 0;
 let REJECTED_ID = 0;
 let OUT_OF_SCOPE_PENDING_ID = 0;
 
-const MIGRATIONS = [
-  "0000_catalogue.sql",
-  "0001_phase1_fk_and_ai_usage.sql",
-  "0002_phase2_examiner_loop.sql",
-  "0003_phase2_misconception_year.sql",
-  "0004_phase3_revision_plans.sql",
-  "0005_phase4_command_word_performance.sql",
-];
-
-async function applyMigrations(client: PGlite): Promise<void> {
-  for (const file of MIGRATIONS) {
-    const sql = readFileSync(
-      path.join(import.meta.dirname, "..", "migrations", file),
-      "utf8",
-    );
-    if (!sql.trim()) continue;
-    // PGlite accepts the whole file at once; drizzle's
-    // `--> statement-breakpoint` markers are SQL line comments and are
-    // simply ignored by Postgres.
-    await client.exec(sql);
-  }
-}
-
 beforeAll(async () => {
   pglite = new PGlite();
   await applyMigrations(pglite);
   testDb = drizzlePglite(pglite, { schema });
 
-  // ---- Catalogue chain so a real subtopic row can exist ----
-  const [body] = await testDb
-    .insert(examiningBodies)
-    .values({ slug: "cambridge", displayName: "Cambridge" })
-    .returning();
-  await testDb
-    .insert(levels)
-    .values({ code: "IGCSE", displayName: "IGCSE", topBand: "IGCSE" });
-  const [subj] = await testDb
-    .insert(subjects)
-    .values({
-      examiningBodyId: body.id,
-      name: "Mathematics",
-      slug: "mathematics",
-    })
-    .returning();
-  const [syl] = await testDb
-    .insert(syllabi)
-    .values({
-      examiningBodyId: body.id,
-      subjectId: subj.id,
-      topBand: "IGCSE",
-      syllabusCode: "0580",
-      title: "Cambridge IGCSE Mathematics",
-    })
-    .returning();
-  const [strand] = await testDb
-    .insert(syllabusStrands)
-    .values({ syllabusId: syl.id, name: "Number" })
-    .returning();
-  const [topic] = await testDb
-    .insert(topics)
-    .values({
-      syllabusId: syl.id,
-      strandId: strand.id,
-      topicNumber: "1",
-      title: "Number basics",
-    })
-    .returning();
-  const [sub] = await testDb
-    .insert(subtopics)
-    .values({
-      topicId: topic.id,
-      subtopicNumber: "1.1",
-      title: "Place value",
-      levelTier: "IGCSE",
-    })
-    .returning();
-  SUBTOPIC_ID = sub.id;
-
-  // ---- Users (reviewer + two tutors) ----
-  await testDb.insert(somaUsers).values([
-    {
-      id: TUTOR_ID,
-      email: "tutor@example.com",
-      displayName: "Test Tutor",
-      role: "tutor",
-    },
-    {
-      id: REVIEWER_ID,
-      email: "reviewer@example.com",
-      displayName: "Review Admin",
-      role: "admin",
-    },
-    {
-      id: OTHER_TUTOR_ID,
-      email: "other@example.com",
-      displayName: "Other Tutor",
-      role: "tutor",
-    },
-  ]);
-
-  // ---- Tutor scope: one quiz on the in-scope syllabus ----
-  // parseBoardAndCode("Cambridge IGCSE 0580") → board="Cambridge IGCSE",
-  // syllabusCode="0580", which matches the misconceptions below.
-  await testDb.insert(somaQuizzes).values({
-    title: "Algebra basics",
-    topic: "Algebra",
-    syllabus: "Cambridge IGCSE 0580",
-    authorId: TUTOR_ID,
+  const base = await setupBaseFixtures(testDb, {
+    tutorId: TUTOR_ID,
+    reviewerId: REVIEWER_ID,
+    otherTutorId: OTHER_TUTOR_ID,
   });
-
-  // ---- Source documents: one in-scope, one out-of-scope ----
-  const [doc] = await testDb
-    .insert(syllabusDocuments)
-    .values({
-      board: "Cambridge IGCSE",
-      level: "IGCSE",
-      syllabusCode: "0580",
-      filename: "cambridge-2024-er.pdf",
-      extractedText: "...",
-      documentType: "examiner_report",
-    })
-    .returning();
-  DOCUMENT_ID = doc.id;
-
-  const [otherDoc] = await testDb
-    .insert(syllabusDocuments)
-    .values({
-      board: "Cambridge IGCSE",
-      level: "IGCSE",
-      syllabusCode: "0625",
-      filename: "physics-2024-er.pdf",
-      extractedText: "...",
-      documentType: "examiner_report",
-    })
-    .returning();
+  SUBTOPIC_ID = base.subtopicId;
+  DOCUMENT_ID = base.documentId;
+  const otherDoc = { id: base.otherDocumentId };
 
   // ---- Misconception rows: one per scenario the queue must handle ----
   // Pending + linked subtopic. Asserts the leftJoin actually hydrates
