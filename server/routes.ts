@@ -20,6 +20,7 @@ import { formatCopilotContextAsText, loadCopilotContext } from "./services/copil
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
 import { generateWithFallback } from "./services/aiOrchestrator";
 import { extractAndStoreMisconceptions } from "./services/extractAndStoreMisconceptions";
+import { normalizeQuizSyllabusForWrite } from "./services/syllabusNormalizer";
 import { cachedListExaminerMisconceptions } from "./services/examinerMisconceptionsCache";
 import { listApprovedSeeds, type ExaminerSeed } from "./services/examinerDistractorSeeds";
 import { buildAndPersistDiagnoses, renderDiagnosesForFeedback, type GradedAnswer } from "./services/answerDiagnosis";
@@ -2920,7 +2921,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
                 topic: item.topic,
                 subject: item.subject,
-                syllabus: `${cached.examBody} ${cached.syllabusCode}`,
+                syllabus: normalizeQuizSyllabusForWrite(`${cached.examBody} ${cached.syllabusCode}`),
                 level: cached.level,
                 authorId: tutorId,
                 status: "published",
@@ -2984,7 +2985,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         title,
         topic: cleanTopics[0] || topic || title,
         topics: cleanTopics,
-        syllabus: syllabus ?? null,
+        syllabus: normalizeQuizSyllabusForWrite(syllabus),
         level: level ?? null,
         subject: subject ?? null,
         timeLimitMinutes: Number(timeLimitMinutes),

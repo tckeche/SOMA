@@ -37,6 +37,7 @@ import {
   syllabi,
 } from "../shared/schema";
 import { resolveSubtopicId } from "../server/services/subtopicResolver";
+import { extractSyllabusCode } from "../server/services/syllabusNormalizer";
 
 interface CliOptions {
   dryRun: boolean;
@@ -145,7 +146,11 @@ async function getQuizCandidateSyllabusIds(quizId: number): Promise<number[]> {
     .from(somaQuizzes)
     .where(eq(somaQuizzes.id, quizId));
   if (!quiz) return [];
-  const code = (quiz.syllabus ?? "").trim();
+  // The `syllabus` column is free-text — common values include
+  // "Cambridge Syllabus · 9709", "Cambridge", "cambridge", "Cambridgee",
+  // "Cambridge · mathematics-0580-…" and bare codes like "9709".
+  // Pull the embedded 4-digit code so the catalogue join resolves.
+  const code = extractSyllabusCode(quiz.syllabus);
   if (!code) return [];
   const ids = await db
     .select({ id: syllabi.id })

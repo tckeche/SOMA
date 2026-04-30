@@ -1,0 +1,11 @@
+-- Phase 6: enable trigram similarity for fuzzy topic-title matching.
+--
+-- Used by `server/services/subtopicResolver.ts` as a fallback when the exact
+-- ilike match on subtopics.title / topics.title misses. Examiner-extracted
+-- topic strings rarely match catalogue titles verbatim
+-- ("Stoichiometry & moles" vs "Stoichiometry"); pg_trgm's `similarity()` lets
+-- the resolver pick the closest catalogue topic when the gap to runner-up
+-- is large enough to be unambiguous.
+--
+-- Fully additive: the extension is created if missing, no tables touched.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
