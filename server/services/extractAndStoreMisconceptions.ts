@@ -32,6 +32,11 @@ import { storage } from "../storage";
 import { db as sharedDb } from "../db";
 import { generateWithFallback } from "./aiOrchestrator";
 import { resolveSubtopicId, resolveSyllabusIdsForCode } from "./subtopicResolver";
+import {
+  listAllowedTopicsForSyllabusCode,
+  lookupInInventory,
+  type AllowedTopic,
+} from "./catalogueInventory";
 import type { InsertExaminerMisconception } from "@shared/schema";
 
 export interface ExtractInputDoc {
@@ -83,6 +88,15 @@ export interface ExtractResult {
   rawItemCount?: number;
   /** Items dropped because the source quote could not be verified. */
   hallucinationDrops?: number;
+  /** Items dropped because the LLM picked a topic outside the allowed
+   *  catalogue inventory. Only populated when the closed-set constraint
+   *  was active (i.e. inventory was non-empty for this syllabus code). */
+  taxonomyDrops?: number;
+  /** Number of allowed topics in the closed set used to constrain the
+   *  prompt. 0 when the catalogue had no entries for this syllabus —
+   *  in that case the extractor degraded to its legacy open-ended
+   *  prompt and `taxonomyDrops` is meaningless. */
+  closedSetTopicCount?: number;
 }
 
 export interface ExtractOptions {
@@ -99,9 +113,24 @@ export interface ExtractOptions {
    *  observe" and we keep up to this many to prevent runaway. */
   itemsPerChunkCap?: number;
   /** Force a specific provider instead of the orchestrator's fallback chain.
-   *  Currently only "openai" (model=gpt-4o) is supported as a single-provider
-   *  override; anything else falls back to `generateWithFallback`. */
-  preferredProvider?: "openai" | "default";
+   *
+   *  - "openai"      → gpt-4o direct, bypasses the orchestrator.
+   *  - "openai-mini" → gpt-4o-mini direct. ~16× cheaper than gpt-4o and the
+   *    closed-set constraint makes the task pure classification, so mini is
+   *    the recommended default for re-extraction sweeps.
+   *  - "default"     → goes through `generateWithFallback`. */
+  preferredProvider?: "openai" | "openai-mini" | "default";
+  /** When true (default) and the catalogue inventory is non-empty for the
+   *  syllabus code, inject an `ALLOWED_TOPICS` block into the prompt and
+   *  drop any item whose topic is outside that closed set. Set to false
+   *  to force the legacy open-ended prompt — useful for tests, or for
+   *  syllabi not yet migrated to the structured catalogue.
+   *
+   *  When the inventory is empty for the syllabus code, this flag has no
+   *  effect: we always degrade to the open-ended prompt because there is
+   *  nothing to constrain against. The result includes
+   *  `closedSetTopicCount: 0` so the caller knows. */
+  useStrictCatalogueConstraint?: boolean;
 }
 
 let openaiClient: OpenAI | null = null;
@@ -114,10 +143,10 @@ function getOpenAI(): OpenAI {
   return openaiClient;
 }
 
-async function callOpenAIDirect(prompt: string, system: string): Promise<string> {
+async function callOpenAIDirect(prompt: string, system: string, model: string): Promise<string> {
   const client = getOpenAI();
   const response = await client.chat.completions.create({
-    model: "gpt-4o",
+    model,
     temperature: 0.1,
     messages: [
       { role: "system", content: system },
@@ -125,11 +154,20 @@ async function callOpenAIDirect(prompt: string, system: string): Promise<string>
     ],
   });
   const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("gpt-4o returned empty response");
+  if (!content) throw new Error(`${model} returned empty response`);
   return content;
 }
 
-const PROMPT_HEADER = `You are an educational data analyst extracting structured misconceptions from a Cambridge examiner report.
+/**
+ * Build the prompt header. When `allowedTopics` is non-empty, inject a
+ * closed-set ALLOWED_TOPICS block and tighten the rules so the LLM is
+ * required to pick from it. When empty (catalogue not populated for this
+ * syllabus), fall back to the legacy open-ended prompt — better to get
+ * loose tags than nothing.
+ */
+function buildPromptHeader(allowedTopics: AllowedTopic[]): string {
+  if (allowedTopics.length === 0) {
+    return `You are an educational data analyst extracting structured misconceptions from a Cambridge examiner report.
 
 For each distinct student misconception present in the chunk below, return a JSON object with:
 - topic: the syllabus topic this relates to (string; "General" if unclear)
@@ -149,6 +187,43 @@ Rules:
 
 CHUNK:
 `;
+  }
+
+  // Compact JSON to keep the prompt small. We strip topicId / subtopic ids
+  // from the prompt — the LLM only needs to pick the strings; we resolve
+  // ids server-side from the inventory.
+  const allowedJson = JSON.stringify(
+    allowedTopics.map((t) => ({
+      topic: t.topicTitle,
+      subtopics: t.subtopics.map((s) => s.title),
+    })),
+  );
+
+  return `You are an educational data analyst extracting structured misconceptions from a Cambridge examiner report.
+
+ALLOWED TAXONOMY for this syllabus — every item you return MUST be tagged against this list. Do NOT invent topics or subtopics:
+${allowedJson}
+
+For each distinct student misconception present in the chunk below, return a JSON object with:
+- topic: MUST be EXACTLY one of the topic strings above, copied verbatim (case-sensitive). If no listed topic is genuinely relevant to the misconception, OMIT the item entirely. Do NOT fall back to "General", do NOT guess, do NOT paraphrase a topic name.
+- subtopic: MUST be EXACTLY one of the subtopic strings under your chosen topic (verbatim), or null when the chunk doesn't pin a specific subtopic.
+- misconception: a single sentence stating the wrong belief students hold
+- studentError: what students typically did wrong on the page
+- correctApproach: the correct method or reasoning
+- frequency: "very_common" | "common" | "occasional"
+- sourceQuote: an EXACT verbatim substring from the chunk below that evidences this misconception (15-200 characters). Must be copy-pasteable text from the chunk; do not paraphrase.
+- confidencePct: integer 0-100 — how confident you are this is a real, distinct misconception.
+
+Rules:
+1. The taxonomy restriction is HARD: any item with an off-list topic, or with a subtopic that is not in that topic's listed subtopics, will be discarded by post-validation. There is NO fallback "General" topic.
+2. Only report observations that are explicitly evidenced in the chunk. Do not invent or extrapolate.
+3. If sourceQuote is not present verbatim in the chunk, do not include the item.
+4. Return a JSON array. Empty array is fine — the chunk legitimately may not contain misconceptions for any of the allowed topics.
+5. Never include personal data, candidate names, or centre numbers.
+
+CHUNK:
+`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chunking
@@ -280,16 +355,27 @@ function clampInt(value: unknown, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(n)));
 }
 
+interface ChunkExtractStats {
+  /** Items dropped because the LLM returned a topic outside the allowed
+   *  set. Only meaningful when `allowedTopics` was non-empty. */
+  taxonomyDrops: number;
+}
+
 async function extractFromChunk(
   chunk: Chunk,
   options: ExtractOptions,
+  allowedTopics: AllowedTopic[],
+  stats: ChunkExtractStats,
 ): Promise<ExtractedItem[]> {
-  const prompt = PROMPT_HEADER + chunk.text;
+  const promptHeader = buildPromptHeader(allowedTopics);
+  const prompt = promptHeader + chunk.text;
   const system = "Extract misconceptions as a JSON array. Quote evidence verbatim.";
   let raw: string;
   try {
     if (options.preferredProvider === "openai") {
-      raw = await callOpenAIDirect(prompt, system);
+      raw = await callOpenAIDirect(prompt, system, "gpt-4o");
+    } else if (options.preferredProvider === "openai-mini") {
+      raw = await callOpenAIDirect(prompt, system, "gpt-4o-mini");
     } else {
       const { data } = await generateWithFallback(prompt, system, undefined, {
         taskType: "examiner.extract",
@@ -300,6 +386,17 @@ async function extractFromChunk(
   } catch (err: any) {
     throw new Error(`LLM call failed for chunk ${chunk.index}: ${err?.message ?? String(err)}`);
   }
+
+  // Pre-build a lowercase index of the allowed set so the per-item check
+  // is O(1) instead of O(allowedTopics × subtopics) per item.
+  const allowedTopicIndex = allowedTopics.length > 0
+    ? new Map(
+        allowedTopics.map((t) => [
+          t.topicTitle.trim().toLowerCase(),
+          new Set(t.subtopics.map((s) => s.title.trim().toLowerCase())),
+        ]),
+      )
+    : null;
 
   const items = parseJsonArray(raw);
   const accepted: ExtractedItem[] = [];
@@ -313,9 +410,46 @@ async function extractFromChunk(
     }
     const misconception = normaliseString(obj.misconception);
     if (!misconception) continue;
+
+    const rawTopic = normaliseString(obj.topic);
+    const rawSubtopic = normaliseString(obj.subtopic);
+
+    // Closed-set enforcement: when an inventory exists, drop items that
+    // didn't pick from it. We do NOT silently coerce ("Algebra" → "General")
+    // because that's exactly how the original 3,485 corrupted rows came to
+    // exist — the LLM happily emitted off-set topics and the validator
+    // shrugged. Better to discard than to keep noise.
+    let topicForRow = rawTopic || "General";
+    let subtopicForRow: string | null = rawSubtopic || null;
+    if (allowedTopicIndex) {
+      const allowedSubs = allowedTopicIndex.get(rawTopic.trim().toLowerCase());
+      if (!allowedSubs) {
+        stats.taxonomyDrops += 1;
+        continue;
+      }
+      // Subtopic must be in the picked topic's allowed list, or null.
+      // An off-list subtopic gets nulled rather than dropping the whole
+      // item, since the topic-level signal is still useful.
+      if (subtopicForRow && !allowedSubs.has(subtopicForRow.trim().toLowerCase())) {
+        subtopicForRow = null;
+      }
+      // Use the inventory's canonical capitalisation so downstream
+      // exact-match resolvers and joins line up perfectly.
+      const canonicalTopic = allowedTopics.find(
+        (t) => t.topicTitle.trim().toLowerCase() === rawTopic.trim().toLowerCase(),
+      );
+      if (canonicalTopic) topicForRow = canonicalTopic.topicTitle;
+      if (subtopicForRow) {
+        const canonicalSub = canonicalTopic?.subtopics.find(
+          (s) => s.title.trim().toLowerCase() === subtopicForRow!.trim().toLowerCase(),
+        );
+        if (canonicalSub) subtopicForRow = canonicalSub.title;
+      }
+    }
+
     accepted.push({
-      topic: normaliseString(obj.topic) || "General",
-      subtopic: normaliseString(obj.subtopic) || null,
+      topic: topicForRow,
+      subtopic: subtopicForRow,
       misconception,
       studentError: normaliseString(obj.studentError ?? obj["student_error"]),
       correctApproach: normaliseString(obj.correctApproach ?? obj["correct_approach"]),
@@ -390,6 +524,7 @@ export async function extractAndStoreMisconceptions(
     concurrency = 4,
     itemsPerChunkCap = 30,
     preferredProvider = "default",
+    useStrictCatalogueConstraint = true,
   } = options;
 
   if (process.env.SUPABASE_URL && !sharedDb) {
@@ -420,16 +555,35 @@ export async function extractAndStoreMisconceptions(
     return { count: 0, skipped: true, reason: "no-chunks" };
   }
 
+  // Load the closed-set inventory once per document. Empty when the
+  // catalogue isn't populated for this syllabus code — the prompt builder
+  // then degrades to its legacy open-ended form. This is the durable
+  // fix for the corrupted-3,485-rows problem (Task #26): the LLM is
+  // explicitly told which topics are valid for this syllabus, and any
+  // off-list response is dropped by post-validation.
+  const allowedTopics = useStrictCatalogueConstraint
+    ? await listAllowedTopicsForSyllabusCode(doc.syllabusCode).catch((err: any) => {
+        console.warn(`[examinerExtract] catalogue inventory load failed for ${doc.syllabusCode}: ${err?.message ?? err}`);
+        return [] as AllowedTopic[];
+      })
+    : [];
+  if (useStrictCatalogueConstraint && allowedTopics.length === 0) {
+    console.warn(
+      `[examinerExtract] catalogue inventory empty for syllabus ${doc.syllabusCode} — degrading to open-ended prompt for doc ${doc.id}`,
+    );
+  }
+
   const limit = pLimit(concurrency);
   const allItems: DedupItem[] = [];
   let rawCount = 0;
   let hallucinationDrops = 0;
+  const chunkStats: ChunkExtractStats = { taxonomyDrops: 0 };
 
   await Promise.all(
     chunks.map((chunk) =>
       limit(async () => {
         try {
-          const items = await extractFromChunk(chunk, { preferredProvider });
+          const items = await extractFromChunk(chunk, { preferredProvider }, allowedTopics, chunkStats);
           rawCount += items.length;
           // Approximate hallucination drops: items returned by the LLM
           // that didn't survive the verbatim check inside extractFromChunk
@@ -449,7 +603,16 @@ export async function extractAndStoreMisconceptions(
 
   const deduped = dedupItems(allItems);
   if (deduped.length === 0) {
-    return { count: 0, skipped: true, reason: "no-items", chunkCount: chunks.length, rawItemCount: rawCount, hallucinationDrops };
+    return {
+      count: 0,
+      skipped: true,
+      reason: "no-items",
+      chunkCount: chunks.length,
+      rawItemCount: rawCount,
+      hallucinationDrops,
+      taxonomyDrops: chunkStats.taxonomyDrops,
+      closedSetTopicCount: allowedTopics.length,
+    };
   }
 
   const examYear = parseExamYearFromFilename(doc.filename ?? null);
@@ -463,19 +626,39 @@ export async function extractAndStoreMisconceptions(
   const rows: InsertExaminerMisconception[] = await Promise.all(
     deduped.map(async (item) => {
       let subtopicId: number | null = null;
-      try {
-        const resolved = await resolveSubtopicId({
-          subject: doc.subject ?? null,
-          topic: item.topic,
-          subtopic: item.subtopic,
-          candidateSyllabusIds,
-        });
-        if (!resolved.ambiguous) subtopicId = resolved.subtopicId;
-      } catch (err: any) {
-        // Resolver issues must never block the insert — the backfill
-        // script can sweep up unmatched rows later.
-        console.warn(`[examinerExtract] subtopic resolve failed: ${err?.message ?? err}`);
+
+      // Fast path: when the closed-set constraint was active, the LLM was
+      // forced to pick (topic, subtopic) from the inventory. We can stamp
+      // subtopicId directly from the inventory without calling the
+      // resolver — saves a round-trip and is exact by construction.
+      if (allowedTopics.length > 0) {
+        const direct = lookupInInventory(allowedTopics, item.topic, item.subtopic);
+        if (direct?.subtopicId !== undefined && direct?.subtopicId !== null) {
+          subtopicId = direct.subtopicId;
+        }
       }
+
+      // Fallback: resolver still runs when (a) the inventory was empty
+      // (legacy open-ended path), or (b) the LLM picked a topic but no
+      // subtopic so the inventory could only return `subtopicId: null`.
+      // Either way the resolver might find a fuzzy match the inventory
+      // didn't.
+      if (subtopicId === null) {
+        try {
+          const resolved = await resolveSubtopicId({
+            subject: doc.subject ?? null,
+            topic: item.topic,
+            subtopic: item.subtopic,
+            candidateSyllabusIds,
+          });
+          if (!resolved.ambiguous) subtopicId = resolved.subtopicId;
+        } catch (err: any) {
+          // Resolver issues must never block the insert — the backfill
+          // script can sweep up unmatched rows later.
+          console.warn(`[examinerExtract] subtopic resolve failed: ${err?.message ?? err}`);
+        }
+      }
+
       return {
         documentId: doc.id,
         board: doc.board,
@@ -506,5 +689,7 @@ export async function extractAndStoreMisconceptions(
     chunkCount: chunks.length,
     rawItemCount: rawCount,
     hallucinationDrops,
+    taxonomyDrops: chunkStats.taxonomyDrops,
+    closedSetTopicCount: allowedTopics.length,
   };
 }
