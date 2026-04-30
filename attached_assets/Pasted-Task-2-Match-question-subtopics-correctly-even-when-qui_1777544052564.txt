@@ -1,0 +1,39 @@
+Task #2 — Match question subtopics correctly even when quiz syllabus is messy
+What & Why
+The Phase-1 backfill linked 0 of 2,804 questions to a catalogue subtopic. The matcher requires soma_quizzes.syllabus to exactly equal a catalogue syllabi.syllabus_code (e.g. 9709), but the actual values in the column are noisy free-text:
+
+"Cambridge"                       111 quizzes
+"Cambridge Syllabus · 9709"        13
+"Cambridge Syllabus · 0580"        14
+"Cambridge "  (trailing space)     10
+"Cambridge · mathematics-0580-…"    4
+"Cambridge (CAIE) 9709"             2
+"cambridge"                         1
+"Cambridgee"                        1
+
+Until this is fixed, syllabus-aligned analytics, weakness-detection per subtopic, and topic-coverage radar will all under-count question coverage to zero.
+
+Done looks like
+
+Either: a deterministic normaliser that extracts the 4-digit code (\b\d{4}\b) and trims whitespace from soma_quizzes.syllabus whenever a quiz is saved, AND a one-off backfill that rewrites the existing 200+ noisy values.
+Or: the question backfill matcher in scripts/backfillCatalogueFks.ts is taught to do the same code extraction itself before joining to syllabi.
+Re-running backfillQuestions then writes ≥ 2,000 of 2,804 question subtopic FKs (current ~0).
+Relevant files
+
+scripts/backfillCatalogueFks.ts (matcher logic)
+server/services/aiPipeline.ts and server/routes.ts quiz-save paths (where syllabus is written)
+shared/schema.ts (soma_quizzes.syllabus column)
+Task #3 — Improve examiner-misconception → syllabus-topic linking
+What & Why
+The same backfill linked only 80 of 3,485 examiner misconceptions (2.3 %) to a catalogue subtopic. The bottleneck is the LOWER(topics.title) = LOWER(misconception.topic) join — examiner-report extracted topic strings rarely match catalogue topic titles verbatim (e.g. examiner says "Stoichiometry & moles", catalogue says "Stoichiometry"). Without these FKs the student-tips carousel and per-subtopic weakness diagnostics fall back to the coarser subject-level digest.
+
+Done looks like
+
+A topic-alias / synonym table OR a fuzzy-matching pass (e.g. trigram similarity pg_trgm, threshold ≥ 0.6) added to the misconception backfill.
+Re-running backfillMisconceptions lifts coverage from 80 → at least 1,500 of 3,485 (≈ 40 %).
+Ambiguous matches still routed to the existing ambiguous bucket so a human can review.
+Relevant files
+
+scripts/backfillCatalogueFks.ts (backfillMisconceptions + resolveSubtopicId)
+server/services/extractAndStoreMisconceptions.ts (where new misconceptions are written — could attach the FK at insert time once matcher is improved)
+shared/schema.ts (examiner_misconceptions table)
