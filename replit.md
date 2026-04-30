@@ -154,6 +154,21 @@ Incremental phases since the catalogue migration started:
 | 14   | Answer-key correctness + student review-link fixes. `validateAndCorrectMcqAnswers` and `applyDeterministicIntegrityGuards` previously fell back silently to `options[0]` when the verifier returned a `correct_answer` that didn't match any option (LaTeX/whitespace drift), corrupting answer keys while the explanation still described the true answer. Both functions now return `{ questions, warnings }`; auto-snaps emit informational `PipelineWarning`s and the no-match fallback emits a CRITICAL warning. Warnings flow through `generateAuditedQuiz`, `runQuestionAudit`, `/api/tutor/copilot-chat`, the Builder Co-Pilot mutation (which previously stripped them before render), and into the existing amber warning block. `POST /api/tutor/quizzes/:id/questions` logs validator warnings server-side. Student dashboard "Completed Assessments" Review button no longer falls back to `quizId` when `reportId` is null (the cause of `/soma/review/<quizId>` 404s); shows "Report pending" instead. |
 | 15   | Catalogue back-link backfill: questions and examiner-misconceptions can now actually find their subtopic FK. New `server/services/syllabusNormalizer.ts` extracts the `\d{4}` syllabus code from the messy free-text `soma_quizzes.syllabus` field (`"Cambridge Syllabus · 9709"`, `"Cambridge International · 9709"`, plain `"Cambridge"`, etc.) so `getQuizCandidateSyllabusIds` in `scripts/backfillCatalogueFks.ts` and the two quiz-save sites in `server/routes.ts` (`POST /api/tutor/quizzes`, `/api/tutor/ai-publish-suggestions`) all join the catalogue on a real code instead of failing on the display string. Additive `migrations/0006_pg_trgm.sql` enables the `pg_trgm` extension; `server/services/subtopicResolver.ts` gains a fuzzy-similarity fallback (threshold 0.45, 0.15 ambiguity gap to runner-up) wrapped in try/catch so a missing extension degrades silently to no-match. The fuzzy + 3-stage exact passes were also re-implemented as a single bulk-SQL backfill (`/tmp/bulk_backfill.sql` shape kept ad-hoc — script-side row-by-row would have taken 10+ minutes vs. seconds). Result: questions matched 0 → 1,493 / 2,844 (52.5 %); misconceptions matched 80 → 129 / 3,485. The misconception dataset turned out to be largely corrupted at source — 0 of 3,181 unmatched rows have *any* exact topic in their declared syllabus (e.g. `subject="accounting", syllabus_code="9706", topic="Algebra"`), so the matcher can't lift them without rewriting the upstream extraction. Tests: `tests/syllabusNormalizer.test.ts` (10) + 5 new fuzzy-fallback cases in `tests/subtopicResolver.test.ts`. |
 
+## Secrets handling
+
+All credentials — database URLs, API keys, JWT/session secrets, admin
+passwords, anything sensitive — live **only** in the Replit Secrets
+store. They must never appear in `.replit` (the legacy `[userenv.shared]`
+block in particular), `.env`, `docker-compose.yml`, scripts, fixtures,
+test mocks, comments, commit messages, or any other file in the repo.
+The shared-env declaration path is convenient but the file is committed
+to git, which leaks the values to anyone with repo access. If you need a
+new credential at runtime, use the env-secrets request flow so the value
+is captured in the encrypted secrets store from the start. If you find a
+plaintext credential anywhere in the tree, treat it as compromised:
+rotate the upstream value first, then remove the in-repo copy, then
+scrub git history.
+
 ## External Dependencies
 - **Auth**: Supabase Auth
 - **AI/LLM Providers**:
