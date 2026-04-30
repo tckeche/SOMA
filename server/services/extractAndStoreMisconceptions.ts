@@ -97,6 +97,15 @@ export interface ExtractResult {
    *  in that case the extractor degraded to its legacy open-ended
    *  prompt and `taxonomyDrops` is meaningless. */
   closedSetTopicCount?: number;
+  /** Number of chunks that threw inside `extractFromChunk` (LLM error,
+   *  network error, JSON parse failure, etc.). Per-chunk failures are
+   *  swallowed so one bad chunk doesn't kill the doc, but callers need
+   *  to know the failure count to distinguish a genuine "no items" doc
+   *  from one whose every chunk crashed. The resumable-skip logic in
+   *  `scripts/reextractExaminerMisconceptions.ts` uses this to refuse
+   *  to insert a sentinel for a doc whose chunks all errored — those
+   *  docs stay re-tryable on the next pass. */
+  chunkFailures?: number;
 }
 
 export interface ExtractOptions {
@@ -284,8 +293,18 @@ function chunkExaminerReport(text: string, opts: { chunkChars: number; chunkOver
             index: chunks.length + 1,
             approxPage: Math.max(1, Math.floor((start + cursor) / CHARS_PER_PAGE) + 1),
           });
-          cursor = end2 - opts.chunkOverlap;
-          if (cursor <= 0) break;
+          // Advance: stop once we've consumed up to the end of the slice.
+          // The previous `cursor = end2 - chunkOverlap` plus the
+          // `cursor < slice.length` loop guard created an infinite loop
+          // when a section was longer than chunkChars: end2 saturates at
+          // slice.length, cursor pins to slice.length - chunkOverlap,
+          // and the same final chunk is re-pushed forever, OOMing the
+          // process. Break the moment the window's right edge has hit
+          // slice.length.
+          if (end2 >= slice.length) break;
+          const nextCursor = end2 - opts.chunkOverlap;
+          if (nextCursor <= cursor) break; // forward-progress guard
+          cursor = nextCursor;
         }
       }
       lastIdx = end;
@@ -293,7 +312,7 @@ function chunkExaminerReport(text: string, opts: { chunkChars: number; chunkOver
     if (chunks.length > 0) return chunks;
   }
 
-  // Strategy 2: sliding-window fallback.
+  // Strategy 2: sliding-window fallback (same forward-progress guard).
   const chunks: Chunk[] = [];
   let cursor = 0;
   while (cursor < text.length) {
@@ -303,8 +322,10 @@ function chunkExaminerReport(text: string, opts: { chunkChars: number; chunkOver
       index: chunks.length + 1,
       approxPage: Math.max(1, Math.floor(cursor / CHARS_PER_PAGE) + 1),
     });
-    cursor = end - opts.chunkOverlap;
-    if (cursor <= 0) break;
+    if (end >= text.length) break;
+    const nextCursor = end - opts.chunkOverlap;
+    if (nextCursor <= cursor) break;
+    cursor = nextCursor;
   }
   return chunks;
 }
@@ -577,6 +598,7 @@ export async function extractAndStoreMisconceptions(
   const allItems: DedupItem[] = [];
   let rawCount = 0;
   let hallucinationDrops = 0;
+  let chunkFailures = 0;
   const chunkStats: ChunkExtractStats = { taxonomyDrops: 0 };
 
   await Promise.all(
@@ -593,8 +615,11 @@ export async function extractAndStoreMisconceptions(
             allItems.push({ ...it, approxPage: chunk.approxPage });
           }
         } catch (err: any) {
-          // Per-chunk failure shouldn't kill the whole document. Log and
-          // continue; the doc-ingestion log captures totals.
+          // Per-chunk failure shouldn't kill the whole document. Log,
+          // count, and continue. The count is propagated on the result so
+          // resumable callers can distinguish a genuine "no items" doc
+          // from one whose every chunk crashed.
+          chunkFailures += 1;
           console.warn(`[examinerExtract] chunk ${chunk.index} failed: ${err?.message ?? err}`);
         }
       }),
@@ -612,6 +637,7 @@ export async function extractAndStoreMisconceptions(
       hallucinationDrops,
       taxonomyDrops: chunkStats.taxonomyDrops,
       closedSetTopicCount: allowedTopics.length,
+      chunkFailures,
     };
   }
 
@@ -691,5 +717,6 @@ export async function extractAndStoreMisconceptions(
     hallucinationDrops,
     taxonomyDrops: chunkStats.taxonomyDrops,
     closedSetTopicCount: allowedTopics.length,
+    chunkFailures,
   };
 }

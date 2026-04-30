@@ -354,6 +354,31 @@ describe("extractAndStoreMisconceptions closed-set catalogue constraint", () => 
     expect(resolveSubtopicIdMock).toHaveBeenCalledTimes(1);
   });
 
+  it("propagates chunkFailures so the re-extraction script can refuse to drop a sentinel on transient errors", async () => {
+    // Every chunk's LLM call throws → extractFromChunk's catch block
+    // increments chunkFailures and returns 0 items. Result must surface
+    // skipped=true with reason='no-items' AND chunkFailures>0 so the
+    // script's sentinel gate keeps the doc re-tryable instead of marking
+    // it permanently done.
+    listAllowedTopicsForSyllabusCodeMock.mockResolvedValue([]);
+    generateWithFallbackMock.mockRejectedValue(new Error("simulated LLM 500"));
+
+    const result = await extractAndStoreMisconceptions({
+      id: 25,
+      board: "Cambridge",
+      syllabusCode: "9706",
+      subject: "Accounting",
+      extractedText: EXTRACT_TEXT,
+      filename: null,
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("no-items");
+    expect(result.count).toBe(0);
+    expect(result.chunkFailures).toBeGreaterThan(0);
+    expect(createExaminerMisconceptionsMock).not.toHaveBeenCalled();
+  });
+
   it("skips the inventory lookup entirely when useStrictCatalogueConstraint=false", async () => {
     // Caller (e.g. legacy ingest path) explicitly opts out of the
     // closed-set constraint. We still expect old behaviour: the LLM is

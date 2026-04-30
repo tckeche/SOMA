@@ -45,6 +45,7 @@ import {
   type ExtractInputDoc,
   type ExtractResult,
 } from "../server/services/extractAndStoreMisconceptions";
+import { listAllowedTopicsForSyllabusCode } from "../server/services/catalogueInventory";
 
 interface CliOptions {
   board: string;
@@ -134,7 +135,28 @@ async function listTargetDocuments(opts: CliOptions): Promise<SyllabusDocument[]
     .from(syllabusDocuments)
     .where(and(...conditions))
     .orderBy(syllabusDocuments.syllabusCode, syllabusDocuments.id);
-  return opts.limit ? rows.slice(0, opts.limit) : rows;
+
+  let filtered = rows;
+  if (opts.requireCatalogue) {
+    const codes = Array.from(new Set(rows.map((r) => r.syllabusCode).filter((c): c is string => !!c)));
+    const codesWithCatalogue = new Set<string>();
+    for (const code of codes) {
+      const inv = await listAllowedTopicsForSyllabusCode(code);
+      if (inv.length > 0) codesWithCatalogue.add(code);
+    }
+    const before = filtered.length;
+    filtered = rows.filter((r) => r.syllabusCode && codesWithCatalogue.has(r.syllabusCode));
+    const skipped = before - filtered.length;
+    const skippedCodes = Array.from(new Set(rows.filter((r) => r.syllabusCode && !codesWithCatalogue.has(r.syllabusCode)).map((r) => r.syllabusCode)));
+    if (skipped > 0) {
+      console.log(`--require-catalogue: skipping ${skipped} doc(s) across ${skippedCodes.length} catalogue-less syllabus code(s) [${skippedCodes.join(", ")}]`);
+    }
+  }
+  // NB: --limit is applied AFTER the resumable-skip filter in main(), not here.
+  // Applying it here would let already-completed docs eat into the budget,
+  // which on a bash-loop wrapper means the loop just spins on the first N
+  // already-done docs and never advances past them.
+  return filtered;
 }
 
 async function countExistingMisconceptions(docIds: number[]): Promise<{ total: number; linked: number }> {
@@ -231,9 +253,13 @@ async function main(): Promise<void> {
     if (alreadyDone.size > 0) {
       docs = allDocs.filter((d) => !alreadyDone.has(d.id));
       console.log(`Resumable-skip: ${alreadyDone.size} doc(s) already re-extracted (have source_quote). Pass --reextract-all to force a redo.`);
-      console.log(`Documents to process this run: ${docs.length}`);
     }
   }
+  if (opts.limit && docs.length > opts.limit) {
+    docs = docs.slice(0, opts.limit);
+    console.log(`--limit=${opts.limit} applied AFTER resumable-skip.`);
+  }
+  console.log(`Documents to process this run: ${docs.length}`);
 
   const docIds = docs.map((d) => d.id);
   const before = await countExistingMisconceptions(docIds);
@@ -292,6 +318,52 @@ async function main(): Promise<void> {
       const outcome = await processDocument(doc, opts);
       outcomes.push(outcome);
       logOutcome(doc, outcome, deleted);
+      // If the closed-set extractor produced 0 rows for this doc, insert a
+      // sentinel row so the resumable-skip logic on the NEXT iteration
+      // treats this doc as done. Without this, a bash loop that re-invokes
+      // the script picks the same no-items doc forever and never advances.
+      // The sentinel uses status="rejected" so it never reaches dashboards
+      // (those filter status="approved"), and source_quote is populated
+      // (which is what listAlreadyReextractedDocIds keys off).
+      //
+      // CRITICAL gate: refuse to insert the sentinel when ANY chunk failed.
+      // A doc whose every chunk crashed on a transient LLM/network error
+      // would otherwise be marked done forever — and the whole goal of
+      // Task #26 is reliable replacement of the 3,485 corrupted rows. So
+      // chunkFailures>0 means "skip this doc this run, but leave it
+      // re-tryable for the next run". The doc-skipped reasons that are
+      // genuinely terminal (`empty-text`, `no-chunks`, `already-extracted`)
+      // do still drop a sentinel — those won't change on retry.
+      const r = outcome.result;
+      const noRowsInserted = !outcome.error && (!r || r.skipped || r.count === 0);
+      const hadChunkFailures = (r?.chunkFailures ?? 0) > 0;
+      if (noRowsInserted && hadChunkFailures) {
+        console.warn(
+          `  warn: doc=${doc.id} produced 0 rows BUT had ${r?.chunkFailures} chunk failure(s) — leaving re-tryable (no sentinel)`,
+        );
+      }
+      if (noRowsInserted && !hadChunkFailures && !opts.keepExisting && sharedDb) {
+        const reason = r?.skipped ? `skipped:${r.reason ?? "unknown"}` : "zero-items";
+        try {
+          await sharedDb.insert(examinerMisconceptions).values({
+            documentId: doc.id,
+            board: doc.board ?? "Cambridge",
+            syllabusCode: doc.syllabusCode ?? "unknown",
+            subject: doc.subject ?? null,
+            topic: "[NO-ITEMS]",
+            subtopic: null,
+            misconception: `[no extractable misconceptions: ${reason}]`,
+            studentError: "[no extractable misconceptions]",
+            correctApproach: "[no extractable misconceptions]",
+            frequency: "common",
+            status: "rejected",
+            sourceQuote: `[NO-ITEMS sentinel: ${reason}]`,
+            sourcePage: null,
+          });
+        } catch (e: any) {
+          console.warn(`  warn: sentinel insert failed for doc=${doc.id}: ${e?.message ?? e}`);
+        }
+      }
       // Drop the heavy extracted_text reference and force GC so the
       // openai SDK's response buffers don't accumulate across docs.
       (doc as any).extractedText = null;
