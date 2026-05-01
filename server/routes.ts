@@ -3041,6 +3041,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   // PUT replace entire draft (client sends full DraftQuestion[])
   app.put("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
     try {
       const quizId = parseInt(String(req.params.quizId));
       if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
@@ -3048,6 +3049,17 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
       const { questions } = req.body;
       if (!Array.isArray(questions)) return res.status(400).json({ message: "questions array required" });
+      traceLog("route.putDraft.entry", {
+        route: "/api/tutor/quizzes/:quizId/draft",
+        quizId,
+        questionsIn: questions.length,
+        clientSentTargetMisconceptionIds: questions.filter((q: any) => Array.isArray(q?.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0).length,
+        sampleQuestion: questions[0] ? {
+          stem: String(questions[0].stem ?? "").slice(0, 50),
+          targetMisconceptionIds: questions[0].targetMisconceptionIds ?? null,
+          subtopicId: questions[0].subtopicId ?? null,
+        } : null,
+      }, traceId);
       setDraft(quizId, questions as DraftQuestion[]);
       res.json({ quizId, questions, updatedAt: new Date() });
     } catch (err: any) {
@@ -3191,6 +3203,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   // Add questions to a quiz
   app.post("/api/tutor/quizzes/:quizId/questions", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
     try {
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
@@ -3200,6 +3213,13 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       if (!Array.isArray(questions) || questions.length === 0) {
         return res.status(400).json({ message: "questions array required" });
       }
+      traceLog("route.addQuestions.entry", {
+        route: "/api/tutor/quizzes/:quizId/questions",
+        quizId,
+        quizSyllabus: quiz.syllabus,
+        questionsIn: questions.length,
+        clientSentTargetMisconceptionIds: questions.filter((q: any) => Array.isArray(q?.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0).length,
+      }, traceId);
       for (const q of questions) {
         if (!q.prompt_text && !q.stem) {
           return res.status(400).json({ message: "Each question must have a prompt_text" });
@@ -3208,6 +3228,26 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           return res.status(400).json({ message: "Each question must have exactly 4 options" });
         }
       }
+
+      // Look up approved examiner-misconception seeds for this quiz's
+      // scope so the questions we're about to write carry the FK link.
+      // Without this, the /questions route silently produces unseeded
+      // rows even after the storage layer was fixed to persist the
+      // column — same root cause as the publish path's missing FK
+      // pass-through. Use the quiz row's parsed syllabus as the scope
+      // since this route doesn't receive selectedSubtopicIds.
+      const { board, syllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
+      const examinerSeeds = await listApprovedSeeds({ board, syllabusCode });
+      const seedIds = examinerSeeds.map((s) => s.id);
+      const targetMisconceptionIds = seedIds.length > 0 ? seedIds : null;
+      traceLog("route.addQuestions.seedsLoaded", {
+        quizId,
+        parsedBoard: board,
+        parsedSyllabusCode: syllabusCode,
+        seedCount: examinerSeeds.length,
+        sampleSeedIds: seedIds.slice(0, 5),
+      }, traceId);
+
       const rawMapped = questions.map((q: any) => {
         // Validate and repair graph_spec — reject broken specs, downgrade type if needed
         let questionType = String(q.question_type || (q.graph_spec ? "graph" : "multiple_choice"));
@@ -3258,8 +3298,25 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         topicTag: rawMapped[index].topic_tag,
         subtopicTag: rawMapped[index].subtopic_tag,
         difficultyTag: rawMapped[index].difficulty_tag,
+        // Seed every newly-added question with the approved-misconception
+        // ids for this quiz's scope. Without this, this route writes
+        // unseeded questions to soma_questions even though the storage
+        // layer is correctly persisting the column when the caller
+        // supplies it. This was the missing fourth piece of the
+        // examiner-loop fix — see EXAMINER_LOOP_BRIEFING.md.
+        targetMisconceptionIds,
       }));
+      traceLog("route.addQuestions.beforeCreate", {
+        quizId,
+        mappedCount: mapped.length,
+        rowsWithSeeds: countWithField(mapped as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
       const saved = await storage.createSomaQuestions(mapped);
+      traceLog("route.addQuestions.afterCreate", {
+        quizId,
+        savedCount: saved.length,
+        savedRowsWithSeeds: countWithField(saved as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
       res.json(saved);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to add questions" });
