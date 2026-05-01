@@ -588,6 +588,210 @@ export async function bulkApproveHighConfidence(
   return { approved: eligible.length };
 }
 
+// ── Tiered automated triage ──────────────────────────────────────────
+//
+// Approves / rejects pending rows from the AI extractor based on
+// multiple signal columns at once (confidence + subtopic FK + source
+// quote + examiner-flagged frequency) so the human review queue only
+// sees the genuinely ambiguous middle tier. Sits alongside the
+// reviewer-driven approveInsight / rejectInsight / bulkActionInsights /
+// bulkApproveHighConfidence — those keep working unchanged. The
+// downstream Maker prompt (`listApprovedSeeds`) is also untouched: it
+// still reads only `status = 'approved'`, so this function plugs into
+// the existing distractor pipeline without changing it.
+
+export interface TriageThresholds {
+  /** Auto-approve when confidence >= this value (and other guards pass). Default 70. */
+  minApproveConfidence?: number;
+  /** Auto-reject when confidence < this value. Default 40. */
+  minRejectConfidence?: number;
+  /** Require subtopic FK linkage to auto-approve. Default true. */
+  requireSubtopicId?: boolean;
+  /** Require a non-null source_quote to auto-approve, and treat missing source_quote as auto-reject. Default true. */
+  requireSourceQuote?: boolean;
+  /** Frequencies eligible for auto-approve. Default ["very_common", "common"]. */
+  approveFrequencies?: string[];
+}
+
+export interface TriageOptions extends TriageThresholds {
+  /** Reviewer UUID to stamp on auto-decisions. null = "automated" (no human). Default null. */
+  reviewerId?: string | null;
+  /** Restrict triage to one board. */
+  board?: string;
+  /** Restrict triage to one syllabus code. */
+  syllabusCode?: string;
+  /** Restrict triage to a single source document. */
+  documentId?: number;
+  /** Preview-only: compute what would change but do not write. */
+  dryRun?: boolean;
+  /** Cap on rows to scan per call. Default 10_000. */
+  limit?: number;
+}
+
+export interface TriageResult {
+  scanned: number;
+  approved: number;
+  rejected: number;
+  leftPending: number;
+  approvedIds: number[];
+  rejectedIds: number[];
+  leftPendingIds: number[];
+  thresholds: Required<TriageThresholds>;
+}
+
+export async function triagePendingMisconceptions(
+  opts: TriageOptions = {},
+): Promise<TriageResult> {
+  const thresholds: Required<TriageThresholds> = {
+    minApproveConfidence: opts.minApproveConfidence ?? 70,
+    minRejectConfidence: opts.minRejectConfidence ?? 40,
+    requireSubtopicId: opts.requireSubtopicId ?? true,
+    requireSourceQuote: opts.requireSourceQuote ?? true,
+    approveFrequencies: opts.approveFrequencies ?? ["very_common", "common"],
+  };
+  const empty: TriageResult = {
+    scanned: 0,
+    approved: 0,
+    rejected: 0,
+    leftPending: 0,
+    approvedIds: [],
+    rejectedIds: [],
+    leftPendingIds: [],
+    thresholds,
+  };
+  if (!db) return empty;
+
+  const limit = Math.max(1, Math.min(100_000, opts.limit ?? 10_000));
+  const conditions = [eq(examinerMisconceptions.status, "pending")];
+  if (opts.board) conditions.push(eq(examinerMisconceptions.board, opts.board));
+  if (opts.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, opts.syllabusCode));
+  if (opts.documentId !== undefined) conditions.push(eq(examinerMisconceptions.documentId, opts.documentId));
+
+  const candidates = await db
+    .select({
+      id: examinerMisconceptions.id,
+      board: examinerMisconceptions.board,
+      syllabusCode: examinerMisconceptions.syllabusCode,
+      confidence: examinerMisconceptions.confidence,
+      subtopicId: examinerMisconceptions.subtopicId,
+      sourceQuote: examinerMisconceptions.sourceQuote,
+      frequency: examinerMisconceptions.frequency,
+    })
+    .from(examinerMisconceptions)
+    .where(and(...conditions))
+    .limit(limit);
+
+  if (candidates.length === 0) return empty;
+
+  const approveFreqSet = new Set(thresholds.approveFrequencies);
+  const approveBucket: typeof candidates = [];
+  // Reject ids are bucketed by reason so reviewNotes captures *why*.
+  const rejectByReason = new Map<string, number[]>();
+  const leftPendingIds: number[] = [];
+
+  for (const row of candidates) {
+    const conf = row.confidence ?? 0;
+    const hasQuote = (row.sourceQuote ?? "").trim().length > 0;
+    const hasSubtopic = row.subtopicId !== null && row.subtopicId !== undefined;
+    const freqOk = approveFreqSet.has(row.frequency);
+
+    // Reject path takes precedence — a row that fails a hard reject
+    // signal must never simultaneously be approved.
+    const rejectReasons: string[] = [];
+    if (conf < thresholds.minRejectConfidence) {
+      rejectReasons.push(`confidence<${thresholds.minRejectConfidence}`);
+    }
+    if (thresholds.requireSourceQuote && !hasQuote) {
+      rejectReasons.push("missing source_quote");
+    }
+    if (rejectReasons.length > 0) {
+      const reason = `auto-rejected: ${rejectReasons.join(", ")}`;
+      const list = rejectByReason.get(reason) ?? [];
+      list.push(row.id);
+      rejectByReason.set(reason, list);
+      continue;
+    }
+
+    const approveOk =
+      conf >= thresholds.minApproveConfidence &&
+      (!thresholds.requireSubtopicId || hasSubtopic) &&
+      (!thresholds.requireSourceQuote || hasQuote) &&
+      freqOk;
+    if (approveOk) {
+      approveBucket.push(row);
+    } else {
+      leftPendingIds.push(row.id);
+    }
+  }
+
+  const approvedIds = approveBucket.map((r) => r.id);
+  const rejectedIds = Array.from(rejectByReason.values()).flat();
+  const result: TriageResult = {
+    scanned: candidates.length,
+    approved: approvedIds.length,
+    rejected: rejectedIds.length,
+    leftPending: leftPendingIds.length,
+    approvedIds,
+    rejectedIds,
+    leftPendingIds,
+    thresholds,
+  };
+
+  if (opts.dryRun) return result;
+
+  const reviewerId = opts.reviewerId ?? null;
+  const reviewedAt = new Date();
+  const cacheGroups = new Set<string>();
+
+  if (approvedIds.length > 0) {
+    const approveNote =
+      `auto-approved: confidence>=${thresholds.minApproveConfidence}` +
+      (thresholds.requireSubtopicId ? ", linked subtopic" : "") +
+      (thresholds.requireSourceQuote ? ", has source_quote" : "") +
+      `, frequency in {${thresholds.approveFrequencies.join("|")}}`;
+    const updated = await db
+      .update(examinerMisconceptions)
+      .set({
+        status: "approved",
+        reviewedById: reviewerId,
+        reviewedAt,
+        reviewNotes: approveNote,
+      })
+      .where(inArray(examinerMisconceptions.id, approvedIds))
+      .returning({
+        board: examinerMisconceptions.board,
+        syllabusCode: examinerMisconceptions.syllabusCode,
+      });
+    for (const r of updated) cacheGroups.add(`${r.board}|${r.syllabusCode}`);
+  }
+
+  const rejectEntries = Array.from(rejectByReason.entries());
+  for (const [reason, ids] of rejectEntries) {
+    if (ids.length === 0) continue;
+    const updated = await db
+      .update(examinerMisconceptions)
+      .set({
+        status: "rejected",
+        reviewedById: reviewerId,
+        reviewedAt,
+        reviewNotes: reason,
+      })
+      .where(inArray(examinerMisconceptions.id, ids))
+      .returning({
+        board: examinerMisconceptions.board,
+        syllabusCode: examinerMisconceptions.syllabusCode,
+      });
+    for (const r of updated) cacheGroups.add(`${r.board}|${r.syllabusCode}`);
+  }
+
+  for (const g of Array.from(cacheGroups)) {
+    const [board, syllabusCode] = g.split("|");
+    invalidateExaminerMisconceptionsCache({ board, syllabusCode });
+  }
+
+  return result;
+}
+
 // ── Subtopic picker support ──────────────────────────────────────────
 //
 // Powers the reviewer "pick a subtopic" affordance on queue rows whose
