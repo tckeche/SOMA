@@ -2938,6 +2938,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             if (generated.warnings.length > 0) {
               console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
             }
+            if (generated.blockedQuestions.length > 0) {
+              console.warn(`[AI Publish] Quiz "${item.topic}" blocked ${generated.blockedQuestions.length} question(s) from disagreement protocol — assignment shipped with ${generated.questions.length}/${parsed.questionCount} questions:`, generated.blockedQuestions.map((b) => `Q${b.originalIndex}: ${b.reason}`).join("; "));
+            }
             const quiz = await storage.createSomaQuizBundle({
               quiz: {
                 title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
@@ -2950,17 +2953,22 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
               questions: generated.questions.map((q, i) => {
-                // Per-question misconception attribution comes from the
-                // blueprint when the planner ran. Probe rows carry a single
-                // targetMisconceptionId; coverage rows carry none. Falling
-                // back to the batch-wide seedMisconceptionIds keeps legacy
-                // behaviour for un-planned generations.
+                // Per-question misconception attribution. Phase 4 prefers
+                // the per-option rationales (each distractor carries its
+                // own misconception id), falling back to the blueprint
+                // row's single targetMisconceptionId, then to the batch-
+                // wide seed list. Each layer is more specific than the
+                // last; the marker reads whichever is populated.
                 const planRow = generated.blueprint?.rows[i];
-                const ids = planRow
-                  ? (planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
-                      ? [planRow.targetMisconceptionId]
-                      : [])
-                  : (generated.seedMisconceptionIds ?? []);
+                const optionRatIds = (q.option_rationales ?? [])
+                  .map((r) => r.misconceptionId)
+                  .filter((id): id is number => id != null);
+                const planIds = planRow && planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
+                  ? [planRow.targetMisconceptionId]
+                  : [];
+                const ids = optionRatIds.length > 0
+                  ? Array.from(new Set([...optionRatIds, ...planIds]))
+                  : (planIds.length > 0 ? planIds : (generated.seedMisconceptionIds ?? []));
                 return {
                   stem: q.stem,
                   options: q.options,
@@ -2968,6 +2976,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                   explanation: q.explanation,
                   marks: q.marks,
                   targetMisconceptionIds: ids.length > 0 ? ids : null,
+                  optionRationales: q.option_rationales ?? null,
                 };
               }),
               assignedStudentIds: [studentId],

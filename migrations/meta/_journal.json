@@ -43,6 +43,13 @@
       "when": 1777491814474,
       "tag": "0005_phase4_command_word_performance",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0007_phase4_option_rationales",
+      "breakpoints": true
     }
   ]
 }

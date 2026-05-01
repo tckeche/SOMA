@@ -24,6 +24,17 @@ import {
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
+export const OptionRationaleSchema = z.object({
+  /** The option text this rationale describes — must match options[i] verbatim. */
+  option: z.string(),
+  /** True for the correct answer, false for distractors. Exactly one row should be true. */
+  isCorrect: z.boolean(),
+  /** 1-2 sentence explanation: why correct, or which step a student got wrong to land here. */
+  rationale: z.string().min(1),
+  /** When this distractor reproduces a known examiner-flagged misconception, the seed id; null otherwise. */
+  misconceptionId: z.number().int().nullable(),
+});
+
 export const QuestionSchema = z.object({
   stem: z.string(),
   options: z.array(z.string()).length(4),
@@ -33,6 +44,13 @@ export const QuestionSchema = z.object({
   difficulty_tag: z.enum(["easy", "medium", "hard"]).optional(),
   topic_tag: z.string().optional(),
   subtopic_tag: z.string().optional(),
+  /**
+   * Phase 4 — per-option rationales. Optional during rollout: legacy
+   * verifiers that haven't been re-prompted still produce only `explanation`.
+   * When present, must have exactly 4 rows, in the same order as `options`,
+   * and exactly one row with isCorrect=true.
+   */
+  option_rationales: z.array(OptionRationaleSchema).length(4).optional(),
 });
 
 export const QuizResultSchema = z.object({
@@ -104,6 +122,14 @@ export interface AuditedQuizResult {
    * attribution back to learning requirements and misconceptions.
    */
   blueprint: Blueprint | null;
+  /**
+   * Phase 4 — questions the disagreement protocol blocked rather than
+   * shipping with a coerced/wrong answer key. The result's `questions`
+   * array is shorter than questionCount when this is non-empty. Callers
+   * can inspect `blockedQuestions[i].rejected` to re-roll, surface to a
+   * tutor for manual review, or simply ship a shorter assignment.
+   */
+  blockedQuestions: BlockedQuestion[];
 }
 
 export interface SomaGenerationContext {
@@ -292,6 +318,200 @@ function applyMathValidatorCorrections(
   return { questions: corrected, warnings };
 }
 
+// ─── Per-option rationale integrity ────────────────────────────────────────
+
+/**
+ * Validate the verifier's per-option rationale array against the actual
+ * options it claims to describe. Catches the common drift modes:
+ *   - rationale.option text doesn't match any option (verifier rewrote it)
+ *   - more or fewer than one isCorrect=true row
+ *   - the isCorrect=true row's option text doesn't match correct_answer
+ *   - duplicate or out-of-order option entries
+ *
+ * On any structural issue, drops the entire option_rationales for that
+ * question and records a warning. We'd rather omit than ship a malformed
+ * attribution that the marker would mis-display.
+ */
+export function validateOptionRationales(
+  questions: QuizResult["questions"],
+  approvedSeedIds: Set<number>,
+): { questions: QuizResult["questions"]; warnings: PipelineWarning[] } {
+  const warnings: PipelineWarning[] = [];
+  const corrected = questions.map((q, idx) => {
+    if (!q.option_rationales) return q;
+    const rats = q.option_rationales;
+    if (rats.length !== 4) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "explanation",
+        issue: `option_rationales must have exactly 4 rows; got ${rats.length}. Dropping rationales.`,
+        autoFixed: false,
+      });
+      return { ...q, option_rationales: undefined };
+    }
+    // Reorder rationales to match options[] order; drop the array if any
+    // option text is missing from the rationale list.
+    const reordered: typeof rats = [];
+    const usedRationaleIdx = new Set<number>();
+    for (const opt of q.options) {
+      const matchIdx = rats.findIndex(
+        (r, i) => !usedRationaleIdx.has(i) && r.option.trim() === opt.trim(),
+      );
+      if (matchIdx === -1) {
+        warnings.push({
+          questionIndex: idx + 1,
+          field: "explanation",
+          issue: `option_rationales does not cover option "${opt.slice(0, 40)}…". Dropping rationales.`,
+          autoFixed: false,
+        });
+        return { ...q, option_rationales: undefined };
+      }
+      usedRationaleIdx.add(matchIdx);
+      reordered.push(rats[matchIdx]);
+    }
+    const correctRows = reordered.filter((r) => r.isCorrect);
+    if (correctRows.length !== 1) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "explanation",
+        issue: `Expected exactly one isCorrect=true rationale; got ${correctRows.length}. Dropping rationales.`,
+        autoFixed: false,
+      });
+      return { ...q, option_rationales: undefined };
+    }
+    if (correctRows[0].option.trim() !== q.correct_answer.trim()) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "explanation",
+        issue: `isCorrect rationale labels "${correctRows[0].option.slice(0, 40)}…" but correct_answer is "${q.correct_answer.slice(0, 40)}…". Dropping rationales.`,
+        autoFixed: false,
+      });
+      return { ...q, option_rationales: undefined };
+    }
+    // Strip misconception ids that aren't on the approved list — the verifier
+    // sometimes hallucinates ids when the seed list is empty or short. Better
+    // to lose attribution than ship a wrong link.
+    const cleaned = reordered.map((r) => {
+      if (r.misconceptionId == null) return r;
+      if (approvedSeedIds.size === 0 || !approvedSeedIds.has(r.misconceptionId)) {
+        return { ...r, misconceptionId: null };
+      }
+      return r;
+    });
+    return { ...q, option_rationales: cleaned };
+  });
+  return { questions: corrected, warnings };
+}
+
+// ─── 3-way disagreement protocol ───────────────────────────────────────────
+
+export interface BlockedQuestion {
+  /** 1-based index in the original generation request. */
+  originalIndex: number;
+  /** Human-readable reason for blocking. */
+  reason: string;
+  /** The question that was blocked (so the caller can re-roll or surface to a tutor). */
+  rejected: QuizResult["questions"][number];
+  /** What each voice said, for telemetry. */
+  votes: {
+    maker: string;
+    verifier: string;
+    prover: string | null;
+  };
+}
+
+/**
+ * Three-way vote between the maker (initial answer), the verifier (post-fix
+ * answer) and the deterministic prover (math validator). The principle: do
+ * not silently coerce — when we cannot confidently identify the correct
+ * answer, BLOCK the question rather than ship a wrong key.
+ *
+ * Decision matrix:
+ *   prover available + prover == verifier  → ship (high confidence)
+ *   prover available + prover != verifier  → BLOCK (both LLMs may be wrong)
+ *   prover unavailable + verifier == maker → ship (LLM consensus, no prover)
+ *   prover unavailable + verifier != maker → ship (verifier did its job),
+ *     but emit an info warning so the tutor knows the maker disagreed.
+ *
+ * Plus: any question that arrived with an UNFIXED critical answer-match
+ * warning (i.e. validateAndCorrectMcqAnswers fell back to options[0]) is
+ * blocked outright — those are the silent-coerce errors that prompted this
+ * whole change.
+ */
+export function applyDisagreementProtocol(
+  drafts: DraftQuiz["questions"],
+  verified: QuizResult["questions"],
+  upstreamWarnings: PipelineWarning[],
+): { questions: QuizResult["questions"]; warnings: PipelineWarning[]; blocked: BlockedQuestion[] } {
+  const warnings: PipelineWarning[] = [];
+  const blocked: BlockedQuestion[] = [];
+  const kept: QuizResult["questions"] = [];
+
+  // Index unfixed CRITICAL answer-key warnings by question index so we can
+  // block them en bloc without re-deriving the heuristic.
+  const criticalUnfixedByIndex = new Set<number>();
+  for (const w of upstreamWarnings) {
+    if (
+      w.field === "correct_answer" &&
+      w.autoFixed === false &&
+      /CRITICAL/i.test(w.issue)
+    ) {
+      criticalUnfixedByIndex.add(w.questionIndex);
+    }
+  }
+
+  for (let i = 0; i < verified.length; i++) {
+    const v = verified[i];
+    const draft = drafts[i];
+    const oneBased = i + 1;
+
+    // Rule 1: any unfixed CRITICAL warning blocks. The validator already
+    // tried letter-mapping, substring-matching, and math-prover — if it
+    // still couldn't snap, we have no trustworthy answer.
+    if (criticalUnfixedByIndex.has(oneBased)) {
+      blocked.push({
+        originalIndex: oneBased,
+        reason: "Verifier's correct_answer did not match any option after letter/substring/math recovery.",
+        rejected: v,
+        votes: { maker: draft?.correct_answer ?? "(no draft)", verifier: v.correct_answer, prover: null },
+      });
+      continue;
+    }
+
+    // Rule 2: deterministic prover is the tiebreaker.
+    const prove = validateMathQuestion(v.stem, v.options, v.correct_answer);
+    const proverAnswer = prove.verifiable && prove.matchedOption ? prove.matchedOption : null;
+
+    if (proverAnswer && proverAnswer.trim() !== v.correct_answer.trim()) {
+      blocked.push({
+        originalIndex: oneBased,
+        reason: `Deterministic prover disagreed with verifier (prover="${proverAnswer}", verifier="${v.correct_answer}", pattern=${prove.pattern}). Both LLMs may be wrong.`,
+        rejected: v,
+        votes: {
+          maker: draft?.correct_answer ?? "(no draft)",
+          verifier: v.correct_answer,
+          prover: proverAnswer,
+        },
+      });
+      continue;
+    }
+
+    // Rule 3: when verifier overrode the maker, surface that for tutor visibility.
+    if (draft && draft.correct_answer.trim() !== v.correct_answer.trim()) {
+      warnings.push({
+        questionIndex: oneBased,
+        field: "correct_answer",
+        issue: `Verifier disagreed with maker (maker="${draft.correct_answer}", verifier="${v.correct_answer}"${proverAnswer ? `, prover="${proverAnswer}" agrees with verifier` : ", no prover available"}). Shipping verifier's answer.`,
+        autoFixed: true,
+      });
+    }
+
+    kept.push(v);
+  }
+
+  return { questions: kept, warnings, blocked };
+}
+
 // ─── Catalogue context helpers ─────────────────────────────────────────────
 
 function catalogueBlock(context: SomaGenerationContext, prefix = "\n\n"): string {
@@ -335,6 +555,12 @@ function buildMakerUserPrompt(context: SomaGenerationContext): string {
 }
 
 function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
+  const blueprintRule = context.blueprint
+    ? `\n   - Use the supplied blueprint row (matched by question index) to attribute distractors to misconceptions: when a row has role="misconception_probe" with targetMisconceptionId, the wrong option that reproduces that misconception's typical error must carry option_rationales[k].misconceptionId = targetMisconceptionId.`
+    : "";
+  const seedAttributionRule = context.examinerSeeds && context.examinerSeeds.length > 0
+    ? `\n   - For any distractor that visibly reproduces one of the supplied examiner-misconception seeds, set option_rationales[k].misconceptionId to that seed's id. Use null when no seed matches — never invent ids that aren't on the supplied list.`
+    : "";
   return `You are the SOMA question verifier. For EACH question you receive:
 
 1. CHECK that correct_answer is objectively correct and in-scope for subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}. The 4 options must be distinct and the question solvable.
@@ -345,6 +571,11 @@ function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
 3. Once the answer is correct, WRITE the explanation field in this voice:
 
 ${SOMA_TUTOR_VOICE}
+
+4. PER-OPTION RATIONALES — for every question, also fill option_rationales: an array of exactly 4 entries, one per option in the same order as options[].
+   - Each entry: { option (verbatim option text), isCorrect (true for the correct answer, false for distractors), rationale (1-2 sentences in the Soma tutor voice; for distractors, name the specific reasoning step the student got wrong), misconceptionId (number or null) }
+   - Exactly one entry must have isCorrect=true.${blueprintRule}${seedAttributionRule}
+   - When no seed matches a distractor, set misconceptionId=null. Never reuse the same misconceptionId on more than one distractor in the same question unless the seed truly explains both.
 
 Return the FULL corrected question set — same count, same order. For every fix add a warning entry with autoFixed=true. Never drop or add questions.`;
 }
@@ -652,12 +883,23 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       }
     }
     const stitchedBlueprint: Blueprint | null = stitchedRows.length > 0 ? { rows: stitchedRows } : null;
+    // Carry blocked questions from each batch into the merged result so
+    // callers see the full picture, not just the surviving questions.
+    const allBlocked: BlockedQuestion[] = [];
+    let runningOffset = 0;
+    for (const batch of batchResults) {
+      for (const b of batch.blockedQuestions) {
+        allBlocked.push({ ...b, originalIndex: b.originalIndex + runningOffset });
+      }
+      runningOffset += batch.questions.length + batch.blockedQuestions.length;
+    }
     return {
       questions: finalValidated.questions,
       warnings: [...allWarnings, ...finalValidated.warnings],
       telemetry: { ...lastTelemetry, totalDurationMs: Date.now() - overallStart },
       seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
       blueprint: stitchedBlueprint,
+      blockedQuestions: allBlocked,
     };
   }
 
@@ -728,16 +970,36 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const guarded = applyDeterministicIntegrityGuards(verified.questions);
   const validated = validateAndCorrectMcqAnswers(guarded.questions);
   const mathCheck = applyMathValidatorCorrections(validated.questions);
-  const finalQuestions = mathCheck.questions;
+
+  // ── STAGE 3a: Per-option rationale integrity ───────────────────────────
+  // Drop malformed rationale arrays before persistence; never ship a
+  // mis-aligned attribution that the marker would surface to a student.
+  const approvedSeedIds = new Set((context.examinerSeeds ?? []).map((s) => s.id));
+  const rationaleChecked = validateOptionRationales(mathCheck.questions, approvedSeedIds);
+
+  // ── STAGE 4: 3-way disagreement protocol ───────────────────────────────
+  // Vote between maker, verifier, and deterministic prover. Block any
+  // question we cannot confidently mark correct; never silently coerce.
+  const upstreamWarnings: PipelineWarning[] = [
+    ...verified.warnings,
+    ...guarded.warnings,
+    ...validated.warnings,
+    ...mathCheck.warnings,
+    ...rationaleChecked.warnings,
+  ];
+  const protocol = applyDisagreementProtocol(draft.questions, rationaleChecked.questions, upstreamWarnings);
+  for (const b of protocol.blocked) {
+    upstreamWarnings.push({
+      questionIndex: b.originalIndex,
+      field: "correct_answer",
+      issue: `BLOCKED — ${b.reason} maker="${b.votes.maker}", verifier="${b.votes.verifier}"${b.votes.prover ? `, prover="${b.votes.prover}"` : ""}.`,
+      autoFixed: false,
+    });
+  }
 
   return {
-    questions: finalQuestions,
-    warnings: [
-      ...verified.warnings,
-      ...guarded.warnings,
-      ...validated.warnings,
-      ...mathCheck.warnings,
-    ],
+    questions: protocol.questions,
+    warnings: [...upstreamWarnings, ...protocol.warnings],
     telemetry: {
       makerModel,
       checkerModel,
@@ -746,6 +1008,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     },
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
     blueprint,
+    blockedQuestions: protocol.blocked,
   };
 }
 
