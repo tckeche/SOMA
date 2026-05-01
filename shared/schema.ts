@@ -123,6 +123,11 @@ export interface DraftQuestion {
   topicTag?: string | null;
   subtopicTag?: string | null;
   difficultyTag?: string | null;
+  subtopicId?: number | null;
+  learningRequirementId?: number | null;
+  targetMisconceptionIds?: number[] | null;
+  commandWord?: string | null;
+  assessmentObjective?: string | null;
 }
 
 export const somaUsers = pgTable("soma_users", {
