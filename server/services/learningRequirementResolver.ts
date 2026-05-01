@@ -325,3 +325,380 @@ export async function backfillLearningRequirementLinks(
 
   return result;
 }
+
+// ─── LLM-judge fallback ─────────────────────────────────────────────
+//
+// The lexical matcher (above) only commits high-confidence wins —
+// misconceptions whose vocabulary literally overlaps with a
+// requirement's statement. That leaves a long tail of rows where the
+// match exists semantically but the surface words differ
+// ("student writes 2x = 7 instead of x = 4" vs "Solve linear
+// equations using inverse operations"). This judge plugs that gap by
+// asking a small LLM to pick from the same candidate set, with the
+// same all-or-nothing contract — return one id from the provided list
+// or report "none" with a reason.
+//
+// Routes through generateWithFallback so it inherits the same
+// caching, idempotency, telemetry, cost guards, and provider fallback
+// chain everything else uses. Per-row idempotency key = misconception
+// id, so re-running the script picks up where it left off without
+// duplicating spend.
+
+import { generateWithFallback } from "./aiOrchestrator";
+
+export interface JudgeOptions {
+  /** Override the AI orchestrator call (used in tests). */
+  callAI?: typeof generateWithFallback;
+  /** Stable idempotency tag prefix (default "lr-judge-v1"). */
+  idempotencyPrefix?: string;
+  /** Minimum confidence the judge must report to commit. Default "medium". */
+  minConfidence?: "low" | "medium" | "high";
+}
+
+export interface JudgeResult {
+  requirementId: number | null;
+  confidence: "low" | "medium" | "high";
+  reason: string;
+  rejectionReason: "judge_low_confidence" | "judge_picked_none" | "judge_invalid_id" | null;
+}
+
+const JUDGE_SYSTEM_PROMPT = [
+  "You classify exam-board misconceptions to a single learning requirement.",
+  "You will be given:",
+  "  1. A misconception (the wrong belief, the typical wrong working, and the correct approach).",
+  "  2. A numbered list of candidate learning requirements under one syllabus subtopic.",
+  "Pick exactly one id from the list that the misconception is ABOUT — i.e. the requirement",
+  "the student would have demonstrated correctly if they understood. If no requirement is a clear",
+  "fit, return id=null with confidence=\"low\".",
+  "Never invent an id that isn't in the list. Never return more than one id.",
+  "Output JSON only, matching the provided schema.",
+].join("\n");
+
+const JUDGE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "confidence", "reason"],
+  properties: {
+    id: {
+      type: ["integer", "null"],
+      description: "The chosen requirement id from the candidate list, or null if no clear fit.",
+    },
+    confidence: {
+      type: "string",
+      enum: ["low", "medium", "high"],
+    },
+    reason: {
+      type: "string",
+      description: "One short sentence explaining the choice (or why none fit).",
+    },
+  },
+};
+
+const CONFIDENCE_RANK: Record<"low" | "medium" | "high", number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+function buildJudgeUserPrompt(
+  parts: MisconceptionTextParts,
+  candidates: RequirementCandidate[],
+): string {
+  const numbered = candidates
+    .map((c, i) =>
+      `  [${c.id}] ${c.statement}` +
+      (c.notesAndExamples ? `\n        notes: ${c.notesAndExamples}` : ""),
+    )
+    .join("\n");
+  return [
+    "Misconception:",
+    `  belief: ${parts.misconception}`,
+    `  typical wrong working: ${parts.studentError ?? "—"}`,
+    `  correct approach: ${parts.correctApproach ?? "—"}`,
+    "",
+    "Candidate learning requirements (pick one id, or null):",
+    numbered,
+  ].join("\n");
+}
+
+/** Pure-async judge — calls the AI orchestrator and parses the
+ *  response. Returns null requirementId when the model refuses or
+ *  reports low confidence below `minConfidence`. */
+export async function judgeBestRequirement(
+  parts: MisconceptionTextParts,
+  candidates: RequirementCandidate[],
+  rowId: number,
+  opts: JudgeOptions = {},
+): Promise<JudgeResult> {
+  const minConfidence = opts.minConfidence ?? "medium";
+  const minConfidenceRank = CONFIDENCE_RANK[minConfidence];
+  const callAI = opts.callAI ?? generateWithFallback;
+  const idempotencyPrefix = opts.idempotencyPrefix ?? "lr-judge-v1";
+
+  if (candidates.length === 0) {
+    return {
+      requirementId: null,
+      confidence: "low",
+      reason: "no candidates",
+      rejectionReason: "judge_picked_none",
+    };
+  }
+
+  const candidateIds = new Set(candidates.map((c) => c.id));
+  const userPrompt = buildJudgeUserPrompt(parts, candidates);
+  const result = await callAI(JUDGE_SYSTEM_PROMPT, userPrompt, JUDGE_SCHEMA, {
+    idempotencyKey: `${idempotencyPrefix}:misconception:${rowId}`,
+    cacheable: true,
+    taskType: "misconception_classify",
+    promptId: "learning-requirement-judge",
+    promptVersion: "v1",
+    maxTokens: 200,
+  });
+
+  let parsed: { id: number | null; confidence: string; reason: string };
+  try {
+    parsed = JSON.parse(result.data);
+  } catch {
+    return {
+      requirementId: null,
+      confidence: "low",
+      reason: `unparseable judge response: ${result.data.slice(0, 80)}`,
+      rejectionReason: "judge_invalid_id",
+    };
+  }
+
+  const conf =
+    parsed.confidence === "high" || parsed.confidence === "medium" || parsed.confidence === "low"
+      ? parsed.confidence
+      : "low";
+
+  if (parsed.id === null || parsed.id === undefined) {
+    return {
+      requirementId: null,
+      confidence: conf,
+      reason: parsed.reason ?? "model returned null",
+      rejectionReason: "judge_picked_none",
+    };
+  }
+  if (typeof parsed.id !== "number" || !Number.isInteger(parsed.id) || !candidateIds.has(parsed.id)) {
+    return {
+      requirementId: null,
+      confidence: conf,
+      reason: `model returned invalid id ${parsed.id}`,
+      rejectionReason: "judge_invalid_id",
+    };
+  }
+  if (CONFIDENCE_RANK[conf] < minConfidenceRank) {
+    return {
+      requirementId: null,
+      confidence: conf,
+      reason: parsed.reason ?? "below min confidence",
+      rejectionReason: "judge_low_confidence",
+    };
+  }
+  return {
+    requirementId: parsed.id,
+    confidence: conf,
+    reason: parsed.reason ?? "",
+    rejectionReason: null,
+  };
+}
+
+export interface JudgeBackfillOptions {
+  board?: string;
+  syllabusCode?: string;
+  status?: "pending" | "approved" | "rejected";
+  /** Cap on candidate rows scanned. Default 10_000. Use a small value (e.g. 50) for the first paid run. */
+  limit?: number;
+  /** Parallel LLM calls. Default 5. */
+  concurrency?: number;
+  /** Minimum confidence to commit. Default "medium". */
+  minConfidence?: "low" | "medium" | "high";
+  /** Preview-only: don't write. */
+  dryRun?: boolean;
+  /** Test seam — override the AI call. */
+  callAI?: typeof generateWithFallback;
+  /** Test seam — override pLimit (defaults to dynamic import). */
+  concurrencyImpl?: <T>(n: number) => (fn: () => Promise<T>) => Promise<T>;
+  /** Optional progress callback — invoked after each row's judge call resolves. */
+  onProgress?: (done: number, total: number) => void;
+}
+
+export interface JudgeBackfillResult {
+  scanned: number;
+  matched: number;
+  skippedJudgeNone: number;
+  skippedJudgeLowConfidence: number;
+  skippedJudgeInvalidId: number;
+  skippedNoCandidates: number;
+  matchedIds: number[];
+}
+
+/**
+ * Same scan as the lexical backfill, but routes the candidate set
+ * through the LLM judge instead of Jaccard. Targets ONLY rows where
+ * the lexical pass already failed (subtopic_id NOT NULL,
+ * learning_requirement_id IS NULL), so running this after the lexical
+ * backfill is the natural workflow.
+ */
+export async function llmBackfillLearningRequirementLinks(
+  opts: JudgeBackfillOptions = {},
+): Promise<JudgeBackfillResult> {
+  const empty: JudgeBackfillResult = {
+    scanned: 0,
+    matched: 0,
+    skippedJudgeNone: 0,
+    skippedJudgeLowConfidence: 0,
+    skippedJudgeInvalidId: 0,
+    skippedNoCandidates: 0,
+    matchedIds: [],
+  };
+  if (!db) return empty;
+
+  const limit = Math.max(1, Math.min(100_000, opts.limit ?? 10_000));
+  const status = opts.status ?? "approved";
+  const concurrency = Math.max(1, Math.min(20, opts.concurrency ?? 5));
+  const minConfidence = opts.minConfidence ?? "medium";
+
+  const conditions = [
+    eq(examinerMisconceptions.status, status),
+    isNotNull(examinerMisconceptions.subtopicId),
+    isNull(examinerMisconceptions.learningRequirementId),
+  ];
+  if (opts.board) conditions.push(eq(examinerMisconceptions.board, opts.board));
+  if (opts.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, opts.syllabusCode));
+
+  const candidates = await db
+    .select({
+      id: examinerMisconceptions.id,
+      board: examinerMisconceptions.board,
+      syllabusCode: examinerMisconceptions.syllabusCode,
+      subtopicId: examinerMisconceptions.subtopicId,
+      misconception: examinerMisconceptions.misconception,
+      studentError: examinerMisconceptions.studentError,
+      correctApproach: examinerMisconceptions.correctApproach,
+    })
+    .from(examinerMisconceptions)
+    .where(and(...conditions))
+    .limit(limit);
+
+  if (candidates.length === 0) return empty;
+
+  const subtopicIds = Array.from(
+    new Set(
+      candidates
+        .map((c) => c.subtopicId)
+        .filter((id): id is number => id !== null && id !== undefined),
+    ),
+  );
+  const reqRows = await db
+    .select({
+      id: learningRequirements.id,
+      subtopicId: learningRequirements.subtopicId,
+      statement: learningRequirements.statement,
+      notesAndExamples: learningRequirements.notesAndExamples,
+    })
+    .from(learningRequirements)
+    .where(inArray(learningRequirements.subtopicId, subtopicIds));
+  const reqsBySubtopic = new Map<number, RequirementCandidate[]>();
+  for (const r of reqRows) {
+    const list = reqsBySubtopic.get(r.subtopicId) ?? [];
+    list.push({ id: r.id, statement: r.statement, notesAndExamples: r.notesAndExamples });
+    reqsBySubtopic.set(r.subtopicId, list);
+  }
+
+  // Resolve concurrency limiter — dynamic import keeps this file
+  // testable without a real p-limit dependency in the unit tests.
+  let runWithLimit: (fn: () => Promise<void>) => Promise<void>;
+  if (opts.concurrencyImpl) {
+    runWithLimit = opts.concurrencyImpl(concurrency) as typeof runWithLimit;
+  } else {
+    const pLimit = (await import("p-limit")).default;
+    runWithLimit = pLimit(concurrency);
+  }
+
+  const updateBuckets = new Map<number, number[]>();
+  let skippedJudgeNone = 0;
+  let skippedJudgeLowConfidence = 0;
+  let skippedJudgeInvalidId = 0;
+  let skippedNoCandidates = 0;
+  let done = 0;
+
+  await Promise.all(
+    candidates.map((row) =>
+      runWithLimit(async () => {
+        if (row.subtopicId === null || row.subtopicId === undefined) {
+          skippedNoCandidates += 1;
+          done += 1;
+          opts.onProgress?.(done, candidates.length);
+          return;
+        }
+        const subtopicReqs = reqsBySubtopic.get(row.subtopicId) ?? [];
+        if (subtopicReqs.length === 0) {
+          skippedNoCandidates += 1;
+          done += 1;
+          opts.onProgress?.(done, candidates.length);
+          return;
+        }
+        const result = await judgeBestRequirement(
+          {
+            misconception: row.misconception,
+            studentError: row.studentError,
+            correctApproach: row.correctApproach,
+          },
+          subtopicReqs,
+          row.id,
+          { callAI: opts.callAI, minConfidence },
+        );
+        if (result.requirementId === null) {
+          switch (result.rejectionReason) {
+            case "judge_picked_none": skippedJudgeNone += 1; break;
+            case "judge_low_confidence": skippedJudgeLowConfidence += 1; break;
+            case "judge_invalid_id": skippedJudgeInvalidId += 1; break;
+          }
+        } else {
+          const list = updateBuckets.get(result.requirementId) ?? [];
+          list.push(row.id);
+          updateBuckets.set(result.requirementId, list);
+        }
+        done += 1;
+        opts.onProgress?.(done, candidates.length);
+      }),
+    ),
+  );
+
+  const matchedIds = Array.from(updateBuckets.values()).flat();
+  const result: JudgeBackfillResult = {
+    scanned: candidates.length,
+    matched: matchedIds.length,
+    skippedJudgeNone,
+    skippedJudgeLowConfidence,
+    skippedJudgeInvalidId,
+    skippedNoCandidates,
+    matchedIds,
+  };
+
+  if (opts.dryRun) return result;
+
+  const cacheGroups = new Set<string>();
+  const bucketEntries = Array.from(updateBuckets.entries());
+  for (const [requirementId, ids] of bucketEntries) {
+    if (ids.length === 0) continue;
+    const updated = await db
+      .update(examinerMisconceptions)
+      .set({ learningRequirementId: requirementId })
+      .where(inArray(examinerMisconceptions.id, ids))
+      .returning({
+        board: examinerMisconceptions.board,
+        syllabusCode: examinerMisconceptions.syllabusCode,
+      });
+    for (const r of updated) cacheGroups.add(`${r.board}|${r.syllabusCode}`);
+  }
+
+  for (const g of Array.from(cacheGroups)) {
+    const [board, syllabusCode] = g.split("|");
+    invalidateExaminerMisconceptionsCache({ board, syllabusCode });
+  }
+
+  return result;
+}
