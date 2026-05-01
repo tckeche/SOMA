@@ -3118,6 +3118,28 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         }
       }
 
+      // The trace told us the client populates the draft via PUT /draft
+      // without ever including FK fields — the UI doesn't know about
+      // examiner-loop seeds. The publish endpoint is the bottleneck every
+      // quiz flows through, so this is the safest place to do the seed
+      // lookup. Look up approved seeds for the quiz's syllabus scope and
+      // attach them to any draft question that didn't come with explicit
+      // FK info. This means: if a future client supplies per-question FKs
+      // (e.g. once the copilot is updated to thread them), we use those;
+      // otherwise we fall back to the scope-level seed list — same
+      // pattern /api/soma/generate uses today.
+      const { board: pubBoard, syllabusCode: pubSyllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
+      const publishExaminerSeeds = await listApprovedSeeds({ board: pubBoard, syllabusCode: pubSyllabusCode });
+      const publishSeedIds = publishExaminerSeeds.map((s) => s.id);
+      const fallbackTargetMisconceptionIds = publishSeedIds.length > 0 ? publishSeedIds : null;
+      traceLog("route.publish.seedsLoaded", {
+        quizId,
+        parsedBoard: pubBoard,
+        parsedSyllabusCode: pubSyllabusCode,
+        seedCount: publishExaminerSeeds.length,
+        sampleSeedIds: publishSeedIds.slice(0, 5),
+      }, traceId);
+
       // Atomically replace all questions in a DB transaction (delete + insert as one unit)
       // so a failed insert cannot leave the quiz without any questions.
       const mapped = draft.map((q) => ({
@@ -3132,15 +3154,17 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
-        // Pass through the examiner-loop and catalogue FK columns the
-        // Maker computed. Without these, the publish step silently
-        // destroys all the attribution data created at generation time
-        // — that was the root cause of the dashboards-look-empty
-        // problem. The schema columns are nullable so unset values are
-        // safe; storage.publishSomaQuestionsTransactional handles them.
         subtopicId: q.subtopicId ?? null,
         learningRequirementId: q.learningRequirementId ?? null,
-        targetMisconceptionIds: q.targetMisconceptionIds ?? null,
+        // Prefer explicit per-question seeds (when a future client
+        // supplies them) but fall back to the scope-level lookup when
+        // the draft came from a UI that doesn't know about FK fields.
+        // Without this fallback, every draft posted via PUT /draft
+        // produces unseeded questions, which is what the trace caught.
+        targetMisconceptionIds:
+          Array.isArray(q.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0
+            ? q.targetMisconceptionIds
+            : fallbackTargetMisconceptionIds,
         commandWord: q.commandWord ?? null,
         assessmentObjective: q.assessmentObjective ?? null,
       }));
