@@ -14,6 +14,13 @@ import { clampMaxTokens } from "./aiCostGuards";
 import { renderSeedsForPrompt } from "./examinerDistractorSeeds";
 import { describePrompt, PromptIds } from "./aiPromptRegistry";
 import { validateAgainstSchema } from "./aiContracts";
+import {
+  inferPurposeFromPrompt,
+  renderBlueprintForMaker,
+  runBlueprintPlanner,
+  type Blueprint,
+  type GenerationPurpose,
+} from "./aiBlueprint";
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
@@ -89,6 +96,14 @@ export interface AuditedQuizResult {
    *  Persist on each question's `target_misconception_ids` so the marker
    *  can cite the matched insight. */
   seedMisconceptionIds: number[];
+  /**
+   * Phase 3 — the per-question blueprint used during this generation. Null
+   * when the planner was skipped (no catalogue anchors AND no examiner
+   * seeds — nothing for the planner to ground on). When present, callers
+   * can persist `blueprint.rows[i]` alongside questions[i] for traceable
+   * attribution back to learning requirements and misconceptions.
+   */
+  blueprint: Blueprint | null;
 }
 
 export interface SomaGenerationContext {
@@ -110,6 +125,19 @@ export interface SomaGenerationContext {
    * specific misconceptions.
    */
   examinerSeeds?: import("./examinerDistractorSeeds").ExaminerSeed[];
+  /**
+   * Phase 3 — assignment purpose drives the blueprint planner's allocation
+   * between syllabus-coverage rows and misconception-probe rows. When
+   * unset, the planner infers from `copilotPrompt` ("Purpose: <slug>") so
+   * existing callers don't need a route-side change to benefit.
+   */
+  purpose?: GenerationPurpose;
+  /**
+   * Phase 3 — pre-computed blueprint plan. The pipeline normally builds
+   * this itself in Stage 0 by calling `runBlueprintPlanner`, but tests can
+   * inject a fixed plan to make assertions deterministic.
+   */
+  blueprint?: Blueprint;
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -278,12 +306,15 @@ function buildMakerSystemPrompt(
   questionCount: number,
   distribution: { easy: number; medium: number; hard: number },
 ): string {
+  const blueprintRule = context.blueprint
+    ? `\n- A QUESTION BLUEPRINT is supplied in the user message. Produce one question per row, in row order, matching each row's role, anchor, difficulty, and (for probe rows) the cited misconception verbatim.`
+    : "";
   return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.
 
 STRICT SCOPE: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
 Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
 
-Requirements:
+Requirements:${blueprintRule}
 - Exactly 4 distinct options per question.
 - correct_answer MUST match exactly one option verbatim.
 - Distractors must be plausible but clearly wrong under syllabus rules.
@@ -297,7 +328,10 @@ function buildMakerUserPrompt(context: SomaGenerationContext): string {
   const seedsBlock = context.examinerSeeds && context.examinerSeeds.length > 0
     ? "\n\n" + renderSeedsForPrompt(context.examinerSeeds)
     : "";
-  return `Topic: ${context.topic}${catalogueBlock(context)}${seedsBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
+  const blueprintBlock = context.blueprint
+    ? "\n\n" + renderBlueprintForMaker(context.blueprint, context.examinerSeeds)
+    : "";
+  return `Topic: ${context.topic}${catalogueBlock(context)}${seedsBlock}${blueprintBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
 }
 
 function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
@@ -551,6 +585,7 @@ export const pipelineStages = {
   runOpenAIMakerSimple,
   runOpenAIVerifier,
   runGeminiVerifier,
+  runBlueprintPlanner,
 };
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
@@ -606,24 +641,65 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     }
 
     const finalValidated = validateAndCorrectMcqAnswers(merged.slice(0, questionCount));
+    // Stitch together the per-batch blueprints so the caller receives one
+    // plan covering the whole quiz. Each batch already has rows numbered
+    // from 1; we re-number sequentially across the full questionCount.
+    const stitchedRows: Blueprint["rows"] = [];
+    for (const batch of batchResults) {
+      if (!batch.blueprint) continue;
+      for (const row of batch.blueprint.rows) {
+        stitchedRows.push({ ...row, questionIndex: stitchedRows.length + 1 });
+      }
+    }
+    const stitchedBlueprint: Blueprint | null = stitchedRows.length > 0 ? { rows: stitchedRows } : null;
     return {
       questions: finalValidated.questions,
       warnings: [...allWarnings, ...finalValidated.warnings],
       telemetry: { ...lastTelemetry, totalDurationMs: Date.now() - overallStart },
       seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
+      blueprint: stitchedBlueprint,
     };
   }
+
+  // ── STAGE 0: BLUEPRINT PLANNER ──────────────────────────────────────────
+  // Build the per-question intent grid before any maker call so coverage
+  // and probe rows are explicit, traceable, and aligned with the catalogue.
+  // If the planner returns null (no anchors + no seeds, or every provider
+  // failed), we keep the legacy improvised path.
+  const planner = pipelineStages.runBlueprintPlanner;
+  let blueprint: Blueprint | null = context.blueprint ?? null;
+  if (!blueprint && planner) {
+    try {
+      blueprint = await planner({
+        questionCount,
+        purpose: context.purpose ?? inferPurposeFromPrompt(context.copilotPrompt),
+        difficultyDistribution: distribution,
+        catalogueContext: context.catalogueContext,
+        examinerSeeds: context.examinerSeeds,
+        topic: context.topic,
+        subtopic: context.subtopic,
+        subject: context.subject,
+        syllabus: context.syllabus,
+        level: context.level,
+        tutorPrompt: context.copilotPrompt,
+      });
+    } catch (err: any) {
+      console.warn(`[SOMA_PIPELINE] Blueprint planner failed (${err?.message || "unknown"}); proceeding without plan.`);
+      blueprint = null;
+    }
+  }
+  const contextWithPlan: SomaGenerationContext = blueprint ? { ...context, blueprint } : context;
 
   // ── STAGE 1: MAKER ──────────────────────────────────────────────────────
   let draft: DraftQuiz;
   let makerModel: string;
   let claudeMadeTheQuiz = true;
   try {
-    draft = await pipelineStages.runClaudeMakerSimple(context, questionCount, distribution);
+    draft = await pipelineStages.runClaudeMakerSimple(contextWithPlan, questionCount, distribution);
     makerModel = "anthropic/claude-sonnet-4-6";
   } catch (err: any) {
     console.warn(`[SOMA_PIPELINE] Claude maker failed (${err?.message || "unknown"}); falling back to ChatGPT maker.`);
-    draft = await pipelineStages.runOpenAIMakerSimple(context, questionCount, distribution);
+    draft = await pipelineStages.runOpenAIMakerSimple(contextWithPlan, questionCount, distribution);
     makerModel = "openai/gpt-4o";
     claudeMadeTheQuiz = false;
   }
@@ -636,15 +712,15 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   let checkerModel: string;
   if (claudeMadeTheQuiz) {
     try {
-      verified = await pipelineStages.runOpenAIVerifier(draft.questions, context);
+      verified = await pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan);
       checkerModel = "openai/gpt-4o";
     } catch (err: any) {
       console.warn(`[SOMA_PIPELINE] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini verifier.`);
-      verified = await pipelineStages.runGeminiVerifier(draft.questions, context);
+      verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
       checkerModel = "google/gemini-2.5-flash";
     }
   } else {
-    verified = await pipelineStages.runGeminiVerifier(draft.questions, context);
+    verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
     checkerModel = "google/gemini-2.5-flash";
   }
 
@@ -669,6 +745,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       totalDurationMs: Date.now() - overallStart,
     },
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
+    blueprint,
   };
 }
 

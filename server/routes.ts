@@ -2916,6 +2916,13 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               difficultyDistribution = { easy: 35, medium: 45, hard: 20 };
             }
 
+            const purposeForPlanner = (
+              item.purpose === "struggling_areas" ||
+              item.purpose === "stretch_strengths" ||
+              item.purpose === "revision"
+            )
+              ? (item.purpose as "struggling_areas" | "stretch_strengths" | "revision")
+              : "general";
             const generated = await generateAuditedQuiz({
               topic: item.topic,
               subject: item.subject,
@@ -2924,6 +2931,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               subtopic: item.subtopic || undefined,
               questionCount: parsed.questionCount,
               difficultyDistribution,
+              purpose: purposeForPlanner,
               copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
               supportingDocText: topicSyllabusContext + topicExaminerContext,
             });
@@ -2941,9 +2949,27 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 status: "published",
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
-              questions: generated.questions.map((q) => ({
-                stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
-              })),
+              questions: generated.questions.map((q, i) => {
+                // Per-question misconception attribution comes from the
+                // blueprint when the planner ran. Probe rows carry a single
+                // targetMisconceptionId; coverage rows carry none. Falling
+                // back to the batch-wide seedMisconceptionIds keeps legacy
+                // behaviour for un-planned generations.
+                const planRow = generated.blueprint?.rows[i];
+                const ids = planRow
+                  ? (planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
+                      ? [planRow.targetMisconceptionId]
+                      : [])
+                  : (generated.seedMisconceptionIds ?? []);
+                return {
+                  stem: q.stem,
+                  options: q.options,
+                  correctAnswer: q.correct_answer,
+                  explanation: q.explanation,
+                  marks: q.marks,
+                  targetMisconceptionIds: ids.length > 0 ? ids : null,
+                };
+              }),
               assignedStudentIds: [studentId],
             });
             await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
