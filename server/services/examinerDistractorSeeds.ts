@@ -60,7 +60,9 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
   const limit = Math.max(1, Math.min(20, q.limit ?? 6));
 
   async function runQuery(conditions: any[]) {
-    return db
+    // db null-check is performed by the caller above. TS can't carry
+    // that narrowing into this nested closure, so re-assert here.
+    return db!
       .select({
         id: examinerMisconceptions.id,
         topic: examinerMisconceptions.topic,
@@ -110,23 +112,6 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
   } else {
     rows = await runQuery(baseConditions);
   }
-
-  const rows = await db
-    .select({
-      id: examinerMisconceptions.id,
-      topic: examinerMisconceptions.topic,
-      subtopic: examinerMisconceptions.subtopic,
-      misconception: examinerMisconceptions.misconception,
-      studentError: examinerMisconceptions.studentError,
-      correctApproach: examinerMisconceptions.correctApproach,
-      frequency: examinerMisconceptions.frequency,
-      sourceQuote: examinerMisconceptions.sourceQuote,
-      sourcePage: examinerMisconceptions.sourcePage,
-      confidence: examinerMisconceptions.confidence,
-    })
-    .from(examinerMisconceptions)
-    .where(and(...conditions))
-    .orderBy(desc(examinerMisconceptions.extractedAt));
 
   traceLog("listApprovedSeeds.queryReturned", {
     rowCount: rows.length,
