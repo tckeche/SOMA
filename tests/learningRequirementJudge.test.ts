@@ -170,4 +170,49 @@ describe("judgeBestRequirement — LLM judge", () => {
     expect(r.confidence).toBe("low");
     expect(r.rejectionReason).toBe("judge_low_confidence");
   });
+
+  it("uses the v1 system prompt and v1 idempotency prefix by default", async () => {
+    const { callAI, spy } = stubAIReturning({ id: 11, confidence: "high", reason: "x" });
+
+    await judgeBestRequirement(PARTS, CANDIDATES, 42, { callAI });
+
+    const [systemPrompt, , , callOptions] = spy.mock.calls[0];
+    expect(systemPrompt).toContain("If no requirement is a clear");
+    expect(systemPrompt).not.toContain("BEST-FIT");
+    expect(callOptions).toMatchObject({
+      promptVersion: "v1",
+      idempotencyKey: "lr-judge-v1:misconception:42",
+    });
+  });
+
+  it("uses the v2 best-fit prompt and v2 idempotency prefix when promptVersion='v2'", async () => {
+    const { callAI, spy } = stubAIReturning({ id: 11, confidence: "medium", reason: "x" });
+
+    await judgeBestRequirement(PARTS, CANDIDATES, 42, { callAI, promptVersion: "v2" });
+
+    const [systemPrompt, , , callOptions] = spy.mock.calls[0];
+    expect(systemPrompt).toContain("BEST-FIT");
+    expect(systemPrompt).toContain("ONLY return id=null when the misconception is genuinely about a topic outside this");
+    expect(callOptions).toMatchObject({
+      promptVersion: "v2",
+      // Key MUST differ from v1 — that's how a v2 retry skips the v1 cache.
+      idempotencyKey: "lr-judge-v2:misconception:42",
+    });
+  });
+
+  it("respects an explicitly supplied idempotencyPrefix over the version default", async () => {
+    const { callAI, spy } = stubAIReturning({ id: 11, confidence: "high", reason: "x" });
+
+    await judgeBestRequirement(PARTS, CANDIDATES, 42, {
+      callAI,
+      promptVersion: "v2",
+      idempotencyPrefix: "custom-tag",
+    });
+
+    const [, , , callOptions] = spy.mock.calls[0];
+    expect(callOptions).toMatchObject({
+      promptVersion: "v2",
+      idempotencyKey: "custom-tag:misconception:42",
+    });
+  });
 });

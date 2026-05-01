@@ -38,6 +38,13 @@
  *                                 USE A SMALL VALUE (e.g. --limit=20) FOR THE FIRST PAID RUN.
  *   --concurrency=<1..20>         Parallel LLM calls. Default 5.
  *   --min-confidence=<low|medium|high>   Min judge confidence to commit. Default medium.
+ *   --prompt-version=<v1|v2>      v1 (default) is conservative — judge returns null when no
+ *                                 requirement is a "clear fit". v2 is best-fit-permissive —
+ *                                 judge commits to the closest candidate unless the
+ *                                 misconception is genuinely off-topic. Use v2 to retry the
+ *                                 residue from a v1 pass without re-paying for already-decided
+ *                                 rows (the orchestrator's idempotency cache miss is automatic
+ *                                 because the prompt version is part of the cache key).
  *   --json                        Machine-readable JSON output.
  */
 import "dotenv/config";
@@ -92,6 +99,12 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error(`bad --min-confidence=${v} (low|medium|high)`);
       }
       opts.minConfidence = v;
+    } else if (raw.startsWith("--prompt-version=")) {
+      const v = raw.slice("--prompt-version=".length);
+      if (v !== "v1" && v !== "v2") {
+        throw new Error(`bad --prompt-version=${v} (v1|v2)`);
+      }
+      opts.promptVersion = v;
     } else {
       throw new Error(`unknown flag: ${raw}`);
     }
@@ -137,6 +150,7 @@ async function main(): Promise<void> {
   if (opts.syllabusCode) console.log(`syllabus code:        ${opts.syllabusCode}`);
   console.log(`status filter:        ${opts.status ?? "approved"}`);
   console.log(`min confidence:       ${opts.minConfidence ?? "medium"}`);
+  console.log(`prompt version:       ${opts.promptVersion ?? "v1"}`);
   console.log(`concurrency:          ${opts.concurrency ?? 5}`);
   console.log("");
   console.log(`scanned:                  ${fmt(result.scanned)}`);

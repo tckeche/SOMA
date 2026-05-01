@@ -349,10 +349,20 @@ import { generateWithFallback } from "./aiOrchestrator";
 export interface JudgeOptions {
   /** Override the AI orchestrator call (used in tests). */
   callAI?: typeof generateWithFallback;
-  /** Stable idempotency tag prefix (default "lr-judge-v1"). */
+  /** Stable idempotency tag prefix (default derives from promptVersion). */
   idempotencyPrefix?: string;
   /** Minimum confidence the judge must report to commit. Default "medium". */
   minConfidence?: "low" | "medium" | "high";
+  /**
+   * Prompt phrasing version. v1 (default) is conservative — model
+   * returns null when no requirement is a "clear fit". v2 is
+   * best-fit-permissive — model commits to the closest requirement
+   * unless the misconception is about a genuinely different topic.
+   * Used to retry the residue from a v1 pass without paying for the
+   * already-decided rows (the orchestrator's idempotency key includes
+   * the version, so v2 calls miss the v1 cache entries).
+   */
+  promptVersion?: "v1" | "v2";
 }
 
 export interface JudgeResult {
@@ -362,7 +372,7 @@ export interface JudgeResult {
   rejectionReason: "judge_low_confidence" | "judge_picked_none" | "judge_invalid_id" | null;
 }
 
-const JUDGE_SYSTEM_PROMPT = [
+const JUDGE_SYSTEM_PROMPT_V1 = [
   "You classify exam-board misconceptions to a single learning requirement.",
   "You will be given:",
   "  1. A misconception (the wrong belief, the typical wrong working, and the correct approach).",
@@ -373,6 +383,37 @@ const JUDGE_SYSTEM_PROMPT = [
   "Never invent an id that isn't in the list. Never return more than one id.",
   "Output JSON only, matching the provided schema.",
 ].join("\n");
+
+const JUDGE_SYSTEM_PROMPT_V2 = [
+  "You classify exam-board misconceptions to a single learning requirement.",
+  "You will be given:",
+  "  1. A misconception (the wrong belief, the typical wrong working, and the correct approach).",
+  "  2. A numbered list of candidate learning requirements under one syllabus subtopic.",
+  "",
+  "Pick the BEST-FIT id from the list — the requirement most directly related to the",
+  "misconception, even if the fit is imperfect. The candidates are ALL within the same",
+  "subtopic, so one of them is almost certainly the right home for this misconception.",
+  "When two candidates are close, prefer the broader / more foundational one.",
+  "When the misconception is about a fundamental skill (arithmetic, notation, units) that",
+  "any of these requirements would exercise, pick the one whose statement most clearly names",
+  "that skill.",
+  "",
+  "ONLY return id=null when the misconception is genuinely about a topic outside this",
+  "subtopic (e.g. an algebra misconception under a geometry subtopic). Don't return null just",
+  "because the fit is imperfect — that is the normal case, and you should still commit.",
+  "",
+  "Confidence rating:",
+  "  - high: the misconception clearly maps to one specific requirement.",
+  "  - medium: best fit picked with reasonable confidence; minor surface-language gap.",
+  "  - low:  best-of-imperfect-options; commit anyway unless the misconception is off-topic.",
+  "",
+  "Never invent an id that isn't in the list. Never return more than one id.",
+  "Output JSON only, matching the provided schema.",
+].join("\n");
+
+function getJudgePrompt(version: "v1" | "v2"): string {
+  return version === "v2" ? JUDGE_SYSTEM_PROMPT_V2 : JUDGE_SYSTEM_PROMPT_V1;
+}
 
 const JUDGE_SCHEMA = {
   type: "object",
@@ -433,7 +474,10 @@ export async function judgeBestRequirement(
   const minConfidence = opts.minConfidence ?? "medium";
   const minConfidenceRank = CONFIDENCE_RANK[minConfidence];
   const callAI = opts.callAI ?? generateWithFallback;
-  const idempotencyPrefix = opts.idempotencyPrefix ?? "lr-judge-v1";
+  const promptVersion = opts.promptVersion ?? "v1";
+  // Default the idempotency prefix to the prompt version so a v2 retry
+  // automatically misses the v1 cache entries from the previous pass.
+  const idempotencyPrefix = opts.idempotencyPrefix ?? `lr-judge-${promptVersion}`;
 
   if (candidates.length === 0) {
     return {
@@ -446,12 +490,12 @@ export async function judgeBestRequirement(
 
   const candidateIds = new Set(candidates.map((c) => c.id));
   const userPrompt = buildJudgeUserPrompt(parts, candidates);
-  const result = await callAI(JUDGE_SYSTEM_PROMPT, userPrompt, JUDGE_SCHEMA, {
+  const result = await callAI(getJudgePrompt(promptVersion), userPrompt, JUDGE_SCHEMA, {
     idempotencyKey: `${idempotencyPrefix}:misconception:${rowId}`,
     cacheable: true,
     taskType: "misconception_classify",
     promptId: "learning-requirement-judge",
-    promptVersion: "v1",
+    promptVersion,
     maxTokens: 200,
   });
 
@@ -514,6 +558,8 @@ export interface JudgeBackfillOptions {
   concurrency?: number;
   /** Minimum confidence to commit. Default "medium". */
   minConfidence?: "low" | "medium" | "high";
+  /** Prompt phrasing version (v1 conservative, v2 best-fit). Default v1. */
+  promptVersion?: "v1" | "v2";
   /** Preview-only: don't write. */
   dryRun?: boolean;
   /** Test seam — override the AI call. */
@@ -648,7 +694,7 @@ export async function llmBackfillLearningRequirementLinks(
           },
           subtopicReqs,
           row.id,
-          { callAI: opts.callAI, minConfidence },
+          { callAI: opts.callAI, minConfidence, promptVersion: opts.promptVersion },
         );
         if (result.requirementId === null) {
           switch (result.rejectionReason) {
