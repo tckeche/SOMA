@@ -47,6 +47,7 @@ import pg from "pg";
 import pLimit from "p-limit";
 import * as schema from "../shared/schema";
 import { eq } from "drizzle-orm";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { parsePdfTextFromBuffer } from "../server/services/aiPipeline";
 import { buildSyllabusChunks } from "../server/services/assessmentGeneration";
 import { extractAndStoreMisconceptions } from "../server/services/extractAndStoreMisconceptions";
@@ -175,13 +176,16 @@ interface DocRow {
 }
 
 /**
- * Type alias for the drizzle handle used by `ingestFile`. Loose enough to
- * accept either the node-postgres handle from `main()` or the PGlite-backed
- * handle from the integration tests — they both implement the subset of
- * the drizzle query API this script needs (`.select`, `.insert`).
+ * Type alias for the drizzle handle used by `ingestFile` / `processFiles`.
+ *
+ * Both `drizzle-orm/node-postgres` (the production handle) and
+ * `drizzle-orm/pglite` (the test handle) extend the same `PgDatabase`
+ * base class — they only differ in the abstract `PgQueryResultHKT` slot.
+ * Parameterising on the HKT instead of casting to `any` keeps the schema
+ * + query-API types intact (so a typo on a column or a wrong table still
+ * fails to compile) while accepting either driver at runtime.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyDrizzleDb = any;
+type AnyDrizzleDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 export async function ingestFile(
   filePath: string,
