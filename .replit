@@ -17,7 +17,6 @@ PORT = "5000"
 deploymentTarget = "autoscale"
 run = ["node", "./dist/index.cjs"]
 build = ["npm", "run", "build"]
-publicDir = "dist/public"
 
 [deployment.healthcheck]
 url = "http://localhost:5000/api/health"
