@@ -25,6 +25,7 @@ import {
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
 import { invalidateExaminerMisconceptionsCache } from "./services/examinerMisconceptionsCache";
+import { traceLog, countWithField } from "./services/quizTraceLog";
 
 
 // Spaced repetition intervals: 7 days → 30 days → 90 days
@@ -220,6 +221,17 @@ class DatabaseStorage implements IStorage {
     questions: SomaQuizBundleQuestionInput[];
     assignedStudentIds?: string[];
   }): Promise<{ quiz: SomaQuiz; questions: SomaQuestion[]; assignments: QuizAssignment[] }> {
+    traceLog("storage.createSomaQuizBundle.entry", {
+      questionsIn: input.questions.length,
+      questionsInWithSeeds: countWithField(input.questions as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      sampleQuestionIn: input.questions[0]
+        ? {
+            stem: input.questions[0].stem.slice(0, 50),
+            targetMisconceptionIds: (input.questions[0] as any).targetMisconceptionIds ?? null,
+            subtopicId: (input.questions[0] as any).subtopicId ?? null,
+          }
+        : null,
+    });
     return this.database.transaction(async (tx) => {
       const [quiz] = await tx.insert(somaQuizzes).values(input.quiz).returning();
       const questions = input.questions.length === 0
@@ -227,6 +239,11 @@ class DatabaseStorage implements IStorage {
         : await tx.insert(somaQuestions).values(
           input.questions.map((q) => ({ ...q, quizId: quiz.id }))
         ).returning();
+      traceLog("storage.createSomaQuizBundle.afterInsert", {
+        quizId: quiz.id,
+        questionsOut: questions.length,
+        questionsOutWithSeeds: countWithField(questions as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      });
 
       const uniqueStudentIds = Array.from(new Set(input.assignedStudentIds ?? []));
       const assignments = uniqueStudentIds.length === 0
@@ -254,6 +271,17 @@ class DatabaseStorage implements IStorage {
   }
 
   async createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
+    traceLog("storage.createSomaQuestions.entry", {
+      questionsIn: questionList.length,
+      questionsInWithSeeds: countWithField(questionList as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      sampleQuestionIn: questionList[0]
+        ? {
+            stem: questionList[0].stem.slice(0, 50),
+            targetMisconceptionIds: (questionList[0] as any).targetMisconceptionIds ?? null,
+            subtopicId: (questionList[0] as any).subtopicId ?? null,
+          }
+        : null,
+    });
     if (questionList.length === 0) return [];
     const normalized = questionList.map((q) => ({
       quizId: q.quizId,
@@ -285,7 +313,16 @@ class DatabaseStorage implements IStorage {
       commandWord: q.commandWord ?? null,
       assessmentObjective: q.assessmentObjective ?? null,
     }));
-    return this.database.insert(somaQuestions).values(normalized).returning();
+    traceLog("storage.createSomaQuestions.beforeInsert", {
+      normalizedCount: normalized.length,
+      normalizedWithSeeds: countWithField(normalized as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+    });
+    const inserted = await this.database.insert(somaQuestions).values(normalized).returning();
+    traceLog("storage.createSomaQuestions.afterInsert", {
+      insertedCount: inserted.length,
+      insertedWithSeeds: countWithField(inserted as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+    });
+    return inserted;
   }
 
   async getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]> {
@@ -653,6 +690,18 @@ class DatabaseStorage implements IStorage {
   }
 
   async publishSomaQuestionsTransactional(quizId: number, questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]> {
+    traceLog("storage.publishSomaQuestionsTransactional.entry", {
+      quizId,
+      questionsIn: questionList.length,
+      questionsInWithSeeds: countWithField(questionList as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      sampleQuestionIn: questionList[0]
+        ? {
+            stem: questionList[0].stem.slice(0, 50),
+            targetMisconceptionIds: (questionList[0] as any).targetMisconceptionIds ?? null,
+            subtopicId: (questionList[0] as any).subtopicId ?? null,
+          }
+        : null,
+    });
     return this.database.transaction(async (tx) => {
       await tx.delete(somaQuestions).where(eq(somaQuestions.quizId, quizId));
       if (questionList.length === 0) return [];
@@ -684,7 +733,18 @@ class DatabaseStorage implements IStorage {
         commandWord: q.commandWord ?? null,
         assessmentObjective: q.assessmentObjective ?? null,
       }));
-      return tx.insert(somaQuestions).values(normalized).returning();
+      traceLog("storage.publishSomaQuestionsTransactional.beforeInsert", {
+        quizId,
+        normalizedCount: normalized.length,
+        normalizedWithSeeds: countWithField(normalized as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      });
+      const inserted = await tx.insert(somaQuestions).values(normalized).returning();
+      traceLog("storage.publishSomaQuestionsTransactional.afterInsert", {
+        quizId,
+        insertedCount: inserted.length,
+        insertedWithSeeds: countWithField(inserted as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      });
+      return inserted;
     });
   }
 

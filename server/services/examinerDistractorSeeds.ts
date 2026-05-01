@@ -12,6 +12,7 @@
 import { db } from "../db";
 import { examinerMisconceptions } from "@shared/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { traceLog } from "./quizTraceLog";
 
 export interface ExaminerSeed {
   id: number;
@@ -45,7 +46,17 @@ export interface SeedQuery {
 }
 
 export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
-  if (!db) return [];
+  traceLog("listApprovedSeeds.entry", {
+    subtopicIdsCount: q.subtopicIds?.length ?? 0,
+    subtopicIds: q.subtopicIds,
+    board: q.board,
+    syllabusCode: q.syllabusCode,
+    limit: q.limit,
+  });
+  if (!db) {
+    traceLog("listApprovedSeeds.exit", { reason: "db_null", returned: 0 });
+    return [];
+  }
   const limit = Math.max(1, Math.min(20, q.limit ?? 6));
 
   const conditions = [eq(examinerMisconceptions.status, "approved")];
@@ -84,6 +95,11 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
     .where(and(...conditions))
     .orderBy(desc(examinerMisconceptions.extractedAt));
 
+  traceLog("listApprovedSeeds.queryReturned", {
+    rowCount: rows.length,
+    sampleIds: rows.slice(0, 5).map((r) => r.id),
+  });
+
   // Rank: very_common > common > occasional, then by confidence desc.
   const ranked = rows
     .map((r) => ({
@@ -92,6 +108,12 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
     }))
     .sort((a, b) => b.rank - a.rank)
     .slice(0, limit);
+
+  traceLog("listApprovedSeeds.exit", {
+    returned: ranked.length,
+    afterLimit: limit,
+    returnedIds: ranked.map((r) => r.id),
+  });
 
   return ranked.map((r) => ({
     id: r.id,
