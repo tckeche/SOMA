@@ -97,6 +97,51 @@ app.get("/_health", (_req, res) => {
   res.status(200).send("ok");
 });
 
+// Real DB liveness probe. Runs a `SELECT 1` against the actual pool
+// and reports timing + pool stats so we can see whether Supabase is
+// healthy, slow, or refusing connections.
+app.get("/api/health/db", async (_req, res) => {
+  const { db, pool } = await import("./db");
+  if (!db || !pool) {
+    return res.status(503).json({
+      ok: false,
+      reason: "db not initialised — connectDb() failed at startup",
+    });
+  }
+  const start = Date.now();
+  try {
+    const { sql } = await import("drizzle-orm");
+    const result = await db.execute(sql`SELECT 1 AS ping, current_database() AS db, current_user AS usr, version() AS ver`);
+    const elapsedMs = Date.now() - start;
+    const row = (result as any).rows?.[0] ?? (result as any)[0] ?? {};
+    res.json({
+      ok: true,
+      elapsedMs,
+      db: row.db,
+      user: row.usr,
+      versionShort: typeof row.ver === "string" ? row.ver.slice(0, 60) : null,
+      pool: {
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+      },
+    });
+  } catch (e: any) {
+    const elapsedMs = Date.now() - start;
+    res.status(503).json({
+      ok: false,
+      elapsedMs,
+      error: e?.message ?? String(e),
+      code: e?.code,
+      pool: pool ? {
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+      } : null,
+    });
+  }
+});
+
 const port = parseInt(process.env.PORT || "5000", 10);
 
 (async () => {
