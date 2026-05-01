@@ -128,15 +128,17 @@ function ChartTooltipContent({ active, payload, label }: any) {
 
 export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
-  if (!stats) return null;
+  // Hooks must run on every render — keep `useMemo` above the `!stats`
+  // early return so the hook count stays stable (otherwise: React #310).
   const data = useMemo(() => {
-    if (!stats.cohortAverages?.length) return [];
+    if (!stats?.cohortAverages?.length) return [];
     return stats.cohortAverages.map((ca) => ({
       subject: ca.subject?.length > 12 ? ca.subject.slice(0, 12) + "…" : ca.subject,
       cohortAvg: Math.round(ca.average),
       fullMark: 100,
     }));
-  }, [stats.cohortAverages]);
+  }, [stats?.cohortAverages]);
+  if (!stats) return null;
 
   if (data.length < 2) {
     return (
@@ -165,8 +167,10 @@ export function CohortRadarChart({ stats }: { stats: DashboardStats }) {
 
 export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
-  if (!stats) return null;
+  // Hooks must run on every render — keep `useMemo` above the `!stats`
+  // early return so the hook count stays stable (otherwise: React #310).
   const data = useMemo(() => {
+    if (!stats) return [];
     return (stats.studentInsights || []).map((s) => {
       const subs = (stats.recentSubmissions || []).filter((r) => r.studentName === s.studentName);
       const avgScore = subs.length > 0 ? Math.round(subs.reduce((a, b) => a + b.score, 0) / subs.length) : 0;
@@ -179,6 +183,7 @@ export function StudentComparisonBarChart({ stats }: { stats: DashboardStats }) 
       return { name, fullName: s.studentName, avgScore, completionRate, reliability, hasData: subs.length > 0 };
     });
   }, [stats]);
+  if (!stats) return null;
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -591,10 +596,12 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
 
 export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
-  if (!stats) return null;
-  const allNames = (stats.studentInsights || []).map((s) => s.studentName);
+  // Hooks must run on every render — keep `useMemo` above the `!stats`
+  // early return so the hook count stays stable (otherwise: React #310).
+  const allNames = (stats?.studentInsights || []).map((s) => s.studentName);
 
   const data = useMemo(() => {
+    if (!stats) return [] as { week: string; [key: string]: any }[];
     const weeks: { week: string; [key: string]: any }[] = [];
     const now = new Date();
 
@@ -621,6 +628,7 @@ export function ActivityTimelineChart({ stats }: { stats: DashboardStats }) {
 
     return weeks;
   }, [stats, allNames]);
+  if (!stats) return null;
 
   const activeStudents = allNames.filter((name) => data.some((w) => (w[name] || 0) > 0));
 
