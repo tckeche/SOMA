@@ -104,6 +104,17 @@ export interface PipelineTelemetry {
   checkerModel: string;
   polishModel: string | null;
   totalDurationMs: number;
+  /**
+   * Phase 4 — number of re-roll passes that ran to backfill questions
+   * blocked by the disagreement protocol. 0 = first pass shipped a full
+   * quiz; N = N additional passes ran.
+   */
+  rerollAttempts?: number;
+  /**
+   * Phase 4 — number of originally-blocked slots that a re-roll filled.
+   * Equals (initial blocks) - (final blocks).
+   */
+  recoveredCount?: number;
 }
 
 export interface AuditedQuizResult {
@@ -164,6 +175,19 @@ export interface SomaGenerationContext {
    * inject a fixed plan to make assertions deterministic.
    */
   blueprint?: Blueprint;
+  /**
+   * Phase 4 — maximum number of re-roll passes if the disagreement
+   * protocol blocks any questions. The pipeline will re-generate the
+   * blocked count up to this many times so the assignment ships at full
+   * length. Defaults to 2 (so up to 3 total passes). Set to 0 to opt out
+   * and accept short assignments.
+   */
+  maxRerollAttempts?: number;
+  /**
+   * Internal flag set when a re-roll calls back into generateAuditedQuiz —
+   * prevents infinite recursion. Callers should not set this.
+   */
+  _disableReroll?: boolean;
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -185,7 +209,14 @@ function dedupeOptions(options: string[], preferred?: string): string[] {
     seen.add(normalized);
     out.push(option.trim());
   }
-  if (preferred && !out.some((o) => o.trim() === preferred.trim())) out.unshift(preferred.trim());
+  // Only insert `preferred` when dedupe has collapsed the option set below 4
+  // (the genuine duplicate-options case). When we already have 4 unique
+  // options, an unshift+slice(0,4) would silently rescue a hallucinated
+  // correct_answer by evicting a real option — exactly the silent-coerce
+  // the disagreement protocol needs to catch, not paper over.
+  if (preferred && out.length < 4 && !out.some((o) => o.trim() === preferred.trim())) {
+    out.unshift(preferred.trim());
+  }
   while (out.length < 4) out.push(`Option ${out.length + 1}`);
   return out.slice(0, 4);
 }
@@ -209,13 +240,19 @@ function applyDeterministicIntegrityGuards(
       marks,
     };
     if (guardedOptions.includes(cleaned.correct_answer)) return cleaned;
+    // The verifier's correct_answer is not among the 4 valid options. Do
+    // NOT silently rescue by setting correct_answer = options[0] — that
+    // would ship a wrong key. Mark CRITICAL and pass through unchanged so
+    // the downstream answer-validator and disagreement protocol can also
+    // try to recover (letter / substring / math) and, failing that, block
+    // the question entirely.
     warnings.push({
       questionIndex: idx + 1,
       field: "correct_answer",
-      issue: `Stored correct_answer "${cleaned.correct_answer}" did not survive option dedupe/normalisation; defaulted to "${guardedOptions[0]}". Verify the answer key manually.`,
+      issue: `CRITICAL: stored correct_answer "${cleaned.correct_answer}" did not survive option dedupe/normalisation — verifier produced an answer not present in the 4 options.`,
       autoFixed: false,
     });
-    return { ...cleaned, correct_answer: guardedOptions[0] };
+    return cleaned;
   });
   return { questions: corrected, warnings };
 }
@@ -832,12 +869,119 @@ export const pipelineStages = {
  *   3. Deterministic guards — dedupe options, clamp marks, snap correct_answer
  *      to a real option, and re-verify numeric answers with the math validator.
  */
+/**
+ * Public entry. Runs one pipeline pass, then — if the disagreement
+ * protocol blocked any questions — re-rolls the missing slots up to
+ * `maxRerollAttempts` times so the assignment ships at full length.
+ *
+ * Re-rolls inherit the original context (subject, syllabus, level, seeds,
+ * etc.) but generate a fresh blueprint for just the shortfall count. They
+ * call back into generateAuditedQuiz with `_disableReroll` set so the
+ * inner pass returns whatever it produced and we control the loop here.
+ */
 export async function generateAuditedQuiz(input: SomaGenerationContext | string): Promise<AuditedQuizResult> {
   const overallStart = Date.now();
   const context: SomaGenerationContext = typeof input === "string"
     ? { topic: input, subject: "Mathematics", syllabus: "IEB", level: "Grade 6-12" }
     : input;
 
+  const initial = await runOnePassQuiz(context, overallStart);
+
+  // Re-roll disabled (we're inside a re-roll already) or first pass
+  // shipped a full quiz → return as-is.
+  if (context._disableReroll || initial.blockedQuestions.length === 0) {
+    return {
+      ...initial,
+      telemetry: {
+        ...initial.telemetry,
+        rerollAttempts: initial.telemetry.rerollAttempts ?? 0,
+        recoveredCount: 0,
+      },
+    };
+  }
+
+  const maxAttempts = Math.max(0, context.maxRerollAttempts ?? 2);
+  if (maxAttempts === 0) return initial;
+
+  const requestedCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+  const initialBlockCount = initial.blockedQuestions.length;
+  let kept = [...initial.questions];
+  let warnings = [...initial.warnings];
+  let lastTelemetry = initial.telemetry;
+  let lastBlueprint = initial.blueprint;
+  let stillBlocked = initial.blockedQuestions;
+  let attempt = 0;
+
+  while (stillBlocked.length > 0 && attempt < maxAttempts) {
+    attempt += 1;
+    const rerollContext: SomaGenerationContext = {
+      ...context,
+      questionCount: stillBlocked.length,
+      blueprint: undefined, // fresh plan for the shortfall slots
+      _disableReroll: true,
+    };
+    let reroll: AuditedQuizResult;
+    try {
+      reroll = await generateAuditedQuiz(rerollContext);
+    } catch (err: any) {
+      warnings.push({
+        questionIndex: 0,
+        field: "overall",
+        issue: `Re-roll attempt ${attempt} failed (${err?.message ?? String(err)}). Keeping ${kept.length}/${requestedCount} questions.`,
+        autoFixed: false,
+      });
+      break;
+    }
+    kept = [...kept, ...reroll.questions];
+    warnings = [
+      ...warnings,
+      ...reroll.warnings.map((w) => ({ ...w, issue: `[reroll #${attempt}] ${w.issue}` })),
+    ];
+    lastTelemetry = reroll.telemetry;
+    if (reroll.blueprint) {
+      const baseIdx = lastBlueprint?.rows.length ?? 0;
+      const appended = reroll.blueprint.rows.map((r, i) => ({ ...r, questionIndex: baseIdx + i + 1 }));
+      lastBlueprint = lastBlueprint
+        ? { rows: [...lastBlueprint.rows, ...appended] }
+        : { rows: appended };
+    }
+    stillBlocked = reroll.blockedQuestions;
+  }
+
+  const recoveredCount = initialBlockCount - stillBlocked.length;
+  if (stillBlocked.length > 0) {
+    warnings.push({
+      questionIndex: 0,
+      field: "overall",
+      issue: `${stillBlocked.length} question(s) remained blocked after ${attempt} re-roll attempt(s); shipping ${kept.length}/${requestedCount}. Tutor review required for the missing slots.`,
+      autoFixed: false,
+    });
+  }
+
+  return {
+    questions: kept,
+    warnings,
+    telemetry: {
+      ...lastTelemetry,
+      rerollAttempts: attempt,
+      recoveredCount,
+      totalDurationMs: Date.now() - overallStart,
+    },
+    seedMisconceptionIds: initial.seedMisconceptionIds,
+    blueprint: lastBlueprint,
+    blockedQuestions: stillBlocked,
+  };
+}
+
+/**
+ * Single pipeline pass: planner → maker → verifier → guards →
+ * disagreement protocol. Returns whatever survived the protocol on this
+ * pass; the outer wrapper decides whether to re-roll for shortfall.
+ */
+async function runOnePassQuiz(
+  context: SomaGenerationContext,
+  overallStart: number,
+): Promise<AuditedQuizResult> {
   const questionCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
 
