@@ -3086,6 +3086,17 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
+        // Pass through the examiner-loop and catalogue FK columns the
+        // Maker computed. Without these, the publish step silently
+        // destroys all the attribution data created at generation time
+        // — that was the root cause of the dashboards-look-empty
+        // problem. The schema columns are nullable so unset values are
+        // safe; storage.publishSomaQuestionsTransactional handles them.
+        subtopicId: q.subtopicId ?? null,
+        learningRequirementId: q.learningRequirementId ?? null,
+        targetMisconceptionIds: q.targetMisconceptionIds ?? null,
+        commandWord: q.commandWord ?? null,
+        assessmentObjective: q.assessmentObjective ?? null,
       }));
 
       const saved = await storage.publishSomaQuestionsTransactional(quizId, mapped);

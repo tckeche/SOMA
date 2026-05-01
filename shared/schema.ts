@@ -123,6 +123,18 @@ export interface DraftQuestion {
   topicTag?: string | null;
   subtopicTag?: string | null;
   difficultyTag?: string | null;
+  // Catalogue + examiner-loop FK columns. Optional on the draft so
+  // the in-memory draftStore and the client-sent draft body keep
+  // working when these aren't supplied — but when they ARE supplied
+  // (i.e. by the AI generation flow), they MUST flow through to the
+  // final published soma_questions row, otherwise the publish
+  // endpoint silently destroys all the examiner-loop attribution
+  // the Maker just computed.
+  subtopicId?: number | null;
+  learningRequirementId?: number | null;
+  targetMisconceptionIds?: number[] | null;
+  commandWord?: string | null;
+  assessmentObjective?: string | null;
 }
 
 export const somaUsers = pgTable("soma_users", {

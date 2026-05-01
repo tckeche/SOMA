@@ -668,6 +668,21 @@ class DatabaseStorage implements IStorage {
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
+        // Catalogue + examiner-loop FK columns. SAME bug that bit
+        // createSomaQuestions before commit be8ab36 — the normalized
+        // map omitted these columns, and the publish-quiz path
+        // (POST /api/tutor/quizzes/:quizId/publish) DELETEs the
+        // pre-existing seeded rows then re-INSERTs the draft, so
+        // dropping the FKs here permanently destroys all examiner-loop
+        // attribution between generation and publish. Keep in
+        // lock-step with the schema in shared/schema.ts:somaQuestions.
+        subtopicId: q.subtopicId ?? null,
+        learningRequirementId: q.learningRequirementId ?? null,
+        targetMisconceptionIds: Array.isArray(q.targetMisconceptionIds)
+          ? [...(q.targetMisconceptionIds as unknown as number[])]
+          : null,
+        commandWord: q.commandWord ?? null,
+        assessmentObjective: q.assessmentObjective ?? null,
       }));
       return tx.insert(somaQuestions).values(normalized).returning();
     });
