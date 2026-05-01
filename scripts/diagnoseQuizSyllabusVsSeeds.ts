@@ -24,6 +24,7 @@ import "dotenv/config";
 import { desc, eq, sql } from "drizzle-orm";
 import { connectDb, db } from "../server/db";
 import { examinerMisconceptions, somaQuizzes } from "../shared/schema";
+import { listApprovedSeeds } from "../server/services/examinerDistractorSeeds";
 
 interface CliOptions {
   limit: number;
@@ -79,9 +80,11 @@ async function main(): Promise<void> {
     .orderBy(desc(somaQuizzes.id))
     .limit(opts.limit);
 
-  // Approved-misconception counts keyed by (board, syllabusCode). Pull
-  // the whole grouping in one query rather than per-quiz to keep this
-  // a single round-trip diagnostic.
+  // Approved-misconception count by (board, syllabusCode). Used only
+  // for the global "top scopes" summary at the bottom of the report —
+  // per-quiz "available seeds" comes from the actual listApprovedSeeds
+  // function below so the diagnostic can never drift from production
+  // logic.
   const approvedByScope = await db
     .select({
       board: examinerMisconceptions.board,
@@ -92,23 +95,32 @@ async function main(): Promise<void> {
     .where(eq(examinerMisconceptions.status, "approved"))
     .groupBy(examinerMisconceptions.board, examinerMisconceptions.syllabusCode);
 
-  const scopeMap = new Map<string, number>();
-  for (const r of approvedByScope) {
-    scopeMap.set(`${r.board}|${r.syllabusCode}`, r.count);
-  }
-
-  const rows = recentQuizzes.map((q) => {
-    const parsed = parseSyllabus(q.syllabus);
-    const seedCount = parsed ? (scopeMap.get(`${parsed.board}|${parsed.syllabusCode}`) ?? 0) : 0;
-    return {
-      quizId: q.id,
-      title: q.title,
-      syllabus: q.syllabus,
-      parsedBoard: parsed?.board ?? null,
-      parsedSyllabusCode: parsed?.syllabusCode ?? null,
-      approvedSeedsAvailable: seedCount,
-    };
-  });
+  // For each recent quiz, call the same listApprovedSeeds function the
+  // route handler uses. This mirrors the production code path exactly,
+  // so any future change to the matching logic shows up here without
+  // needing to update the diagnostic. Use a generous limit so the
+  // count reflects "how many seeds would have been available" rather
+  // than the runtime cap (default 6).
+  const rows = await Promise.all(
+    recentQuizzes.map(async (q) => {
+      const parsed = parseSyllabus(q.syllabus);
+      const seeds = parsed
+        ? await listApprovedSeeds({
+            board: parsed.board,
+            syllabusCode: parsed.syllabusCode,
+            limit: 20,
+          })
+        : [];
+      return {
+        quizId: q.id,
+        title: q.title,
+        syllabus: q.syllabus,
+        parsedBoard: parsed?.board ?? null,
+        parsedSyllabusCode: parsed?.syllabusCode ?? null,
+        approvedSeedsAvailable: seeds.length,
+      };
+    }),
+  );
 
   if (opts.json) {
     console.log(JSON.stringify({ rows, allScopes: approvedByScope }, null, 2));
