@@ -192,6 +192,18 @@ export const somaQuestions = pgTable("soma_questions", {
   // time; nullable so legacy questions don't block reads.
   commandWord: text("command_word"),
   assessmentObjective: text("assessment_objective"),
+  // Phase 4 — per-option rationales emitted by the verifier. Null on legacy
+  // rows; on new rows it's a 4-entry array (one per option, in the same
+  // order as `options`). Each entry: { option, isCorrect, rationale,
+  // misconceptionId }. Marker uses `misconceptionId` to attribute a wrong
+  // answer to the specific examiner-flagged seed and surface it in the
+  // tutor's misconception report.
+  optionRationales: jsonb("option_rationales").$type<Array<{
+    option: string;
+    isCorrect: boolean;
+    rationale: string;
+    misconceptionId: number | null;
+  }>>(),
 });
 
 

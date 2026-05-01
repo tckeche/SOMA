@@ -49,6 +49,13 @@ type SomaQuizBundleQuestionInput = {
   targetMisconceptionIds?: number[] | null;
   commandWord?: string | null;
   assessmentObjective?: string | null;
+  // Phase 4 — per-option rationales emitted by the verifier.
+  optionRationales?: Array<{
+    option: string;
+    isCorrect: boolean;
+    rationale: string;
+    misconceptionId: number | null;
+  }> | null;
 };
 
 export interface TutorDashboardSummary {
@@ -1438,6 +1445,7 @@ class MemoryStorage implements IStorage {
       targetMisconceptionIds: (Array.isArray(q.targetMisconceptionIds) ? [...(q.targetMisconceptionIds as unknown as number[])] : null),
       commandWord: q.commandWord ?? null,
       assessmentObjective: q.assessmentObjective ?? null,
+      optionRationales: (q as { optionRationales?: unknown }).optionRationales as SomaQuestion["optionRationales"] ?? null,
     }));
     this.somaQuestionsList.push(...created);
     return created;

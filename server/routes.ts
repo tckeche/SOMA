@@ -2916,6 +2916,13 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               difficultyDistribution = { easy: 35, medium: 45, hard: 20 };
             }
 
+            const purposeForPlanner = (
+              item.purpose === "struggling_areas" ||
+              item.purpose === "stretch_strengths" ||
+              item.purpose === "revision"
+            )
+              ? (item.purpose as "struggling_areas" | "stretch_strengths" | "revision")
+              : "general";
             const generated = await generateAuditedQuiz({
               topic: item.topic,
               subject: item.subject,
@@ -2924,11 +2931,15 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               subtopic: item.subtopic || undefined,
               questionCount: parsed.questionCount,
               difficultyDistribution,
+              purpose: purposeForPlanner,
               copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
               supportingDocText: topicSyllabusContext + topicExaminerContext,
             });
             if (generated.warnings.length > 0) {
               console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
+            }
+            if (generated.blockedQuestions.length > 0) {
+              console.warn(`[AI Publish] Quiz "${item.topic}" blocked ${generated.blockedQuestions.length} question(s) from disagreement protocol — assignment shipped with ${generated.questions.length}/${parsed.questionCount} questions:`, generated.blockedQuestions.map((b) => `Q${b.originalIndex}: ${b.reason}`).join("; "));
             }
             const quiz = await storage.createSomaQuizBundle({
               quiz: {
@@ -2941,9 +2952,33 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 status: "published",
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
-              questions: generated.questions.map((q) => ({
-                stem: q.stem, options: q.options, correctAnswer: q.correct_answer, explanation: q.explanation, marks: q.marks,
-              })),
+              questions: generated.questions.map((q, i) => {
+                // Per-question misconception attribution. Phase 4 prefers
+                // the per-option rationales (each distractor carries its
+                // own misconception id), falling back to the blueprint
+                // row's single targetMisconceptionId, then to the batch-
+                // wide seed list. Each layer is more specific than the
+                // last; the marker reads whichever is populated.
+                const planRow = generated.blueprint?.rows[i];
+                const optionRatIds = (q.option_rationales ?? [])
+                  .map((r) => r.misconceptionId)
+                  .filter((id): id is number => id != null);
+                const planIds = planRow && planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
+                  ? [planRow.targetMisconceptionId]
+                  : [];
+                const ids = optionRatIds.length > 0
+                  ? Array.from(new Set([...optionRatIds, ...planIds]))
+                  : (planIds.length > 0 ? planIds : (generated.seedMisconceptionIds ?? []));
+                return {
+                  stem: q.stem,
+                  options: q.options,
+                  correctAnswer: q.correct_answer,
+                  explanation: q.explanation,
+                  marks: q.marks,
+                  targetMisconceptionIds: ids.length > 0 ? ids : null,
+                  optionRationales: q.option_rationales ?? null,
+                };
+              }),
               assignedStudentIds: [studentId],
             });
             await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);

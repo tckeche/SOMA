@@ -1,0 +1,11 @@
+-- Phase 4: per-option rationales on soma_questions.
+--
+-- The verifier now emits a 4-entry array (one per option, in the same order
+-- as the `options` jsonb) attributing each option to a specific reasoning
+-- step or examiner-flagged misconception. The marker reads this column to
+-- show students WHY their wrong answer was wrong, not just THAT it was
+-- wrong, and to drive the tutor's misconception attribution dashboards.
+--
+-- Fully additive and nullable: legacy rows continue to render with the
+-- existing `explanation` field as before.
+ALTER TABLE "soma_questions" ADD COLUMN "option_rationales" jsonb;
