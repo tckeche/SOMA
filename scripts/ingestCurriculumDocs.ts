@@ -11,13 +11,22 @@
  *     context and treats these chunks as optional supporting text.
  *
  * Usage:
- *   npx tsx scripts/ingestCurriculumDocs.ts
+ *   npx tsx scripts/ingestCurriculumDocs.ts            # actually ingest
+ *   npx tsx scripts/ingestCurriculumDocs.ts --dry-run  # preview only — no
+ *                                                       # writes, no LLM calls
  *
  * Scans the /curriculum-docs folder recursively, classifies each PDF as
  * "syllabus" or "examiner_report" based on its folder path, parses text,
  * chunks it, and stores everything in the database. Examiner reports are
  * then passed to the LLM-backed misconception extractor so the
  * `examiner_misconceptions` table is populated in the same pass.
+ *
+ * `--dry-run` walks the same files, parses + chunks the same way, and
+ * emits the same per-file status lines, but no `db.insert` calls fire and
+ * no LLM calls are made. The summary block is relabelled to "Would
+ * ingest", "Would skip", "Would extract misconceptions" etc. so a reviewer
+ * can stage a new curriculum drop and read the planned outcome before
+ * paying for the LLM run.
  *
  * Idempotent: files already ingested (detected by SHA-256 hash) are skipped;
  * documents whose misconceptions have already been extracted are skipped at
@@ -32,6 +41,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import crypto from "crypto";
+import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import pLimit from "p-limit";
@@ -49,7 +59,7 @@ const ERRORS_LOG = path.resolve(process.cwd(), "ingestion-errors.log");
 const MIN_WORD_COUNT = 50;
 const CONCURRENCY = Math.min(8, Math.max(1, os.cpus().length));
 
-interface IngestResult {
+export interface IngestResult {
   file: string;
   status: "ingested" | "skipped" | "failed" | "needs-ocr";
   reason?: string;
@@ -57,6 +67,19 @@ interface IngestResult {
   chunkCount?: number;
   misconceptionCount?: number;
   misconceptionSkipReason?: string;
+  /** True when this file is an examiner_report that *would* have been sent
+   *  to the LLM-backed misconception extractor under a non-dry-run pass.
+   *  Only populated by `processFiles({ dryRun: true })`. Lets the dry-run
+   *  summary report "would-extract-misconceptions" without burning tokens. */
+  wouldExtractMisconceptions?: boolean;
+}
+
+export interface IngestOptions {
+  /** When true, parse and chunk normally but skip every `db.insert(...)`
+   *  call and every `extractAndStoreMisconceptions(...)` call. The result
+   *  array is returned exactly as in a real run so the summary can be
+   *  computed and inspected. */
+  dryRun?: boolean;
 }
 
 function createPool(): pg.Pool {
@@ -76,7 +99,7 @@ function sha256(buffer: Buffer): string {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
-function collectPdfs(dir: string): string[] {
+export function collectPdfs(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   const results: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -148,12 +171,24 @@ interface DocRow {
   subject: string | null;
   extractedText: string;
   documentType: "syllabus" | "examiner_report";
+  filename?: string | null;
 }
 
-async function ingestFile(
+/**
+ * Type alias for the drizzle handle used by `ingestFile`. Loose enough to
+ * accept either the node-postgres handle from `main()` or the PGlite-backed
+ * handle from the integration tests — they both implement the subset of
+ * the drizzle query API this script needs (`.select`, `.insert`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDrizzleDb = any;
+
+export async function ingestFile(
   filePath: string,
-  db: ReturnType<typeof drizzle<typeof schema>>,
+  db: AnyDrizzleDb,
+  opts: IngestOptions = {},
 ): Promise<{ result: IngestResult; doc?: DocRow }> {
+  const dryRun = opts.dryRun === true;
   const filename = path.basename(filePath);
   const relPath = path.relative(process.cwd(), filePath);
 
@@ -202,6 +237,26 @@ async function ingestFile(
   const level = inferLevel(filePath);
   const syllabusCode = inferSyllabusCode(filename);
   const subject = inferSubject(filename);
+
+  if (dryRun) {
+    // Dry-run: skip the two `db.insert(...)` calls below. Return a
+    // synthetic doc so the caller's downstream "would extract
+    // misconceptions for examiner_reports" branch still fires. id=-1
+    // signals "no real row" — anyone who tries to FK against it will
+    // immediately fail, which is the correct loud behaviour.
+    return {
+      result: { file: relPath, status: "ingested", docId: -1, chunkCount: chunks.length },
+      doc: {
+        id: -1,
+        board,
+        syllabusCode,
+        subject: subject ?? null,
+        extractedText,
+        documentType,
+        filename,
+      },
+    };
+  }
 
   const [doc] = await db.insert(syllabusDocuments).values({
     tutorId: null,
@@ -278,10 +333,170 @@ async function maybeAssertPersistence(pool: pg.Pool, idx: number) {
   }
 }
 
+export interface IngestSummary {
+  total: number;
+  /** Files that were ingested (or under `--dry-run`, *would* have been). */
+  wouldIngest: number;
+  /** Files skipped because their SHA-256 was already in the catalogue. */
+  wouldSkip: number;
+  /** Files whose extracted text was below MIN_WORD_COUNT — likely image-only. */
+  wouldNeedOcr: number;
+  /** Examiner-reports that *would* have been sent to the LLM under a real
+   *  run. Always populated under dry-run; under a real run it counts the
+   *  reports the extractor was actually invoked on (regardless of how many
+   *  rows it produced). */
+  wouldExtractMisconceptions: number;
+  /** Files that failed to parse or insert. */
+  failed: number;
+  /** Total misconception rows actually written (real run) or 0 (dry run). */
+  misconceptions: number;
+  reportsWithMisconceptions: number;
+}
+
+export function summarize(results: IngestResult[]): IngestSummary {
+  return {
+    total: results.length,
+    wouldIngest: results.filter((r) => r.status === "ingested").length,
+    wouldSkip: results.filter((r) => r.status === "skipped").length,
+    wouldNeedOcr: results.filter((r) => r.status === "needs-ocr").length,
+    wouldExtractMisconceptions: results.filter(
+      (r) => r.wouldExtractMisconceptions || (r.misconceptionCount !== undefined),
+    ).length,
+    failed: results.filter((r) => r.status === "failed").length,
+    misconceptions: results.reduce((acc, r) => acc + (r.misconceptionCount ?? 0), 0),
+    reportsWithMisconceptions: results.filter((r) => (r.misconceptionCount ?? 0) > 0).length,
+  };
+}
+
+/**
+ * Drive `ingestFile` over a list of PDF paths with bounded concurrency,
+ * the same way `main()` does — but parameterised on the db handle and
+ * options so integration tests can drive the whole pipeline against
+ * PGlite under `--dry-run`.
+ */
+export async function processFiles(
+  pdfs: string[],
+  db: AnyDrizzleDb,
+  opts: IngestOptions & { pool?: pg.Pool; concurrency?: number; quiet?: boolean } = {},
+): Promise<IngestResult[]> {
+  const dryRun = opts.dryRun === true;
+  const limit = pLimit(opts.concurrency ?? CONCURRENCY);
+  const results: IngestResult[] = [];
+  let done = 0;
+  const log = opts.quiet ? () => {} : (msg: string) => console.log(msg);
+
+  await Promise.all(
+    pdfs.map((filePath) =>
+      limit(async () => {
+        const idx = ++done;
+        const rel = path.relative(process.cwd(), filePath);
+        const t0 = Date.now();
+        try {
+          const { result, doc } = await ingestFile(filePath, db, { dryRun });
+          // Skip the persistence sanity-check when dry-run — we've intentionally
+          // not written anything, so a 0 row count is the expected state.
+          if (!dryRun && opts.pool) {
+            await maybeAssertPersistence(opts.pool, idx);
+          }
+
+          if (
+            (result.status === "ingested" || result.status === "skipped") &&
+            doc &&
+            doc.documentType === "examiner_report"
+          ) {
+            if (dryRun) {
+              // Don't call the LLM extractor — just mark that we would have.
+              result.wouldExtractMisconceptions = true;
+            } else {
+              try {
+                const extracted = await extractAndStoreMisconceptions(doc, { preferredProvider: "openai" });
+                if (extracted.skipped) {
+                  result.misconceptionCount = 0;
+                  result.misconceptionSkipReason = extracted.reason;
+                } else {
+                  result.misconceptionCount = extracted.count;
+                }
+              } catch (e: any) {
+                result.misconceptionCount = 0;
+                result.misconceptionSkipReason = `extract-failed: ${e?.message ?? String(e)}`;
+                logError({ phase: "extract", file: rel, docId: doc.id, message: e?.message ?? String(e) });
+              }
+            }
+          }
+
+          results.push(result);
+          const ms = Date.now() - t0;
+          const tag =
+            result.status === "ingested" ? (dryRun ? "PLAN " : "OK   ") :
+            result.status === "skipped"  ? "SKIP " :
+            result.status === "needs-ocr" ? "OCR  " : "FAIL ";
+          const extra =
+            result.misconceptionCount !== undefined
+              ? ` — ${result.misconceptionCount} misconceptions`
+              : result.wouldExtractMisconceptions
+                ? ` — would extract misconceptions`
+                : result.chunkCount !== undefined && result.status === "ingested"
+                  ? ` — ${result.chunkCount} chunks`
+                  : "";
+          log(`[${idx}/${pdfs.length}] ${tag}${path.basename(filePath).padEnd(50)}${extra} (${ms}ms)`);
+        } catch (e: any) {
+          const result: IngestResult = { file: rel, status: "failed", reason: e?.message ?? String(e) };
+          results.push(result);
+          logError({ phase: "ingest", file: rel, message: result.reason });
+          log(`[${idx}/${pdfs.length}] FAIL ${path.basename(filePath)} — ${result.reason}`);
+        }
+      })
+    )
+  );
+
+  return results;
+}
+
+function printSummary(summary: IngestSummary, results: IngestResult[], opts: IngestOptions) {
+  const dryRun = opts.dryRun === true;
+  console.log("\n========================================");
+  console.log(`  Summary${dryRun ? " (DRY RUN — no writes occurred)" : ""}`);
+  console.log("========================================");
+  if (dryRun) {
+    console.log(`  Total found                    : ${summary.total}`);
+    console.log(`  Would ingest                   : ${summary.wouldIngest}`);
+    console.log(`  Would skip (already ingested)  : ${summary.wouldSkip}`);
+    console.log(`  Would need OCR                 : ${summary.wouldNeedOcr}`);
+    console.log(`  Would extract misconceptions   : ${summary.wouldExtractMisconceptions}`);
+    console.log(`  Failed (parse errors)          : ${summary.failed}`);
+  } else {
+    console.log(`  Total found        : ${summary.total}`);
+    console.log(`  Ingested           : ${summary.wouldIngest}`);
+    console.log(`  Skipped            : ${summary.wouldSkip}`);
+    console.log(`  Needs OCR          : ${summary.wouldNeedOcr}`);
+    console.log(`  Failed             : ${summary.failed}`);
+    console.log(
+      `  Misconceptions     : ${summary.misconceptions} (across ${summary.reportsWithMisconceptions} reports)`,
+    );
+  }
+
+  const needsOcr = results.filter((r) => r.status === "needs-ocr");
+  const failed = results.filter((r) => r.status === "failed");
+  if (needsOcr.length > 0) {
+    console.log("\n  Files that need OCR (image-only PDFs):");
+    for (const f of needsOcr) console.log(`    - ${f.file}`);
+  }
+  if (failed.length > 0) {
+    console.log("\n  Failed files:");
+    for (const f of failed) console.log(`    - ${f.file}: ${f.reason}`);
+  }
+  console.log("========================================\n");
+}
+
 async function main() {
+  const dryRun = process.argv.includes("--dry-run");
+
   console.log("\n========================================");
   console.log("  SOMA Curriculum Document Ingestion");
   console.log("========================================\n");
+  if (dryRun) {
+    console.log("  --- DRY RUN: no writes will occur ---\n");
+  }
   console.log(`  Concurrency: ${CONCURRENCY} (min(8, ${os.cpus().length} cpus))`);
   console.log(`  Errors log : ${path.relative(process.cwd(), ERRORS_LOG)}\n`);
 
@@ -313,100 +528,23 @@ async function main() {
 
   console.log(`Found ${pdfs.length} PDF(s). Processing...\n`);
 
-  const limit = pLimit(CONCURRENCY);
-  const results: IngestResult[] = [];
-  let done = 0;
-
-  await Promise.all(
-    pdfs.map((filePath) =>
-      limit(async () => {
-        const idx = ++done;
-        const rel = path.relative(process.cwd(), filePath);
-        const t0 = Date.now();
-        try {
-          const { result, doc } = await ingestFile(filePath, db);
-          // Sanity check: after the very first examiner_report extraction
-          // completes, verify rows actually landed in the database. If they
-          // did not, abort before burning hundreds more LLM calls.
-          await maybeAssertPersistence(pool, idx);
-
-          // Examiner reports get a misconception extraction pass under the
-          // same limiter slot — i.e. a fresh slot is taken once parse+insert
-          // is done. We schedule it inline so we stay within CONCURRENCY for
-          // both CPU-bound parsing and the LLM call.
-          if (
-            (result.status === "ingested" || result.status === "skipped") &&
-            doc &&
-            doc.documentType === "examiner_report"
-          ) {
-            try {
-              const extracted = await extractAndStoreMisconceptions(doc, { preferredProvider: "openai" });
-              if (extracted.skipped) {
-                result.misconceptionCount = 0;
-                result.misconceptionSkipReason = extracted.reason;
-              } else {
-                result.misconceptionCount = extracted.count;
-              }
-            } catch (e: any) {
-              result.misconceptionCount = 0;
-              result.misconceptionSkipReason = `extract-failed: ${e?.message ?? String(e)}`;
-              logError({ phase: "extract", file: rel, docId: doc.id, message: e?.message ?? String(e) });
-            }
-          }
-
-          results.push(result);
-          const ms = Date.now() - t0;
-          const tag =
-            result.status === "ingested" ? "OK   " :
-            result.status === "skipped"  ? "SKIP " :
-            result.status === "needs-ocr" ? "OCR  " : "FAIL ";
-          const extra =
-            result.misconceptionCount !== undefined
-              ? ` — ${result.misconceptionCount} misconceptions`
-              : result.chunkCount !== undefined && result.status === "ingested"
-                ? ` — ${result.chunkCount} chunks`
-                : "";
-          console.log(`[${idx}/${pdfs.length}] ${tag}${path.basename(filePath).padEnd(50)}${extra} (${ms}ms)`);
-        } catch (e: any) {
-          const result: IngestResult = { file: rel, status: "failed", reason: e?.message ?? String(e) };
-          results.push(result);
-          logError({ phase: "ingest", file: rel, message: result.reason });
-          console.log(`[${idx}/${pdfs.length}] FAIL ${path.basename(filePath)} — ${result.reason}`);
-        }
-      })
-    )
-  );
+  const results = await processFiles(pdfs, db, { dryRun, pool });
 
   await pool.end();
 
-  const ingested  = results.filter((r) => r.status === "ingested");
-  const skipped   = results.filter((r) => r.status === "skipped");
-  const failed    = results.filter((r) => r.status === "failed");
-  const needsOcr  = results.filter((r) => r.status === "needs-ocr");
-  const totalMisc = results.reduce((acc, r) => acc + (r.misconceptionCount ?? 0), 0);
-
-  console.log("\n========================================");
-  console.log(`  Summary`);
-  console.log("========================================");
-  console.log(`  Total found        : ${results.length}`);
-  console.log(`  Ingested           : ${ingested.length}`);
-  console.log(`  Skipped            : ${skipped.length}`);
-  console.log(`  Needs OCR          : ${needsOcr.length}`);
-  console.log(`  Failed             : ${failed.length}`);
-  console.log(`  Misconceptions     : ${totalMisc} (across ${results.filter(r => (r.misconceptionCount ?? 0) > 0).length} reports)`);
-
-  if (needsOcr.length > 0) {
-    console.log("\n  Files that need OCR (image-only PDFs):");
-    for (const f of needsOcr) console.log(`    - ${f.file}`);
-  }
-  if (failed.length > 0) {
-    console.log("\n  Failed files:");
-    for (const f of failed) console.log(`    - ${f.file}: ${f.reason}`);
-  }
-  console.log("========================================\n");
+  printSummary(summarize(results), results, { dryRun });
 }
 
-main().catch((e) => {
-  console.error("Unexpected error:", e);
-  process.exit(1);
-});
+// Only auto-execute when this file is the actual entry point. Importing
+// the module from a Vitest test (or any other tooling) must NOT trigger
+// `main()` — that would attempt to open a real Postgres connection.
+const isEntryPoint = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isEntryPoint) {
+  main().catch((e) => {
+    console.error("Unexpected error:", e);
+    process.exit(1);
+  });
+}
