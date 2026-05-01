@@ -25,6 +25,49 @@
 
 const ENABLED = process.env.QUIZ_TRACE === "1" || process.env.QUIZ_TRACE === "true";
 
+/**
+ * In-memory ring buffer of recent trace events. Lets us surface the
+ * trace via an HTTP endpoint (`/api/health/trace`) so the deployed
+ * app's events are reachable from a curl in the workspace shell —
+ * no Replit-UI log panel digging required.
+ *
+ * Capped at MAX so heavy traffic can't OOM the process. Events older
+ * than the cap are silently dropped (oldest-first). Buffer is empty
+ * when QUIZ_TRACE is off.
+ */
+const RING_MAX = 500;
+interface TraceEvent {
+  ts: string;
+  traceId: string;
+  event: string;
+  data: unknown;
+}
+const ring: TraceEvent[] = [];
+function pushRing(evt: TraceEvent): void {
+  ring.push(evt);
+  if (ring.length > RING_MAX) ring.splice(0, ring.length - RING_MAX);
+}
+
+/** Returns a snapshot copy of the ring buffer (most recent at end).
+ *  Optional `since` filters to events after the given ISO timestamp. */
+export function getRecentTraces(opts?: { since?: string; limit?: number }): TraceEvent[] {
+  let out = ring.slice();
+  if (opts?.since) {
+    const cutoff = opts.since;
+    out = out.filter((e) => e.ts > cutoff);
+  }
+  if (opts?.limit && opts.limit > 0) {
+    out = out.slice(-opts.limit);
+  }
+  return out;
+}
+
+/** Wipes the ring buffer. Useful between quiz attempts so the next
+ *  trace request returns only the new events. */
+export function clearTraces(): void {
+  ring.length = 0;
+}
+
 /** Pads short bursts of randomness with a counter so concurrent
  *  events still get unique ids even when Date.now() collides. */
 let counter = 0;
@@ -57,9 +100,13 @@ export function traceLog(
   traceId?: string,
 ): void {
   if (!ENABLED) return;
-  const line = `[QUIZ_TRACE] ${new Date().toISOString()} trace=${traceId ?? "-"} event=${event} | ${safeStringify(data)}`;
+  const ts = new Date().toISOString();
+  const id = traceId ?? "-";
+  const line = `[QUIZ_TRACE] ${ts} trace=${id} event=${event} | ${safeStringify(data)}`;
   // eslint-disable-next-line no-console
   console.log(line);
+  // Also push to the ring buffer so /api/health/trace can serve it.
+  pushRing({ ts, traceId: id, event, data });
 }
 
 /** Convenience: counts how many of the items in `arr` have a non-null,

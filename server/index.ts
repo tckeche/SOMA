@@ -97,6 +97,31 @@ app.get("/_health", (_req, res) => {
   res.status(200).send("ok");
 });
 
+// Returns the in-memory ring buffer of recent QUIZ_TRACE events so the
+// deployed app's pipeline can be inspected via a curl from anywhere
+// (workspace shell, browser, monitoring) — no Replit-UI log digging.
+//
+// Empty when QUIZ_TRACE is unset (the trace logger is a no-op then,
+// so nothing reaches the buffer). Set QUIZ_TRACE=1 in deployment
+// secrets, republish, generate a quiz, then GET /api/health/trace.
+//
+// Optional query params:
+//   ?since=<ISO>   only return events with ts > since
+//   ?limit=<n>     return only the most recent n events
+//   ?clear=1       wipe the buffer (returns the events being wiped)
+app.get("/api/health/trace", async (req, res) => {
+  const { getRecentTraces, clearTraces } = await import("./services/quizTraceLog");
+  const since = typeof req.query.since === "string" ? req.query.since : undefined;
+  const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined;
+  const events = getRecentTraces({ since, limit: Number.isFinite(limit ?? NaN) ? limit : undefined });
+  if (req.query.clear === "1") clearTraces();
+  res.json({
+    enabled: process.env.QUIZ_TRACE === "1" || process.env.QUIZ_TRACE === "true",
+    eventCount: events.length,
+    events,
+  });
+});
+
 // Real DB liveness probe. Runs a `SELECT 1` against the actual pool
 // and reports timing + pool stats so we can see whether Supabase is
 // healthy, slow, or refusing connections.

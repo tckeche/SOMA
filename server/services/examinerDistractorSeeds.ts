@@ -57,12 +57,13 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
     traceLog("listApprovedSeeds.exit", { reason: "db_null", returned: 0 });
     return [];
   }
+  // Capture into a local so the inner closure sees a non-null db
+  // (TypeScript can't propagate the null narrowing into nested fns).
+  const dbRef = db;
   const limit = Math.max(1, Math.min(20, q.limit ?? 6));
 
   async function runQuery(conditions: any[]) {
-    // db null-check is performed by the caller above. TS can't carry
-    // that narrowing into this nested closure, so re-assert here.
-    return db!
+    return dbRef
       .select({
         id: examinerMisconceptions.id,
         topic: examinerMisconceptions.topic,
