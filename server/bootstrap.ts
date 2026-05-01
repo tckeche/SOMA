@@ -21,6 +21,21 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS topic_tag TEXT`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS subtopic_tag TEXT`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS difficulty_tag TEXT`,
+  // Phase 1+: FK columns + per-question metadata that the schema expects.
+  // These were previously only in migrations/*.sql files but the bootstrap
+  // doesn't run those — so production was missing these columns and SELECTs
+  // against soma_questions were 500ing in deploy. All additive + nullable.
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS subtopic_id INTEGER`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS learning_requirement_id INTEGER`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS target_misconception_ids JSONB`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS command_word TEXT`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS assessment_objective TEXT`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS option_rationales JSONB`,
+  // Per-student question flagging (tutor review queue). Defined in schema.ts
+  // but historically missing from bootstrap, so a fresh DB never got the
+  // table and `/api/tutor/flagged-questions` 500ed.
+  `CREATE TABLE IF NOT EXISTS flagged_questions (id SERIAL PRIMARY KEY, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, question_id INTEGER NOT NULL REFERENCES soma_questions(id) ON DELETE CASCADE, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, report_id INTEGER REFERENCES soma_reports(id) ON DELETE SET NULL, reason TEXT, resolved_at TIMESTAMP, tutor_viewed_at TIMESTAMP, created_at TIMESTAMP DEFAULT NOW() NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS flagged_question_unique_idx ON flagged_questions(student_id, question_id)`,
   `CREATE TABLE IF NOT EXISTS syllabus_documents (id SERIAL PRIMARY KEY, tutor_id UUID REFERENCES soma_users(id) ON DELETE SET NULL, board TEXT NOT NULL, level TEXT NOT NULL, syllabus_code TEXT NOT NULL, filename TEXT NOT NULL, extracted_text TEXT NOT NULL, uploaded_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS syllabus_chunks (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, content TEXT NOT NULL, content_preview TEXT NOT NULL)`,
   // Syllabus document extended columns (curriculum ingestion system)
