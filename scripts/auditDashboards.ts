@@ -145,22 +145,30 @@ async function auditStudentDashboard(studentId: string): Promise<SectionReport> 
   try {
     const dash = await buildStudentDashboard({ storage, student });
     const warnings: string[] = [];
-    // Inspect each major tile.
-    const subjectCount = (dash.subjectCoverage ?? []).length;
+    // Inspect each major tile. Field names MUST match DashboardPayload
+    // in server/services/studentDashboard.ts — the type system can't
+    // catch a typo here because dash is `any`-equivalent at the access
+    // site (the audit imports the function but not the type).
+    const subjectCount = (dash.subjects ?? []).length;
     const remindersCount = (dash.reminders ?? []).length;
     const winsCount = (dash.recentWins ?? []).length;
-    const recentQuizzesCount = (dash.recentQuizzes ?? []).length;
-    if (subjectCount === 0) warnings.push("subjectCoverage tile is empty (student has no subjects assigned)");
-    if (remindersCount === 0) warnings.push("reminders carousel is empty");
-    if (winsCount === 0) warnings.push("recent wins list is empty");
+    const assignmentsCount = (dash.assignments ?? []).length;
+    const completedCount = (dash.completed ?? []).length;
+    const nextActionsCount = (dash.nextActions ?? []).length;
+    const notificationsCount = (dash.notifications?.items ?? []).length;
+    const unreadCount = dash.notifications?.unreadCount ?? 0;
+    if (subjectCount === 0) warnings.push("subjects tile is empty (student has no enrolled subjects)");
+    if (assignmentsCount === 0) warnings.push("no quiz assignments — tutor hasn't assigned anything to this student");
+    if (completedCount === 0 && assignmentsCount > 0) warnings.push(`${assignmentsCount} assignments exist but 0 are completed — student hasn't started any quizzes yet`);
+    if (winsCount === 0 && completedCount > 0) warnings.push(`${completedCount} completions exist but recentWins is empty — buildRecentWins may be filtering them out`);
     const verdict: Verdict =
-      subjectCount === 0 && winsCount === 0 ? "empty"
-      : subjectCount > 0 && winsCount > 0 ? "healthy"
+      subjectCount === 0 && assignmentsCount === 0 ? "empty"
+      : subjectCount > 0 && completedCount > 0 ? "healthy"
       : "sparse";
     return {
       section: "STUDENT DASHBOARD",
       verdict,
-      headline: `subjects=${subjectCount} reminders=${remindersCount} wins=${winsCount} recentQuizzes=${recentQuizzesCount}`,
+      headline: `subjects=${subjectCount} assignments=${assignmentsCount} completed=${completedCount} wins=${winsCount} reminders=${remindersCount} nextActions=${nextActionsCount} notifs=${notificationsCount}(${unreadCount} unread)`,
       details: [
         `student: ${student.displayName ?? "(no name)"} <${student.email ?? "?"}>`,
       ],
@@ -190,9 +198,13 @@ async function auditMasteryMap(studentId: string): Promise<SectionReport> {
         return tSum + (t.subtopics ?? []).filter((st: any) => st.attempts > 0).length;
       }, 0);
     }, 0);
+    // Field name is examinerInsightCount (singular, no `s`) — see
+    // syllabusMasteryMap.ts SubtopicLeaf type. The plural was a typo
+    // in the first version of this script which silently reported 0
+    // for everything because undefined ?? 0 is 0.
     const leavesWithExaminerCount = (map.subjects ?? []).reduce((sum: number, s: any) => {
       return sum + (s.topics ?? []).reduce((tSum: number, t: any) => {
-        return tSum + (t.subtopics ?? []).filter((st: any) => (st.examinerInsightsCount ?? 0) > 0).length;
+        return tSum + (t.subtopics ?? []).filter((st: any) => (st.examinerInsightCount ?? 0) > 0).length;
       }, 0);
     }, 0);
     const warnings: string[] = [];
