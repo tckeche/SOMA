@@ -668,6 +668,16 @@ class DatabaseStorage implements IStorage {
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
+        // Keep publish in lock-step with createSomaQuestions: the
+        // review/publish flow re-inserts from draft payload, so any
+        // omitted FK/attribution fields here are destructive data loss.
+        subtopicId: q.subtopicId ?? null,
+        learningRequirementId: q.learningRequirementId ?? null,
+        targetMisconceptionIds: Array.isArray(q.targetMisconceptionIds)
+          ? [...(q.targetMisconceptionIds as unknown as number[])]
+          : null,
+        commandWord: q.commandWord ?? null,
+        assessmentObjective: q.assessmentObjective ?? null,
       }));
       return tx.insert(somaQuestions).values(normalized).returning();
     });
