@@ -541,6 +541,19 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
     topicTag: raw.topic_tag ? String(raw.topic_tag) : null,
     subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : null,
     difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : null,
+    subtopicId: Number.isFinite(Number(raw.subtopic_id ?? raw.subtopicId))
+      ? Number(raw.subtopic_id ?? raw.subtopicId)
+      : null,
+    learningRequirementId: Number.isFinite(Number(raw.learning_requirement_id ?? raw.learningRequirementId))
+      ? Number(raw.learning_requirement_id ?? raw.learningRequirementId)
+      : null,
+    targetMisconceptionIds: Array.isArray(raw.target_misconception_ids ?? raw.targetMisconceptionIds)
+      ? (raw.target_misconception_ids ?? raw.targetMisconceptionIds)
+        .map((v: unknown) => Number(v))
+        .filter((n: number) => Number.isFinite(n) && n > 0)
+      : null,
+    commandWord: raw.command_word ? String(raw.command_word) : (raw.commandWord ? String(raw.commandWord) : null),
+    assessmentObjective: raw.assessment_objective ? String(raw.assessment_objective) : (raw.assessmentObjective ? String(raw.assessmentObjective) : null),
   };
 }
 
@@ -3086,6 +3099,11 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
+        subtopicId: q.subtopicId ?? null,
+        learningRequirementId: q.learningRequirementId ?? null,
+        targetMisconceptionIds: q.targetMisconceptionIds ?? null,
+        commandWord: q.commandWord ?? null,
+        assessmentObjective: q.assessmentObjective ?? null,
       }));
 
       const saved = await storage.publishSomaQuestionsTransactional(quizId, mapped);

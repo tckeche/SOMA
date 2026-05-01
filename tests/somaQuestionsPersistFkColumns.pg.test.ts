@@ -250,4 +250,55 @@ describe("storage.createSomaQuestions — production INSERT must persist every F
     expect(inserted[1].targetMisconceptionIds).toEqual([seedA, seedB]);
     expect(inserted[2].targetMisconceptionIds).toBeNull();
   });
+
+  it("publish transaction preserves seeded FK columns when replacing draft questions", async () => {
+    if (!harness || !base) throw new Error("harness not initialised");
+    const quizId = await seedQuiz();
+    const [seedA, seedB] = await seedTwoApprovedMisconceptions();
+
+    await storage.createSomaQuestions([
+      {
+        quizId,
+        stem: "old",
+        options: ["a", "b"],
+        correctAnswer: "a",
+        explanation: "old",
+        marks: 1,
+      },
+    ]);
+
+    const published = await storage.publishSomaQuestionsTransactional(quizId, [
+      {
+        quizId,
+        stem: "new",
+        options: ["1", "2", "3", "4"],
+        correctAnswer: "2",
+        explanation: "new",
+        marks: 2,
+        subtopicId: base.subtopicId,
+        learningRequirementId: null,
+        targetMisconceptionIds: [seedA, seedB],
+        commandWord: "calculate",
+        assessmentObjective: "AO1",
+      },
+    ]);
+
+    expect(published).toHaveLength(1);
+    expect(published[0].targetMisconceptionIds).toEqual([seedA, seedB]);
+    expect(published[0].subtopicId).toBe(base.subtopicId);
+    expect(published[0].commandWord).toBe("calculate");
+    expect(published[0].assessmentObjective).toBe("AO1");
+
+    const rows = await harness.db
+      .select()
+      .from(somaQuestions)
+      .where(eq(somaQuestions.quizId, quizId));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].stem).toBe("new");
+    expect(rows[0].targetMisconceptionIds).toEqual([seedA, seedB]);
+    expect(rows[0].subtopicId).toBe(base.subtopicId);
+    expect(rows[0].commandWord).toBe("calculate");
+    expect(rows[0].assessmentObjective).toBe("AO1");
+  });
 });
