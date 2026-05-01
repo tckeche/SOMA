@@ -549,13 +549,12 @@ function StepTopics({
   resolvedSyllabus: SyllabusDto | null;
 }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
-  if (!subjectPicked) {
-    return <p className="text-xs text-muted-foreground">Pick a subject first.</p>;
-  }
-  const selectedTopicSet = new Set(selectedTopicIds);
-  const selectedSubtopicSet = new Set(selectedSubtopicIds);
   // Group by strand so the checklist mirrors the syllabus outline. Topics
   // with no strand fall under an "Uncategorised" heading.
+  // NOTE: this `useMemo` MUST run on every render — the early return for
+  // `!subjectPicked` lives below it. Hoisting the hook above the early
+  // return keeps the hook count stable between renders (otherwise React
+  // throws #310 the moment `subjectPicked` flips false → true).
   const groups = useMemo(() => {
     const map = new Map<string, TopicListItemDto[]>();
     for (const t of topics) {
@@ -568,6 +567,11 @@ function StepTopics({
       topics: [...list].sort((a, b) => a.sortOrder - b.sortOrder || a.topicNumber.localeCompare(b.topicNumber)),
     }));
   }, [topics]);
+  if (!subjectPicked) {
+    return <p className="text-xs text-muted-foreground">Pick a subject first.</p>;
+  }
+  const selectedTopicSet = new Set(selectedTopicIds);
+  const selectedSubtopicSet = new Set(selectedSubtopicIds);
 
   const totalSelected = selectedTopicIds.length + selectedSubtopicIds.length;
 
