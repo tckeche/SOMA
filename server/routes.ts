@@ -23,6 +23,7 @@ import { extractAndStoreMisconceptions } from "./services/extractAndStoreMisconc
 import { normalizeQuizSyllabusForWrite } from "./services/syllabusNormalizer";
 import { cachedListExaminerMisconceptions } from "./services/examinerMisconceptionsCache";
 import { listApprovedSeeds, type ExaminerSeed } from "./services/examinerDistractorSeeds";
+import { traceLog, newTraceId, countWithField } from "./services/quizTraceLog";
 import { buildAndPersistDiagnoses, renderDiagnosesForFeedback, type GradedAnswer } from "./services/answerDiagnosis";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
@@ -3056,10 +3057,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   // POST publish draft → write to soma_questions (replaces all existing questions)
   app.post("/api/tutor/quizzes/:quizId/publish", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
     try {
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      traceLog("route.publish.entry", {
+        route: "/api/tutor/quizzes/:quizId/publish",
+        quizId,
+        quizSyllabus: quiz.syllabus,
+        clientBodyHasQuestions: Array.isArray(req.body?.questions),
+        clientBodyQuestionCount: Array.isArray(req.body?.questions) ? req.body.questions.length : 0,
+      }, traceId);
 
       // Prefer the server-side in-memory draft (most authoritative).
       // Fall back to client-sent questions in the request body — this handles the case
@@ -3073,6 +3082,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         setDraft(quizId, draft);
       }
       if (draft.length === 0) return res.status(400).json({ message: "Draft is empty — add questions before publishing" });
+      traceLog("route.publish.draftLoaded", {
+        quizId,
+        draftSource: getDraft(quizId).length > 0 && draft === getDraft(quizId) ? "serverStore" : "clientBody",
+        draftCount: draft.length,
+        draftRowsWithSeeds: countWithField(draft as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+        sampleDraft: draft.slice(0, 1).map((q) => ({
+          stem: q.stem.slice(0, 50),
+          targetMisconceptionIds: (q as any).targetMisconceptionIds ?? null,
+          subtopicId: (q as any).subtopicId ?? null,
+          learningRequirementId: (q as any).learningRequirementId ?? null,
+        })),
+      }, traceId);
 
       // Validate each draft question before write
       for (const q of draft) {
@@ -3099,14 +3120,31 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
+        // Pass through the examiner-loop and catalogue FK columns the
+        // Maker computed. Without these, the publish step silently
+        // destroys all the attribution data created at generation time
+        // — that was the root cause of the dashboards-look-empty
+        // problem. The schema columns are nullable so unset values are
+        // safe; storage.publishSomaQuestionsTransactional handles them.
         subtopicId: q.subtopicId ?? null,
         learningRequirementId: q.learningRequirementId ?? null,
         targetMisconceptionIds: q.targetMisconceptionIds ?? null,
         commandWord: q.commandWord ?? null,
         assessmentObjective: q.assessmentObjective ?? null,
       }));
+      traceLog("route.publish.beforePublishTransactional", {
+        quizId,
+        mappedCount: mapped.length,
+        rowsWithTargetMisconceptionIds: countWithField(mapped as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+        rowsWithSubtopicId: countWithField(mapped as unknown as Record<string, unknown>[], "subtopicId"),
+      }, traceId);
 
       const saved = await storage.publishSomaQuestionsTransactional(quizId, mapped);
+      traceLog("route.publish.afterPublishTransactional", {
+        quizId,
+        savedCount: saved.length,
+        savedRowsWithSeeds: countWithField(saved as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
 
       // Clear in-memory draft only after DB commit succeeded
       draftStore.delete(quizId);
@@ -4705,6 +4743,7 @@ ${JSON.stringify({
   }
 
   app.post("/api/soma/generate", requireAdmin, async (req, res) => {
+    const traceId = newTraceId();
     try {
       const parsed = somaGenerateSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -4715,6 +4754,13 @@ ${JSON.stringify({
       const quizTitle = title || `${topic} Quiz`;
 
       const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
+      traceLog("route.somaGenerate.entry", {
+        route: "/api/soma/generate",
+        topic, subject, syllabus, level, subtopic,
+        parsedBoard: board, parsedSyllabusCode: syllabusCode,
+        selectedSubtopicIdsCount: selectedSubtopicIds?.length ?? 0,
+        questionCount,
+      }, traceId);
       const supportContext = await buildGenerationSupportContext({
         board,
         level,
@@ -4746,6 +4792,10 @@ ${JSON.stringify({
         board,
         syllabusCode,
       });
+      traceLog("route.somaGenerate.seedsLoaded", {
+        seedCount: examinerSeeds.length,
+        sampleSeedIds: examinerSeeds.slice(0, 5).map((s) => s.id),
+      }, traceId);
 
       const result = await generateAuditedQuiz({
         topic,
@@ -4760,6 +4810,11 @@ ${JSON.stringify({
         catalogueContext: catalogueContext ?? undefined,
         examinerSeeds,
       });
+      traceLog("route.somaGenerate.makerReturned", {
+        questionsReturned: result.questions.length,
+        seedMisconceptionIdsCount: (result.seedMisconceptionIds ?? []).length,
+        seedMisconceptionIds: result.seedMisconceptionIds ?? null,
+      }, traceId);
 
       const quiz = await storage.createSomaQuiz({
         title: quizTitle,
@@ -4775,6 +4830,12 @@ ${JSON.stringify({
       const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
         ? (result.seedMisconceptionIds ?? null)
         : null;
+      traceLog("route.somaGenerate.beforeCreateSomaQuestions", {
+        quizId: quiz.id,
+        questionCount: result.questions.length,
+        targetMisconceptionIds,
+        targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
+      }, traceId);
       const insertedQuestions = await storage.createSomaQuestions(
         result.questions.map((q) => ({
           quizId: quiz.id,
@@ -4786,6 +4847,12 @@ ${JSON.stringify({
           targetMisconceptionIds,
         }))
       );
+      traceLog("route.somaGenerate.afterCreateSomaQuestions", {
+        quizId: quiz.id,
+        insertedCount: insertedQuestions.length,
+        insertedIds: insertedQuestions.map((q) => q.id),
+        rowsWithSeeds: countWithField(insertedQuestions as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
 
       res.json({
         quiz,
@@ -4808,6 +4875,7 @@ ${JSON.stringify({
 
   // Tutor quiz generation — sets authorId and optionally assigns to students
   app.post("/api/tutor/quizzes/generate", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
     try {
       const tutorId = (req as any).tutorId;
       const parsed = somaGenerateSchema.safeParse(req.body);
@@ -4820,6 +4888,13 @@ ${JSON.stringify({
       const quizTitle = title || `${topic} Quiz`;
 
       const { board, syllabusCode } = parseBoardAndSyllabusCode(syllabus);
+      traceLog("route.tutorGenerate.entry", {
+        route: "/api/tutor/quizzes/generate",
+        tutorId, topic, subject, syllabus, level, subtopic,
+        parsedBoard: board, parsedSyllabusCode: syllabusCode,
+        selectedSubtopicIdsCount: selectedSubtopicIds?.length ?? 0,
+        questionCount,
+      }, traceId);
       const supportContext = await buildGenerationSupportContext({
         board,
         level,
@@ -4851,6 +4926,10 @@ ${JSON.stringify({
         board,
         syllabusCode,
       });
+      traceLog("route.tutorGenerate.seedsLoaded", {
+        seedCount: examinerSeeds.length,
+        sampleSeedIds: examinerSeeds.slice(0, 5).map((s) => s.id),
+      }, traceId);
 
       const result = await generateAuditedQuiz({
         topic, subject, syllabus, level,
@@ -4862,6 +4941,11 @@ ${JSON.stringify({
         catalogueContext: catalogueContext ?? undefined,
         examinerSeeds,
       });
+      traceLog("route.tutorGenerate.makerReturned", {
+        questionsReturned: result.questions.length,
+        seedMisconceptionIdsCount: (result.seedMisconceptionIds ?? []).length,
+        seedMisconceptionIds: result.seedMisconceptionIds ?? null,
+      }, traceId);
 
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
@@ -4870,6 +4954,11 @@ ${JSON.stringify({
       const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
         ? (result.seedMisconceptionIds ?? null)
         : null;
+      traceLog("route.tutorGenerate.beforeCreateBundle", {
+        questionCount: result.questions.length,
+        targetMisconceptionIds,
+        targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
+      }, traceId);
       const bundle = await storage.createSomaQuizBundle({
         quiz: {
           title: quizTitle,
@@ -4892,6 +4981,11 @@ ${JSON.stringify({
         })),
         assignedStudentIds: validAssignedStudentIds,
       });
+      traceLog("route.tutorGenerate.afterCreateBundle", {
+        quizId: bundle.quiz.id,
+        insertedCount: bundle.questions.length,
+        rowsWithSeeds: countWithField(bundle.questions as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
 
       res.json({
         quiz: bundle.quiz,
