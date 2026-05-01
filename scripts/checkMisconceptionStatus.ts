@@ -84,11 +84,29 @@ async function main(): Promise<void> {
     .orderBy(sql`count(*) desc`)
     .limit(10);
 
+  // Catalogue linkage breakdown: every row carries TWO FKs to the
+  // catalogue tree — subtopic_id (broader) and learning_requirement_id
+  // (finer-grained). Reports both as "of the rows in this status, how
+  // many are linked / orphaned". The Maker's listApprovedSeeds queries
+  // by subtopic_id; the learning_requirement_id is used by the mastery
+  // rollups + per-requirement coaching UI downstream.
+  const linkageRows = await db
+    .select({
+      status: examinerMisconceptions.status,
+      total: sql<number>`count(*)::int`,
+      withSubtopic: sql<number>`sum(case when ${examinerMisconceptions.subtopicId} is not null then 1 else 0 end)::int`,
+      withLearningReq: sql<number>`sum(case when ${examinerMisconceptions.learningRequirementId} is not null then 1 else 0 end)::int`,
+      withBoth: sql<number>`sum(case when ${examinerMisconceptions.subtopicId} is not null and ${examinerMisconceptions.learningRequirementId} is not null then 1 else 0 end)::int`,
+    })
+    .from(examinerMisconceptions)
+    .where(scopeWhere)
+    .groupBy(examinerMisconceptions.status);
+
   const total = byStatus.reduce((sum, r) => sum + r.count, 0);
   const totalAuto = byAutoStatus.reduce((sum, r) => sum + r.count, 0);
 
   if (opts.json) {
-    console.log(JSON.stringify({ scope: { board: opts.board, syllabusCode: opts.syllabusCode }, total, byStatus, totalAuto, byAutoStatus, recentNotes }, null, 2));
+    console.log(JSON.stringify({ scope: { board: opts.board, syllabusCode: opts.syllabusCode }, total, byStatus, totalAuto, byAutoStatus, recentNotes, linkage: linkageRows }, null, 2));
     return;
   }
 
@@ -108,6 +126,17 @@ async function main(): Promise<void> {
     console.log("");
     console.log("auto-decision rules fired:");
     for (const r of recentNotes) console.log(`  ${fmt(r.count).padStart(6)}  ${r.note ?? "(null)"}`);
+  }
+  if (linkageRows.length > 0) {
+    console.log("");
+    console.log("catalogue linkage (of N rows in each status, how many are FK-linked):");
+    console.log(`  ${"status".padEnd(10)} ${"total".padStart(7)} ${"subtopic".padStart(10)} ${"learn-req".padStart(10)} ${"both".padStart(7)}`);
+    for (const r of linkageRows) {
+      const pct = (n: number) => r.total === 0 ? "" : ` (${Math.round((n / r.total) * 100)}%)`;
+      console.log(
+        `  ${r.status.padEnd(10)} ${fmt(r.total).padStart(7)} ${(`${fmt(r.withSubtopic)}${pct(r.withSubtopic)}`).padStart(14)} ${(`${fmt(r.withLearningReq)}${pct(r.withLearningReq)}`).padStart(14)} ${(`${fmt(r.withBoth)}${pct(r.withBoth)}`).padStart(11)}`,
+      );
+    }
   }
   console.log("");
 }
