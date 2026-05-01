@@ -48,10 +48,41 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
   if (!db) return [];
   const limit = Math.max(1, Math.min(20, q.limit ?? 6));
 
-  const conditions = [eq(examinerMisconceptions.status, "approved")];
+  async function runQuery(conditions: any[]) {
+    return db
+      .select({
+        id: examinerMisconceptions.id,
+        topic: examinerMisconceptions.topic,
+        subtopic: examinerMisconceptions.subtopic,
+        misconception: examinerMisconceptions.misconception,
+        studentError: examinerMisconceptions.studentError,
+        correctApproach: examinerMisconceptions.correctApproach,
+        frequency: examinerMisconceptions.frequency,
+        sourceQuote: examinerMisconceptions.sourceQuote,
+        sourcePage: examinerMisconceptions.sourcePage,
+        confidence: examinerMisconceptions.confidence,
+      })
+      .from(examinerMisconceptions)
+      .where(and(...conditions))
+      .orderBy(desc(examinerMisconceptions.extractedAt));
+  }
+
+  const baseConditions = [eq(examinerMisconceptions.status, "approved")];
   const subtopicIds = (q.subtopicIds ?? []).filter((n) => Number.isFinite(n) && n > 0);
+
+  let rows: Awaited<ReturnType<typeof runQuery>> = [];
   if (subtopicIds.length > 0) {
-    conditions.push(inArray(examinerMisconceptions.subtopicId, subtopicIds));
+    rows = await runQuery([...baseConditions, inArray(examinerMisconceptions.subtopicId, subtopicIds)]);
+    if (rows.length === 0 && q.syllabusCode) {
+      // Production reality: not every approved misconception row has a
+      // catalogue subtopic FK yet (or the tutor-selected subtopic IDs
+      // can be from a newer catalogue cut). Strict subtopic filtering
+      // would silently return [] despite hundreds of valid seeds on the
+      // same syllabus code, which is exactly how the maker loop ended
+      // up producing zero target_misconception_ids. Fall back to the
+      // syllabus-code branch when subtopic filter misses.
+      rows = await runQuery([...baseConditions, eq(examinerMisconceptions.syllabusCode, q.syllabusCode)]);
+    }
   } else if (q.syllabusCode) {
     // Syllabus codes (e.g. "0580", "9709") are globally unique identifiers
     // — they are not reused across boards. The `board` column on
@@ -62,27 +93,12 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
     // produced silent zero-result queries on every recent quiz, which
     // was the root cause of the dashboards-have-no-attribution bug.
     // Trust the code; ignore the board label.
-    conditions.push(eq(examinerMisconceptions.syllabusCode, q.syllabusCode));
+    rows = await runQuery([...baseConditions, eq(examinerMisconceptions.syllabusCode, q.syllabusCode)]);
   } else if (q.board) {
-    conditions.push(eq(examinerMisconceptions.board, q.board));
+    rows = await runQuery([...baseConditions, eq(examinerMisconceptions.board, q.board)]);
+  } else {
+    rows = await runQuery(baseConditions);
   }
-
-  const rows = await db
-    .select({
-      id: examinerMisconceptions.id,
-      topic: examinerMisconceptions.topic,
-      subtopic: examinerMisconceptions.subtopic,
-      misconception: examinerMisconceptions.misconception,
-      studentError: examinerMisconceptions.studentError,
-      correctApproach: examinerMisconceptions.correctApproach,
-      frequency: examinerMisconceptions.frequency,
-      sourceQuote: examinerMisconceptions.sourceQuote,
-      sourcePage: examinerMisconceptions.sourcePage,
-      confidence: examinerMisconceptions.confidence,
-    })
-    .from(examinerMisconceptions)
-    .where(and(...conditions))
-    .orderBy(desc(examinerMisconceptions.extractedAt));
 
   // Rank: very_common > common > occasional, then by confidence desc.
   const ranked = rows

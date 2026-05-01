@@ -138,6 +138,29 @@ describe("listApprovedSeeds — subtopic-id branch", () => {
     });
     expect(seeds.map((s) => s.id)).toEqual([id]);
   });
+
+  it("falls back to syllabusCode when subtopicIds are supplied but no rows match", async () => {
+    const wanted = await insertSeed({
+      board: "Cambridge",
+      syllabusCode: "0580",
+      subtopicId: null,
+      misconception: "fallback-hit",
+    });
+    await insertSeed({
+      board: "Cambridge",
+      syllabusCode: "9709",
+      subtopicId: null,
+      misconception: "other-syllabus",
+    });
+
+    // Intentionally pass a subtopic id that matches nothing.
+    const seeds = await listApprovedSeeds({
+      subtopicIds: [999_999_999],
+      syllabusCode: "0580",
+    });
+
+    expect(seeds.map((s) => s.id)).toEqual([wanted]);
+  });
 });
 
 describe("listApprovedSeeds — syllabusCode is the source of truth", () => {
