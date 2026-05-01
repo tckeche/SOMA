@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { execSync } from "child_process";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -39,8 +40,25 @@ app.use((req, res, next) => {
   next();
 });
 
+const resolvedCommitSha = (() => {
+  if (process.env.GIT_COMMIT_SHA) return process.env.GIT_COMMIT_SHA;
+  try {
+    return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+})();
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/health/version", (_req, res) => {
+  res.json({
+    status: "ok",
+    commitSha: resolvedCommitSha,
+    source: process.env.GIT_COMMIT_SHA ? "env" : "git",
+  });
 });
 
 app.get("/_health", (_req, res) => {
