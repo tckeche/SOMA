@@ -53,12 +53,44 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Returns the git commit SHA the running bundle was built from. Used
+// to verify a deployment actually shipped the expected code — without
+// this we can't tell whether the deployed bundle is on commit X or Y
+// unless we read the bundle file directly. The SHA is injected at
+// build time by script/build.ts via esbuild's `define`. At runtime in
+// dev (tsx, no build step), it falls back to reading .git/HEAD so
+// `npm run dev` still reports something useful.
 app.get("/api/health/version", (_req, res) => {
-  res.json({
-    status: "ok",
-    commitSha: resolvedCommitSha,
-    source: process.env.GIT_COMMIT_SHA ? "env" : "git",
-  });
+  // __BUILD_COMMIT_SHA__ is replaced by esbuild at build time. The
+  // typeof check works because esbuild substitutes the literal string,
+  // and an unsubstituted reference would be a ReferenceError otherwise.
+  let commit = "unknown";
+  let buildTime = "unknown";
+  try {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore — injected by esbuild
+    commit = typeof __BUILD_COMMIT_SHA__ !== "undefined" ? __BUILD_COMMIT_SHA__ : "unknown";
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore — injected by esbuild
+    buildTime = typeof __BUILD_TIME__ !== "undefined" ? __BUILD_TIME__ : "unknown";
+  } catch {
+    // dev mode — fall through to .git read
+  }
+  if (commit === "unknown") {
+    try {
+      const fs = require("node:fs");
+      const head = fs.readFileSync(".git/HEAD", "utf8").trim();
+      if (head.startsWith("ref: ")) {
+        const ref = head.slice("ref: ".length);
+        commit = fs.readFileSync(`.git/${ref}`, "utf8").trim();
+      } else {
+        commit = head;
+      }
+    } catch {
+      // .git not present (e.g. some deployment containers) — leave as "unknown"
+    }
+  }
+  res.json({ commit, buildTime, runtime: "node", env: process.env.NODE_ENV ?? "unknown" });
 });
 
 app.get("/_health", (_req, res) => {

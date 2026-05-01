@@ -52,9 +52,19 @@ export async function listApprovedSeeds(q: SeedQuery): Promise<ExaminerSeed[]> {
   const subtopicIds = (q.subtopicIds ?? []).filter((n) => Number.isFinite(n) && n > 0);
   if (subtopicIds.length > 0) {
     conditions.push(inArray(examinerMisconceptions.subtopicId, subtopicIds));
-  } else {
-    if (q.board) conditions.push(eq(examinerMisconceptions.board, q.board));
-    if (q.syllabusCode) conditions.push(eq(examinerMisconceptions.syllabusCode, q.syllabusCode));
+  } else if (q.syllabusCode) {
+    // Syllabus codes (e.g. "0580", "9709") are globally unique identifiers
+    // — they are not reused across boards. The `board` column on
+    // examiner_misconceptions, by contrast, is denormalized display text
+    // that drifts between writes ("Cambridge", "Cambridge IGCSE",
+    // "Cambridge Syllabus ·" all appear in the wild — see
+    // scripts/diagnoseQuizSyllabusVsSeeds.ts). ANDing both filters
+    // produced silent zero-result queries on every recent quiz, which
+    // was the root cause of the dashboards-have-no-attribution bug.
+    // Trust the code; ignore the board label.
+    conditions.push(eq(examinerMisconceptions.syllabusCode, q.syllabusCode));
+  } else if (q.board) {
+    conditions.push(eq(examinerMisconceptions.board, q.board));
   }
 
   const rows = await db

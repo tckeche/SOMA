@@ -267,6 +267,23 @@ class DatabaseStorage implements IStorage {
       topicTag: q.topicTag ?? null,
       subtopicTag: q.subtopicTag ?? null,
       difficultyTag: q.difficultyTag ?? null,
+      // Catalogue + examiner-loop FK columns. These were silently
+      // dropped by an earlier version of this method (it omitted them
+      // from the normalised insert object), which left every quiz
+      // question with target_misconception_ids = NULL even when the
+      // route handler passed the IDs correctly. That broke the entire
+      // examiner loop end-to-end: zero distractor seeds reached the
+      // questions, so the marker had nothing to attribute wrong
+      // answers to, so per-student misconception rollups stayed empty,
+      // so the dashboards looked useless. Keep these in lock-step with
+      // the schema (shared/schema.ts:somaQuestions).
+      subtopicId: q.subtopicId ?? null,
+      learningRequirementId: q.learningRequirementId ?? null,
+      targetMisconceptionIds: Array.isArray(q.targetMisconceptionIds)
+        ? [...(q.targetMisconceptionIds as unknown as number[])]
+        : null,
+      commandWord: q.commandWord ?? null,
+      assessmentObjective: q.assessmentObjective ?? null,
     }));
     return this.database.insert(somaQuestions).values(normalized).returning();
   }
