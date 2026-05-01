@@ -44,6 +44,10 @@ interface CliOptions {
   syllabusCode: string | null;
   subject: string | null;
   json: boolean;
+  /** When >1, ignores --student-id/--tutor-id and audits the top-N
+   *  students AND top-N tutors. Useful for "is the picture I just
+   *  saw representative, or is this user an outlier?" */
+  sample: number;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -53,17 +57,22 @@ function parseArgs(argv: string[]): CliOptions {
     syllabusCode: null,
     subject: null,
     json: false,
+    sample: 1,
   };
   for (const raw of argv.slice(2)) {
     if (raw === "--json") opts.json = true;
     else if (raw === "--help" || raw === "-h") {
-      console.log("Usage: npx tsx scripts/auditDashboards.ts [--student-id=UUID] [--tutor-id=UUID] [--syllabus-code=0580] [--subject=Mathematics] [--json]");
+      console.log("Usage: npx tsx scripts/auditDashboards.ts [--student-id=UUID] [--tutor-id=UUID] [--sample=N] [--syllabus-code=0580] [--subject=Mathematics] [--json]");
       process.exit(0);
     } else if (raw.startsWith("--student-id=")) opts.studentId = raw.slice("--student-id=".length);
     else if (raw.startsWith("--tutor-id=")) opts.tutorId = raw.slice("--tutor-id=".length);
     else if (raw.startsWith("--syllabus-code=")) opts.syllabusCode = raw.slice("--syllabus-code=".length);
     else if (raw.startsWith("--subject=")) opts.subject = raw.slice("--subject=".length);
-    else throw new Error(`unknown flag: ${raw}`);
+    else if (raw.startsWith("--sample=")) {
+      const n = Number(raw.slice("--sample=".length));
+      if (!Number.isFinite(n) || n <= 0 || n > 20) throw new Error(`bad ${raw} (1..20)`);
+      opts.sample = Math.floor(n);
+    } else throw new Error(`unknown flag: ${raw}`);
   }
   return opts;
 }
@@ -81,52 +90,50 @@ interface SectionReport {
 
 const fmt = (n: number) => new Intl.NumberFormat("en-GB").format(n);
 
-async function pickStudent(explicitId: string | null): Promise<{ id: string; displayName: string | null; email: string | null } | null> {
-  if (!db) return null;
+type PickedUser = { id: string; displayName: string | null; email: string | null };
+
+async function pickStudents(explicitId: string | null, limit: number): Promise<PickedUser[]> {
+  if (!db) return [];
   if (explicitId) {
     const [row] = await db.select({ id: somaUsers.id, displayName: somaUsers.displayName, email: somaUsers.email }).from(somaUsers).where(eq(somaUsers.id, explicitId));
-    return row ?? null;
+    return row ? [row] : [];
   }
-  // Prefer a student that actually has submitted reports — that's the
-  // realistic case where dashboards have data to show.
+  // Prefer students with the most submitted reports — those have the
+  // most populated dashboards and are the realistic verification target.
   const candidates = await db
     .select({
       id: somaUsers.id,
       displayName: somaUsers.displayName,
       email: somaUsers.email,
-      reportCount: sql<number>`count(${somaReports.id})::int`,
     })
     .from(somaUsers)
     .leftJoin(somaReports, eq(somaReports.studentId, somaUsers.id))
     .where(eq(somaUsers.role, "student"))
     .groupBy(somaUsers.id, somaUsers.displayName, somaUsers.email)
     .orderBy(sql`count(${somaReports.id}) desc`)
-    .limit(1);
-  return candidates[0] ?? null;
+    .limit(limit);
+  return candidates;
 }
 
-async function pickTutor(explicitId: string | null): Promise<{ id: string; displayName: string | null; email: string | null } | null> {
-  if (!db) return null;
+async function pickTutors(explicitId: string | null, limit: number): Promise<PickedUser[]> {
+  if (!db) return [];
   if (explicitId) {
     const [row] = await db.select({ id: somaUsers.id, displayName: somaUsers.displayName, email: somaUsers.email }).from(somaUsers).where(eq(somaUsers.id, explicitId));
-    return row ?? null;
+    return row ? [row] : [];
   }
-  // Prefer a tutor with at least one authored quiz — they're more likely
-  // to have adopted students and meaningful dashboard data.
   const candidates = await db
     .select({
       id: somaUsers.id,
       displayName: somaUsers.displayName,
       email: somaUsers.email,
-      quizCount: sql<number>`count(${somaQuizzes.id})::int`,
     })
     .from(somaUsers)
     .leftJoin(somaQuizzes, eq(somaQuizzes.authorId, somaUsers.id))
     .where(eq(somaUsers.role, "tutor"))
     .groupBy(somaUsers.id, somaUsers.displayName, somaUsers.email)
     .orderBy(sql`count(${somaQuizzes.id}) desc`)
-    .limit(1);
-  return candidates[0] ?? null;
+    .limit(limit);
+  return candidates;
 }
 
 // ── 1. Student dashboard ────────────────────────────────────────────
@@ -379,59 +386,111 @@ async function auditAttributionHealth(): Promise<SectionReport> {
   };
 }
 
-async function main(): Promise<void> {
-  const opts = parseArgs(process.argv);
-  await connectDb();
-  initStorage();
-
-  const student = await pickStudent(opts.studentId);
-  const tutor = await pickTutor(opts.tutorId);
-
-  if (!student) console.warn("warning: no student found in DB — student-side audits will be skipped.");
-  if (!tutor) console.warn("warning: no tutor found in DB — tutor-side audits will be skipped.");
-
-  const sections: SectionReport[] = [];
-  sections.push(await auditAttributionHealth());
-  if (student) {
-    sections.push(await auditStudentDashboard(student.id));
-    sections.push(await auditMasteryMap(student.id));
-  }
-  sections.push(await auditStudyTips({ subject: opts.subject, syllabusCode: opts.syllabusCode }));
-  if (tutor) {
-    sections.push(await auditTutorCohortHeatmap(tutor.id));
-  }
-
-  const overall: Verdict = sections.some((s) => s.verdict === "error")
+function deriveOverall(sections: SectionReport[]): Verdict {
+  return sections.some((s) => s.verdict === "error")
     ? "error"
     : sections.every((s) => s.verdict === "healthy")
       ? "healthy"
       : sections.some((s) => s.verdict === "empty")
         ? "empty"
         : "sparse";
+}
+
+const VERDICT_MARK: Record<Verdict, string> = {
+  healthy: "[HEALTHY]",
+  sparse: "[ SPARSE]",
+  empty: "[  EMPTY]",
+  error: "[  ERROR]",
+};
+
+function printSection(s: SectionReport): void {
+  console.log(`${VERDICT_MARK[s.verdict]}  ${s.section}`);
+  console.log(`           ${s.headline}`);
+  for (const d of s.details) console.log(`           ${d}`);
+  for (const w of s.warnings) console.log(`           ⚠ ${w}`);
+  console.log("");
+}
+
+async function main(): Promise<void> {
+  const opts = parseArgs(process.argv);
+  await connectDb();
+  initStorage();
+
+  const students = await pickStudents(opts.studentId, opts.sample);
+  const tutors = await pickTutors(opts.tutorId, opts.sample);
+
+  if (students.length === 0) console.warn("warning: no students found in DB — student-side audits will be skipped.");
+  if (tutors.length === 0) console.warn("warning: no tutors found in DB — tutor-side audits will be skipped.");
+
+  // Global sections — run once per invocation, not per user.
+  const globalSections: SectionReport[] = [
+    await auditAttributionHealth(),
+    await auditStudyTips({ subject: opts.subject, syllabusCode: opts.syllabusCode }),
+  ];
+
+  // Per-student and per-tutor sections — run once for each sampled user.
+  interface UserAuditResult {
+    user: PickedUser;
+    sections: SectionReport[];
+    overall: Verdict;
+  }
+  const studentResults: UserAuditResult[] = [];
+  for (const s of students) {
+    const sections: SectionReport[] = [
+      await auditStudentDashboard(s.id),
+      await auditMasteryMap(s.id),
+    ];
+    studentResults.push({ user: s, sections, overall: deriveOverall(sections) });
+  }
+  const tutorResults: UserAuditResult[] = [];
+  for (const t of tutors) {
+    const sections: SectionReport[] = [await auditTutorCohortHeatmap(t.id)];
+    tutorResults.push({ user: t, sections, overall: deriveOverall(sections) });
+  }
+
+  const overall = deriveOverall([
+    ...globalSections,
+    ...studentResults.flatMap((r) => r.sections),
+    ...tutorResults.flatMap((r) => r.sections),
+  ]);
 
   if (opts.json) {
-    console.log(JSON.stringify({ overall, student, tutor, sections }, null, 2));
+    console.log(
+      JSON.stringify(
+        { overall, sample: opts.sample, globalSections, studentResults, tutorResults },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
-  const mark: Record<Verdict, string> = {
-    healthy: "[HEALTHY]",
-    sparse: "[ SPARSE]",
-    empty: "[  EMPTY]",
-    error: "[  ERROR]",
-  };
+  console.log("");
+  console.log(`Dashboard audit — sample=${opts.sample}  students=${students.length}  tutors=${tutors.length}`);
+  console.log("");
+  console.log("─── Global ──────────────────────────────────────────────────");
+  console.log("");
+  for (const s of globalSections) printSection(s);
 
-  console.log("");
-  console.log(`Dashboard audit — student=${student?.id ?? "(none)"}  tutor=${tutor?.id ?? "(none)"}`);
-  console.log("");
-  for (const s of sections) {
-    console.log(`${mark[s.verdict]}  ${s.section}`);
-    console.log(`           ${s.headline}`);
-    for (const d of s.details) console.log(`           ${d}`);
-    for (const w of s.warnings) console.log(`           ⚠ ${w}`);
+  if (studentResults.length > 0) {
+    console.log(`─── Per-student (${studentResults.length}) ───────────────────────────────`);
     console.log("");
+    for (const r of studentResults) {
+      console.log(`Student: ${r.user.displayName ?? "(no name)"} <${r.user.email ?? "?"}> — ${VERDICT_MARK[r.overall]}`);
+      for (const s of r.sections) printSection(s);
+    }
   }
-  console.log(`OVERALL: ${mark[overall]}`);
+
+  if (tutorResults.length > 0) {
+    console.log(`─── Per-tutor (${tutorResults.length}) ─────────────────────────────────`);
+    console.log("");
+    for (const r of tutorResults) {
+      console.log(`Tutor: ${r.user.displayName ?? "(no name)"} <${r.user.email ?? "?"}> — ${VERDICT_MARK[r.overall]}`);
+      for (const s of r.sections) printSection(s);
+    }
+  }
+
+  console.log(`OVERALL: ${VERDICT_MARK[overall]}`);
   console.log("");
   console.log("Verdict legend:");
   console.log("  HEALTHY = tile is populated, attribution layer visible");
