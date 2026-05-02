@@ -60,12 +60,27 @@ credential is found in the tree, treat it as compromised: rotate
 upstream first, then remove the in-repo copy, then scrub git history.
 
 ## Database migrations policy
-Schema changes use **hand-crafted, additive SQL migrations** in
-`migrations/NNNN_*.sql` (e.g. `0006_pg_trgm.sql`). The `db:push --force`
-shortcut is **not used** — the cumulative DDL is large enough that
-auto-generated diffs would be destructive. New migrations should be
-idempotent (`CREATE EXTENSION IF NOT EXISTS …`, `ADD COLUMN IF NOT
-EXISTS …`) so they can re-run safely.
+The runtime authority for the production schema is the
+`BOOTSTRAP_QUERIES` array in `server/bootstrap.ts`. It is replayed on
+every server start (idempotent `CREATE TABLE IF NOT EXISTS …` /
+`ADD COLUMN IF NOT EXISTS …`) and is the **only** schema mechanism that
+runs against production. The `db:push --force` shortcut is **not used**
+— the cumulative DDL is large enough that auto-generated diffs would
+be destructive.
+
+Whenever a column or table is added to `shared/schema.ts`, a matching
+idempotent statement MUST also be added to `BOOTSTRAP_QUERIES`.
+`server/schemaVerifier.ts` runs at startup right after the bootstrap
+queries: it walks every `pgTable(...)` in `shared/schema.ts`, checks
+`information_schema.columns`, and **fails server startup in production**
+(warns in development) if anything declared in the schema is missing
+from the live DB. This is what prevents the "I added a column and forgot
+the bootstrap entry → production 500s on the first SELECT" outage class
+(e.g. the historical `option_rationales does not exist` incident).
+
+The `migrations/*.sql` folder is **not** run on startup. It is the
+fixture replayed by the PGlite-backed integration test harness
+(`tests/helpers/pglite.ts`); see `migrations/README.md`.
 
 ## Development ledger
 

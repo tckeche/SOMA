@@ -1,5 +1,45 @@
+/**
+ * Single runtime authority for the production database schema.
+ *
+ * Every column/table declared in `shared/schema.ts` MUST also have a
+ * matching idempotent `CREATE` / `ALTER ... ADD COLUMN IF NOT EXISTS`
+ * statement in `BOOTSTRAP_QUERIES` below. The list is replayed on every
+ * server start so a fresh database (or one missing a recent column)
+ * converges to the schema the application code expects.
+ *
+ * NOTE: the `migrations/*.sql` folder is **not** run on startup. It exists
+ * solely as the fixture replayed by the PGlite test harness
+ * (`tests/helpers/pglite.ts`); see `migrations/README.md`. Production
+ * never executes those files.
+ *
+ * After applying the queries we run `verifySchemaMatchesDb()` — if the
+ * live DB is still missing anything `shared/schema.ts` declares, we fail
+ * loudly. In production that means the server refuses to start (better
+ * than 500ing on the first SELECT that hits the missing column, as
+ * happened with `option_rationales does not exist`). In development we
+ * warn but continue so a working dev DB isn't blocked by an in-progress
+ * schema change.
+ *
+ * ## Adding a new column / table
+ * 1. Add the field to `shared/schema.ts`.
+ * 2. Add a matching idempotent statement to `BOOTSTRAP_QUERIES` below
+ *    (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`,
+ *    `CREATE TABLE IF NOT EXISTS ...`, etc.).
+ * 3. If the change is also needed for service-level integration tests
+ *    that use the PGlite harness, add a corresponding `migrations/NNNN_*.sql`
+ *    file and add it to `migrations/meta/_journal.json`.
+ *
+ * Forgetting step 2 is exactly what the verifier catches: server startup
+ * will fail with a "missing column: <table>.<column>" error pointing
+ * straight at the field you forgot.
+ */
 import { pool } from "./db";
 import { log } from "./utils/logging";
+import {
+  formatDriftReport,
+  hasDrift,
+  verifySchemaMatchesDb,
+} from "./schemaVerifier";
 
 const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'`,
@@ -89,5 +129,37 @@ export async function applyBootstrapMigrations() {
     log("schema migrations applied", "bootstrap");
   } finally {
     client.release();
+  }
+
+  // After bootstrap, sanity-check that every table/column declared in
+  // shared/schema.ts actually exists in the live DB. If we're here and the
+  // verifier still finds drift, it means a column was added to the schema
+  // without a matching ALTER above — exactly the failure mode this task
+  // exists to prevent.
+  if (!pool) return;
+  try {
+    const drift = await verifySchemaMatchesDb(pool);
+    if (!hasDrift(drift)) {
+      log("schema drift check passed", "bootstrap");
+      return;
+    }
+
+    const detail = formatDriftReport(drift);
+    const summary =
+      `Schema drift detected after bootstrap migrations.\n${detail}\n` +
+      `Add the missing CREATE/ALTER statements to BOOTSTRAP_QUERIES in server/bootstrap.ts.`;
+
+    if (process.env.NODE_ENV === "production") {
+      log(`FATAL: ${summary}`, "bootstrap");
+      throw new Error(summary);
+    }
+    log(`WARNING: ${summary}`, "bootstrap");
+  } catch (err: any) {
+    if (process.env.NODE_ENV === "production") {
+      // Re-throw so server/index.ts kills the process before it accepts
+      // traffic against a half-migrated DB.
+      throw err;
+    }
+    log(`schema drift check failed (non-fatal in dev): ${err.message ?? err}`, "bootstrap");
   }
 }
