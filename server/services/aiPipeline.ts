@@ -200,7 +200,26 @@ const SOMA_TUTOR_VOICE = `Write each explanation in the Soma tutor voice: encour
 
 // ─── Deterministic helpers ──────────────────────────────────────────────────
 
-function dedupeOptions(options: string[], preferred?: string): string[] {
+// Visible sentinel emitted when dedupe collapses the option set below 4. We
+// must still ship 4 options to satisfy the schema, but a sentinel is far
+// safer than the previous "Option 1"/"Option 2" placeholder which looked
+// like real content — students would see plausible-looking text and a
+// reviewer skimming the quiz might miss it. The OPTION_GAP_PREFIX makes
+// the bug obvious and is paired with a CRITICAL pipeline warning so the
+// builder co-pilot surfaces it before publication.
+const OPTION_GAP_PREFIX = "[OPTION GENERATION FAILED — please regenerate";
+
+function isGapSentinel(opt: string): boolean {
+  return opt.startsWith(OPTION_GAP_PREFIX);
+}
+
+interface DedupeOptionsResult {
+  options: string[];
+  /** Number of placeholder options inserted to satisfy the 4-option schema. */
+  gaps: number;
+}
+
+function dedupeOptions(options: string[], preferred?: string): DedupeOptionsResult {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const option of options) {
@@ -217,8 +236,12 @@ function dedupeOptions(options: string[], preferred?: string): string[] {
   if (preferred && out.length < 4 && !out.some((o) => o.trim() === preferred.trim())) {
     out.unshift(preferred.trim());
   }
-  while (out.length < 4) out.push(`Option ${out.length + 1}`);
-  return out.slice(0, 4);
+  let gaps = 0;
+  while (out.length < 4) {
+    gaps++;
+    out.push(`${OPTION_GAP_PREFIX} #${gaps}]`);
+  }
+  return { options: out.slice(0, 4), gaps };
 }
 
 function applyDeterministicIntegrityGuards(
@@ -229,7 +252,16 @@ function applyDeterministicIntegrityGuards(
     const normalizedStem = q.stem.trim();
     const normalizedCorrect = q.correct_answer.trim();
     const normalizedExplanation = q.explanation.trim() || "See worked method for the correct option.";
-    const guardedOptions = dedupeOptions(q.options, normalizedCorrect);
+    const dedupeResult = dedupeOptions(q.options, normalizedCorrect);
+    const guardedOptions = dedupeResult.options;
+    if (dedupeResult.gaps > 0) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "options",
+        issue: `CRITICAL: only ${4 - dedupeResult.gaps} unique option(s) survived dedupe — ${dedupeResult.gaps} placeholder slot(s) were inserted with the "${OPTION_GAP_PREFIX} #N]" sentinel. Regenerate this question before publishing or students will see broken option text.`,
+        autoFixed: false,
+      });
+    }
     const marks = Number.isInteger(q.marks) ? Math.min(10, Math.max(1, q.marks)) : 1;
     const cleaned = {
       ...q,

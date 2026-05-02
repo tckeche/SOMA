@@ -14,6 +14,7 @@ import { registerDomainRoutes } from "./routes/index";
 import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
+import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { effectiveCorrectAnswer } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
@@ -821,13 +822,10 @@ function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
   return { reply: reply || "Here are your questions.", action, questions, positions };
 }
 
-// LLMs that emit LaTeX inside JSON strings frequently forget to escape the
-// backslash (they write `\sin` instead of `\\sin`), which causes JSON.parse
-// to throw. We can recover by doubling every odd-length run of backslashes.
-// Even-length runs are already properly escaped and left untouched.
-function sanitizeLatexBackslashes(raw: string): string {
-  return raw.replace(/\\+/g, (run) => (run.length % 2 === 0 ? run : run + "\\"));
-}
+// `sanitizeLatexBackslashes` lives in aiContracts.ts so the maker/verifier
+// pipeline benefits from the same protection. Re-exported alias kept here so
+// the existing copilot extractor below reads the same.
+const sanitizeLatexBackslashes = aiContractsSanitize;
 
 function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
   console.log(`[COPILOT_DEBUG] Raw AI response length: ${text.length} chars`);

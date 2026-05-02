@@ -70,3 +70,117 @@ describe("aiContracts: validateAgainstSchema", () => {
     expect(r.ok).toBe(true);
   });
 });
+
+import { sanitizeLatexBackslashes, repairControlCharCorruption, hasControlCharCorruption } from "../server/services/aiContracts";
+
+describe("aiContracts: sanitizeLatexBackslashes", () => {
+  it("doubles a single under-escaped backslash so JSON.parse keeps the LaTeX command intact", () => {
+    // LLM emitted: {"opt":"$x = \frac{1}{2}$"}
+    // Without sanitisation, JSON.parse converts \f → form-feed (0x0C):
+    const raw = '{"opt":"$x = \\frac{1}{2}$"}';
+    // Note: in JS source, \\ → one backslash on the wire, so `raw` represents
+    // `{"opt":"$x = \frac{1}{2}$"}` exactly as the LLM would emit it.
+    const broken = JSON.parse(raw);
+    expect(broken.opt.includes("\u000Crac")).toBe(true);
+
+    const fixed = JSON.parse(sanitizeLatexBackslashes(raw));
+    expect(fixed.opt).toBe("$x = \\frac{1}{2}$");
+    expect(fixed.opt.includes("\u000C")).toBe(false);
+  });
+
+  it("is a no-op when backslashes are already properly escaped", () => {
+    const raw = '{"opt":"$x = \\\\frac{1}{2}$"}';
+    expect(sanitizeLatexBackslashes(raw)).toBe(raw);
+    expect(JSON.parse(sanitizeLatexBackslashes(raw)).opt).toBe("$x = \\frac{1}{2}$");
+  });
+
+  it("handles all the dangerous JSON escape collisions: \\b, \\t, \\v, \\f", () => {
+    const raw = '{"a":"\\beta","b":"\\theta","c":"\\vec","d":"\\frac"}';
+    const fixed = JSON.parse(sanitizeLatexBackslashes(raw));
+    expect(fixed).toEqual({ a: "\\beta", b: "\\theta", c: "\\vec", d: "\\frac" });
+  });
+});
+
+describe("aiContracts: repairControlCharCorruption", () => {
+  it("reverses form-feed + letter back into a backslash + letter", () => {
+    const corrupted = "$x = \u000Crac{5}{2}$";
+    expect(repairControlCharCorruption(corrupted)).toBe("$x = \\frac{5}{2}$");
+  });
+
+  it("reverses tab/v-tab/backspace/bell + letter", () => {
+    expect(repairControlCharCorruption("\u0009heta")).toBe("\\theta");
+    expect(repairControlCharCorruption("\u0008eta")).toBe("\\beta");
+    expect(repairControlCharCorruption("\u000Bec")).toBe("\\vec");
+    expect(repairControlCharCorruption("\u0007lpha")).toBe("\\alpha");
+  });
+
+  it("does NOT touch newlines or carriage returns (they're often legitimate)", () => {
+    const text = "Line one\nLine two\rEnd";
+    expect(repairControlCharCorruption(text)).toBe(text);
+  });
+
+  it("recurses into arrays and objects", () => {
+    const input = {
+      stem: "$2x^2 - 3x - 5 = 0$",
+      options: ["$x = \u000Crac{5}{2}$", "$x = 1$"],
+      meta: { tag: "\u0009heta" },
+    };
+    expect(repairControlCharCorruption(input)).toEqual({
+      stem: "$2x^2 - 3x - 5 = 0$",
+      options: ["$x = \\frac{5}{2}$", "$x = 1$"],
+      meta: { tag: "\\theta" },
+    });
+  });
+
+  it("hasControlCharCorruption detects the buggy strings", () => {
+    expect(hasControlCharCorruption("$x = \u000Crac{1}{2}$")).toBe(true);
+    expect(hasControlCharCorruption("$x = \\frac{1}{2}$")).toBe(false);
+    expect(hasControlCharCorruption("Plain text")).toBe(false);
+  });
+
+  it("returns non-plain objects (Date/Map/Set/Buffer) untouched instead of clobbering them with {}", () => {
+    const date = new Date("2026-01-01T00:00:00Z");
+    expect(repairControlCharCorruption(date)).toBe(date);
+
+    const map = new Map([["k", "v"]]);
+    expect(repairControlCharCorruption(map)).toBe(map);
+
+    const set = new Set([1, 2, 3]);
+    expect(repairControlCharCorruption(set)).toBe(set);
+
+    class Custom { value = "$x = \u000Crac{1}{2}$"; }
+    const inst = new Custom();
+    // class instance is preserved as-is; we deliberately do NOT recurse into
+    // class internals because we can't safely reconstruct an instance.
+    expect(repairControlCharCorruption(inst)).toBe(inst);
+  });
+});
+
+describe("aiContracts: validateAgainstSchema (LaTeX corruption end-to-end)", () => {
+  const quizSchema = z.object({
+    options: z.array(z.string()).length(4),
+  });
+
+  it("repairs unescaped \\frac via pre-parse sanitisation", () => {
+    const llmEmitted = '{"options":["$x = \\frac{5}{2}$","$x = 1$","$x = 2$","$x = -1$"]}';
+    const r = validateAgainstSchema(llmEmitted, quizSchema);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.options[0]).toBe("$x = \\frac{5}{2}$");
+      expect(r.value.options[0].includes("\u000C")).toBe(false);
+    }
+  });
+
+  it("repairs an already-parsed object that has form-feed corruption (Anthropic SDK path)", () => {
+    // Anthropic SDK pre-parses the tool_use input; corruption may already
+    // be baked in by the time we receive it.
+    const alreadyParsed = {
+      options: ["$x = \u000Crac{5}{2}$", "$x = 1$", "$x = 2$", "$x = -1$"],
+    };
+    const r = validateAgainstSchema(alreadyParsed, quizSchema);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.options[0]).toBe("$x = \\frac{5}{2}$");
+    }
+  });
+});
