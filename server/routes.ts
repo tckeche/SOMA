@@ -4584,7 +4584,12 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
       const questionMeta = new Map<number, { stem: string; correctAnswer: string }>();
       for (const q of questions) {
-        questionMeta.set(q.id, { stem: q.stem, correctAnswer: q.correctAnswer });
+        // Use the prover-corrected key so the per-question wrong/correct
+        // tallies the tutor sees agree with the per-student review screen.
+        questionMeta.set(q.id, {
+          stem: q.stem,
+          correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
+        });
       }
 
       const questionStats: Record<string, {
@@ -5243,7 +5248,11 @@ ${JSON.stringify({
         allQuestions.map((q) => ({
           id: q.id,
           stem: q.stem,
-          correctAnswer: q.correctAnswer,
+          // Use the prover-corrected key so mastery counts match the score
+          // we computed above (line 5170). Without this, a student who
+          // typed the genuinely-correct answer would be marked "wrong"
+          // against a stored AI key the prover already overrode.
+          correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
           marks: q.marks,
           topicTag: q.topicTag,
           subtopicTag: q.subtopicTag,
@@ -5310,7 +5319,12 @@ ${JSON.stringify({
           id: q.id,
           stem: q.stem,
           options: q.options,
-          correctAnswer: q.correctAnswer,
+          // Run the deterministic math prover at read time so any stored
+          // wrong answer (e.g. AI shipped 11/36 for 8/9 − 5/12 when the
+          // truth is 17/36) is corrected before reaching the student. Falls
+          // back to the stored value when the stem isn't a recognised
+          // numeric pattern.
+          correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
           marks: q.marks,
           explanation: q.explanation,
         })),

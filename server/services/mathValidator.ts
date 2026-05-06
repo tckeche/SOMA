@@ -327,6 +327,93 @@ function tryArithmeticVerb(stem: string): Attempt {
   return { computed, worked: `**Worked solution:** $${expr.replace(/\s+/g, " ")} = ${computed}$.`, pattern: "arithmetic" };
 }
 
+// ─── Pattern 7b: verbal arithmetic  "Subtract X from Y" / "Add X and Y" ─
+// Handles forms the bare "Calculate X + Y" pattern misses, including the
+// asymmetric "Subtract X from Y" → Y − X (NOT X − Y).
+function tryVerbalArithmetic(stem: string): Attempt {
+  const cleaned = stripLatexAndUnicode(stem);
+  // Anything that could be a fraction / signed number / parenthesised expr,
+  // up to the connector word. Bounded by sentence punctuation on the right.
+  const E = `[\\-+()\\d.\\s\\/*^]+?`;
+  const SENT_END = `(?=[.?!]|\\s+(?:what|find|the|so|then|hence|which)\\b|$)`;
+  const verbs: Array<{
+    re: RegExp;
+    build: (a: string, b: string) => { expr: string; pretty: string };
+  }> = [
+    {
+      // "Subtract X from Y" → Y − X
+      re: new RegExp(`\\bsubtract\\s+(${E})\\s+from\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${b}) - (${a})`, pretty: `${b.trim()} - ${a.trim()}` }),
+    },
+    {
+      // "Take/take away X from Y" → Y − X
+      re: new RegExp(`\\b(?:take(?:\\s+away)?)\\s+(${E})\\s+from\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${b}) - (${a})`, pretty: `${b.trim()} - ${a.trim()}` }),
+    },
+    {
+      // "Add X and Y" / "Add X to Y" → X + Y
+      re: new RegExp(`\\badd\\s+(${E})\\s+(?:and|to)\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${a}) + (${b})`, pretty: `${a.trim()} + ${b.trim()}` }),
+    },
+    {
+      // "Sum of X and Y" → X + Y
+      re: new RegExp(`\\bsum\\s+of\\s+(${E})\\s+and\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${a}) + (${b})`, pretty: `${a.trim()} + ${b.trim()}` }),
+    },
+    {
+      // "Multiply X by Y" → X × Y
+      re: new RegExp(`\\bmultiply\\s+(${E})\\s+by\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${a}) * (${b})`, pretty: `${a.trim()} \\times ${b.trim()}` }),
+    },
+    {
+      // "Product of X and Y" → X × Y
+      re: new RegExp(`\\bproduct\\s+of\\s+(${E})\\s+and\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${a}) * (${b})`, pretty: `${a.trim()} \\times ${b.trim()}` }),
+    },
+    {
+      // "Divide X by Y" → X ÷ Y
+      re: new RegExp(`\\bdivide\\s+(${E})\\s+by\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => ({ expr: `(${a}) / (${b})`, pretty: `${a.trim()} \\div ${b.trim()}` }),
+    },
+    {
+      // "Difference between Y and X" → Y − X (English convention: bigger first)
+      re: new RegExp(`\\bdifference\\s+between\\s+(${E})\\s+and\\s+(${E})${SENT_END}`, "i"),
+      build: (a, b) => {
+        const va = safeEvaluate(a);
+        const vb = safeEvaluate(b);
+        // If both parse, return |a − b| so the order doesn't matter; otherwise
+        // default to the order written.
+        if (va !== null && vb !== null) {
+          const diff = Math.abs(va - vb);
+          return { expr: `${diff}`, pretty: `|${a.trim()} - ${b.trim()}|` };
+        }
+        return { expr: `(${a}) - (${b})`, pretty: `${a.trim()} - ${b.trim()}` };
+      },
+    },
+  ];
+
+  for (const v of verbs) {
+    const m = cleaned.match(v.re);
+    if (!m) continue;
+    const a = m[1].trim();
+    const b = m[2].trim();
+    if (!a || !b) continue;
+    // Reject captures that don't look like arithmetic (must contain a digit
+    // and only math chars). Stops "add diagrams and explanations" matching.
+    if (!/\d/.test(a) || !/\d/.test(b)) continue;
+    if (!/^[\-+()\d.\s\/*^]+$/.test(a) || !/^[\-+()\d.\s\/*^]+$/.test(b)) continue;
+    const { expr, pretty } = v.build(a, b);
+    const computed = safeEvaluate(expr);
+    if (computed === null) continue;
+    return {
+      computed,
+      worked: `**Worked solution:** $${pretty} = ${computed}$.`,
+      pattern: "verbal_arithmetic",
+    };
+  }
+  return null;
+}
+
 // ─── Pattern 8: bare arithmetic expression  "8 - 6 + 1 = ?" ──────────
 function tryRawExpression(stem: string): Attempt {
   let cleaned = stripLatexAndUnicode(stem)
@@ -348,6 +435,12 @@ const ATTEMPTS: Array<(s: string) => Attempt> = [
   tryDerivative,
   trySolveEquation,
   tryPercentage,
+  // Verbal arithmetic must come BEFORE statistics: stems like
+  //   "What is the sum of 1/4 and 1/4?"
+  // would otherwise be eaten by tryStatistics, which would extract the four
+  // digit tokens {1,4,1,4} and return 10. It must also come before
+  // tryArithmeticVerb so "Subtract X from Y" is read as Y−X (not X−Y).
+  tryVerbalArithmetic,
   tryStatistics,
   tryArithmeticVerb,
   tryRawExpression,
