@@ -149,6 +149,18 @@ export default function BuilderPage() {
   const isEditMode = editId !== null;
 
   const [title, setTitle] = useState("");
+  const [titleError, setTitleError] = useState(false);
+  const titleErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flagMissingTitle = useCallback(() => {
+    setTitleError(true);
+    toast({
+      title: "Please give the quiz a name",
+      description: "Add a title at the top of the assessment parameters before generating questions.",
+      variant: "destructive",
+    });
+    if (titleErrorTimerRef.current) clearTimeout(titleErrorTimerRef.current);
+    titleErrorTimerRef.current = setTimeout(() => setTitleError(false), 2800);
+  }, []);
   // Catalogue selections (Phase 5). The old free-text subject/level/syllabus
   // strings are derived from these on the fly when we POST to the quiz API.
   const [examiningBodySlug, setExaminingBodySlug] = useState<string>("cambridge");
@@ -1050,6 +1062,11 @@ export default function BuilderPage() {
 
   const handleSend = () => {
     if (!msg.trim() || chatMutation.isPending || !authenticated) return;
+    if (!title.trim()) {
+      flagMissingTitle();
+      return;
+    }
+    setTitleError(false);
     setLastAttemptMessage(msg);
     chatMutation.mutate(msg);
   };
@@ -1202,7 +1219,8 @@ export default function BuilderPage() {
             step={wizardStep}
             onStep={setWizardStep}
             title={title}
-            onTitleChange={(v) => { setTitle(v); markMeta(); }}
+            onTitleChange={(v) => { setTitle(v); markMeta(); if (v.trim()) setTitleError(false); }}
+            titleError={titleError}
             examiningBodySlug={examiningBodySlug}
             onExaminingBodyChange={(slug) => {
               setExaminingBodySlug(slug);
@@ -1474,7 +1492,8 @@ export default function BuilderPage() {
                   className="glow-button shrink-0 self-end min-h-[44px] min-w-[44px]"
                   size="icon"
                   onClick={handleSend}
-                  disabled={!msg.trim() || chatMutation.isPending || !authenticated}
+                  disabled={chatMutation.isPending || !authenticated}
+                  title={!title.trim() ? "Add a quiz title first" : undefined}
                   data-testid="button-copilot-send"
                 >
                   {chatMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

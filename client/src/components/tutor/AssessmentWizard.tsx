@@ -52,6 +52,7 @@ export interface AssessmentWizardProps {
 
   title: string;
   onTitleChange: (v: string) => void;
+  titleError?: boolean;
 
   examiningBodySlug: string;
   onExaminingBodyChange: (slug: string) => void;
@@ -110,7 +111,7 @@ const STEPS: Array<{
 export function AssessmentWizard(props: AssessmentWizardProps) {
   const {
     step, onStep,
-    title, onTitleChange,
+    title, onTitleChange, titleError = false,
     examiningBodySlug, onExaminingBodyChange, bodies, bodiesLoading,
     levelCode, onLevelChange, levels, levelsLoading,
     subjectSlug, onSubjectChange, subjects, subjectsLoading,
@@ -198,12 +199,22 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
 
       {/* Title lives above the stepper — tutor can edit it at any step. */}
       <div className="space-y-1.5">
-        <Label className="text-muted-foreground text-xs uppercase">Title</Label>
+        <Label
+          className={`text-xs uppercase transition-colors ${
+            titleError ? "text-red-400" : "text-muted-foreground"
+          }`}
+        >
+          Title{titleError && <span className="ml-1 normal-case lowercase tracking-normal">— required</span>}
+        </Label>
         <Input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder="e.g. Pure Mathematics Paper 1"
-          className="glass-input text-sm h-12"
+          className={`glass-input text-sm h-12 transition-all ${
+            titleError
+              ? "border-red-500 ring-2 ring-red-500/50 shadow-[0_0_22px_rgba(239,68,68,0.65)] animate-pulse"
+              : ""
+          }`}
           data-testid="input-quiz-title"
         />
       </div>
