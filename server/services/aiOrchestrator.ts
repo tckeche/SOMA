@@ -339,6 +339,49 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+/**
+ * Record a cache-hit row in `ai_usage_logs` so the super-admin dashboard can
+ * actually see when the orchestrator served a request from memory instead of
+ * paying the LLM. Costs and tokens are zero by definition; latency is just
+ * the cache lookup time. Telemetry must never throw — the call path has
+ * already produced a usable result.
+ */
+function recordCacheHit(args: {
+  scope: "idempotency" | "subflow";
+  cached: AIResult;
+  systemPrompt: string;
+  userPrompt: string;
+  options: AICallOptions | undefined;
+  parentRequestId: string;
+  startedAt: number;
+}): void {
+  try {
+    recordCall({
+      requestId: args.parentRequestId,
+      parentRequestId: args.parentRequestId,
+      idempotencyKey: args.options?.idempotencyKey ?? null,
+      provider: args.cached.metadata.provider,
+      model: args.cached.metadata.model,
+      taskType: args.options?.taskType ?? args.cached.metadata.taskType ?? null,
+      promptVersion: args.options?.promptVersion ?? args.cached.metadata.promptVersion ?? null,
+      route: args.options?.route ?? null,
+      userId: args.options?.userId ?? null,
+      systemPrompt: args.systemPrompt,
+      userPrompt: args.userPrompt,
+      startedAt: args.startedAt,
+      endedAt: Date.now(),
+      retryCount: 0,
+      cached: true,
+      inputTokens: 0,
+      outputTokens: 0,
+      parse: { status: "skipped" },
+      validation: { status: "skipped" },
+    });
+  } catch {
+    // never poison the call path
+  }
+}
+
 export async function generateWithFallback(
   systemPrompt: string,
   userPrompt: string,
@@ -358,8 +401,18 @@ export async function generateWithFallback(
       promptVersion: options.promptVersion,
       model: null,
     });
+    const lookupStart = Date.now();
     const cached = cache.get<AIResult>(idemKey);
     if (cached) {
+      recordCacheHit({
+        scope: "idempotency",
+        cached,
+        systemPrompt,
+        userPrompt,
+        options,
+        parentRequestId,
+        startedAt: lookupStart,
+      });
       return { ...cached, metadata: { ...cached.metadata, cached: true, requestId: parentRequestId } };
     }
     const fresh = await runChain(systemPrompt, userPrompt, expectedSchema, options, parentRequestId, promptHash, maxTokensCap);
@@ -375,8 +428,18 @@ export async function generateWithFallback(
       promptVersion: options.promptVersion,
       model: null,
     });
+    const lookupStart = Date.now();
     const cached = cache.get<AIResult>(cacheKey);
     if (cached) {
+      recordCacheHit({
+        scope: "subflow",
+        cached,
+        systemPrompt,
+        userPrompt,
+        options,
+        parentRequestId,
+        startedAt: lookupStart,
+      });
       return { ...cached, metadata: { ...cached.metadata, cached: true, requestId: parentRequestId } };
     }
     const fresh = await runChain(systemPrompt, userPrompt, expectedSchema, options, parentRequestId, promptHash, maxTokensCap);
