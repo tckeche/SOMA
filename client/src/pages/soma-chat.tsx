@@ -11,6 +11,7 @@ import {
   AlertTriangle, CheckCircle2, Target,
 } from "lucide-react";
 import DOMPurify from "dompurify";
+import { renderMathInHtml } from "@/lib/renderMathInHtml";
 import { toProperCase } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -352,7 +353,7 @@ export default function SomaChatPage() {
           <div ref={reportRef} className="bg-white text-gray-900 p-8 rounded-2xl shadow-lg">
             <div
               className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(analysis) }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMathInHtml(analysis)) }}
             />
           </div>
         )}

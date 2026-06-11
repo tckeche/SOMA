@@ -107,7 +107,7 @@ describe("applyDisagreementProtocol", () => {
     const result = applyDisagreementProtocol([proseDraft], [proseQuestion], upstream);
     expect(result.questions).toHaveLength(0);
     expect(result.blocked).toHaveLength(1);
-    expect(result.blocked[0].reason).toMatch(/did not match any option/i);
+    expect(result.blocked[0].reason).toMatch(/failed integrity checks/i);
   });
 
   it("does not double-block a question that has both a CRITICAL warning and prover disagreement", () => {
