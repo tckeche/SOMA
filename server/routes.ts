@@ -994,6 +994,7 @@ async function updateMasteryFromSubmission(
   questions: {
     id: number;
     stem?: string;
+    options?: string[];
     correctAnswer: string;
     marks: number;
     topicTag: string | null;
@@ -1004,6 +1005,13 @@ async function updateMasteryFromSubmission(
   }[],
   studentAnswers: Record<string, string>,
 ): Promise<void> {
+  // Grade against the same answer key the scoring path uses — the
+  // deterministic math prover may override a bad stored answer, and mastery
+  // must not diverge from the score the student actually received.
+  const gradedCorrectAnswer = (q: { stem?: string; options?: string[]; correctAnswer: string }): string =>
+    q.stem && Array.isArray(q.options) && q.options.length > 0
+      ? effectiveCorrectAnswer(q.stem, q.options, q.correctAnswer)
+      : q.correctAnswer;
   // Phase 4.2 — bump per-command-word counters in parallel with the
   // topic mastery rollup. Each apply is independent and shouldn't
   // block mastery if it errors.
@@ -1015,7 +1023,7 @@ async function updateMasteryFromSubmission(
         const word = normaliseCommandWord(q.commandWord ?? null) ?? extractCommandWordFromStem(q.stem ?? "");
         if (!word) continue;
         const answered = studentAnswers[String(q.id)];
-        const correct = !!answered && answered === q.correctAnswer;
+        const correct = !!answered && answered === gradedCorrectAnswer(q);
         await applyCommandWordResult({
           studentId,
           subject: cwSubject,
@@ -1057,7 +1065,7 @@ async function updateMasteryFromSubmission(
     bucket.total += 1;
     bucket.maxMarks += q.marks;
     const answered = studentAnswers[String(q.id)];
-    if (answered === q.correctAnswer) {
+    if (answered === gradedCorrectAnswer(q)) {
       bucket.correct += 1;
       bucket.marks += q.marks;
     }
@@ -2728,7 +2736,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 subject: normalizeLabel(a.quiz.subject, "General"),
                 topicTag: q.topicTag,
                 subtopicTag: q.subtopicTag,
-                correct: studentAnswer === q.correctAnswer,
+                correct: studentAnswer === effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
                 marks: q.marks,
               });
             }
@@ -2938,8 +2946,15 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             if (generated.warnings.length > 0) {
               console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
             }
-            if (generated.blockedQuestions.length > 0) {
+            if ((generated.blockedQuestions ?? []).length > 0) {
               console.warn(`[AI Publish] Quiz "${item.topic}" blocked ${generated.blockedQuestions.length} question(s) from disagreement protocol — assignment shipped with ${generated.questions.length}/${parsed.questionCount} questions:`, generated.blockedQuestions.map((b) => `Q${b.originalIndex}: ${b.reason}`).join("; "));
+            }
+            if (generated.questions.length === 0) {
+              // Every question was blocked even after re-rolls — never publish
+              // an empty quiz. Skip this item; the completion notification
+              // reflects the number actually published.
+              console.error(`[AI Publish] Quiz "${item.topic}" produced 0 usable questions after re-rolls — skipping publish.`);
+              continue;
             }
             const quiz = await storage.createSomaQuizBundle({
               quiz: {
@@ -2985,14 +3000,25 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             quizzes.push(quiz.quiz);
           }
 
-          await storage.createTutorNotification({
-            tutorId,
-            studentId,
-            type: "ai_assessment_published",
-            title: "Suggested assessments are ready",
-            message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published.`,
-            payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
-          });
+          if (quizzes.length === 0) {
+            await storage.createTutorNotification({
+              tutorId,
+              studentId,
+              type: "ai_assessment_failed",
+              title: "Assessment generation failed",
+              message: "No assessments could be published: every generated question failed the quality checks. Please try again.",
+              payload: { studentId, suggestionIds: parsed.suggestionIds },
+            });
+          } else {
+            await storage.createTutorNotification({
+              tutorId,
+              studentId,
+              type: "ai_assessment_published",
+              title: "Suggested assessments are ready",
+              message: `${quizzes.length} assessment${quizzes.length !== 1 ? "s were" : " was"} generated and published.`,
+              payload: { studentId, quizIds: quizzes.map((q) => q.id), suggestionIds: parsed.suggestionIds },
+            });
+          }
           console.log(`[AI Publish] Successfully generated ${quizzes.length} assessments for student ${studentId}`);
         } catch (bgErr: any) {
           console.error(`[AI Publish] Background generation failed for student ${studentId}:`, bgErr.message);
@@ -4584,7 +4610,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
       const questionMeta = new Map<number, { stem: string; correctAnswer: string }>();
       for (const q of questions) {
-        questionMeta.set(q.id, { stem: q.stem, correctAnswer: q.correctAnswer });
+        questionMeta.set(q.id, { stem: q.stem, correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer) });
       }
 
       const questionStats: Record<string, {
@@ -4907,6 +4933,16 @@ ${JSON.stringify({
         seedMisconceptionIdsCount: (result.seedMisconceptionIds ?? []).length,
         seedMisconceptionIds: result.seedMisconceptionIds ?? null,
       }, traceId);
+      const blockedQuestions = result.blockedQuestions ?? [];
+      if (blockedQuestions.length > 0) {
+        console.warn(`[SOMA] Quiz "${quizTitle}" blocked ${blockedQuestions.length} question(s) from disagreement protocol — shipping ${result.questions.length}/${questionCount}:`, blockedQuestions.map((b) => `Q${b.originalIndex}: ${b.reason}`).join("; "));
+      }
+      if (result.questions.length === 0) {
+        return res.status(502).json({
+          message: "Generation produced no usable questions: every question failed the quality checks even after regeneration. Please try again.",
+          warnings: result.warnings,
+        });
+      }
 
       const quiz = await storage.createSomaQuiz({
         title: quizTitle,
@@ -5038,6 +5074,16 @@ ${JSON.stringify({
         seedMisconceptionIdsCount: (result.seedMisconceptionIds ?? []).length,
         seedMisconceptionIds: result.seedMisconceptionIds ?? null,
       }, traceId);
+      const blockedQuestions = result.blockedQuestions ?? [];
+      if (blockedQuestions.length > 0) {
+        console.warn(`[SOMA] Tutor quiz "${quizTitle}" blocked ${blockedQuestions.length} question(s) from disagreement protocol — shipping ${result.questions.length}/${questionCount}:`, blockedQuestions.map((b) => `Q${b.originalIndex}: ${b.reason}`).join("; "));
+      }
+      if (result.questions.length === 0) {
+        return res.status(502).json({
+          message: "Generation produced no usable questions: every question failed the quality checks even after regeneration. Please try again.",
+          warnings: result.warnings,
+        });
+      }
 
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
@@ -5243,6 +5289,7 @@ ${JSON.stringify({
         allQuestions.map((q) => ({
           id: q.id,
           stem: q.stem,
+          options: q.options as string[],
           correctAnswer: q.correctAnswer,
           marks: q.marks,
           topicTag: q.topicTag,
