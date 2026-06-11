@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { authFetch } from "@/lib/supabase";
+import { formatPersonName } from "@/lib/personName";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz } from "@shared/schema";
 import { toProperCase, getInitials } from "@/lib/utils";
@@ -650,10 +651,10 @@ export default function TutorAssessmentDetails() {
                               {selectedStudentIds.has(student.id) && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
                             </div>
                             <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${getAvatarColor(student.id)}`}>
-                              {getInitials(student.displayName || student.email)}
+                              {getInitials(formatPersonName(student))}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">{student.displayName || "Student"}</p>
+                              <p className="text-sm font-medium text-foreground truncate">{formatPersonName(student)}</p>
                               {student.email && (
                                 <p className="flex items-center gap-1 text-[11px] text-muted-foreground truncate">
                                   <Mail className="w-3 h-3 shrink-0" />

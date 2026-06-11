@@ -761,7 +761,13 @@ class DatabaseStorage implements IStorage {
       .values(user)
       .onConflictDoUpdate({
         target: somaUsers.id,
-        set: { email: user.email, displayName: user.displayName, role: user.role ?? "student" },
+        set: {
+          email: user.email,
+          // Never let a missing name wipe a stored one — callers resolve the
+          // best available name, but a null here must not regress the row.
+          displayName: sql`COALESCE(${user.displayName ?? null}, ${somaUsers.displayName})`,
+          role: user.role ?? "student",
+        },
       })
       .returning();
     return result;

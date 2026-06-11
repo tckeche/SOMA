@@ -37,12 +37,24 @@ export function parseCookies(req: Request) {
   }, {});
 }
 
-export async function verifySupabaseToken(token: string): Promise<{ sub: string; email?: string } | null> {
+export async function verifySupabaseToken(
+  token: string,
+): Promise<{ sub: string; email?: string; metadataName?: string } | null> {
   const secret = getSupabaseJwtSecret();
   if (secret) {
     try {
-      const decoded = jwt.verify(token, secret) as { sub?: string; email?: string };
-      if (decoded.sub) return { sub: decoded.sub, email: decoded.email };
+      const decoded = jwt.verify(token, secret) as {
+        sub?: string;
+        email?: string;
+        user_metadata?: { display_name?: string; full_name?: string; name?: string };
+      };
+      if (decoded.sub) {
+        return {
+          sub: decoded.sub,
+          email: decoded.email,
+          metadataName: extractMetadataName(decoded.user_metadata),
+        };
+      }
     } catch {}
   }
 
@@ -56,10 +68,17 @@ export async function verifySupabaseToken(token: string): Promise<{ sub: string;
     });
     if (!resp.ok) return null;
     const user = await resp.json();
-    if (user?.id) return { sub: user.id, email: user.email };
+    if (user?.id) return { sub: user.id, email: user.email, metadataName: extractMetadataName(user.user_metadata) };
   } catch {}
 
   return null;
+}
+
+function extractMetadataName(
+  meta: { display_name?: string; full_name?: string; name?: string } | undefined,
+): string | undefined {
+  const name = (meta?.display_name || meta?.full_name || meta?.name || "").trim();
+  return name || undefined;
 }
 
 function getBearerToken(req: Request): string {

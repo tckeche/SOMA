@@ -1392,6 +1392,34 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return res.json({ svg });
   });
 
+  // ─── Display-name resolution ───────────────────────────────────────
+  // Students kept showing up as their email prefix ("tckeche") because both
+  // sync paths fell back to email.split("@")[0] and the upsert overwrote any
+  // real name on every login. Resolution order: a real name from the auth
+  // metadata wins; otherwise keep an existing real name; otherwise prettify
+  // the email prefix ("john.smith42" → "John Smith") as a last resort.
+  const isEmailDerivedName = (name: string | null | undefined, email: string): boolean => {
+    const n = (name || "").trim().toLowerCase();
+    if (!n) return true;
+    return n === email.toLowerCase() || n === email.split("@")[0].toLowerCase();
+  };
+  const humanizeEmailPrefix = (email: string): string => {
+    const words = email.split("@")[0].split(/[._\-+\d]+/).filter(Boolean);
+    if (words.length === 0) return "Student";
+    return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+  };
+  const resolveDisplayName = (
+    metadataName: string | null | undefined,
+    existingName: string | null | undefined,
+    email: string,
+  ): string => {
+    const meta = (metadataName || "").trim();
+    if (meta && !isEmailDerivedName(meta, email)) return meta;
+    const existing = (existingName || "").trim();
+    if (existing && !isEmailDerivedName(existing, email)) return existing;
+    return humanizeEmailPrefix(email);
+  };
+
   app.post("/api/auth/sync", async (req, res) => {
     try {
       const user_metadata = req.body?.user_metadata as {
@@ -1405,6 +1433,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       } | undefined;
       let id = "";
       let email = "";
+      let tokenName: string | undefined;
 
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
@@ -1414,6 +1443,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }
         id = decoded.sub;
         email = decoded.email;
+        tokenName = decoded.metadataName;
       } else if (process.env.NODE_ENV !== "production") {
         // Legacy local/test fallback
         id = String(req.body?.id || "");
@@ -1427,10 +1457,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       const role = determineRole(email);
       console.log(`[auth-sync] email=${email} domain=${email.split("@")[1]} role=${role}`);
+      const existingUser = await storage.getSomaUserById(id);
       const parsed = insertSomaUserSchema.parse({
         id,
         email,
-        displayName: user_metadata?.display_name || user_metadata?.full_name || email.split("@")[0],
+        displayName: resolveDisplayName(
+          user_metadata?.display_name || user_metadata?.full_name || tokenName,
+          existingUser?.displayName,
+          email,
+        ),
         role,
       });
       const user = await storage.upsertSomaUser(parsed);
@@ -1473,7 +1508,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       let userId = "";
       let email = "";
-      let displayName: string | null = null;
+      let tokenName: string | undefined;
 
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
@@ -1481,6 +1516,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (!decoded?.sub || !decoded?.email) return res.status(401).json({ message: "Invalid or expired token" });
         userId = decoded.sub;
         email = decoded.email;
+        tokenName = decoded.metadataName;
       } else if (process.env.NODE_ENV !== "production") {
         // Legacy local/test fallback
         userId = String(req.query.userId || "");
@@ -1497,10 +1533,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const parsed = insertSomaUserSchema.parse({
           id: userId,
           email,
-          displayName: displayName || email.split("@")[0],
+          displayName: resolveDisplayName(tokenName, null, email),
           role,
         });
         user = await storage.upsertSomaUser(parsed);
+      } else if (tokenName && isEmailDerivedName(user.displayName, user.email)) {
+        // Self-heal: the row carries an email-prefix name (from the old
+        // fallback) but the auth token has the student's real name.
+        user = await storage.upsertSomaUser({
+          id: user.id,
+          email: user.email,
+          displayName: resolveDisplayName(tokenName, user.displayName, user.email),
+          role: user.role,
+        });
       }
       if (!user) return res.status(404).json({ message: "User not found" });
       await storage.touchUserLastLogin(user.id);
