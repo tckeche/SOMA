@@ -207,7 +207,144 @@ describe("generateAuditedQuiz: error handling", () => {
       runOpenAIVerifier: vi.fn().mockRejectedValue(new Error("OpenAI verifier down")),
       runGeminiVerifier: vi.fn().mockRejectedValue(new Error("Gemini verifier down")),
     });
-    await expect(generateAuditedQuiz("Topic")).rejects.toThrow("Gemini verifier down");
+    // With chunked verification a total outage is reported as an aggregate
+    // error (every chunk failed on every provider) rather than the last
+    // provider's message.
+    await expect(generateAuditedQuiz("Topic")).rejects.toThrow("Verifier unavailable");
+  });
+});
+
+// ─── Chunked parallel verification ──────────────────────────────────────────
+// Verification was the latency long pole (one serial call covering the whole
+// quiz). It now runs in parallel chunks of 4; a chunk that fails on every
+// provider is blocked for re-roll instead of failing the quiz.
+describe("generateAuditedQuiz: chunked verification", () => {
+  const makeDrafts = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      stem: `Question ${i + 1}: which option is first?`,
+      options: [`First-${i + 1}`, `Second-${i + 1}`, `Third-${i + 1}`, `Fourth-${i + 1}`],
+      correct_answer: `First-${i + 1}`,
+      marks: 1,
+    }));
+
+  const echoVerifier = vi.fn(async (chunk: any[]) => ({
+    questions: chunk.map((q) => ({ ...q, explanation: "Verified explanation." })),
+    warnings: [],
+  }));
+
+  beforeEach(() => {
+    echoVerifier.mockClear();
+  });
+
+  it("verifies an 8-question quiz in two parallel chunks of 4, preserving order", async () => {
+    stubStages({
+      runClaudeMakerSimple: vi.fn().mockResolvedValue({ questions: makeDrafts(8) }),
+      runOpenAIMakerSimple: vi.fn(),
+      runOpenAIVerifier: echoVerifier,
+      runGeminiVerifier: vi.fn(),
+    });
+    const result = await generateAuditedQuiz({
+      topic: "Algebra", subject: "Maths", syllabus: "IEB", level: "G10",
+      questionCount: 8,
+    });
+    expect(echoVerifier).toHaveBeenCalledTimes(2);
+    expect(echoVerifier.mock.calls[0][0]).toHaveLength(4);
+    expect(echoVerifier.mock.calls[1][0]).toHaveLength(4);
+    expect(result.questions.map((q) => q.stem)).toEqual(makeDrafts(8).map((d) => d.stem));
+    expect(result.telemetry.checkerModel).toContain("openai/gpt-4o");
+    expect(result.telemetry.checkerModel).toContain("parallel chunks");
+  });
+
+  it("re-offsets verifier warning indices from later chunks to global positions", async () => {
+    const verifier = vi.fn(async (chunk: any[]) => ({
+      questions: chunk.map((q) => ({ ...q, explanation: "ok." })),
+      // Warning about the first question OF THIS CHUNK.
+      warnings: [{ questionIndex: 1, field: "stem" as const, issue: "tweaked stem", autoFixed: true }],
+    }));
+    stubStages({
+      runClaudeMakerSimple: vi.fn().mockResolvedValue({ questions: makeDrafts(8) }),
+      runOpenAIMakerSimple: vi.fn(),
+      runOpenAIVerifier: verifier,
+      runGeminiVerifier: vi.fn(),
+    });
+    const result = await generateAuditedQuiz({
+      topic: "Algebra", subject: "Maths", syllabus: "IEB", level: "G10",
+      questionCount: 8,
+    });
+    const stemWarnings = result.warnings.filter((w) => w.field === "stem");
+    expect(stemWarnings.map((w) => w.questionIndex).sort((a, b) => a - b)).toEqual([1, 5]);
+  });
+
+  it("blocks (not fails) the questions of a chunk whose verification failed on all providers", async () => {
+    let call = 0;
+    const flakyOpenAI = vi.fn(async (chunk: any[]) => {
+      call += 1;
+      if (call === 2) throw new Error("OpenAI verifier down");
+      return { questions: chunk.map((q: any) => ({ ...q, explanation: "ok." })), warnings: [] };
+    });
+    stubStages({
+      runClaudeMakerSimple: vi.fn().mockResolvedValue({ questions: makeDrafts(8) }),
+      runOpenAIMakerSimple: vi.fn(),
+      runOpenAIVerifier: flakyOpenAI,
+      runGeminiVerifier: vi.fn().mockRejectedValue(new Error("Gemini down")),
+    });
+    const result = await generateAuditedQuiz({
+      topic: "Algebra", subject: "Maths", syllabus: "IEB", level: "G10",
+      questionCount: 8,
+      maxRerollAttempts: 0,
+    });
+    expect(result.questions).toHaveLength(4);
+    expect(result.blockedQuestions).toHaveLength(4);
+    expect(result.blockedQuestions[0].reason).toMatch(/failed integrity checks/i);
+  });
+
+  it("discards a chunk whose verifier returned the wrong question count (alignment guard)", async () => {
+    const dropOne = vi.fn(async (chunk: any[]) => ({
+      questions: chunk.slice(0, chunk.length - 1).map((q) => ({ ...q, explanation: "ok." })),
+      warnings: [],
+    }));
+    stubStages({
+      runClaudeMakerSimple: vi.fn().mockResolvedValue({ questions: makeDrafts(4) }),
+      runOpenAIMakerSimple: vi.fn(),
+      runOpenAIVerifier: dropOne,
+      runGeminiVerifier: vi.fn().mockRejectedValue(new Error("Gemini down")),
+    });
+    const result = await generateAuditedQuiz({
+      topic: "Algebra", subject: "Maths", syllabus: "IEB", level: "G10",
+      questionCount: 4,
+      maxRerollAttempts: 0,
+    });
+    // The miscounted chunk must not ship misaligned questions.
+    expect(result.questions).toHaveLength(0);
+    expect(result.blockedQuestions).toHaveLength(4);
+  });
+
+  it("skips the blueprint planner on small re-roll passes", async () => {
+    const planner = vi.fn().mockResolvedValue(null);
+    let verifierCall = 0;
+    // First pass (5 questions → chunks of 4+1): the second chunk fails, so
+    // 1 question is blocked → re-roll regenerates it and succeeds.
+    const recoveringVerifier = vi.fn(async (chunk: any[]) => {
+      verifierCall += 1;
+      if (verifierCall === 2) throw new Error("transient outage");
+      return { questions: chunk.map((q: any) => ({ ...q, explanation: "ok." })), warnings: [] };
+    });
+    const maker = vi.fn(async (_ctx: any, count: number) => ({ questions: makeDrafts(count) }));
+    stubStages({
+      runClaudeMakerSimple: maker,
+      runOpenAIMakerSimple: vi.fn(),
+      runOpenAIVerifier: recoveringVerifier,
+      runGeminiVerifier: vi.fn().mockRejectedValue(new Error("Gemini down")),
+      runBlueprintPlanner: planner,
+    });
+    const result = await generateAuditedQuiz({
+      topic: "Algebra", subject: "Maths", syllabus: "IEB", level: "G10",
+      questionCount: 5,
+    });
+    expect(result.questions).toHaveLength(5);
+    expect(result.telemetry.rerollAttempts).toBe(1);
+    // Planner ran for the initial pass only — the ≤3-question re-roll skips it.
+    expect(planner).toHaveBeenCalledTimes(1);
   });
 });
 

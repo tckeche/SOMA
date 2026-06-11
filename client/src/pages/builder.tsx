@@ -211,7 +211,11 @@ export default function BuilderPage() {
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [lastAttemptMessage, setLastAttemptMessage] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
-  const GENERATION_TIMEOUT_MS = 90_000;
+  // Bounds the entire generation request including SSE stream consumption.
+  // Typical runs finish in ~60s now that verification runs in parallel
+  // chunks, but a pass that needs a re-roll can legitimately exceed 90s —
+  // aborting then throws away work the server completes anyway.
+  const GENERATION_TIMEOUT_MS = 180_000;
 
   const [includeGraphQuestions, setIncludeGraphQuestions] = useState(false);
 

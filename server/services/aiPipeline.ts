@@ -188,6 +188,13 @@ export interface SomaGenerationContext {
    * prevents infinite recursion. Callers should not set this.
    */
   _disableReroll?: boolean;
+  /**
+   * Internal flag: skip the Stage-0 blueprint planner. Set by the re-roll
+   * loop for small shortfalls (≤3 questions), where the planner's serial
+   * LLM call adds latency without meaningfully improving 1-3 replacement
+   * questions. Callers should not set this.
+   */
+  _skipPlanner?: boolean;
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -1050,6 +1057,9 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       questionCount: stillBlocked.length,
       blueprint: undefined, // fresh plan for the shortfall slots
       _disableReroll: true,
+      // For small shortfalls, the planner's serial LLM call costs more time
+      // than it's worth on 1-3 replacement questions — go straight to maker.
+      _skipPlanner: stillBlocked.length <= 3,
     };
     let reroll: AuditedQuizResult;
     try {
@@ -1185,7 +1195,7 @@ async function runOnePassQuiz(
   // failed), we keep the legacy improvised path.
   const planner = pipelineStages.runBlueprintPlanner;
   let blueprint: Blueprint | null = context.blueprint ?? null;
-  if (!blueprint && planner) {
+  if (!blueprint && planner && !context._skipPlanner) {
     try {
       blueprint = await planner({
         questionCount,
@@ -1225,21 +1235,87 @@ async function runOnePassQuiz(
   // Pairing rule: the model that made the quiz must not verify its own work.
   //   Claude maker → ChatGPT verifier (Gemini as fallback for availability).
   //   ChatGPT maker → Gemini verifier only (no self-check).
-  let verified: { questions: QuizResult["questions"]; warnings: PipelineWarning[] };
-  let checkerModel: string;
-  if (claudeMadeTheQuiz) {
-    try {
-      verified = await pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan);
-      checkerModel = "openai/gpt-4o";
-    } catch (err: any) {
-      console.warn(`[SOMA_PIPELINE] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini verifier.`);
-      verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-      checkerModel = "google/gemini-2.5-flash";
-    }
-  } else {
-    verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-    checkerModel = "google/gemini-2.5-flash";
+  //
+  // SPEED: verification is the pipeline's latency long pole — the verifier
+  // writes an explanation plus 4 per-option rationales for EVERY question,
+  // so a single call over a full quiz ran 90-110s and blew client timeouts.
+  // Verification is per-question independent, so we verify in chunks of
+  // VERIFIER_CHUNK_SIZE IN PARALLEL: wall-clock becomes the slowest chunk
+  // (~25-35s) instead of the sum. A chunk that fails on every provider does
+  // NOT fail the quiz — its questions are passed through with a CRITICAL
+  // warning so the disagreement protocol blocks them and the re-roll loop
+  // replaces them.
+  const VERIFIER_CHUNK_SIZE = 4;
+  const verifierChunks: DraftQuiz["questions"][] = [];
+  for (let i = 0; i < draft.questions.length; i += VERIFIER_CHUNK_SIZE) {
+    verifierChunks.push(draft.questions.slice(i, i + VERIFIER_CHUNK_SIZE));
   }
+
+  type ChunkResult = { questions: QuizResult["questions"]; warnings: PipelineWarning[]; model: string } | null;
+  // Distinguishes "a provider answered but miscounted" (re-rollable) from
+  // "no provider answered at all" (an outage a re-roll would hit too).
+  let verifierResponded = false;
+  const verifyChunk = async (chunk: DraftQuiz["questions"]): Promise<ChunkResult> => {
+    const guardCount = (r: { questions: QuizResult["questions"]; warnings: PipelineWarning[] }, model: string): ChunkResult => {
+      verifierResponded = true;
+      // A verifier that drops or adds questions would desynchronise the
+      // maker↔verifier alignment the disagreement protocol relies on.
+      if (r.questions.length !== chunk.length) {
+        console.warn(`[SOMA_PIPELINE] Verifier (${model}) returned ${r.questions.length}/${chunk.length} questions for a chunk; discarding chunk result.`);
+        return null;
+      }
+      return { ...r, model };
+    };
+    if (claudeMadeTheQuiz) {
+      try {
+        return guardCount(await pipelineStages.runOpenAIVerifier(chunk, contextWithPlan), "openai/gpt-4o");
+      } catch (err: any) {
+        console.warn(`[SOMA_PIPELINE] ChatGPT verifier chunk failed (${err?.message || "unknown"}); falling back to Gemini verifier.`);
+      }
+    }
+    try {
+      return guardCount(await pipelineStages.runGeminiVerifier(chunk, contextWithPlan), "google/gemini-2.5-flash");
+    } catch (err: any) {
+      console.warn(`[SOMA_PIPELINE] Gemini verifier chunk failed (${err?.message || "unknown"}); chunk will be blocked for re-roll.`);
+      return null;
+    }
+  };
+
+  const chunkResults = await Promise.all(verifierChunks.map(verifyChunk));
+
+  const verifiedQuestions: QuizResult["questions"] = [];
+  const verifierWarnings: PipelineWarning[] = [];
+  const verifierModels = new Set<string>();
+  let anyChunkVerified = false;
+  for (let c = 0; c < verifierChunks.length; c++) {
+    const base = verifiedQuestions.length;
+    const result = chunkResults[c];
+    if (result) {
+      anyChunkVerified = true;
+      verifierModels.add(result.model);
+      verifiedQuestions.push(...result.questions);
+      for (const w of result.warnings) {
+        verifierWarnings.push({ ...w, questionIndex: w.questionIndex + base });
+      }
+    } else {
+      for (const q of verifierChunks[c]) {
+        verifiedQuestions.push({ ...q, explanation: "Verification unavailable for this question." });
+        verifierWarnings.push({
+          questionIndex: verifiedQuestions.length,
+          field: "overall",
+          issue: "CRITICAL: verifier unavailable for this question (all providers failed); blocked for re-roll.",
+          autoFixed: false,
+        });
+      }
+    }
+  }
+  if (!anyChunkVerified && !verifierResponded) {
+    // Every provider failed on every chunk — a re-roll would fail the same
+    // way, so surface the outage to the caller instead of looping.
+    throw new Error("Verifier unavailable: every chunk failed on all providers");
+  }
+  const verified = { questions: verifiedQuestions, warnings: verifierWarnings };
+  const checkerModel = (Array.from(verifierModels).join("+") || "unverified") + (verifierChunks.length > 1 ? ` (×${verifierChunks.length} parallel chunks)` : "");
 
   // ── STAGE 3: Deterministic guards ───────────────────────────────────────
   const guarded = applyDeterministicIntegrityGuards(verified.questions);
