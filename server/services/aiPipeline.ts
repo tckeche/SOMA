@@ -7,7 +7,7 @@ import {
   formatCopilotContextAsText,
   type CatalogueCopilotContext,
 } from "./copilotContext";
-import { validateMathQuestion } from "./mathValidator";
+import { validateMathQuestion, explanationFinalAnswerMismatch } from "./mathValidator";
 import { recordCall, newRequestId } from "../utils/aiTelemetry";
 import * as health from "./aiHealth";
 import { clampMaxTokens } from "./aiCostGuards";
@@ -387,6 +387,30 @@ function applyMathValidatorCorrections(
   return { questions: corrected, warnings };
 }
 
+/**
+ * Flag questions whose explanation contradicts the marked correct option (the
+ * explanation never states the verified answer). Used by the Copilot audit
+ * flow, which surfaces drafts to the tutor for review rather than hard-blocking.
+ */
+function flagExplanationContradictions(
+  questions: QuizResult["questions"],
+): PipelineWarning[] {
+  const warnings: PipelineWarning[] = [];
+  questions.forEach((q, idx) => {
+    if (!q.explanation) return;
+    const r = explanationFinalAnswerMismatch(q.stem, q.options, q.correct_answer, q.explanation);
+    if (r.mismatch) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "explanation",
+        issue: `CRITICAL: explanation contradicts the marked answer "${q.correct_answer}" — it never states the correct value "${r.expected}". Review before publishing.`,
+        autoFixed: false,
+      });
+    }
+  });
+  return warnings;
+}
+
 // ─── Per-option rationale integrity ────────────────────────────────────────
 
 /**
@@ -563,6 +587,36 @@ export function applyDisagreementProtocol(
         },
       });
       continue;
+    }
+
+    // Rule 2b: the explanation's stated answer must agree with the marked
+    // option. For complex-number questions the check is high-confidence, so a
+    // worked explanation that never states the correct value is BLOCKED rather
+    // than teaching the student the wrong working. For plain numeric questions
+    // the heuristic is looser (equivalent forms exist), so we only warn.
+    if (v.explanation) {
+      const exMismatch = explanationFinalAnswerMismatch(v.stem, v.options, v.correct_answer, v.explanation);
+      if (exMismatch.mismatch && exMismatch.complex) {
+        blocked.push({
+          originalIndex: oneBased,
+          reason: `Explanation contradicts the marked answer (marked="${v.correct_answer}", explanation never states the correct value "${exMismatch.expected}").`,
+          rejected: v,
+          votes: {
+            maker: draft?.correct_answer ?? "(no draft)",
+            verifier: v.correct_answer,
+            prover: proverAnswer,
+          },
+        });
+        continue;
+      }
+      if (exMismatch.mismatch) {
+        warnings.push({
+          questionIndex: oneBased,
+          field: "explanation",
+          issue: `Explanation may contradict the marked answer "${v.correct_answer}" — the value "${exMismatch.expected}" does not appear in the worked steps. Please review before publishing.`,
+          autoFixed: false,
+        });
+      }
     }
 
     // Rule 3: when verifier overrode the maker, surface that for tutor visibility.
@@ -1225,9 +1279,10 @@ export async function runQuestionAudit(
     const guarded = applyDeterministicIntegrityGuards(verified.questions);
     const validated = validateAndCorrectMcqAnswers(guarded.questions);
     const mathCheck = applyMathValidatorCorrections(validated.questions);
+    const explanationWarnings = flagExplanationContradictions(mathCheck.questions);
     return {
       questions: mathCheck.questions,
-      warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings],
+      warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings, ...explanationWarnings],
       verifierModel: "openai/gpt-4o",
     };
   } catch (err: any) {
@@ -1237,9 +1292,10 @@ export async function runQuestionAudit(
       const guarded = applyDeterministicIntegrityGuards(verified.questions);
       const validated = validateAndCorrectMcqAnswers(guarded.questions);
       const mathCheck = applyMathValidatorCorrections(validated.questions);
+      const explanationWarnings = flagExplanationContradictions(mathCheck.questions);
       return {
         questions: mathCheck.questions,
-        warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings],
+        warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings, ...explanationWarnings],
         verifierModel: "google/gemini-2.5-flash",
       };
     } catch (err2: any) {

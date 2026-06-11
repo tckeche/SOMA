@@ -5,7 +5,7 @@ const math = create(all, {});
 export interface MathValidationResult {
   verifiable: boolean;
   pattern?: string;
-  computedAnswer?: number | number[];
+  computedAnswer?: number | number[] | string;
   matchedOption?: string;
   storedCorrectMatches?: boolean;
   mismatch?: boolean;
@@ -353,6 +353,216 @@ const ATTEMPTS: Array<(s: string) => Attempt> = [
   tryRawExpression,
 ];
 
+// ─── Complex-number support ──────────────────────────────────────────────
+//
+// Real-number parsing strips the imaginary unit (e.g. "0 + 8i" → "0 + 8" → 8),
+// so complex questions MUST be handled on a dedicated path or they get silently
+// mis-graded. We evaluate with mathjs' native complex arithmetic and match
+// options as complex numbers (real and imaginary parts compared independently).
+
+interface Cplx {
+  re: number;
+  im: number;
+}
+
+/** Detect a standalone imaginary unit `i` (not part of a word like "is"/"find"). */
+function hasImaginaryUnit(s: string): boolean {
+  return /(?<![a-zA-Z])i(?![a-zA-Z])/.test(stripLatexAndUnicode(s));
+}
+
+/** A question is "complex" if its stem or ≥2 of its options use the imaginary unit. */
+function looksComplex(stem: string, options: string[]): boolean {
+  if (hasImaginaryUnit(stem)) return true;
+  return options.filter(hasImaginaryUnit).length >= 2;
+}
+
+function toComplex(v: any): Cplx | null {
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? { re: v, im: 0 } : null;
+  if (typeof v === "object") {
+    if (typeof v.re === "number" && typeof v.im === "number") {
+      return Number.isFinite(v.re) && Number.isFinite(v.im) ? { re: v.re, im: v.im } : null;
+    }
+    if (typeof v.toNumber === "function") {
+      const n = v.toNumber();
+      return Number.isFinite(n) ? { re: n, im: 0 } : null;
+    }
+  }
+  return null;
+}
+
+function safeEvaluateComplex(expr: string, scope: Record<string, any> = {}): Cplx | null {
+  try {
+    return toComplex(math.evaluate(expr, scope));
+  } catch {
+    return null;
+  }
+}
+
+function complexEq(a: Cplx, b: Cplx): boolean {
+  return approxEq(a.re, b.re) && approxEq(a.im, b.im);
+}
+
+function roundish(n: number): number {
+  const r = Math.round(n);
+  return Math.abs(n - r) < 1e-9 ? r : Number(n.toFixed(6));
+}
+
+function fmtComplex(c: Cplx): string {
+  const re = roundish(c.re);
+  const im = roundish(c.im);
+  if (im === 0) return `${re}`;
+  if (re === 0) return `${im}i`;
+  return `${re} ${im < 0 ? "-" : "+"} ${Math.abs(im)}i`;
+}
+
+/** Parse an option / answer string into a complex number, keeping the imaginary unit. */
+function parseComplexValue(input: string): Cplx | null {
+  let cleaned = stripLatexAndUnicode(input)
+    .replace(/^[A-D]\s*[\.\):]\s*/i, "") // strip leading "A) ", "B." etc
+    .replace(/^[a-z]\s*=\s*/i, "")        // strip leading "z = " / "w = "
+    .replace(/,(?=\d{3}\b)/g, "")         // thousands separator
+    .trim();
+  if (!cleaned) return null;
+  cleaned = insertImplicitMultiplication(cleaned, "i"); // "8i" → "8*i"
+  return safeEvaluateComplex(cleaned);
+}
+
+// ─── Complex pattern: "If z = 2 + 2i, find z²" ───────────────────────────
+function findMatchingComplexOption(options: string[], computed: Cplx): number | null {
+  for (let i = 0; i < options.length; i++) {
+    const c = parseComplexValue(options[i]);
+    if (c && complexEq(c, computed)) return i;
+  }
+  return null;
+}
+
+function validateComplexQuestion(
+  stem: string,
+  options: string[],
+  storedCorrectAnswer: string,
+): MathValidationResult {
+  const cleaned = stripLatexAndUnicode(stem);
+  const def = cleaned.match(/\b([zw])\s*=\s*([^,;.?]+)/i);
+  if (!def) return { verifiable: false };
+  const variable = def[1].toLowerCase();
+  const zVal = parseComplexValue(def[2]);
+  if (!zVal) return { verifiable: false };
+
+  const tail = cleaned.slice((def.index ?? 0) + def[0].length);
+  const exprMatch = tail.match(
+    /(?:find|calculate|evaluate|compute|determine|express|what\s+is(?:\s+the\s+value\s+of)?)\s+([^?.]+)/i,
+  );
+  if (!exprMatch) return { verifiable: false };
+  let body = exprMatch[1]
+    .trim()
+    .replace(/^the\s+value\s+of\s+/i, "")
+    .replace(/\bconjugate\s+of\s+([zw])\b/i, "conj($1)")
+    .replace(/\bmodulus\s+of\s+([zw])\b/i, "abs($1)")
+    .replace(/\|\s*([zw])\s*\|/i, "abs($1)")
+    .replace(/\bargument\s+of\s+([zw])\b/i, "arg($1)")
+    .replace(/\b([zw])\s+squared\b/i, "$1^2")
+    .replace(/\b([zw])\s+cubed\b/i, "$1^3")
+    .replace(/^the\s+/i, "")
+    .replace(/[?.]+\s*$/, "")
+    .trim();
+  if (!body) return { verifiable: false };
+  if (!new RegExp(`(?<![a-zA-Z])${variable}(?![a-zA-Z])`, "i").test(body)) {
+    return { verifiable: false };
+  }
+
+  const computed = safeEvaluateComplex(
+    insertImplicitMultiplication(body, variable),
+    { [variable]: math.complex(zVal.re, zVal.im) },
+  );
+  if (!computed) return { verifiable: false };
+
+  const idx = findMatchingComplexOption(options, computed);
+  if (idx === null) return { verifiable: false };
+
+  const matchedOption = options[idx];
+  const storedC = parseComplexValue(storedCorrectAnswer);
+  const storedCorrectMatches = storedC !== null && complexEq(storedC, computed);
+
+  return {
+    verifiable: true,
+    pattern: "complex_arithmetic",
+    computedAnswer: fmtComplex(computed),
+    matchedOption,
+    storedCorrectMatches,
+    mismatch: !storedCorrectMatches,
+    workedSolution: `**Worked solution:** with $${variable} = ${fmtComplex(zVal)}$, $${body} = ${fmtComplex(computed)}$.`,
+  };
+}
+
+/** Pull every complex/real numeric token out of free text (for explanation checks). */
+function extractComplexTokens(text: string): Cplx[] {
+  const cleaned = stripLatexAndUnicode(text);
+  const re =
+    /-?\s*\d+(?:\.\d+)?\s*[+\-]\s*\d+(?:\.\d+)?\s*i|-?\s*\d+(?:\.\d+)?\s*i|(?<![\d.])-?\d+(?:\.\d+)?(?![\d.])/g;
+  const out: Cplx[] = [];
+  for (const m of cleaned.match(re) ?? []) {
+    const c = parseComplexValue(m);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * Pull real-number tokens out of free text, evaluating simple fractions so that
+ * "1/2" is read as 0.5 (not as the two integers 1 and 2). Used by the numeric
+ * branch of the explanation check to avoid false contradictions on equivalent
+ * forms.
+ */
+function extractNumberTokens(text: string): number[] {
+  const cleaned = stripLatexAndUnicode(text);
+  const re = /-?\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|-?\d+(?:\.\d+)?/g;
+  const out: number[] = [];
+  for (const m of cleaned.match(re) ?? []) {
+    const v = m.includes("/") ? safeEvaluate(m.replace(/\s+/g, "")) : Number(m);
+    if (v !== null && Number.isFinite(v)) out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Requirement: the explanation's stated answer must agree with the marked
+ * correct option. We flag a mismatch ONLY when the expected value never appears
+ * anywhere in a worked (numeric) explanation — a strong contradiction signal —
+ * so verbal explanations and harmless phrasing differences are never blocked.
+ *
+ * `complex` is returned so callers can hard-block the high-confidence complex
+ * case while treating the looser numeric case as a review warning only.
+ */
+export function explanationFinalAnswerMismatch(
+  stem: string,
+  options: string[],
+  correctAnswer: string,
+  explanation: string,
+): { mismatch: boolean; complex: boolean; expected?: string } {
+  if (!explanation || !explanation.trim()) return { mismatch: false, complex: false };
+
+  if (looksComplex(stem, options) || hasImaginaryUnit(correctAnswer)) {
+    const expected = parseComplexValue(correctAnswer);
+    if (!expected) return { mismatch: false, complex: true };
+    const tokens = extractComplexTokens(explanation);
+    if (tokens.length === 0) return { mismatch: false, complex: true }; // verbal — can't judge
+    const present = tokens.some((t) => complexEq(t, expected));
+    return present
+      ? { mismatch: false, complex: true }
+      : { mismatch: true, complex: true, expected: fmtComplex(expected) };
+  }
+
+  const expectedNum = parseOptionAsNumber(correctAnswer);
+  if (expectedNum === null) return { mismatch: false, complex: false };
+  const nums = extractNumberTokens(explanation);
+  if (nums.length === 0) return { mismatch: false, complex: false };
+  const present = nums.some((n) => approxEq(n, expectedNum));
+  return present
+    ? { mismatch: false, complex: false }
+    : { mismatch: true, complex: false, expected: String(roundish(expectedNum)) };
+}
+
 /**
  * Attempt deterministic verification of an MCQ math question.
  * Returns verifiable=false when the question doesn't fit a recognised pattern
@@ -364,6 +574,12 @@ export function validateMathQuestion(
   storedCorrectAnswer: string,
 ): MathValidationResult {
   if (!Array.isArray(options) || options.length < 2) return { verifiable: false };
+
+  // Complex-number questions take a dedicated path: the real-number parser
+  // strips the imaginary unit and would otherwise silently mis-grade them.
+  if (looksComplex(stem, options)) {
+    return validateComplexQuestion(stem, options, storedCorrectAnswer);
+  }
   // An option is "numeric-shaped" if it parses as a single number OR contains numeric tokens
   // (e.g. "x = 2 or x = 3", "{1, 6}"). Require most options to be numeric-shaped.
   const numericOptionCount = options.filter(

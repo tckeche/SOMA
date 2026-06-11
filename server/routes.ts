@@ -15,7 +15,7 @@ import rateLimit from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
-import { effectiveCorrectAnswer } from "./services/mathValidator";
+import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -3148,6 +3148,24 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         if (q.questionType === "graph" && q.graphSpec) {
           const check = repairGraphSpec(q.graphSpec);
           if (!check) return res.status(400).json({ message: "A graph question has an invalid graph spec" });
+        }
+      }
+
+      // Assessment-integrity hard gate: never publish a complex-number question
+      // whose worked explanation contradicts the marked correct option. The
+      // Copilot audit only warns (advisory) so the tutor can keep editing, but
+      // publish is the irreversible step that reaches students — so we enforce
+      // the high-confidence complex check here and refuse to persist a question
+      // that would teach incorrect working.
+      for (let i = 0; i < draft.length; i++) {
+        const q = draft[i];
+        if (!q.explanation || !q.correctAnswer) continue;
+        const exMismatch = explanationFinalAnswerMismatch(q.stem, q.options, q.correctAnswer, q.explanation);
+        if (exMismatch.mismatch && exMismatch.complex) {
+          return res.status(422).json({
+            message: `Cannot publish: question ${i + 1} has an explanation that contradicts its marked answer "${q.correctAnswer}" (the correct value "${exMismatch.expected}" never appears in the worked steps). Fix the explanation or answer key, then publish again.`,
+            questionIndex: i + 1,
+          });
         }
       }
 
