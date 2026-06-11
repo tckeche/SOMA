@@ -7,7 +7,7 @@ import {
   formatCopilotContextAsText,
   type CatalogueCopilotContext,
 } from "./copilotContext";
-import { validateMathQuestion, explanationFinalAnswerMismatch } from "./mathValidator";
+import { validateMathQuestion, explanationFinalAnswerMismatch, parseNumericValue, numericallyEquivalent } from "./mathValidator";
 import { recordCall, newRequestId } from "../utils/aiTelemetry";
 import * as health from "./aiHealth";
 import { clampMaxTokens } from "./aiCostGuards";
@@ -244,7 +244,7 @@ function dedupeOptions(options: string[], preferred?: string): DedupeOptionsResu
   return { options: out.slice(0, 4), gaps };
 }
 
-function applyDeterministicIntegrityGuards(
+export function applyDeterministicIntegrityGuards(
   questions: QuizResult["questions"],
 ): { questions: QuizResult["questions"]; warnings: PipelineWarning[] } {
   const warnings: PipelineWarning[] = [];
@@ -271,6 +271,20 @@ function applyDeterministicIntegrityGuards(
       explanation: normalizedExplanation,
       marks,
     };
+    // dedupeOptions pads with "Option N" placeholders when the model returned
+    // fewer than 4 distinct options. A student must never see that — mark
+    // CRITICAL (unfixed) so the disagreement protocol blocks the question
+    // and the re-roll loop regenerates it.
+    const originalSet = new Set(q.options.map((o) => o.trim()));
+    const placeholders = guardedOptions.filter((o) => /^Option [1-4]$/.test(o) && !originalSet.has(o));
+    if (placeholders.length > 0) {
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "options",
+        issue: `CRITICAL: model returned only ${guardedOptions.length - placeholders.length} distinct option(s); ${placeholders.length} placeholder option(s) were padded in. Question is unusable as-is.`,
+        autoFixed: false,
+      });
+    }
     if (guardedOptions.includes(cleaned.correct_answer)) return cleaned;
     // The verifier's correct_answer is not among the 4 valid options. Do
     // NOT silently rescue by setting correct_answer = options[0] — that
@@ -322,8 +336,6 @@ export function validateAndCorrectMcqAnswers(
     }
 
     const normalized = q.correct_answer.trim().toLowerCase().replace(/\s+/g, " ");
-    let bestIdx = -1;
-    let bestScore = 0;
     for (let i = 0; i < q.options.length; i++) {
       const optNorm = q.options[i].trim().toLowerCase().replace(/\s+/g, " ");
       if (optNorm === normalized) {
@@ -335,6 +347,37 @@ export function validateAndCorrectMcqAnswers(
         });
         return { ...q, correct_answer: q.options[i] };
       }
+    }
+
+    // Numeric answers get an exact value match, never substring matching —
+    // substring scoring happily snapped "12" onto "123" (67% overlap), which
+    // is a wrong answer key. Equality is by parsed value, so "0.5",
+    // "\\frac{1}{2}" and "1/2" all match each other.
+    const answerNum = parseNumericValue(q.correct_answer);
+    if (answerNum !== null) {
+      const numericIdx = q.options.findIndex((o) => numericallyEquivalent(o, q.correct_answer));
+      if (numericIdx >= 0) {
+        warnings.push({
+          questionIndex: idx + 1,
+          field: "correct_answer",
+          issue: `Verifier's correct_answer "${q.correct_answer}" is numerically equal to option "${q.options[numericIdx]}"; auto-snapped.`,
+          autoFixed: true,
+        });
+        return { ...q, correct_answer: q.options[numericIdx] };
+      }
+      warnings.push({
+        questionIndex: idx + 1,
+        field: "correct_answer",
+        issue: `CRITICAL: verifier's numeric correct_answer "${q.correct_answer}" does not equal ANY of the 4 options. Defaulted to "${q.options[0]}" so the quiz is savable, but the answer key is unverifiable — REVIEW THIS QUESTION MANUALLY before publishing or students may be marked wrong on the right answer.`,
+        autoFixed: false,
+      });
+      return { ...q, correct_answer: q.options[0] };
+    }
+
+    let bestIdx = -1;
+    let bestScore = 0;
+    for (let i = 0; i < q.options.length; i++) {
+      const optNorm = q.options[i].trim().toLowerCase().replace(/\s+/g, " ");
       if (optNorm.includes(normalized) || normalized.includes(optNorm)) {
         const score = Math.min(optNorm.length, normalized.length) / Math.max(optNorm.length, normalized.length);
         if (score > bestScore) {
@@ -544,11 +587,7 @@ export function applyDisagreementProtocol(
   // block them en bloc without re-deriving the heuristic.
   const criticalUnfixedByIndex = new Set<number>();
   for (const w of upstreamWarnings) {
-    if (
-      w.field === "correct_answer" &&
-      w.autoFixed === false &&
-      /CRITICAL/i.test(w.issue)
-    ) {
+    if (w.autoFixed === false && /CRITICAL/i.test(w.issue)) {
       criticalUnfixedByIndex.add(w.questionIndex);
     }
   }
@@ -564,18 +603,24 @@ export function applyDisagreementProtocol(
     if (criticalUnfixedByIndex.has(oneBased)) {
       blocked.push({
         originalIndex: oneBased,
-        reason: "Verifier's correct_answer did not match any option after letter/substring/math recovery.",
+        reason: "Question failed integrity checks (unmatchable answer key or malformed options) after letter/numeric/math recovery.",
         rejected: v,
         votes: { maker: draft?.correct_answer ?? "(no draft)", verifier: v.correct_answer, prover: null },
       });
       continue;
     }
 
-    // Rule 2: deterministic prover is the tiebreaker.
+    // Rule 2: deterministic prover is the tiebreaker. Compare by numeric
+    // value before blocking — "2" vs "2.0" is agreement, not disagreement,
+    // and a false block here burns a re-roll pass for nothing.
     const prove = validateMathQuestion(v.stem, v.options, v.correct_answer);
     const proverAnswer = prove.verifiable && prove.matchedOption ? prove.matchedOption : null;
 
-    if (proverAnswer && proverAnswer.trim() !== v.correct_answer.trim()) {
+    if (
+      proverAnswer &&
+      proverAnswer.trim() !== v.correct_answer.trim() &&
+      !numericallyEquivalent(proverAnswer, v.correct_answer)
+    ) {
       blocked.push({
         originalIndex: oneBased,
         reason: `Deterministic prover disagreed with verifier (prover="${proverAnswer}", verifier="${v.correct_answer}", pattern=${prove.pattern}). Both LLMs may be wrong.`,

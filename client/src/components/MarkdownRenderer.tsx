@@ -9,15 +9,69 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+// A brace group with one level of nesting: {…} possibly containing {…}.
+const BRACE_GROUP = String.raw`\{(?:[^{}]|\{[^{}]*\})*\}`;
+// A contiguous bare-LaTeX run: starts at a \command (with optional [..] and {..}
+// arguments) or a base^{exp} / base_{sub} token, and extends through directly
+// attached math characters — e.g. "\frac{1}{2}xe^{x^2}+C" or "\sqrt{x^2+1}".
+const BARE_LATEX_RUN = new RegExp(
+  String.raw`(?:\\[a-zA-Z]+(?:\[[^\]]*\])?(?:${BRACE_GROUP})*|[A-Za-z0-9)\]][\^_](?:${BRACE_GROUP}|[A-Za-z0-9]))` +
+  String.raw`(?:[A-Za-z0-9^_+\-*/=(),.]|${BRACE_GROUP}|\\[a-zA-Z]+)*`,
+  "g",
+);
+
+// True when stripped of LaTeX commands the text still contains prose-length
+// words — i.e. it's a sentence with math in it, not a pure expression.
+function looksLikeProse(text: string): boolean {
+  return /[a-zA-Z]{4,}/.test(text.replace(/\\[a-zA-Z]+/g, " "));
+}
+
+// Wrap bare (undelimited) LaTeX inside a segment that contains no $ math.
+function wrapBareLatexInSegment(segment: string): string {
+  const hasBareLatexCmd = /\\[a-zA-Z]/.test(segment);
+  const hasBraceExponent = /[a-zA-Z0-9]\^{|[a-zA-Z0-9]_{/.test(segment);
+  if (!hasBareLatexCmd && !hasBraceExponent) return segment;
+  // Pure expression (e.g. an MCQ option like "xe^{x^2}+C") → wrap whole thing.
+  if (!looksLikeProse(segment)) {
+    const lead = segment.match(/^\s*/)?.[0] ?? "";
+    const trail = segment.match(/\s*$/)?.[0] ?? "";
+    const core = segment.trim();
+    return core ? `${lead}$${core}$${trail}` : segment;
+  }
+  // Sentence with embedded math → wrap each contiguous LaTeX run so the
+  // fraction renders without italicising the surrounding prose.
+  return segment.replace(BARE_LATEX_RUN, (run) => {
+    if (!/\\[a-zA-Z]|[\^_]/.test(run)) return run;
+    // Keep sentence punctuation outside the math span.
+    const m = run.match(/^([\s\S]*?)([.,;:]*)$/);
+    const core = (m?.[1] ?? run).trim();
+    const punct = m?.[2] ?? "";
+    return core ? `$${core}$${punct}` : run;
+  });
+}
+
 export function normalizeLatexDelimiters(text: string): string {
   let result = text;
 
   // Step 0: Escape currency dollar signs BEFORE any other processing.
-  // ONLY escape "$" when followed by a clear currency pattern: digits with a thousands-
-  // separator comma (e.g. $100,000 or $9,000). This avoids breaking legitimate math
-  // delimiters around small numbers like $0$, $1$, $9$, or $1+2$.
-  // In markdown, \$ is a backslash-escaped dollar sign that renders as a literal "$".
+  // A "$" followed by an amount is treated as currency when it cannot be a
+  // valid math span: either no closing "$" exists, or the next "$" itself
+  // starts another amount (e.g. "between $5 and $7"). Genuine math like
+  // "$1+2$" or "$5 \times 3$" keeps its delimiters.
+  // In markdown, \$ is a backslash-escaped dollar sign rendering a literal "$".
+  // 0a: thousands-separator amounts are always currency ($9,000 / $100,000.50).
   result = result.replace(/\$(?=\d{1,3}(?:,\d{3})+)/g, "\\$");
+  // 0b: plain amounts ($50, $9.99) are currency when no closing "$" follows,
+  // or when the next "$" itself starts another amount ("between $5 and $7").
+  result = result.replace(/\$(\d+(?:\.\d+)?)/g, (match, amount, offset: number, str: string) => {
+    if (offset > 0 && (str[offset - 1] === "\\" || str[offset - 1] === "$")) return match;
+    const rest = str.slice(offset + match.length);
+    if (rest.startsWith("$")) return match; // "$50$$" edge — leave to later steps
+    const nextDollar = rest.indexOf("$");
+    if (nextDollar === -1) return `\\$${amount}`; // no closing $ → currency
+    if (/\d/.test(rest[nextDollar + 1] ?? "")) return `\\$${amount}`; // next $ is another amount
+    return match; // a plausible closing delimiter exists → leave as math
+  });
 
   // Step 1: \[...\] → $$...$$
   result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`);
@@ -55,17 +109,16 @@ export function normalizeLatexDelimiters(text: string): string {
   // Example: "\\mathbf{a}= $$...$$" -> "$\\mathbf{a}=$ $...$"
   result = result.replace(/(\\[a-zA-Z]+\{[^}]+\}\s*=\s*)(?=\$|\\\[|\\\()/g, (_, expr) => `$${expr}$`);
 
-  // Step 7: bare LaTeX — AI-generated math options often have NO delimiters at all.
+  // Step 7: bare LaTeX — AI-generated math often has NO delimiters at all.
   // e.g. \frac{1}{2}xe^{x^2}+C   or   xe^{x^2}+C   or   \sqrt{x^2+1}
-  // Detect any LaTeX command (\word) or brace-exponent notation (x^{, x_{})
-  // that is NOT already inside a $ or \[ delimiter, then wrap the whole string.
-  const hasAnyDelimiter = /\$|\\\[|\\\(/.test(result);
-  if (!hasAnyDelimiter) {
-    const hasBareLatexCmd = /\\[a-zA-Z]/.test(result);
-    const hasBraceExponent = /[a-zA-Z0-9]\^{|[a-zA-Z0-9]_{/.test(result);
-    if (hasBareLatexCmd || hasBraceExponent) {
-      result = `$${result}$`;
-    }
+  // This must also work for MIXED content ("Simplify \frac{1}{2} given $x$"):
+  // split on existing math spans and only wrap bare LaTeX in the text between
+  // them, otherwise fractions sitting next to delimited math render as raw text.
+  if (/\\[a-zA-Z]|[a-zA-Z0-9]\^{|[a-zA-Z0-9]_{/.test(result)) {
+    result = result
+      .split(/((?<!\\)\$\$[\s\S]*?(?<!\\)\$\$|(?<!\\)\$[^$\n]*?(?<!\\)\$)/)
+      .map((segment, i) => (i % 2 === 1 ? segment : wrapBareLatexInSegment(segment)))
+      .join("");
   }
 
   return result;

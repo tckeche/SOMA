@@ -18,8 +18,19 @@ function approxEq(a: number, b: number): boolean {
   return Math.abs(a - b) < Math.max(NUM_TOL, Math.abs(b) * 1e-4);
 }
 
+const SUPERSCRIPT_MAP: Record<string, string> = {
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+  "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9", "⁻": "-",
+};
+
+const VULGAR_FRACTION_MAP: Record<string, string> = {
+  "½": "(1/2)", "⅓": "(1/3)", "⅔": "(2/3)", "¼": "(1/4)", "¾": "(3/4)",
+  "⅕": "(1/5)", "⅖": "(2/5)", "⅗": "(3/5)", "⅘": "(4/5)",
+  "⅙": "(1/6)", "⅚": "(5/6)", "⅛": "(1/8)", "⅜": "(3/8)", "⅝": "(5/8)", "⅞": "(7/8)",
+};
+
 function stripLatexAndUnicode(input: string): string {
-  return input
+  let s = input
     .replace(/\\\(|\\\)|\\\[|\\\]/g, "")
     .replace(/\$\$/g, "")
     .replace(/\$/g, "")
@@ -28,22 +39,34 @@ function stripLatexAndUnicode(input: string): string {
     .replace(/\\cdot|\\times/g, "*")
     .replace(/\\div/g, "/")
     .replace(/\\pi/g, "pi")
-    .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, "(($1)/($2))")
+    .replace(/\\[dt]frac/g, "\\frac")
+    .replace(/\\%/g, "%")
+    .replace(/\^\s*\{?\s*\\circ\s*\}?/g, "")
+    .replace(/\\degree[s]?\b/g, "");
+  // \frac{a}{b} → ((a)/(b)) — loop so nested fractions resolve inner-first.
+  for (let i = 0; i < 5 && /\\frac/.test(s); i++) {
+    const next = s.replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, "(($1)/($2))");
+    if (next === s) break;
+    s = next;
+  }
+  s = s
+    .replace(/\\frac\s*(\d)\s*(\d)/g, "(($1)/($2))") // \frac12 shorthand
     .replace(/\\sqrt\s*\{([^{}]+)\}/g, "sqrt(($1))")
     .replace(/\\sqrt\s*([0-9.]+)/g, "sqrt($1)")
+    .replace(/√\s*\(([^()]+)\)/g, "sqrt(($1))")
+    .replace(/√\s*([0-9.]+|[a-zA-Z])/g, "sqrt($1)")
     .replace(/\^\s*\{([^{}]+)\}/g, "^($1)")
     .replace(/_\s*\{[^{}]+\}/g, "")
     .replace(/[{}]/g, "")
-    .replace(/²/g, "^2")
-    .replace(/³/g, "^3")
-    .replace(/⁴/g, "^4")
-    .replace(/⁵/g, "^5")
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+/g, (run) => `^(${run.split("").map((c) => SUPERSCRIPT_MAP[c] ?? "").join("")})`)
+    .replace(/[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]/g, (c) => VULGAR_FRACTION_MAP[c] ?? c)
     .replace(/−|–|—/g, "-")
     .replace(/×/g, "*")
     .replace(/÷/g, "/")
     .replace(/≈|≃/g, "=")
     .replace(/\s+/g, " ")
     .trim();
+  return s;
 }
 
 function insertImplicitMultiplication(expr: string, variable = "x"): string {
@@ -63,6 +86,10 @@ function safeEvaluate(expr: string, scope: Record<string, number> = {}): number 
   try {
     const v = math.evaluate(expr, scope);
     if (typeof v === "number" && Number.isFinite(v)) return v;
+    // Units ("3 cm") would silently convert to SI base values — a wrong
+    // magnitude is worse than no match, so refuse them here. Callers strip
+    // recognised unit suffixes and retry as plain numbers.
+    if ((math as any).isUnit?.(v)) return null;
     if (v && typeof (v as any).toNumber === "function") {
       const n = (v as any).toNumber();
       return Number.isFinite(n) ? n : null;
@@ -73,19 +100,59 @@ function safeEvaluate(expr: string, scope: Record<string, number> = {}): number 
   }
 }
 
+// Recognised measurement units that may trail (or lead, for currency) a
+// numeric option. Deliberately an allowlist: blanket letter-stripping turned
+// algebraic options like "2x" into 2 and "sqrt(2)" into 2 — i.e. the prover
+// could "verify" the wrong option.
+const UNIT_SUFFIX_RE = /\s*(?:mm|cm|km|m|kg|mg|g|ml|cl|l|litres?|liters?|s|sec(?:ond)?s?|min(?:ute)?s?|h|hrs?|hours?|days?|weeks?|months?|years?|deg(?:ree)?s?|rad(?:ian)?s?|units?|dollars?|cents?|pounds?|euros?|people|items?|apples?|m\s*\^\s*\(?[23]\)?|cm\s*\^\s*\(?[23]\)?|mm\s*\^\s*\(?[23]\)?|km\s*\^\s*\(?[23]\)?)\s*\.?\s*$/i;
+
 function parseOptionAsNumber(opt: string): number | null {
-  let cleaned = stripLatexAndUnicode(opt)
+  const base = stripLatexAndUnicode(opt)
     .replace(/^[A-D]\s*[\.\):]\s*/i, "") // strip leading "A) ", "B." etc
     .replace(/^[a-z]\s*=\s*/i, "")        // strip leading "x = " / "y = "
     .replace(/,(?=\d{3}\b)/g, "")         // thousands separator
-    .replace(/[a-zA-Z°%]/g, "")           // strip residual units
+    .replace(/^[$£€]\s*/, "")             // leading currency symbol
+    .replace(/[°%]\s*$/, "")              // trailing degree / percent sign
     .trim();
-  if (!cleaned) return null;
-  const direct = Number(cleaned);
+  if (!base) return null;
+  // Pass 1: the cleaned text as-is. Evaluating BEFORE any letter-stripping is
+  // what keeps "sqrt(2)" ≈ 1.414 (and not 2), "pi/2" ≈ 1.571, "2/3" ≈ 0.667.
+  const direct = Number(base);
   if (Number.isFinite(direct)) return direct;
-  const expr = safeEvaluate(cleaned);
-  if (expr !== null) return expr;
+  const evaluated = safeEvaluate(base);
+  if (evaluated !== null) return evaluated;
+  // Pass 2: strip a recognised trailing unit word ("12 cm", "45 minutes")
+  // and retry. Unknown letters (e.g. "2x", "3a + 1") stay non-numeric.
+  const unitless = base.replace(UNIT_SUFFIX_RE, "").trim();
+  if (unitless && unitless !== base) {
+    const n = Number(unitless);
+    if (Number.isFinite(n)) return n;
+    const e = safeEvaluate(unitless);
+    if (e !== null) return e;
+  }
   return null;
+}
+
+/**
+ * Parse arbitrary answer text as a single numeric value (exported for the
+ * pipeline's answer-snapping logic). Returns null when the text is not a
+ * single, unambiguous number.
+ */
+export function parseNumericValue(text: string): number | null {
+  if (typeof text !== "string" || !text.trim()) return null;
+  return parseOptionAsNumber(text);
+}
+
+/**
+ * True when both strings parse to numerically-equal values ("2", "2.0",
+ * "\\frac{4}{2}" are all equivalent). False when either side is non-numeric.
+ */
+export function numericallyEquivalent(a: string, b: string): boolean {
+  const na = parseNumericValue(a);
+  if (na === null) return false;
+  const nb = parseNumericValue(b);
+  if (nb === null) return false;
+  return approxEq(na, nb);
 }
 
 // Parse multi-value options like "x = 2 or x = 3", "{1, 4}", "2 and 5" into a set of numbers.

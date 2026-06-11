@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/supabase";
 import { formatDistanceToNow } from "date-fns";
 import { Flag, CheckCircle2, Loader2, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
+import MarkdownRenderer from "@/components/MarkdownRenderer";
 
 interface TutorFlag {
   id: number;
@@ -110,7 +111,9 @@ export default function TutorFlagsPanel({ quizId }: Props) {
                       by {f.student.displayName || f.student.email} · {formatDistanceToNow(new Date(f.createdAt), { addSuffix: true })}
                     </span>
                   </div>
-                  <p className="text-xs text-foreground mt-1.5 line-clamp-3">{f.question.stem}</p>
+                  <div className="text-xs text-foreground mt-1.5 line-clamp-3">
+                    <MarkdownRenderer content={f.question.stem} />
+                  </div>
                   {f.reason && (
                     <div className="flex items-start gap-1.5 mt-2 text-[11px] text-orange-200/90 bg-orange-500/5 border border-orange-500/20 rounded-lg p-2">
                       <MessageSquare className="w-3 h-3 mt-0.5 shrink-0" />

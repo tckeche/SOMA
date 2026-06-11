@@ -49,6 +49,8 @@ vi.mock("../server/services/aiPipeline", () => ({
       totalDurationMs: 0,
     },
     seedMisconceptionIds: [],
+    blueprint: null,
+    blockedQuestions: [],
   }),
   runQuestionAudit: vi.fn(async (questions: any[]) => ({
     questions: questions.map((q) => ({

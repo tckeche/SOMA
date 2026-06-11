@@ -12,6 +12,7 @@ import {
   ClockArrowUp, Pencil, Search,
 } from "lucide-react";
 import DOMPurify from "dompurify";
+import { renderMathInHtml } from "@/lib/renderMathInHtml";
 import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -273,7 +274,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
               </h4>
               <div
                 className="prose prose-sm prose-invert max-w-none bg-muted/40 rounded-xl p-4 border border-border/50 text-foreground/80 [&_h3]:text-violet-300 [&_strong]:text-foreground [&_li]:text-foreground/80"
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(report.aiFeedbackHtml) }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMathInHtml(report.aiFeedbackHtml)) }}
                 data-testid="modal-ai-feedback"
               />
             </div>
@@ -899,12 +900,14 @@ export default function TutorAssessments() {
                                     Q{idx + 1}
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="text-sm text-foreground/80 line-clamp-2">{q.stem}</p>
+                                    <div className="text-sm text-foreground/80 line-clamp-2">
+                                      <MarkdownRenderer content={q.stem} />
+                                    </div>
                                     <p className="text-[10px] text-muted-foreground mt-1">{q.marks} mark{q.marks !== 1 ? "s" : ""} · {(q.options as string[]).length} options</p>
                                   </div>
                                 </div>
                                 <button
-                                  onClick={() => setConfirmDeleteQuestion({ questionId: q.id, stem: q.stem.slice(0, 60) })}
+                                  onClick={() => setConfirmDeleteQuestion({ questionId: q.id, stem: q.stem })}
                                   className="flex items-center justify-center p-1.5 min-h-[28px] min-w-[28px] rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0"
                                   title="Delete question"
                                   data-testid={`button-delete-question-${q.id}`}
@@ -1245,7 +1248,9 @@ export default function TutorAssessments() {
                 <p className="text-xs text-muted-foreground">This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-foreground/80 mb-4">"{confirmDeleteQuestion.stem}..."</p>
+            <div className="text-sm text-foreground/80 mb-4 line-clamp-3">
+              <MarkdownRenderer content={confirmDeleteQuestion.stem} />
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDeleteQuestion(null)}
