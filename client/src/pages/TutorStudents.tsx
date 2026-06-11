@@ -9,11 +9,10 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SomaUser } from "@shared/schema";
+import { formatPersonName } from "@/lib/personName";
 
 function formatStudentName(student: SomaUser): string {
-  const fromDisplay = (student.displayName || "").trim();
-  if (fromDisplay) return fromDisplay;
-  return "Student";
+  return formatPersonName(student);
 }
 
 const GP = "glass-panel-elite";

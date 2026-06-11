@@ -2,6 +2,7 @@ import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { authFetch } from "@/lib/supabase";
+import { formatPersonName } from "@/lib/personName";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format, formatDistanceToNow } from "date-fns";
@@ -279,7 +280,7 @@ export default function TutorStudentDetail() {
   const student = report?.student;
   const stats = report?.stats;
   const assignments = report?.assignments || [];
-  const displayName = toProperCase(student?.displayName || student?.email?.split("@")[0] || "Student");
+  const displayName = toProperCase(formatPersonName(student ?? {}));
   const initials = getInitials(displayName);
 
   const topicPerformance = useMemo(() => {

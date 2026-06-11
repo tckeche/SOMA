@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { supabase, authFetch } from "@/lib/supabase";
+import { formatPersonName } from "@/lib/personName";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
 import { formatDuration, getInitials } from "@/lib/utils";
@@ -1167,8 +1168,7 @@ export default function TutorDashboard() {
               <>
                 <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
                   {adoptedStudents.map((student) => {
-                    const nameOnly = (student.displayName || "").trim();
-                    const studentLabel = nameOnly || "Student";
+                    const studentLabel = formatPersonName(student);
                     const si = getInitials(studentLabel);
                     return (
                       <button

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { renderMathInHtml } from "@/lib/renderMathInHtml";
+import { formatPersonName } from "@/lib/personName";
 import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -664,7 +665,7 @@ export default function TutorAssessments() {
             >
               <option value="">All students</option>
               {adoptedStudents.map((s) => (
-                <option key={s.id} value={s.id}>{s.displayName || s.email}</option>
+                <option key={s.id} value={s.id}>{formatPersonName(s)}</option>
               ))}
             </select>
           </div>
@@ -827,7 +828,7 @@ export default function TutorAssessments() {
                               <select value={assignmentStudentFilter} onChange={(e) => setAssignmentStudentFilter(e.target.value)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80">
                                 <option value="all">All students</option>
                                 {currentAssignments.map((a) => (
-                                  <option key={a.studentId} value={a.studentId}>{a.student.displayName || a.student.email}</option>
+                                  <option key={a.studentId} value={a.studentId}>{formatPersonName(a.student)}</option>
                                 ))}
                               </select>
                               <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value as any)} className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground/80">
@@ -847,12 +848,12 @@ export default function TutorAssessments() {
                                   <div className="flex items-center gap-3 min-w-0">
                                     <div className="w-8 h-8 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center shrink-0">
                                       <span className="text-[10px] font-bold text-violet-300">
-                                        {(assignment.student.displayName || assignment.student.email || "?")
+                                        {formatPersonName(assignment.student)
                                           .split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
                                       </span>
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="text-sm text-foreground truncate">{assignment.student.displayName || "Student"}</p>
+                                      <p className="text-sm text-foreground truncate">{formatPersonName(assignment.student)}</p>
                                       <p className="text-[11px] text-muted-foreground truncate">{assignment.student.email}</p>
                                     </div>
                                   </div>

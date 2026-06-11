@@ -4,6 +4,7 @@ import { authFetch } from "@/lib/supabase";
 import { formatDistanceToNow } from "date-fns";
 import { Flag, CheckCircle2, Loader2, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { formatPersonName } from "@/lib/personName";
 
 interface TutorFlag {
   id: number;
@@ -108,7 +109,7 @@ export default function TutorFlagsPanel({ quizId }: Props) {
                       <span className="text-[10px] text-muted-foreground">{f.quiz.title}</span>
                     )}
                     <span className="text-[10px] text-muted-foreground">
-                      by {f.student.displayName || f.student.email} · {formatDistanceToNow(new Date(f.createdAt), { addSuffix: true })}
+                      by {formatPersonName(f.student)} · {formatDistanceToNow(new Date(f.createdAt), { addSuffix: true })}
                     </span>
                   </div>
                   <div className="text-xs text-foreground mt-1.5 line-clamp-3">

@@ -143,6 +143,14 @@ export default function StudentAuth() {
     const nextErrors: { email?: string; password?: string } = {};
     if (!email.trim()) nextErrors.email = "Please enter your email address.";
     if (!password.trim()) nextErrors.password = "Please create a password.";
+    if (!displayName.trim()) {
+      toast({
+        title: "Name required",
+        description: "Please enter your first name and surname so your tutor can recognise you.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!subject || !syllabus || !syllabusCode.trim() || !level) {
       toast({
         title: "Missing required fields",
@@ -181,7 +189,7 @@ export default function StudentAuth() {
         password,
         options: {
           data: {
-            display_name: displayName || email.split("@")[0],
+            display_name: displayName.trim(),
             subject,
             syllabus,
             syllabus_code: syllabusCode.trim(),
@@ -411,14 +419,17 @@ export default function StudentAuth() {
             {mode === "signup" && (
               <>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Display Name</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
+                    Full Name <span className="text-red-400">*</span>
+                  </label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
                       type="text"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Your name"
+                      placeholder="First name and surname"
+                      required
                       className="glass-input w-full pl-10 pr-4 py-3 text-sm"
                       data-testid="input-display-name"
                     />

@@ -949,14 +949,43 @@ describe("POST /api/auth/sync", () => {
     expect(res.body.displayName).toBe("Full Name User");
   });
 
-  it("falls back to email prefix when no name metadata provided", async () => {
+  it("falls back to a humanized email prefix when no name metadata provided", async () => {
     const res = await request.post("/api/auth/sync").send({
       id: "550e8400-e29b-41d4-a716-446655440003",
       email: "noname@example.com",
       user_metadata: {},
     });
     expect(res.status).toBe(200);
-    expect(res.body.displayName).toBe("noname");
+    // Humanized rather than the raw prefix — tutors see "Noname", not "noname".
+    expect(res.body.displayName).toBe("Noname");
+  });
+
+  it("humanizes dotted email prefixes into name-and-surname form", async () => {
+    const res = await request.post("/api/auth/sync").send({
+      id: "550e8400-e29b-41d4-a716-446655440013",
+      email: "john.smith42@example.com",
+      user_metadata: {},
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.displayName).toBe("John Smith");
+  });
+
+  it("does not overwrite an existing real name with an email-derived fallback", async () => {
+    const id = "550e8400-e29b-41d4-a716-446655440014";
+    const first = await request.post("/api/auth/sync").send({
+      id,
+      email: "thandi.k@example.com",
+      user_metadata: { display_name: "Thandi Khumalo" },
+    });
+    expect(first.body.displayName).toBe("Thandi Khumalo");
+    // Second sync without metadata (e.g. a token-only login) must keep the name.
+    const second = await request.post("/api/auth/sync").send({
+      id,
+      email: "thandi.k@example.com",
+      user_metadata: {},
+    });
+    expect(second.status).toBe(200);
+    expect(second.body.displayName).toBe("Thandi Khumalo");
   });
 
   it("assigns super_admin role to fallback email when SUPER_ADMIN_EMAIL is unset", async () => {
