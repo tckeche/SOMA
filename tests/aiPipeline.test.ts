@@ -345,6 +345,13 @@ describe("generateAuditedQuiz: chunked verification", () => {
     expect(result.telemetry.rerollAttempts).toBe(1);
     // Planner ran for the initial pass only — the ≤3-question re-roll skips it.
     expect(planner).toHaveBeenCalledTimes(1);
+    // The re-roll maker must be told which questions the quiz already keeps,
+    // so it can't regenerate near-duplicates from the identical context.
+    expect(maker).toHaveBeenCalledTimes(2);
+    const rerollCtx = maker.mock.calls[1][0];
+    expect(rerollCtx._avoidStems).toBeDefined();
+    expect(rerollCtx._avoidStems.length).toBe(4);
+    expect(rerollCtx._avoidStems[0]).toContain("Question 1");
   });
 });
 

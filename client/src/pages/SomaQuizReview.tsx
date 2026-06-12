@@ -217,16 +217,21 @@ export default function SomaQuizReview() {
     setDownloading(true);
     try {
       const images = Array.from(pdfRef.current.querySelectorAll("img"));
-      await Promise.all(
-        images.map((img) =>
-          img.complete && img.naturalWidth > 0
-            ? Promise.resolve()
-            : new Promise<void>((resolve) => {
-                img.addEventListener("load", () => resolve(), { once: true });
-                img.addEventListener("error", () => resolve(), { once: true });
-              }),
+      // Cap the wait: a stalled image request (no load OR error event) must
+      // not hang the export forever — after 8s render with what we have.
+      await Promise.race([
+        Promise.all(
+          images.map((img) =>
+            img.complete && img.naturalWidth > 0
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.addEventListener("load", () => resolve(), { once: true });
+                  img.addEventListener("error", () => resolve(), { once: true });
+                }),
+          ),
         ),
-      );
+        new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+      ]);
       const html2pdf = (await import("html2pdf.js")).default;
       await html2pdf().set({
         margin: [12, 12, 12, 12],

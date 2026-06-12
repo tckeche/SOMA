@@ -342,6 +342,24 @@ const verificationCodeStore = new Map<string, {
   attempts: number;
 }>();
 
+// These in-process maps grow forever without eviction: abandoned drafts and
+// expired verification codes pile up for the lifetime of the server. Sweep
+// hourly; drafts older than 7 days are stale by any definition (they only
+// survive a refresh, not a deploy, anyway).
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [quizId, draft] of Array.from(draftStore.entries())) {
+    if (now - draft.updatedAt.getTime() > DRAFT_MAX_AGE_MS) draftStore.delete(quizId);
+  }
+  for (const [email, record] of Array.from(verificationCodeStore.entries())) {
+    if (record.expiresAt < now - 60 * 60 * 1000) {
+      verificationCodeStore.delete(email);
+      verificationResendAttempts.delete(email);
+    }
+  }
+}, 60 * 60 * 1000).unref();
+
 function getDraft(quizId: number): DraftQuestion[] {
   return draftStore.get(quizId)?.questions ?? [];
 }
@@ -1479,14 +1497,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             level: user_metadata.level,
           }]
           : [];
-      for (const item of signupSubjects) {
-        if (!item.subject || !item.examBody || !item.syllabusCode || !item.level) continue;
+      if (signupSubjects.length > 0) {
+        // Fetch once and track additions in-memory — the old per-iteration
+        // re-fetch was an N+1 (and N is every login, not just signup).
         const existing = await storage.listStudentSubjects(user.id);
-        const already = existing.some((s) =>
-          s.subject.toLowerCase() === item.subject.toLowerCase()
-          && s.syllabusCode.toLowerCase() === item.syllabusCode.toLowerCase()
-        );
-        if (!already) {
+        const seen = new Set(existing.map((s) => `${s.subject.toLowerCase()}|${s.syllabusCode.toLowerCase()}`));
+        for (const item of signupSubjects) {
+          if (!item.subject || !item.examBody || !item.syllabusCode || !item.level) continue;
+          const key = `${item.subject.toLowerCase()}|${item.syllabusCode.toLowerCase()}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
           await storage.addStudentSubject({
             studentId: user.id,
             subject: item.subject,
@@ -5306,7 +5326,7 @@ ${JSON.stringify({
       res.json(report);
 
       // Mark quiz assignment as completed
-      storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch(() => {});
+      storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch((err) => console.error(`[Submission] Failed to mark assignment completed (quiz ${quizId}, student ${studentId}):`, err?.message ?? err));
       const quiz = await storage.getSomaQuiz(quizId);
       if (quiz?.authorId) {
         const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
@@ -5326,7 +5346,7 @@ ${JSON.stringify({
         studentId,
         quizTitle: quiz?.title || "your assessment",
         quizSubject: quiz?.subject ?? null,
-      }).catch(() => {});
+      }).catch((err) => console.error(`[Submission] Background grading failed to start for report ${report.id}:`, err?.message ?? err));
 
       // Phase 3.3 — mark any existing revision plans stale so the
       // student is prompted to refresh after each new submission.
@@ -5464,7 +5484,7 @@ ${JSON.stringify({
 
       res.json({ message: "Retry started", reportId });
 
-      runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore).catch(() => {});
+      runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore).catch((err) => console.error(`[Retry Grading] Background grading failed for report ${reportId}:`, err?.message ?? err));
     } catch (err: any) {
       console.error("[Retry Grading] Error:", err.message);
       res.status(500).json({ message: err.message });

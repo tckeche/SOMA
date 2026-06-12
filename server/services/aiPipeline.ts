@@ -195,6 +195,13 @@ export interface SomaGenerationContext {
    * questions. Callers should not set this.
    */
   _skipPlanner?: boolean;
+  /**
+   * Internal: stems of questions already kept in this quiz. Set by the
+   * re-roll loop so the maker prompt can forbid duplicating them — the
+   * same context otherwise reliably regenerates near-identical questions.
+   * Callers should not set this.
+   */
+  _avoidStems?: string[];
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -726,7 +733,14 @@ function buildMakerUserPrompt(context: SomaGenerationContext): string {
   const blueprintBlock = context.blueprint
     ? "\n\n" + renderBlueprintForMaker(context.blueprint, context.examinerSeeds)
     : "";
-  return `Topic: ${context.topic}${catalogueBlock(context)}${seedsBlock}${blueprintBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
+  // Re-roll passes replace blocked questions in an existing quiz. Without
+  // this list the maker has no way to know what it already wrote, and the
+  // same context reliably reproduces near-identical questions — students
+  // would see duplicates.
+  const avoidBlock = context._avoidStems && context._avoidStems.length > 0
+    ? `\n\nDO NOT DUPLICATE: the quiz already contains the following questions. Each new question must test a DIFFERENT calculation or scenario — do not reword, renumber, or lightly mutate any of these:\n${context._avoidStems.map((s, i) => `${i + 1}. ${s.slice(0, 240)}`).join("\n")}`
+    : "";
+  return `Topic: ${context.topic}${catalogueBlock(context)}${seedsBlock}${blueprintBlock}${avoidBlock}\n${context.copilotPrompt || ""}\n${context.supportingDocText || ""}`;
 }
 
 function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
@@ -868,7 +882,9 @@ export async function runClaudeMakerSimple(
           input_schema: inputSchema,
         }],
         tool_choice: { type: "tool", name: "return_quiz_draft" },
-      });
+        // SDK default timeout is ~10 minutes — a hung provider would stall
+        // the whole generation. Fail at 90s so the fallback maker runs.
+      }, { timeout: 90_000 });
 
       const toolBlock = response.content.find((b: any) => b.type === "tool_use");
       if (!toolBlock || toolBlock.type !== "tool_use") {
@@ -910,7 +926,7 @@ export async function runOpenAIMakerSimple(
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-      });
+      }, { timeout: 90_000 });
       const raw = completion.choices[0]?.message?.content || "";
       const validated = validateAgainstSchema(raw, DraftQuizSchema);
       if (!validated.ok) throw new Error(`OpenAI maker schema gate failed: ${validated.reason}`);
@@ -948,7 +964,9 @@ export async function runOpenAIVerifier(
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-      });
+        // Chunked verification keeps each call small — 75s is generous for
+        // a 4-question chunk and lets the Gemini fallback run within budget.
+      }, { timeout: 75_000 });
       const raw = completion.choices[0]?.message?.content || "";
       const validated = validateAgainstSchema(raw, VerifierResponseSchema);
       if (!validated.ok) throw new Error(`OpenAI verifier schema gate failed: ${validated.reason}`);
@@ -1050,7 +1068,22 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   let stillBlocked = initial.blockedQuestions;
   let attempt = 0;
 
+  // Hard wall-clock budget across all re-roll passes. Each pass can cost
+  // 30-60s; without a budget two re-rolls on a slow provider push the whole
+  // request past every client timeout, throwing away work the caller will
+  // never see. Better to ship slightly short within budget.
+  const REROLL_TIME_BUDGET_MS = 150_000;
+
   while (stillBlocked.length > 0 && attempt < maxAttempts) {
+    if (Date.now() - overallStart > REROLL_TIME_BUDGET_MS) {
+      warnings.push({
+        questionIndex: 0,
+        field: "overall",
+        issue: `Re-roll time budget exceeded (${Math.round((Date.now() - overallStart) / 1000)}s elapsed); shipping ${kept.length}/${requestedCount} without further attempts.`,
+        autoFixed: false,
+      });
+      break;
+    }
     attempt += 1;
     const rerollContext: SomaGenerationContext = {
       ...context,
@@ -1060,6 +1093,8 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       // For small shortfalls, the planner's serial LLM call costs more time
       // than it's worth on 1-3 replacement questions — go straight to maker.
       _skipPlanner: stillBlocked.length <= 3,
+      // Forbid duplicating questions the quiz already keeps.
+      _avoidStems: kept.map((q) => q.stem),
     };
     let reroll: AuditedQuizResult;
     try {
@@ -1151,7 +1186,9 @@ async function runOnePassQuiz(
       const baseIndex = merged.length;
       merged.push(...batch.questions);
       for (const w of batch.warnings) {
-        allWarnings.push({ ...w, questionIndex: w.questionIndex + baseIndex });
+        // questionIndex 0 marks a batch-level/overall warning (e.g. re-roll
+        // exhaustion) — shifting it would misattribute it to a real question.
+        allWarnings.push({ ...w, questionIndex: w.questionIndex > 0 ? w.questionIndex + baseIndex : 0 });
       }
       lastTelemetry = batch.telemetry;
     }
@@ -1172,11 +1209,15 @@ async function runOnePassQuiz(
     // callers see the full picture, not just the surviving questions.
     const allBlocked: BlockedQuestion[] = [];
     let runningOffset = 0;
-    for (const batch of batchResults) {
+    for (let bi = 0; bi < batchResults.length; bi++) {
+      const batch = batchResults[bi];
       for (const b of batch.blockedQuestions) {
         allBlocked.push({ ...b, originalIndex: b.originalIndex + runningOffset });
       }
-      runningOffset += batch.questions.length + batch.blockedQuestions.length;
+      // Advance by the REQUESTED batch size: kept + blocked can drift from it
+      // after partial re-roll recovery, which would collide originalIndex
+      // values across batches.
+      runningOffset += batchSizes[bi];
     }
     return {
       questions: finalValidated.questions,

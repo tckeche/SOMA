@@ -449,9 +449,18 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     return () => clearInterval(interval);
   }, [isPreview, quiz?.timeLimitMinutes, submissionResult, autosaveRestored, quizStartedAt]);
 
-  // Auto-submit when timer reaches 0
+  // Auto-submit when timer reaches 0. Capped: without the counter this
+  // effect re-fires on every render after a failed mutation (the mutation
+  // object's identity changes), hammering the server forever on a dead
+  // network. After 3 automatic attempts the student keeps the visible
+  // "Retry submission" banner — answers stay autosaved either way.
+  const autoSubmitAttempts = useRef(0);
   useEffect(() => {
-    if (timeRemainingSeconds === 0 && !isPreview && userId && !submissionResult && !submitMutation.isPending) {
+    if (
+      timeRemainingSeconds === 0 && !isPreview && userId && !submissionResult &&
+      !submitMutation.isPending && autoSubmitAttempts.current < 3
+    ) {
+      autoSubmitAttempts.current += 1;
       submitMutation.mutate();
     }
   }, [timeRemainingSeconds, isPreview, userId, submissionResult, submitMutation]);
@@ -703,6 +712,26 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             <ThemeToggle size="sm" />
           </div>
         </div>
+
+        {!isPreview && submitMutation.isError && !submissionResult && (
+          <div
+            className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+            role="alert"
+            data-testid="banner-submit-failed"
+          >
+            <p className="text-sm text-red-200">
+              Your submission didn't go through — your answers are saved on this device. Check your connection and retry.
+            </p>
+            <button
+              onClick={() => submitMutation.mutate()}
+              disabled={submitMutation.isPending}
+              className="px-4 py-2 min-h-[40px] rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-500 disabled:opacity-60 transition-all"
+              data-testid="button-retry-submit"
+            >
+              {submitMutation.isPending ? "Retrying…" : "Retry submission"}
+            </button>
+          </div>
+        )}
 
         {!isPreview && (
           <div

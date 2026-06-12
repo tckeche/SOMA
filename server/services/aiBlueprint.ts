@@ -381,7 +381,9 @@ async function callOpenAIPlanner(systemPrompt: string, userPrompt: string): Prom
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-  });
+    // The planner is a small, fast call — fail at 30s so the fallback
+    // planner (or the legacy no-plan path) runs instead of stalling.
+  }, { timeout: 30_000 });
   const raw = completion.choices[0]?.message?.content || "";
   const validated = validateAgainstSchema(raw, BlueprintSchema);
   if (!validated.ok) throw new Error(`Planner schema gate failed (openai): ${validated.reason}`);
@@ -419,7 +421,7 @@ async function callClaudePlanner(systemPrompt: string, userPrompt: string): Prom
       },
     ],
     tool_choice: { type: "tool", name: "return_blueprint" },
-  });
+  }, { timeout: 30_000 });
   const toolBlock = response.content.find((b: any) => b.type === "tool_use");
   if (!toolBlock || toolBlock.type !== "tool_use") {
     throw new Error("Claude planner returned no tool output");
