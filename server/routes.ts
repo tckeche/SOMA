@@ -917,6 +917,24 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   return res.status(401).json({ message: "Unauthorized" });
 }
 
+
+const clientErrorReportSchema = z.object({
+  timestamp: z.string().max(64),
+  route: z.string().max(2048),
+  boundaryTitle: z.string().max(256),
+  error: z.object({
+    name: z.string().max(256),
+    message: z.string().max(2000),
+    stack: z.string().max(4000).optional(),
+    componentStack: z.string().max(4000).optional(),
+  }),
+  user: z.object({
+    id: z.string().max(128).optional(),
+    role: z.string().max(64).optional(),
+  }).optional(),
+  requestId: z.string().max(128),
+});
+
 const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com";
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
@@ -1738,6 +1756,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // before the legacy inline handlers below so any future domain takeover
   // can shadow a route here without conflict.
   registerDomainRoutes(app);
+
+
+  app.post("/api/diagnostics/client-error", requireSupabaseAuth, async (req, res) => {
+    const parsed = clientErrorReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid client error report" });
+    }
+
+    const authUser = (req as any).authUser as { id?: string; role?: string } | undefined;
+    const report = parsed.data;
+
+    console.warn("[client-error]", {
+      timestamp: report.timestamp,
+      route: report.route,
+      boundaryTitle: report.boundaryTitle,
+      errorName: report.error.name,
+      errorMessage: report.error.message,
+      requestId: report.requestId,
+      userId: authUser?.id || report.user?.id,
+      role: authUser?.role || report.user?.role,
+      stack: report.error.stack,
+      componentStack: report.error.componentStack,
+    });
+
+    res.status(202).json({ ok: true, requestId: report.requestId });
+  });
 
   app.post("/api/graph/render-svg", async (req, res) => {
     const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
