@@ -11,6 +11,7 @@ import {
 import * as health from "./aiHealth";
 import * as cache from "./aiCache";
 import { clampMaxTokens } from "./aiCostGuards";
+import { logWarn } from "../utils/logging";
 
 interface ModelConfig {
   provider: "google" | "openai" | "anthropic" | "deepseek";
@@ -594,7 +595,18 @@ async function runChain(
         validation: { status: "skipped" },
         error: errorMessage,
       });
-      console.warn(`[${config.provider} - ${config.model}] failed: ${errorMessage}. Attempting next model...`);
+      logWarn("ai.provider_failed", {
+        severity: "high",
+        module: "aiOrchestrator",
+        component: "providerFallback",
+        provider: config.provider,
+        model: config.model,
+        errorMessage,
+        requestId,
+        route: options?.route,
+        userId: options?.userId,
+        retryCount: attempt,
+      });
       attempt++;
     }
   }

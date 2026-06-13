@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { storage } from "./storage";
+import { logError, logSecurity, requestLogContext } from "./utils/logging";
 
 export type AppRole = "student" | "tutor" | "super_admin";
 
@@ -138,12 +139,26 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
       // Header-based identity is a legacy fallback for local/dev setups only.
       // In production this must stay disabled to prevent header spoofing.
       if (process.env.NODE_ENV === "production") {
+        logSecurity("auth.header_fallback_blocked", {
+          ...requestLogContext(req as any),
+          module: "auth",
+          component: "roleMiddleware",
+          allowedRoles: config.allowedRoles,
+        });
         return res.status(401).json({ message: "Authentication required" });
       }
 
       const headerUser = await findAuthorizedUserByHeader(req, config.identityHeaderName, config.allowedRoles);
       if (!headerUser) {
         const missingIdentity = !(req.headers[config.identityHeaderName] as string | undefined);
+        logSecurity(missingIdentity ? "auth.identity_missing" : "auth.role_forbidden", {
+          ...requestLogContext(req as any),
+          module: "auth",
+          component: "roleMiddleware",
+          severity: missingIdentity ? "medium" : "high",
+          identityHeaderName: config.identityHeaderName,
+          allowedRoles: config.allowedRoles,
+        });
         return res.status(missingIdentity ? 401 : 403).json({
           message: missingIdentity ? config.missingIdentityMessage : config.forbiddenMessage,
         });
@@ -153,7 +168,14 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
       (req as any)[config.requestIdKey] = headerUser.id;
       (req as any)[config.requestUserKey] = headerUser;
       return next();
-    } catch {
+    } catch (err) {
+      logError("auth.identity_verification_failed", err, {
+        ...requestLogContext(req as any),
+        severity: "high",
+        module: "auth",
+        component: "roleMiddleware",
+        allowedRoles: config.allowedRoles,
+      });
       return res.status(500).json({ message: "Failed to verify user identity" });
     }
   };
