@@ -322,7 +322,14 @@ const adminRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+const allowedImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const uploadTypeByExtension = new Map<string, string>([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+]);
 const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
 
 // ---------------------------------------------------------------------------
@@ -700,26 +707,85 @@ const uploadImageLimiter = rateLimit({
 });
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      const dir = path.resolve(process.cwd(), "client/public/uploads");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    },
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
     if (!allowedImageTypes.has(file.mimetype)) {
-      cb(new Error("Only PNG, JPEG, WEBP, and SVG images are allowed"));
+      cb(new Error("Only PNG, JPEG, and WEBP images are allowed"));
       return;
     }
     cb(null, true);
   },
 });
+
+type ValidatedImageUpload = {
+  extension: ".png" | ".jpg" | ".jpeg" | ".webp";
+  contentType: "image/png" | "image/jpeg" | "image/webp";
+};
+
+function logRejectedUpload(req: Request, reason: string, file?: Express.Multer.File): void {
+  console.warn(JSON.stringify({
+    event: "upload_rejected",
+    reason,
+    ip: req.ip,
+    userAgent: req.get("user-agent")?.slice(0, 200),
+    originalExtension: file?.originalname ? path.extname(file.originalname).toLowerCase().slice(0, 16) : undefined,
+    mimetype: file?.mimetype,
+    size: file?.size,
+  }));
+}
+
+function hasImageMagicBytes(buffer: Buffer, contentType: string): boolean {
+  if (contentType === "image/png") {
+    return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  if (contentType === "image/jpeg") {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (contentType === "image/webp") {
+    return buffer.length >= 12
+      && buffer.subarray(0, 4).toString("ascii") === "RIFF"
+      && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+  }
+  return false;
+}
+
+function containsActiveTextPayload(buffer: Buffer): boolean {
+  const sample = buffer.subarray(0, Math.min(buffer.length, 4096)).toString("utf8").toLowerCase();
+  return /<\s*(?:!doctype\s+html|html|head|body|script|iframe|object|embed|svg|img|meta|link)\b/.test(sample)
+    || /javascript\s*:|onerror\s*=|onload\s*=|<\?php/.test(sample);
+}
+
+function validateImageUpload(req: Request, file: Express.Multer.File): ValidatedImageUpload | null {
+  const extension = path.extname(file.originalname).toLowerCase();
+  if (!allowedImageExtensions.has(extension)) {
+    logRejectedUpload(req, "unsupported_extension", file);
+    return null;
+  }
+  const expectedContentType = uploadTypeByExtension.get(extension);
+  if (!expectedContentType || expectedContentType !== file.mimetype) {
+    logRejectedUpload(req, "extension_mime_mismatch", file);
+    return null;
+  }
+  if (!hasImageMagicBytes(file.buffer, file.mimetype)) {
+    logRejectedUpload(req, "magic_bytes_mismatch", file);
+    return null;
+  }
+  if (containsActiveTextPayload(file.buffer)) {
+    logRejectedUpload(req, "active_content_detected", file);
+    return null;
+  }
+  return { extension: extension as ValidatedImageUpload["extension"], contentType: file.mimetype as ValidatedImageUpload["contentType"] };
+}
+
+async function persistImageUpload(file: Express.Multer.File, extension: string): Promise<string> {
+  await fs.promises.mkdir(UPLOAD_ROOT, { recursive: true, mode: 0o755 });
+  const filename = `${Date.now()}-${crypto.randomUUID()}${extension}`;
+  const destination = path.join(UPLOAD_ROOT, filename);
+  await fs.promises.writeFile(destination, file.buffer, { mode: 0o644, flag: "wx" });
+  await fs.promises.chmod(destination, 0o644);
+  return filename;
+}
 
 const pdfUpload = multer({ storage: multer.memoryStorage() });
 
@@ -1575,6 +1641,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.use("/api/student", studentApiLimiter);
   app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
+
+  app.get("/uploads/:filename", async (req, res) => {
+    const filename = path.basename(String(req.params.filename || ""));
+    if (!/^[0-9]+-[0-9a-f-]{36}\.(?:png|jpe?g|webp)$/i.test(filename)) {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+
+    const extension = path.extname(filename).toLowerCase();
+    const contentType = uploadTypeByExtension.get(extension);
+    if (!contentType) {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+
+    const filePath = path.join(UPLOAD_ROOT, filename);
+    if (!filePath.startsWith(`${UPLOAD_ROOT}${path.sep}`)) {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+
+    try {
+      await fs.promises.access(filePath, fs.constants.R_OK);
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; sandbox");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      return res.sendFile(filePath);
+    } catch {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+  });
 
   // Per-domain route modules (see server/routes/README.md). Registered
   // before the legacy inline handlers below so any future domain takeover
@@ -4966,16 +5061,38 @@ ${JSON.stringify({
 
 
   app.post("/api/upload-image", uploadImageLimiter, requireAdmin, (req, res) => {
-    upload.single("image")(req, res, (err: any) => {
+    upload.single("image")(req, res, async (err: any) => {
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {
+          logRejectedUpload(req, "file_too_large");
           return res.status(400).json({ message: "Image exceeds 5MB size limit" });
         }
+        logRejectedUpload(req, err.message || "multer_rejected");
         return res.status(400).json({ message: err.message || "Invalid image upload" });
       }
-      if (!req.file) return res.status(400).json({ message: "No image uploaded" });
-      const url = `/uploads/${req.file.filename}`;
-      res.json({ url });
+      if (!req.file) {
+        logRejectedUpload(req, "missing_file");
+        return res.status(400).json({ message: "No image uploaded" });
+      }
+
+      const validated = validateImageUpload(req, req.file);
+      if (!validated) {
+        return res.status(400).json({ message: "Invalid image upload" });
+      }
+
+      try {
+        const filename = await persistImageUpload(req.file, validated.extension);
+        const url = `/uploads/${filename}`;
+        res.json({ url });
+      } catch (saveErr: any) {
+        console.error(JSON.stringify({
+          event: "upload_save_failed",
+          reason: saveErr?.code || saveErr?.message || "unknown",
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        }));
+        res.status(500).json({ message: "Failed to save image upload" });
+      }
     });
   });
 
