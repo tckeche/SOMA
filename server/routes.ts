@@ -559,6 +559,104 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
   };
 }
 
+
+type BackgroundTaskSeverity = "info" | "warning" | "error" | "critical";
+
+type BackgroundTaskLogEntry = {
+  id: string;
+  timestamp: string;
+  taskName: string;
+  severity: BackgroundTaskSeverity;
+  requestId?: string | null;
+  userId?: string | null;
+  studentId?: string | null;
+  tutorId?: string | null;
+  reportId?: number | null;
+  quizId?: number | null;
+  error: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+};
+
+const BACKGROUND_TASK_LOG_LIMIT = 200;
+const backgroundTaskLog: BackgroundTaskLogEntry[] = [];
+
+function getRequestId(req: Request): string | null {
+  const header = req.header("x-request-id") || req.header("x-correlation-id");
+  if (header && header.trim()) return header.trim().slice(0, 120);
+  const candidate = (req as any).id ?? (req as any).requestId;
+  return candidate ? String(candidate).slice(0, 120) : null;
+}
+
+function serializeBackgroundError(err: unknown): BackgroundTaskLogEntry["error"] {
+  if (err instanceof Error) {
+    return {
+      name: err.name || "Error",
+      message: err.message || "Unknown error",
+      stack: err.stack,
+    };
+  }
+  let message = "Unknown error";
+  if (typeof err === "string") {
+    message = err;
+  } else {
+    try {
+      message = JSON.stringify(err) || "Unknown error";
+    } catch {
+      message = String(err);
+    }
+  }
+  return {
+    name: "NonError",
+    message,
+  };
+}
+
+function logBackgroundTaskFailure(
+  taskName: string,
+  severity: BackgroundTaskSeverity,
+  err: unknown,
+  context: Omit<Partial<BackgroundTaskLogEntry>, "id" | "timestamp" | "taskName" | "severity" | "error"> = {},
+): void {
+  const entry: BackgroundTaskLogEntry = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    taskName,
+    severity,
+    ...context,
+    error: serializeBackgroundError(err),
+  };
+  backgroundTaskLog.unshift(entry);
+  if (backgroundTaskLog.length > BACKGROUND_TASK_LOG_LIMIT) {
+    backgroundTaskLog.length = BACKGROUND_TASK_LOG_LIMIT;
+  }
+
+  const logPayload = {
+    taskName: entry.taskName,
+    severity: entry.severity,
+    requestId: entry.requestId ?? null,
+    userId: entry.userId ?? null,
+    studentId: entry.studentId ?? null,
+    tutorId: entry.tutorId ?? null,
+    reportId: entry.reportId ?? null,
+    quizId: entry.quizId ?? null,
+    errorName: entry.error.name,
+    errorMessage: entry.error.message,
+    errorStack: entry.error.stack,
+  };
+
+  const prefix = "[BackgroundTask]";
+  if (severity === "critical" || severity === "error") {
+    console.error(prefix, logPayload);
+  } else if (severity === "warning") {
+    console.warn(prefix, logPayload);
+  } else {
+    console.log(prefix, logPayload);
+  }
+}
+
 const analyzeClassLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // limit each IP to 20 analyze-class requests per window
@@ -1202,7 +1300,9 @@ async function updateMasteryFromSubmission(
         title: `Mastery in ${stats.topic}`,
         message: `Nice work — your accuracy on ${subject} → ${stats.topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
         payload: { subject, topic: stats.topic, subtopic: stats.subtopic || null, percent: pct },
-      }).catch((err) => console.error("[Milestone Notification] failed:", err));
+      }).catch((err) => logBackgroundTaskFailure("student-notification.milestone-mastery", "warning", err, {
+        studentId,
+      }));
     }
   }
 }
@@ -1314,19 +1414,28 @@ Provide:
         title: "Feedback ready",
         message: `Your personalised feedback for "${studentMeta.quizTitle}" is ready. You scored ${scorePctNotif}%.`,
         payload: { reportId, quizTitle: studentMeta.quizTitle, quizSubject: studentMeta.quizSubject ?? null, scorePercent: scorePctNotif },
-      }).catch((err) => console.error("[Feedback Notification] failed:", err));
+      }).catch((err) => logBackgroundTaskFailure("student-notification.feedback-ready", "warning", err, {
+        studentId: studentMeta.studentId,
+        reportId,
+      }));
     }
 
     console.log(`[SOMA Grading] Report ${reportId} graded successfully`);
   } catch (err: any) {
-    console.error(`[SOMA Grading] Failed for report ${reportId}:`, err.message || err);
+    logBackgroundTaskFailure("soma-report.background-grading", "critical", err, {
+      reportId,
+      studentId: studentMeta?.studentId ?? null,
+    });
     try {
       await storage.updateSomaReport(reportId, {
         status: "failed",
         aiFeedbackHtml: `<p>Analysis failed: ${err.message || "Unknown error"}. Please contact your teacher or try again later.</p>`,
       });
     } catch (dbErr: any) {
-      console.error(`[SOMA Grading] Failed to update report ${reportId} to failed status:`, dbErr.message);
+      logBackgroundTaskFailure("soma-report.mark-grading-failed", "critical", dbErr, {
+        reportId,
+        studentId: studentMeta?.studentId ?? null,
+      });
     }
   }
 }
@@ -4325,6 +4434,23 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
+  app.get("/api/super-admin/background-task-diagnostics", requireSuperAdmin, async (req, res) => {
+    const severity = typeof req.query.severity === "string" ? req.query.severity : null;
+    const limitRaw = Number(req.query.limit ?? 50);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 200) : 50;
+    const entries = backgroundTaskLog
+      .filter((entry) => !severity || entry.severity === severity)
+      .slice(0, limit);
+
+    res.json({
+      entries,
+      totalStored: backgroundTaskLog.length,
+      criticalCount: backgroundTaskLog.filter((entry) => entry.severity === "critical").length,
+      errorCount: backgroundTaskLog.filter((entry) => entry.severity === "error").length,
+      warningCount: backgroundTaskLog.filter((entry) => entry.severity === "warning").length,
+    });
+  });
+
   app.get("/api/super-admin/stats", requireSuperAdmin, async (_req, res) => {
     try {
       const [users, quizzes] = await Promise.all([
@@ -5403,7 +5529,12 @@ ${JSON.stringify({
       res.json(report);
 
       // Mark quiz assignment as completed
-      storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch(() => {});
+      const requestId = getRequestId(req);
+      storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch((err) => logBackgroundTaskFailure("quiz-assignment.update-status-completed", "warning", err, {
+        requestId,
+        quizId,
+        studentId,
+      }));
       const quiz = await storage.getSomaQuiz(quizId);
       if (quiz?.authorId) {
         const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
@@ -5415,7 +5546,13 @@ ${JSON.stringify({
           title: `${resolvedName} submitted ${quiz.title}`,
           message: `${resolvedName} submitted ${quiz.title} (${quiz.subject || "General subject"}) in ${durationText} and scored ${Math.round((totalScore / Math.max(1, allQuestions.reduce((s, q) => s + q.marks, 0))) * 100)}%.`,
           payload: { reportId: report.id, quizId, studentId, studentName: resolvedName, score: totalScore, completedAt: now.toISOString() },
-        });
+        }).catch((err) => logBackgroundTaskFailure("tutor-notification.student-submission", "warning", err, {
+          requestId,
+          reportId: report.id,
+          quizId,
+          studentId,
+          tutorId: quiz.authorId,
+        }));
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
@@ -5423,7 +5560,12 @@ ${JSON.stringify({
         studentId,
         quizTitle: quiz?.title || "your assessment",
         quizSubject: quiz?.subject ?? null,
-      }).catch(() => {});
+      }).catch((err) => logBackgroundTaskFailure("soma-report.background-grading.unhandled", "critical", err, {
+        requestId,
+        reportId: report.id,
+        quizId,
+        studentId,
+      }));
 
       // Phase 3.3 — mark any existing revision plans stale so the
       // student is prompted to refresh after each new submission.
@@ -5432,7 +5574,12 @@ ${JSON.stringify({
           const { markPlansStale } = await import("./services/revisionPlanStore");
           await markPlansStale(studentId, report.id);
         } catch (err) {
-          /* never block submission on plan housekeeping */
+          logBackgroundTaskFailure("revision-plan.mark-stale", "warning", err, {
+            requestId,
+            reportId: report.id,
+            quizId,
+            studentId,
+          });
         }
       })();
 
@@ -5561,7 +5708,15 @@ ${JSON.stringify({
 
       res.json({ message: "Retry started", reportId });
 
-      runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore).catch(() => {});
+      runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore, {
+        studentId: report.studentId ?? "",
+        quizTitle: "retried assessment",
+      }).catch((err) => logBackgroundTaskFailure("soma-report.retry-background-grading.unhandled", "critical", err, {
+        requestId: getRequestId(req),
+        reportId,
+        quizId: report.quizId,
+        studentId: report.studentId,
+      }));
     } catch (err: any) {
       console.error("[Retry Grading] Error:", err.message);
       res.status(500).json({ message: err.message });
