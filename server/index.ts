@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { execSync } from "child_process";
+import { randomUUID } from "crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -12,6 +13,12 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+declare module "express-serve-static-core" {
+  interface Request {
+    requestId: string;
   }
 }
 
@@ -30,14 +37,34 @@ app.use(attachRequestId);
 app.use(installErrorResponseFormatter);
 
 app.use((req, res, next) => {
+  const incomingRequestId = req.get("x-request-id")?.trim();
+  req.requestId = incomingRequestId || randomUUID();
+  res.setHeader("x-request-id", req.requestId);
+
+  const originalJson = res.json.bind(res);
+  res.json = (body: unknown) => {
+    if (req.path.startsWith("/api") && res.statusCode >= 400 && body && typeof body === "object") {
+      const responseBody = body as { error?: unknown; requestId?: string };
+      if (responseBody.error && typeof responseBody.error === "object") {
+        responseBody.error = { ...(responseBody.error as Record<string, unknown>), requestId: req.requestId };
+      } else if (responseBody.error) {
+        responseBody.requestId = req.requestId;
+      }
+    }
+    return originalJson(body);
+  };
+
+  next();
+});
+
+app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
-      recordRequestDiagnostics(req, res.statusCode, duration);
+      log(JSON.stringify({ requestId: req.requestId, method: req.method, path, statusCode: res.statusCode, durationMs: duration }));
     }
   });
 
@@ -251,30 +278,33 @@ const port = parseInt(process.env.PORT || "5000", 10);
     await registerRoutes(httpServer, app);
 
     app.use("/api/{*path}", (req, res) => {
-      sendApiError(req, res, {
-        status: 404,
-        code: "API_NOT_FOUND",
-        message: "We could not find that API route.",
-        details: { method: req.method, path: req.path },
+      res.status(404).json({
+        error: {
+          code: "API_NOT_FOUND",
+          message: `No API route for ${req.method} ${req.path}`,
+          details: null,
+          requestId: req.requestId,
+        },
       });
     });
 
-    app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
-      console.error("Internal Server Error:", err);
-      recordRequestDiagnostics(_req, status, 0, err);
+      console.error("Internal Server Error:", { requestId: req.requestId, error: err });
 
       if (res.headersSent) {
         return next(err);
       }
 
-      return sendApiError(_req, res, {
-        status,
-        code: err.code || `HTTP_${status}`,
-        message: status >= 500 ? "Something went wrong. Please try again." : message,
-        details: err.details,
+      return res.status(status).json({
+        error: {
+          code: err.code || `HTTP_${status}`,
+          message,
+          details: err.details || null,
+          requestId: req.requestId,
+        },
       });
     });
 

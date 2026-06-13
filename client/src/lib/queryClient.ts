@@ -1,61 +1,56 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-export class ApiRequestError extends Error {
-  code?: string;
-  requestId?: string;
-  details?: unknown;
-  status: number;
+const REQUEST_ID_STORAGE_KEY = "math-quiz-hub-request-id";
 
-  constructor(message: string, options: { status: number; code?: string; requestId?: string; details?: unknown }) {
-    super(message);
-    this.name = "ApiRequestError";
-    this.status = options.status;
-    this.code = options.code;
-    this.requestId = options.requestId;
-    this.details = options.details;
-  }
+export function getOrCreateRequestId(): string {
+  const stored = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(REQUEST_ID_STORAGE_KEY) : null;
+  if (stored) return stored;
+
+  const requestId = typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(REQUEST_ID_STORAGE_KEY, requestId);
+  return requestId;
 }
 
-type StandardErrorEnvelope = {
-  error?: {
-    code?: unknown;
-    message?: unknown;
-    requestId?: unknown;
-    details?: unknown;
-  };
-  message?: unknown;
-};
+function shortRequestId(requestId?: string | null): string | null {
+  if (!requestId) return null;
+  return requestId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6).toUpperCase() || null;
+}
 
-function parseErrorEnvelope(json: StandardErrorEnvelope, status: number, fallbackMessage: string): ApiRequestError {
-  const standardError = json?.error && typeof json.error === "object" ? json.error : undefined;
-  if (standardError && typeof standardError.message === "string") {
-    return new ApiRequestError(standardError.message, {
-      status,
-      code: typeof standardError.code === "string" ? standardError.code : undefined,
-      requestId: typeof standardError.requestId === "string" ? standardError.requestId : undefined,
-      details: standardError.details,
-    });
+function messageWithSupportCode(message: string, requestId?: string | null): string {
+  const code = shortRequestId(requestId);
+  return code ? `${message} If this keeps happening, contact support with code ${code}.` : message;
+}
+
+export class ApiRequestError extends Error {
+  requestId?: string;
+
+  constructor(message: string, requestId?: string | null) {
+    super(messageWithSupportCode(message, requestId));
+    this.name = "ApiRequestError";
+    this.requestId = requestId ?? undefined;
   }
-
-  // Backward-compatible fallback while any endpoint or proxy still returns
-  // the previous `{ message }` shape during migration.
-  if (typeof json?.message === "string") {
-    return new ApiRequestError(json.message, { status });
-  }
-
-  return new ApiRequestError(fallbackMessage, { status });
 }
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    const responseRequestId = res.headers.get("x-request-id");
+    // Try to extract a user-friendly message from JSON responses
     try {
-      const json = JSON.parse(text) as StandardErrorEnvelope;
-      throw parseErrorEnvelope(json, res.status, res.statusText);
+      const json = JSON.parse(text);
+      if (json?.error?.message) {
+        throw new ApiRequestError(json.error.message, json.error.requestId || responseRequestId);
+      }
+      if (json.message) {
+        throw new ApiRequestError(json.message, json.requestId || responseRequestId);
+      }
     } catch (e) {
       if (e instanceof ApiRequestError) throw e;
     }
-    throw new ApiRequestError(text || res.statusText, { status: res.status });
+    throw new ApiRequestError(text || res.statusText, responseRequestId);
   }
 }
 
@@ -64,9 +59,13 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const requestId = getOrCreateRequestId();
+  const headers = new Headers(data ? { "Content-Type": "application/json" } : {});
+  headers.set("x-request-id", requestId);
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -81,8 +80,13 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const requestId = getOrCreateRequestId();
+    const headers = new Headers();
+    headers.set("x-request-id", requestId);
+
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

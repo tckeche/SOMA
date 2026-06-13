@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getOrCreateRequestId } from './queryClient';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -57,12 +58,13 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
 export async function authFetch(url: string, options: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
   const authHeaders = await getAuthHeaders();
   const { timeoutMs, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers);
+  Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
+  if (!headers.has('x-request-id')) headers.set('x-request-id', getOrCreateRequestId());
+
   return withTimeout((signal) => fetch(url, {
     ...fetchOptions,
     signal,
-    headers: {
-      ...authHeaders,
-      ...(fetchOptions.headers || {}),
-    },
+    headers,
   }), { timeoutMs: timeoutMs ?? 20_000, stage: `authFetch:${url}` });
 }
