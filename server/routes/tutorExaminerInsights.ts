@@ -49,9 +49,7 @@ function tutorIdFromReq(req: any): string | null {
   const fromAuth = req?.authUser?.id;
   if (fromAuth) return String(fromAuth);
   const fromTutor = req?.tutorUser?.id;
-  if (fromTutor) return String(fromTutor);
-  const headerId = req?.headers?.["x-tutor-id"];
-  return headerId ? String(headerId) : null;
+  return fromTutor ? String(fromTutor) : null;
 }
 
 export function registerTutorExaminerInsightsRoutes(app: Express): void {

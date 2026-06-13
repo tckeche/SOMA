@@ -48,7 +48,7 @@ async function throwIfResNotOk(res: Response) {
         throw new ApiRequestError(json.message, json.requestId || responseRequestId);
       }
     } catch (e) {
-      if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+      if (e instanceof ApiRequestError) throw e;
     }
     throw new ApiRequestError(text || res.statusText, responseRequestId);
   }
