@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { log } from "./utils/logging";
+import { attachRequestId, installErrorResponseFormatter, sendApiError } from "./errorResponse";
 
 const app = express();
 const httpServer = createServer(app);
@@ -25,6 +26,8 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 app.set("trust proxy", 1);
+app.use(attachRequestId);
+app.use(installErrorResponseFormatter);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -128,9 +131,11 @@ app.get("/api/health/trace", async (req, res) => {
 app.get("/api/health/db", async (_req, res) => {
   const { db, pool } = await import("./db");
   if (!db || !pool) {
-    return res.status(503).json({
-      ok: false,
-      reason: "db not initialised — connectDb() failed at startup",
+    return sendApiError(_req, res, {
+      status: 503,
+      code: "DB_NOT_INITIALISED",
+      message: "The database is not ready. Please try again shortly.",
+      details: { reason: "db not initialised — connectDb() failed at startup" },
     });
   }
   const start = Date.now();
@@ -153,16 +158,19 @@ app.get("/api/health/db", async (_req, res) => {
     });
   } catch (e: any) {
     const elapsedMs = Date.now() - start;
-    res.status(503).json({
-      ok: false,
-      elapsedMs,
-      error: e?.message ?? String(e),
-      code: e?.code,
-      pool: pool ? {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-      } : null,
+    sendApiError(_req, res, {
+      status: 503,
+      code: e?.code || "DB_HEALTH_CHECK_FAILED",
+      message: "The database health check failed. Please try again shortly.",
+      details: {
+        elapsedMs,
+        reason: e?.message ?? String(e),
+        pool: pool ? {
+          total: pool.totalCount,
+          idle: pool.idleCount,
+          waiting: pool.waitingCount,
+        } : null,
+      },
     });
   }
 });
@@ -183,12 +191,11 @@ const port = parseInt(process.env.PORT || "5000", 10);
     await registerRoutes(httpServer, app);
 
     app.use("/api/{*path}", (req, res) => {
-      res.status(404).json({
-        error: {
-          code: "API_NOT_FOUND",
-          message: `No API route for ${req.method} ${req.path}`,
-          details: null,
-        },
+      sendApiError(req, res, {
+        status: 404,
+        code: "API_NOT_FOUND",
+        message: "We could not find that API route.",
+        details: { method: req.method, path: req.path },
       });
     });
 
@@ -202,12 +209,11 @@ const port = parseInt(process.env.PORT || "5000", 10);
         return next(err);
       }
 
-      return res.status(status).json({
-        error: {
-          code: err.code || `HTTP_${status}`,
-          message,
-          details: err.details || null,
-        },
+      return sendApiError(_req, res, {
+        status,
+        code: err.code || `HTTP_${status}`,
+        message: status >= 500 ? "Something went wrong. Please try again." : message,
+        details: err.details,
       });
     });
 

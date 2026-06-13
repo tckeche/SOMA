@@ -1,21 +1,61 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+export class ApiRequestError extends Error {
+  code?: string;
+  requestId?: string;
+  details?: unknown;
+  status: number;
+
+  constructor(message: string, options: { status: number; code?: string; requestId?: string; details?: unknown }) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = options.status;
+    this.code = options.code;
+    this.requestId = options.requestId;
+    this.details = options.details;
+  }
+}
+
+type StandardErrorEnvelope = {
+  error?: {
+    code?: unknown;
+    message?: unknown;
+    requestId?: unknown;
+    details?: unknown;
+  };
+  message?: unknown;
+};
+
+function parseErrorEnvelope(json: StandardErrorEnvelope, status: number, fallbackMessage: string): ApiRequestError {
+  const standardError = json?.error && typeof json.error === "object" ? json.error : undefined;
+  if (standardError && typeof standardError.message === "string") {
+    return new ApiRequestError(standardError.message, {
+      status,
+      code: typeof standardError.code === "string" ? standardError.code : undefined,
+      requestId: typeof standardError.requestId === "string" ? standardError.requestId : undefined,
+      details: standardError.details,
+    });
+  }
+
+  // Backward-compatible fallback while any endpoint or proxy still returns
+  // the previous `{ message }` shape during migration.
+  if (typeof json?.message === "string") {
+    return new ApiRequestError(json.message, { status });
+  }
+
+  return new ApiRequestError(fallbackMessage, { status });
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    // Try to extract a user-friendly message from JSON responses
     try {
-      const json = JSON.parse(text);
-      if (json?.error?.message) {
-        throw new Error(json.error.message);
-      }
-      if (json.message) {
-        throw new Error(json.message);
-      }
+      const json = JSON.parse(text) as StandardErrorEnvelope;
+      throw parseErrorEnvelope(json, res.status, res.statusText);
     } catch (e) {
-      if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+      if (e instanceof ApiRequestError) throw e;
     }
-    throw new Error(text || res.statusText);
+    throw new ApiRequestError(text || res.statusText, { status: res.status });
   }
 }
 
