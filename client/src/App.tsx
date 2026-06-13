@@ -17,6 +17,7 @@ import TutorAssessments from "@/pages/TutorAssessments";
 import TutorAssessmentDetails from "@/pages/TutorAssessmentDetails";
 import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import SuperAdminTutorDetail from "@/pages/SuperAdminTutorDetail";
+import SuperAdminDiagnostics from "@/pages/SuperAdminDiagnostics";
 import SomaChatPage from "@/pages/soma-chat";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -34,6 +35,7 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/portal">{() => <RoleRouter studentComponent={StudentDashboard} tutorComponent={TutorDashboard} />}</Route>
+      <Route path="/super-admin/diagnostics">{() => <ProtectedRoute component={SuperAdminDiagnostics} />}</Route>
       <Route path="/super-admin">{() => <ProtectedRoute component={SuperAdminDashboard} />}</Route>
       <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} />}</Route>
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>

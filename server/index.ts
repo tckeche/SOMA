@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { log } from "./utils/logging";
+import { recordRequestDiagnostics } from "./services/diagnosticsStore";
 
 const app = express();
 const httpServer = createServer(app);
@@ -34,6 +35,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
+      recordRequestDiagnostics(req, res.statusCode, duration);
     }
   });
 
@@ -197,6 +199,7 @@ const port = parseInt(process.env.PORT || "5000", 10);
       const message = err.message || "Internal Server Error";
 
       console.error("Internal Server Error:", err);
+      recordRequestDiagnostics(_req, status, 0, err);
 
       if (res.headersSent) {
         return next(err);
