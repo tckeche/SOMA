@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { createHash } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { storage } from "./storage";
+import { sendApiError } from "./errorResponse";
 
 export type AppRole = "student" | "tutor" | "super_admin";
 
@@ -238,13 +239,19 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
       // Header-based identity is a legacy fallback for local/dev setups only.
       // In production this must stay disabled to prevent header spoofing.
       if (process.env.NODE_ENV === "production") {
-        return res.status(401).json({ message: "Authentication required" });
+        return sendApiError(req, res, {
+          status: 401,
+          code: "AUTHENTICATION_REQUIRED",
+          message: "Please sign in to continue.",
+        });
       }
 
       const headerUser = await findAuthorizedUserByHeader(req, config.identityHeaderName, config.allowedRoles);
       if (!headerUser) {
         const missingIdentity = !(req.headers[config.identityHeaderName] as string | undefined);
-        return res.status(missingIdentity ? 401 : 403).json({
+        return sendApiError(req, res, {
+          status: missingIdentity ? 401 : 403,
+          code: missingIdentity ? "AUTHENTICATION_REQUIRED" : "FORBIDDEN",
           message: missingIdentity ? config.missingIdentityMessage : config.forbiddenMessage,
         });
       }
@@ -258,7 +265,11 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
       (req as any)[config.requestUserKey] = headerUser;
       return next();
     } catch {
-      return res.status(500).json({ message: "Failed to verify user identity" });
+      return sendApiError(req, res, {
+        status: 500,
+        code: "IDENTITY_VERIFICATION_FAILED",
+        message: "We could not verify your identity. Please try again.",
+      });
     }
   };
 }
