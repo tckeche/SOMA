@@ -14,6 +14,7 @@ import {
   verifySupabaseToken,
 } from "../auth";
 import { storage } from "../storage";
+import { logError, logSecurity, requestLogContext } from "../utils/logging";
 
 export const requireTutor = createRoleMiddleware({
   allowedRoles: ["tutor", "super_admin"],
@@ -42,7 +43,12 @@ export const requireSuperAdmin = createRoleMiddleware({
 export function requireSupabaseAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    logAuthEvent(req, "missing_auth_header", "low");
+    logSecurity("auth.bearer_missing", {
+      ...requestLogContext(req as any),
+      severity: "medium",
+      module: "roles",
+      component: "requireSupabaseAuth",
+    });
     return res.status(401).json({ message: "Authentication required" });
   }
 
@@ -51,7 +57,11 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
   verifySupabaseToken(token)
     .then((decoded) => {
       if (!decoded) {
-        classifyAndLogInvalidToken(req, token);
+        logSecurity("auth.token_invalid", {
+          ...requestLogContext(req as any),
+          module: "roles",
+          component: "requireSupabaseAuth",
+        });
         return res.status(401).json({ message: "Invalid or expired token" });
       }
       const userId = decoded.sub;
@@ -59,7 +69,12 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
         .getSomaUserById(userId)
         .then((user) => {
           if (!user) {
-            logAuthEvent(req, "user_lookup_failure", "medium", { userId });
+            logSecurity("auth.user_not_found", {
+              ...requestLogContext(req as any),
+              module: "roles",
+              component: "requireSupabaseAuth",
+              userId,
+            });
             return res.status(401).json({ message: "User not found" });
           }
           (req as any).authUser = {
@@ -70,13 +85,24 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
           };
           next();
         })
-        .catch(() => {
-          logAuthEvent(req, "user_lookup_failure", "medium", { userId });
+        .catch((err) => {
+          logError("auth.user_lookup_failed", err, {
+            ...requestLogContext(req as any),
+            severity: "high",
+            module: "roles",
+            component: "requireSupabaseAuth",
+            userId,
+          });
           res.status(500).json({ message: "Failed to verify user identity" });
         });
     })
-    .catch(() => {
-      classifyAndLogInvalidToken(req, token);
+    .catch((err) => {
+      logSecurity("auth.token_verification_failed", {
+        ...requestLogContext(req as any),
+        module: "roles",
+        component: "requireSupabaseAuth",
+        error: err,
+      });
       res.status(401).json({ message: "Invalid or expired token" });
     });
 }

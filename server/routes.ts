@@ -31,6 +31,7 @@ import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGrap
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { buildSyllabusInsights } from "./services/syllabusInsights";
+import { logError, logInfo, logWarn, requestLogContext } from "./utils/logging";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
 import {
   getTopicContext,
@@ -1447,9 +1448,7 @@ async function updateMasteryFromSubmission(
         title: `Mastery in ${stats.topic}`,
         message: `Nice work — your accuracy on ${subject} → ${stats.topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
         payload: { subject, topic: stats.topic, subtopic: stats.subtopic || null, percent: pct },
-      }).catch((err) => logBackgroundTaskFailure("student-notification.milestone-mastery", "warning", err, {
-        studentId,
-      }));
+      }).catch((err) => logError("grading.milestone_notification_failed", err, { severity: "medium", module: "routes", component: "updateMastery", studentId }));
     }
   }
 }
@@ -1464,7 +1463,7 @@ async function runBackgroundGrading(
 ) {
   const GRADING_TIMEOUT_MS = 180_000;
   try {
-    console.log(`[SOMA Grading] Starting background AI grading for report ${reportId}`);
+    logInfo("grading.started", { module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId });
 
     // Phase 2C — build per-answer diagnoses and roll up student
     // misconceptions BEFORE prompting the AI grader, so we can hand the
@@ -1490,11 +1489,11 @@ async function runBackgroundGrading(
         });
         diagnosisContext = renderDiagnosesForFeedback(diagResult.diagnoses);
         if (diagResult.matchedCount > 0) {
-          console.log(`[SOMA Grading] Report ${reportId} matched ${diagResult.matchedCount}/${diagResult.wrongCount} wrong answers to known examiner misconceptions.`);
+          logInfo("grading.diagnoses_matched", { module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId, matchedCount: diagResult.matchedCount, wrongCount: diagResult.wrongCount });
         }
       } catch (err: any) {
         // Diagnosis failures must never block the AI feedback.
-        console.warn(`[SOMA Grading] Diagnosis pass failed for report ${reportId}: ${err?.message ?? err}`);
+        logWarn("grading.diagnosis_failed", { severity: "medium", module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId, errorMessage: err?.message ?? String(err) });
       }
     }
 
@@ -1561,28 +1560,19 @@ Provide:
         title: "Feedback ready",
         message: `Your personalised feedback for "${studentMeta.quizTitle}" is ready. You scored ${scorePctNotif}%.`,
         payload: { reportId, quizTitle: studentMeta.quizTitle, quizSubject: studentMeta.quizSubject ?? null, scorePercent: scorePctNotif },
-      }).catch((err) => logBackgroundTaskFailure("student-notification.feedback-ready", "warning", err, {
-        studentId: studentMeta.studentId,
-        reportId,
-      }));
+      }).catch((err) => logError("grading.feedback_notification_failed", err, { severity: "medium", module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta.studentId }));
     }
 
-    console.log(`[SOMA Grading] Report ${reportId} graded successfully`);
+    logInfo("grading.completed", { module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId });
   } catch (err: any) {
-    logBackgroundTaskFailure("soma-report.background-grading", "critical", err, {
-      reportId,
-      studentId: studentMeta?.studentId ?? null,
-    });
+    logError("grading.failed", err, { severity: "high", module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId });
     try {
       await storage.updateSomaReport(reportId, {
         status: "failed",
         aiFeedbackHtml: `<p>Analysis failed: ${err.message || "Unknown error"}. Please contact your teacher or try again later.</p>`,
       });
     } catch (dbErr: any) {
-      logBackgroundTaskFailure("soma-report.mark-grading-failed", "critical", dbErr, {
-        reportId,
-        studentId: studentMeta?.studentId ?? null,
-      });
+      logError("grading.failed_status_update_failed", dbErr, { severity: "critical", module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId });
     }
   }
 }
@@ -1906,7 +1896,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       res.json(user);
     } catch (err: any) {
-      console.error("Auth sync error:", err);
+      logError("route.auth_sync_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "authSync" });
       res.status(500).json({ message: err.message || "Failed to sync user" });
     }
   });
@@ -1937,7 +1927,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let user = await storage.getSomaUserById(userId);
       if (!user) {
         const role = determineRole(email);
-        console.log(`[auth-me] auto-sync for missing user: email=${email} role=${role}`);
+        logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req as any), module: "routes", component: "authMe", userId, role, email });
         const parsed = insertSomaUserSchema.parse({
           id: userId,
           email,
@@ -1992,7 +1982,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Always return 200 — never reveal whether the email exists.
       res.json({ message: "If that email is registered, a reset link has been sent." });
     } catch (err: any) {
-      console.error("[forgot-password]", err);
+      logError("route.forgot_password_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "forgotPassword" });
       res.status(500).json({ error: "Failed to process password reset request." });
     }
   });
@@ -2015,7 +2005,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       const body = await resp.text();
       if (!resp.ok) {
-        console.error("[verification-resend-failed]", { emailHash: hashEmailForLog(email), status: resp.status, body: body.slice(0, 220) });
+        logError("route.verification_resend_failed", undefined, { ...requestLogContext(req as any), severity: "medium", module: "routes", component: "verificationResend", email, status: resp.status, responseBody: body.slice(0, 220) });
         return res.status(502).json({ message: "Could not resend verification email. Please try again shortly.", code: "VERIFICATION_RESEND_FAILED" });
       }
 
@@ -2023,7 +2013,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       verificationResendAttempts.set(email, attemptCount);
       return res.json({ ok: true, attemptCount, canUseCodeFallback: attemptCount >= 3 });
     } catch (err: any) {
-      console.error("[verification-resend-error]", err?.message || err);
+      logError("route.verification_resend_error", err, { ...requestLogContext(req as any), severity: "medium", module: "routes", component: "verificationResend" });
       return res.status(500).json({ message: "Verification resend failed", code: "VERIFICATION_RESEND_EXCEPTION" });
     }
   });
@@ -2385,7 +2375,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         totalSubmitted: studentDetails.filter((s) => s.detailedStatus === "submitted" || s.detailedStatus === "feedback_ready").length,
       });
     } catch (err: any) {
-      console.error("Failed to fetch quiz details:", err);
+      logError("route.quiz_details_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "quizDetails", quizId: req.params.quizId });
       res.status(500).json({ message: err.message || "Failed to fetch quiz details" });
     }
   });
@@ -5504,7 +5494,7 @@ ${JSON.stringify({
         },
       });
     } catch (err: any) {
-      console.error("[SOMA] Generation failed:", err);
+      logError("route.soma_generation_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "somaGenerate" });
       res.status(500).json({ message: `Pipeline failed: ${err.message}` });
     }
   });
@@ -6002,7 +5992,7 @@ ${JSON.stringify({
         studentId: report.studentId,
       }));
     } catch (err: any) {
-      console.error("[Retry Grading] Error:", err.message);
+      logError("route.retry_grading_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "retryGrading", reportId: req.params.reportId });
       res.status(500).json({ message: err.message });
     }
   });
