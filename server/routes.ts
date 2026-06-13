@@ -566,11 +566,74 @@ const analyzeClassLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const RATE_LIMIT_MESSAGE = "Too many attempts. Please wait a few minutes and try again.";
+
+function hashEmailForLog(email: unknown): string | undefined {
+  if (typeof email !== "string") return undefined;
+  const normalised = canonicalEmail(email);
+  if (!normalised) return undefined;
+  return crypto.createHash("sha256").update(normalised).digest("hex");
+}
+
+function getRequestEmailHash(req: Request): string | undefined {
+  return hashEmailForLog(req.body?.email);
+}
+
+function logAuthRateLimit(req: Request, reason: string): void {
+  console.warn("[auth-rate-limit]", {
+    route: req.route?.path || req.path || req.originalUrl.split("?")[0],
+    method: req.method,
+    ip: req.ip,
+    emailHash: getRequestEmailHash(req),
+    reason,
+  });
+}
+
+function authRateLimitHandler(reason: string) {
+  return (req: Request, res: Response) => {
+    logAuthRateLimit(req, reason);
+    return res.status(429).json({ message: RATE_LIMIT_MESSAGE });
+  };
+}
+
 const authApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: authRateLimitHandler("auth_api_window_exceeded"),
+});
+
+const authSyncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("auth_sync_window_exceeded"),
+});
+
+const verificationResendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("verification_resend_window_exceeded"),
+});
+
+const verificationCodeSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("verification_code_send_window_exceeded"),
+});
+
+const verificationCodeVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("verification_code_verify_window_exceeded"),
 });
 
 const tutorApiLimiter = rateLimit({
@@ -1420,7 +1483,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return humanizeEmailPrefix(email);
   };
 
-  app.post("/api/auth/sync", async (req, res) => {
+  app.post("/api/auth/sync", authSyncLimiter, async (req, res) => {
     try {
       const user_metadata = req.body?.user_metadata as {
         display_name?: string;
@@ -1456,7 +1519,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(400).json({ message: "Missing id or email" });
       }
       const role = determineRole(email);
-      console.log(`[auth-sync] email=${email} domain=${email.split("@")[1]} role=${role}`);
+      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
       const existingUser = await storage.getSomaUserById(id);
       const parsed = insertSomaUserSchema.parse({
         id,
@@ -1589,7 +1652,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/auth/resend-verification", async (req, res) => {
+  app.post("/api/auth/resend-verification", verificationResendLimiter, async (req, res) => {
     try {
       const email = canonicalEmail(String(req.body?.email || ""));
       if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
@@ -1607,7 +1670,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       const body = await resp.text();
       if (!resp.ok) {
-        console.error("[verification-resend-failed]", { email, status: resp.status, body: body.slice(0, 220) });
+        console.error("[verification-resend-failed]", { emailHash: hashEmailForLog(email), status: resp.status, body: body.slice(0, 220) });
         return res.status(502).json({ message: "Could not resend verification email. Please try again shortly.", code: "VERIFICATION_RESEND_FAILED" });
       }
 
@@ -1620,7 +1683,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/auth/send-verification-code", async (req, res) => {
+  app.post("/api/auth/send-verification-code", verificationCodeSendLimiter, async (req, res) => {
     try {
       const email = canonicalEmail(String(req.body?.email || ""));
       if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
@@ -1673,7 +1736,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/auth/verify-verification-code", async (req, res) => {
+  app.post("/api/auth/verify-verification-code", verificationCodeVerifyLimiter, async (req, res) => {
     try {
       const email = canonicalEmail(String(req.body?.email || ""));
       const code = String(req.body?.code || "").trim();
