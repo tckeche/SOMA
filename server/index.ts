@@ -5,7 +5,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { log } from "./utils/logging";
-import { sendApiError, sendInternalError, logInternalError } from "./utils/apiErrors";
+import { requireSuperAdmin } from "./middleware/roles";
 
 const app = express();
 const httpServer = createServer(app);
@@ -71,6 +71,48 @@ app.use((req, res, next) => {
   next();
 });
 
+
+function requireSuperAdminForDiagnostics(req: Request, res: Response, next: NextFunction) {
+  const originalStatus = res.status.bind(res);
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+  let deniedReason: string | undefined;
+
+  res.status = ((code: number) => originalStatus(code)) as typeof res.status;
+  res.json = ((body?: any) => {
+    if (res.statusCode === 401 || res.statusCode === 403) {
+      deniedReason = typeof body?.message === "string" ? body.message : `HTTP_${res.statusCode}`;
+      return originalJson({ message: res.statusCode === 401 ? "Authentication required" : "Access denied" });
+    }
+    return originalJson(body);
+  }) as typeof res.json;
+  res.send = ((body?: any) => {
+    if (res.statusCode === 401 || res.statusCode === 403) {
+      deniedReason = deniedReason ?? (typeof body === "string" ? body : `HTTP_${res.statusCode}`);
+      return originalJson({ message: res.statusCode === 401 ? "Authentication required" : "Access denied" });
+    }
+    return originalSend(body);
+  }) as typeof res.send;
+
+  res.on("finish", () => {
+    if (res.statusCode !== 401 && res.statusCode !== 403) return;
+
+    const authUser = (req as any).authUser as { id?: string } | undefined;
+    const userId = authUser?.id ?? (req as any).adminId ?? null;
+    log(JSON.stringify({
+      event: "diagnostic_access_denied",
+      route: req.route?.path ?? req.path,
+      method: req.method,
+      ip: req.ip,
+      userId,
+      reason: deniedReason ?? (res.statusCode === 401 ? "authentication_required" : "access_denied"),
+      statusCode: res.statusCode,
+    }), "security");
+  });
+
+  return requireSuperAdmin(req, res, next);
+}
+
 const resolvedCommitSha = (() => {
   if (process.env.GIT_COMMIT_SHA) return process.env.GIT_COMMIT_SHA;
   try {
@@ -91,7 +133,7 @@ app.get("/api/health", (_req, res) => {
 // build time by script/build.ts via esbuild's `define`. At runtime in
 // dev (tsx, no build step), it falls back to reading .git/HEAD so
 // `npm run dev` still reports something useful.
-app.get("/api/health/version", (_req, res) => {
+app.get("/api/health/version", requireSuperAdminForDiagnostics, (_req, res) => {
   // __BUILD_COMMIT_SHA__ is replaced by esbuild at build time. The
   // typeof check works because esbuild substitutes the literal string,
   // and an unsubstituted reference would be a ReferenceError otherwise.
@@ -140,7 +182,7 @@ app.get("/_health", (_req, res) => {
 //   ?since=<ISO>   only return events with ts > since
 //   ?limit=<n>     return only the most recent n events
 //   ?clear=1       wipe the buffer (returns the events being wiped)
-app.get("/api/health/trace", async (req, res) => {
+app.get("/api/health/trace", requireSuperAdminForDiagnostics, async (req, res) => {
   const { getRecentTraces, clearTraces } = await import("./services/quizTraceLog");
   const since = typeof req.query.since === "string" ? req.query.since : undefined;
   const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined;
@@ -153,28 +195,10 @@ app.get("/api/health/trace", async (req, res) => {
   });
 });
 
-type DbHealthOptions = { diagnostics: boolean };
-
-function poolSnapshot(pool: { totalCount: number; idleCount: number; waitingCount: number } | null | undefined) {
-  return pool
-    ? {
-      total: pool.totalCount,
-      idle: pool.idleCount,
-      waiting: pool.waitingCount,
-    }
-    : null;
-}
-
-function logDbHealthFailure(details: Record<string, unknown>) {
-  console.error(JSON.stringify({
-    level: "error",
-    event: "db_health_check_failed",
-    timestamp: new Date().toISOString(),
-    ...details,
-  }));
-}
-
-async function runDbHealthCheck({ diagnostics }: DbHealthOptions) {
+// Real DB liveness probe. Runs a `SELECT 1` against the actual pool
+// and reports timing + pool stats so we can see whether Supabase is
+// healthy, slow, or refusing connections.
+app.get("/api/health/db", requireSuperAdminForDiagnostics, async (_req, res) => {
   const { db, pool } = await import("./db");
   const start = Date.now();
 
