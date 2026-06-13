@@ -16,6 +16,7 @@ import { registerMarkLossPredictorRoutes } from "./markLossPredictor";
 import { registerRevisionPlanRoutes } from "./revisionPlan";
 import { registerCohortHeatmapRoutes } from "./cohortHeatmap";
 import { registerCommandWordsRoutes } from "./commandWords";
+import { registerSuperAdminDiagnosticsRoutes } from "./superAdminDiagnostics";
 
 export function registerDomainRoutes(app: Express): void {
   registerSuperAdminAiUsageRoutes(app);
@@ -26,4 +27,5 @@ export function registerDomainRoutes(app: Express): void {
   registerRevisionPlanRoutes(app);
   registerCohortHeatmapRoutes(app);
   registerCommandWordsRoutes(app);
+  registerSuperAdminDiagnosticsRoutes(app);
 }
