@@ -1,9 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { execSync } from "child_process";
+import { randomUUID } from "crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { log } from "./utils/logging";
+import { recordRequestDiagnostics } from "./services/diagnosticsStore";
 
 const app = express();
 const httpServer = createServer(app);
@@ -11,6 +13,12 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+declare module "express-serve-static-core" {
+  interface Request {
+    requestId: string;
   }
 }
 
@@ -25,6 +33,29 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 app.set("trust proxy", 1);
+app.use(attachRequestId);
+app.use(installErrorResponseFormatter);
+
+app.use((req, res, next) => {
+  const incomingRequestId = req.get("x-request-id")?.trim();
+  req.requestId = incomingRequestId || randomUUID();
+  res.setHeader("x-request-id", req.requestId);
+
+  const originalJson = res.json.bind(res);
+  res.json = (body: unknown) => {
+    if (req.path.startsWith("/api") && res.statusCode >= 400 && body && typeof body === "object") {
+      const responseBody = body as { error?: unknown; requestId?: string };
+      if (responseBody.error && typeof responseBody.error === "object") {
+        responseBody.error = { ...(responseBody.error as Record<string, unknown>), requestId: req.requestId };
+      } else if (responseBody.error) {
+        responseBody.requestId = req.requestId;
+      }
+    }
+    return originalJson(body);
+  };
+
+  next();
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -33,7 +64,7 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
+      log(JSON.stringify({ requestId: req.requestId, method: req.method, path, statusCode: res.statusCode, durationMs: duration }));
     }
   });
 
@@ -122,49 +153,113 @@ app.get("/api/health/trace", async (req, res) => {
   });
 });
 
-// Real DB liveness probe. Runs a `SELECT 1` against the actual pool
-// and reports timing + pool stats so we can see whether Supabase is
-// healthy, slow, or refusing connections.
-app.get("/api/health/db", async (_req, res) => {
+type DbHealthOptions = { diagnostics: boolean };
+
+function poolSnapshot(pool: { totalCount: number; idleCount: number; waitingCount: number } | null | undefined) {
+  return pool
+    ? {
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+    }
+    : null;
+}
+
+function logDbHealthFailure(details: Record<string, unknown>) {
+  console.error(JSON.stringify({
+    level: "error",
+    event: "db_health_check_failed",
+    timestamp: new Date().toISOString(),
+    ...details,
+  }));
+}
+
+async function runDbHealthCheck({ diagnostics }: DbHealthOptions) {
   const { db, pool } = await import("./db");
-  if (!db || !pool) {
-    return res.status(503).json({
-      ok: false,
-      reason: "db not initialised — connectDb() failed at startup",
-    });
-  }
   const start = Date.now();
+
+  if (!db || !pool) {
+    return sendApiError(_req, res, {
+      status: 503,
+      code: "DB_NOT_INITIALISED",
+      message: "The database is not ready. Please try again shortly.",
+      details: { reason: "db not initialised — connectDb() failed at startup" },
+    });
+    return {
+      statusCode: 503,
+      body: diagnostics
+        ? { ok: false, elapsedMs, status: "unavailable", reason: "db_not_initialised", pool: poolSnapshot(pool) }
+        : { ok: false, elapsedMs, status: "unavailable", message: "Database health check failed" },
+    };
+  }
+
   try {
     const { sql } = await import("drizzle-orm");
-    const result = await db.execute(sql`SELECT 1 AS ping, current_database() AS db, current_user AS usr, version() AS ver`);
+    const query = diagnostics
+      ? sql`SELECT 1 AS ping, current_database() AS db, current_user AS usr, version() AS ver`
+      : sql`SELECT 1 AS ping`;
+    const result = await db.execute(query);
     const elapsedMs = Date.now() - start;
     const row = (result as any).rows?.[0] ?? (result as any)[0] ?? {};
-    res.json({
-      ok: true,
-      elapsedMs,
-      db: row.db,
-      user: row.usr,
-      versionShort: typeof row.ver === "string" ? row.ver.slice(0, 60) : null,
-      pool: {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-      },
-    });
+
+    return {
+      statusCode: 200,
+      body: diagnostics
+        ? {
+          ok: true,
+          elapsedMs,
+          status: "ok",
+          db: row.db,
+          user: row.usr,
+          versionShort: typeof row.ver === "string" ? row.ver.slice(0, 60) : null,
+          pool: poolSnapshot(pool),
+        }
+        : { ok: true, elapsedMs, status: "ok" },
+    };
   } catch (e: any) {
     const elapsedMs = Date.now() - start;
-    res.status(503).json({
-      ok: false,
-      elapsedMs,
-      error: e?.message ?? String(e),
-      code: e?.code,
-      pool: pool ? {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-      } : null,
+    sendApiError(_req, res, {
+      status: 503,
+      code: e?.code || "DB_HEALTH_CHECK_FAILED",
+      message: "The database health check failed. Please try again shortly.",
+      details: {
+        elapsedMs,
+        reason: e?.message ?? String(e),
+        pool: pool ? {
+          total: pool.totalCount,
+          idle: pool.idleCount,
+          waiting: pool.waitingCount,
+        } : null,
+      },
     });
+
+    return {
+      statusCode: 503,
+      body: diagnostics
+        ? {
+          ok: false,
+          elapsedMs,
+          status: "unavailable",
+          error: e?.message ?? String(e),
+          code: e?.code,
+          pool: poolSnapshot(pool),
+        }
+        : { ok: false, elapsedMs, status: "unavailable", message: "Database health check failed" },
+    };
   }
+}
+
+// Public DB liveness probe. Keep unauthenticated output intentionally minimal
+// so operational details are only exposed through super-admin diagnostics.
+app.get("/api/health/db", async (_req, res) => {
+  const result = await runDbHealthCheck({ diagnostics: false });
+  res.status(result.statusCode).json(result.body);
+});
+
+// Super-admin-only DB diagnostics with database, user, version, pool, and error-code details.
+app.get("/api/super-admin/health/db", requireSuperAdmin, async (_req, res) => {
+  const result = await runDbHealthCheck({ diagnostics: true });
+  res.status(result.statusCode).json(result.body);
 });
 
 const port = parseInt(process.env.PORT || "5000", 10);
@@ -188,15 +283,16 @@ const port = parseInt(process.env.PORT || "5000", 10);
           code: "API_NOT_FOUND",
           message: `No API route for ${req.method} ${req.path}`,
           details: null,
+          requestId: req.requestId,
         },
       });
     });
 
-    app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
-      console.error("Internal Server Error:", err);
+      console.error("Internal Server Error:", { requestId: req.requestId, error: err });
 
       if (res.headersSent) {
         return next(err);
@@ -207,6 +303,7 @@ const port = parseInt(process.env.PORT || "5000", 10);
           code: err.code || `HTTP_${status}`,
           message,
           details: err.details || null,
+          requestId: req.requestId,
         },
       });
     });

@@ -7,7 +7,12 @@
  * routes.ts; behaviour is unchanged.
  */
 import type { NextFunction, Request, Response } from "express";
-import { createRoleMiddleware, verifySupabaseToken } from "../auth";
+import {
+  classifyAndLogInvalidToken,
+  createRoleMiddleware,
+  logAuthEvent,
+  verifySupabaseToken,
+} from "../auth";
 import { storage } from "../storage";
 import { logError, logSecurity, requestLogContext } from "../utils/logging";
 
