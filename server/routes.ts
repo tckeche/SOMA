@@ -5207,38 +5207,98 @@ ${JSON.stringify({
     }
   });
 
-  app.get("/api/soma/quizzes", async (_req, res) => {
+  type SomaReadAuthUser = { id: string | string[]; role?: string | null; email?: string | null };
+
+  function logSomaPermissionDenied(params: {
+    route: string;
+    quizId?: number;
+    userId?: string;
+    role?: string | null;
+    reason: string;
+  }) {
+    console.warn(JSON.stringify({ event: "permission_denied", resource: "soma_quiz", ...params }));
+  }
+
+  function sanitizeQuestionForPreSubmission(question: any) {
+    const { correctAnswer, explanation, ...safeQuestion } = question;
+    return safeQuestion;
+  }
+
+  async function canReadSomaQuiz(quiz: any, authUser: SomaReadAuthUser): Promise<boolean> {
+    const userId = String(authUser.id);
+    if (authUser.role === "super_admin") return true;
+    if (authUser.role === "tutor") return quiz.authorId === userId;
+    const assignments = await storage.getQuizAssignmentsForStudent(userId);
+    return assignments.some((assignment) => assignment.quizId === quiz.id);
+  }
+
+  async function requireSomaQuizReadAccess(req: Request, res: Response, quiz: any): Promise<boolean> {
+    const authUser = (req as any).authUser as SomaReadAuthUser;
+    const allowed = await canReadSomaQuiz(quiz, authUser);
+    if (!allowed) {
+      logSomaPermissionDenied({
+        route: req.path,
+        quizId: quiz.id,
+        userId: String(authUser.id),
+        role: authUser.role,
+        reason: "soma_quiz_not_assigned_or_not_owned",
+      });
+      res.status(403).json({ message: "Forbidden: you do not have access to this quiz" });
+      return false;
+    }
+    return true;
+  }
+
+  // Product requirement: SOMA quiz browsing is not public. Students may read
+  // only assigned quizzes, tutors may preview only their own authored quizzes,
+  // and super admins may read all non-archived quizzes.
+  app.get("/api/soma/quizzes", requireSupabaseAuth, async (req, res) => {
     try {
-      const allQuizzes = await storage.getSomaQuizzes();
-      res.json(allQuizzes.filter((q) => !q.isArchived));
+      const authUser = (req as any).authUser as SomaReadAuthUser;
+      const authUserId = String(authUser.id);
+      const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
+
+      if (authUser.role === "super_admin") {
+        return res.json(allQuizzes);
+      }
+
+      if (authUser.role === "tutor") {
+        return res.json(allQuizzes.filter((q) => q.authorId === authUserId));
+      }
+
+      const assignments = await storage.getQuizAssignmentsForStudent(authUserId);
+      const assignedQuizIds = new Set(assignments.map((assignment) => assignment.quizId));
+      return res.json(allQuizzes.filter((q) => assignedQuizIds.has(q.id)));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  app.get("/api/soma/quizzes/:id", async (req, res) => {
+  app.get("/api/soma/quizzes/:id", requireSupabaseAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
 
       const quiz = await storage.getSomaQuiz(id);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
+      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
       res.json(quiz);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  app.get("/api/soma/quizzes/:id/questions", async (req, res) => {
+  app.get("/api/soma/quizzes/:id/questions", requireSupabaseAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
 
       const quiz = await storage.getSomaQuiz(id);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
+      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
 
       const allQuestions = await storage.getSomaQuestionsByQuizId(id);
-      const sanitized = allQuestions.map(({ correctAnswer, explanation, ...rest }) => rest);
+      const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
       res.json(sanitized);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
