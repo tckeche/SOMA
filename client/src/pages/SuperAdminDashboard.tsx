@@ -11,7 +11,7 @@ import type { SomaQuiz } from "@shared/schema";
 import {
   Shield, Users, BookOpen, Trash2, LogOut,
   Loader2, AlertTriangle, Search, UserX, X,
-  ShieldCheck, GraduationCap, UserCog, ChevronRight, Activity, ClipboardCheck,
+  ShieldCheck, GraduationCap, UserCog, ChevronRight, Activity, ClipboardCheck, Bug,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SuperAdminAIUsage } from "@/components/SuperAdminAIUsage";
@@ -237,6 +237,11 @@ export default function SuperAdminDashboard() {
                 <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Super Admin</p>
               </div>
             </div>
+            <Link href="/super-admin/diagnostics">
+              <button className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-200 hover:bg-red-500/20" data-testid="link-diagnostics">
+                <Bug className="w-4 h-4" /> Diagnostics
+              </button>
+            </Link>
             <ThemeToggle />
             <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px]" aria-label="Log out" data-testid="button-logout">
               <LogOut className="w-4 h-4" />
