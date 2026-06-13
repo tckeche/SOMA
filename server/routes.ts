@@ -11,7 +11,7 @@ import jwt from "jsonwebtoken";
 import { getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
 import { requireTutor, requireSuperAdmin, requireSupabaseAuth } from "./middleware/roles";
 import { registerDomainRoutes } from "./routes/index";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
@@ -705,6 +705,103 @@ function determineRole(email: string): "tutor" | "student" | "super_admin" {
 // per-domain modules under `./routes/*` share the same middleware
 // instances. See server/routes/README.md.
 
+
+function getSafeRateLimitUser(req: Request): { role: string; userId?: string } {
+  const authUser = (req as any).authUser as { id?: string; role?: string } | undefined;
+  const tutorId = (req as any).tutorId as string | undefined;
+  if (authUser?.role) {
+    return { role: authUser.role, userId: authUser.id };
+  }
+  if (tutorId) {
+    return { role: "tutor", userId: tutorId };
+  }
+  return { role: "legacy_admin" };
+}
+
+function logAiRateLimit(req: Request, reason: string, retryWindowMs: number): void {
+  const { role, userId } = getSafeRateLimitUser(req);
+  console.warn("[AI Rate Limit]", {
+    route: req.route?.path ?? req.path,
+    method: req.method,
+    role,
+    ...(userId ? { userId } : {}),
+    reason,
+    retryWindowMs,
+  });
+}
+
+function aiRateLimitMessage(retryWindowMs: number) {
+  const minutes = Math.max(1, Math.ceil(retryWindowMs / 60_000));
+  return {
+    error: {
+      code: "RATE_LIMITED",
+      message: `AI tools are busy for this account. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      details: { retryWindowMs },
+    },
+  };
+}
+
+function aiRateLimitKey(req: Request): string {
+  const { role, userId } = getSafeRateLimitUser(req);
+  return userId ? `${role}:${userId}` : `${role}:${ipKeyGenerator(req.ip ?? "unknown")}`;
+}
+
+function createAiRouteLimiter(options: {
+  windowMs: number;
+  limit: number | ((req: Request) => number);
+  reason: string;
+}) {
+  return rateLimit({
+    windowMs: options.windowMs,
+    limit: options.limit,
+    keyGenerator: aiRateLimitKey,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: aiRateLimitMessage(options.windowMs),
+    handler: (req, res, _next, opts) => {
+      const retryWindowMs = Number(opts.windowMs) || options.windowMs;
+      logAiRateLimit(req, options.reason, retryWindowMs);
+      res.status(opts.statusCode).json(aiRateLimitMessage(retryWindowMs));
+    },
+  });
+}
+
+const legacyAdminAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  reason: "legacy/admin AI generation limit exceeded",
+});
+
+const tutorGenerationAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  reason: "tutor AI generation limit exceeded",
+});
+
+const tutorCopilotAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  reason: "tutor copilot AI chat limit exceeded",
+});
+
+const tutorAnalyticsAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  reason: "tutor analytics AI limit exceeded",
+});
+
+const globalTutorAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: (req) => {
+    const { role } = getSafeRateLimitUser(req);
+    if (role === "student") return 20;
+    if (role === "tutor") return 35;
+    if (role === "super_admin") return 45;
+    return 8;
+  },
+  reason: "global tutor AI chat limit exceeded",
+});
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -716,14 +813,14 @@ const loginLimiter = rateLimit({
 const somaAiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
+  skip: (req) => req.path === "/generate" || req.path === "/global-tutor",
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error: {
-      code: "RATE_LIMITED",
-      message: "Too many requests. Please wait before trying again.",
-      details: { retryWindowMs: 60_000 },
-    },
+  message: aiRateLimitMessage(60_000),
+  handler: (req, res, _next, opts) => {
+    const retryWindowMs = Number(opts.windowMs) || 60_000;
+    logAiRateLimit(req, "generic SOMA API limit exceeded", retryWindowMs);
+    res.status(opts.statusCode).json(aiRateLimitMessage(retryWindowMs));
   },
 });
 
@@ -2655,7 +2752,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/tutor/ai/intervention-insights", requireTutor, async (req, res) => {
+  app.post("/api/tutor/ai/intervention-insights", requireTutor, tutorAnalyticsAiLimiter, async (req, res) => {
     try {
       const { students } = req.body;
       if (!Array.isArray(students) || students.length === 0) {
@@ -2697,7 +2794,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/tutor/ai/student-summary", requireTutor, async (req, res) => {
+  app.post("/api/tutor/ai/student-summary", requireTutor, tutorAnalyticsAiLimiter, async (req, res) => {
     try {
       const { studentName, stats, topicPerformance, assignments } = req.body;
       if (!studentName) return res.status(400).json({ message: "studentName required" });
@@ -3561,7 +3658,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   });
 
   // Copilot chat for tutor quiz builder
-  app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
+  app.post("/api/tutor/copilot-chat", requireTutor, tutorCopilotAiLimiter, async (req, res) => {
     // ── SSE progress streaming ────────────────────────────────────────────
     // When the client sends `Accept: text/event-stream`, we keep the response
     // open and emit named events at each pipeline boundary so the builder UI
@@ -4921,7 +5018,7 @@ ${JSON.stringify({
     }
   }
 
-  app.post("/api/soma/generate", requireAdmin, async (req, res) => {
+  app.post("/api/soma/generate", requireAdmin, legacyAdminAiLimiter, async (req, res) => {
     const traceId = newTraceId();
     try {
       const parsed = somaGenerateSchema.safeParse(req.body);
@@ -5063,7 +5160,7 @@ ${JSON.stringify({
   });
 
   // Tutor quiz generation — sets authorId and optionally assigns to students
-  app.post("/api/tutor/quizzes/generate", requireTutor, async (req, res) => {
+  app.post("/api/tutor/quizzes/generate", requireTutor, tutorGenerationAiLimiter, async (req, res) => {
     const traceId = newTraceId();
     try {
       const tutorId = (req as any).tutorId;
@@ -5471,7 +5568,7 @@ ${JSON.stringify({
     }
   });
 
-  app.post("/api/soma/global-tutor", requireSupabaseAuth, async (req, res) => {
+  app.post("/api/soma/global-tutor", requireSupabaseAuth, globalTutorAiLimiter, async (req, res) => {
     try {
       const authUser = (req as any).authUser as { id: string; role: string };
       const { message, studentId: requestedStudentId } = req.body;
