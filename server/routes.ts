@@ -32,6 +32,7 @@ import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { buildSyllabusInsights } from "./services/syllabusInsights";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
+import { logInternalError, sendInternalError } from "./utils/apiErrors";
 import {
   getTopicContext,
   listExaminingBodies,
@@ -1222,14 +1223,14 @@ Provide:
 
     console.log(`[SOMA Grading] Report ${reportId} graded successfully`);
   } catch (err: any) {
-    console.error(`[SOMA Grading] Failed for report ${reportId}:`, err.message || err);
+    console.error(JSON.stringify({ level: "error", event: "soma_grading_failed", reportId, error: { message: err?.message ?? String(err), name: err?.name, stack: err?.stack, code: err?.code } }));
     try {
       await storage.updateSomaReport(reportId, {
         status: "failed",
-        aiFeedbackHtml: `<p>Analysis failed: ${err.message || "Unknown error"}. Please contact your teacher or try again later.</p>`,
+        aiFeedbackHtml: "<p>We could not analyse this submission. Please contact your teacher or try again later.</p>",
       });
     } catch (dbErr: any) {
-      console.error(`[SOMA Grading] Failed to update report ${reportId} to failed status:`, dbErr.message);
+      console.error(JSON.stringify({ level: "error", event: "soma_grading_status_update_failed", reportId, error: { message: dbErr?.message ?? String(dbErr), name: dbErr?.name, stack: dbErr?.stack, code: dbErr?.code } }));
     }
   }
 }
@@ -1498,8 +1499,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       res.json(user);
     } catch (err: any) {
-      console.error("Auth sync error:", err);
-      res.status(500).json({ message: err.message || "Failed to sync user" });
+      return sendInternalError(req, res, err, "auth.sync", "We could not sync your account. Please try again.");
     }
   });
 
@@ -1551,7 +1551,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.touchUserLastLogin(user.id);
       res.json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch user" });
+      return sendInternalError(req, res, err, "auth.me", "We could not load your account. Please try again.");
     }
   });
 
@@ -4175,10 +4175,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       }
     } catch (err: any) {
       if (wantsStream) {
-        sendEvent("error", { message: `Copilot failed: ${err.message}` });
+        logInternalError(req, err, "copilot.generate");
+        sendEvent("error", { message: "We could not generate the copilot response. Please try again." });
         res.end();
       } else {
-        res.status(500).json({ message: `Copilot failed: ${err.message}` });
+        return sendInternalError(req, res, err, "copilot.generate", "We could not generate the copilot response. Please try again.");
       }
     }
   });
@@ -5057,8 +5058,7 @@ ${JSON.stringify({
         },
       });
     } catch (err: any) {
-      console.error("[SOMA] Generation failed:", err);
-      res.status(500).json({ message: `Pipeline failed: ${err.message}` });
+      return sendInternalError(req, res, err, "soma.generate", "We could not generate this quiz. Please try again.");
     }
   });
 
@@ -5202,17 +5202,16 @@ ${JSON.stringify({
         },
       });
     } catch (err: any) {
-      console.error("[SOMA Tutor] Generation failed:", err);
-      res.status(500).json({ message: `Pipeline failed: ${err.message}` });
+      return sendInternalError(req, res, err, "tutor.soma.generate", "We could not generate this quiz. Please try again.");
     }
   });
 
-  app.get("/api/soma/quizzes", async (_req, res) => {
+  app.get("/api/soma/quizzes", async (req, res) => {
     try {
       const allQuizzes = await storage.getSomaQuizzes();
       res.json(allQuizzes.filter((q) => !q.isArchived));
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.list", "Something went wrong while loading quizzes. Please try again.");
     }
   });
 
@@ -5225,7 +5224,7 @@ ${JSON.stringify({
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
       res.json(quiz);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.get", "Something went wrong while loading this quiz. Please try again.");
     }
   });
 
@@ -5241,7 +5240,7 @@ ${JSON.stringify({
       const sanitized = allQuestions.map(({ correctAnswer, explanation, ...rest }) => rest);
       res.json(sanitized);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.questions", "Something went wrong while loading this quiz. Please try again.");
     }
   });
 
@@ -5362,7 +5361,7 @@ ${JSON.stringify({
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.submit", "We could not submit your answers. Please retry.");
     }
   });
 
@@ -5376,7 +5375,7 @@ ${JSON.stringify({
       const exists = await storage.checkSomaSubmission(quizId, studentId);
       res.json({ submitted: exists });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.checkSubmission", "Something went wrong while checking your submission. Please try again.");
     }
   });
 
@@ -5428,7 +5427,7 @@ ${JSON.stringify({
         diagnoses,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.reports.review", "Something went wrong while loading this review. Please try again.");
     }
   });
 
@@ -5466,8 +5465,7 @@ ${JSON.stringify({
 
       runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore).catch(() => {});
     } catch (err: any) {
-      console.error("[Retry Grading] Error:", err.message);
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.grading_retry", "We could not retry grading this report. Please try again.");
     }
   });
 
@@ -5563,8 +5561,7 @@ Also answer any specific question the student asks, informed by their performanc
       });
       res.json({ reply: result.data });
     } catch (err: any) {
-      console.error("[Global Tutor] Error:", err.message);
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.global_tutor", "We could not generate a tutor response. Please try again.");
     }
   });
 
