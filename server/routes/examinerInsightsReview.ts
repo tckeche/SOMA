@@ -56,9 +56,7 @@ function reviewerId(req: any): string | null {
   const fromAuth = req?.authUser?.id;
   if (fromAuth) return String(fromAuth);
   const fromAdmin = req?.adminUser?.id;
-  if (fromAdmin) return String(fromAdmin);
-  const headerId = req?.headers?.["x-admin-id"];
-  return headerId ? String(headerId) : null;
+  return fromAdmin ? String(fromAdmin) : null;
 }
 
 export function registerExaminerInsightsReviewRoutes(app: Express): void {

@@ -22,7 +22,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import SomaQuizEngine from "./soma-quiz";
 import type { StudentQuestion } from "./soma-quiz";
-import { createIdentityHeaders } from "@/lib/identityHeaders";
+import { getAuthHeaders } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
   buildTutorDraftKey,
@@ -230,8 +230,7 @@ export default function BuilderPage() {
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftCheckedRef = useRef(false);
 
-  const { session: supaSession, isLoading: supaLoading, userId: tutorUserId } = useSupabaseSession();
-  const supaAccessToken = supaSession?.access_token;
+  const { isLoading: supaLoading, userId: tutorUserId } = useSupabaseSession();
   const isTutorAuth = !!tutorUserId;
   const backLink = "/tutor/assessments";
   const confirmDiscardIfDirty = useCallback(() => {
@@ -392,21 +391,17 @@ export default function BuilderPage() {
     return null;
   }, [title, examiningBodySlug, levelCode, subjectSlug, timeLimitMinutes]);
 
-  const authHeaders = useCallback((): Record<string, string> => {
-    return createIdentityHeaders(
-      "x-tutor-id",
-      tutorUserId,
-      supaAccessToken ? { Authorization: `Bearer ${supaAccessToken}` } : {},
-    );
-  }, [supaAccessToken, tutorUserId]);
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    return getAuthHeaders();
+  }, []);
 
   const authFetch = useCallback(async (url: string, opts: RequestInit = {}): Promise<Response> => {
-    const headers = { ...authHeaders(), ...(opts.headers || {}) };
+    const headers = { ...(await authHeaders()), ...(opts.headers || {}) };
     return fetch(url, { ...opts, headers, credentials: "include" });
   }, [authHeaders]);
 
   const authApiRequest = useCallback(async (method: string, url: string, data?: unknown): Promise<Response> => {
-    const headers: Record<string, string> = { ...authHeaders() };
+    const headers: Record<string, string> = { ...(await authHeaders()) };
     if (data) headers["Content-Type"] = "application/json";
     const res = await fetch(url, {
       method,
@@ -790,7 +785,7 @@ export default function BuilderPage() {
           res = await fetch("/api/tutor/copilot-chat", {
             method: "POST",
             headers: {
-              ...authHeaders(),
+              ...(await authHeaders()),
               "Content-Type": "application/json",
               Accept: "text/event-stream",
             },

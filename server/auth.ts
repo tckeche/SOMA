@@ -194,6 +194,23 @@ async function findAuthorizedUserByHeader(
   return { id: user.id, email: user.email, role: user.role as AppRole, displayName: user.displayName ?? null };
 }
 
+function getRequestPath(req: Request): string {
+  return req.originalUrl || req.url || "unknown";
+}
+
+function warnNonProductionIdentityFallback(req: Request, role: AppRole) {
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      event: "non_production_identity_header_fallback_used",
+      route: getRequestPath(req),
+      method: req.method,
+      role,
+      message: "Legacy identity header fallback was used outside production; never enable this fallback in production.",
+    }),
+  );
+}
+
 function attachAuthenticatedUser(req: Request, user: RequestUser) {
   (req as any).authUser = {
     id: user.id,
@@ -223,21 +240,9 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
         return next();
       }
 
-      if (!bearerToken) {
-        logAuthEvent(req, "missing_bearer_token", "low");
-      } else if (bearerResult?.status === "invalid_token") {
-        classifyAndLogInvalidToken(req, bearerToken);
-      } else if (bearerResult?.status === "user_not_found") {
-        logAuthEvent(req, "user_not_found", "medium", { userId: bearerResult.userId });
-      } else if (bearerResult?.status === "role_mismatch") {
-        logAuthEvent(req, "role_mismatch", config.allowedRoles.includes("super_admin") ? "high" : "medium", {
-          role: bearerResult.role,
-          userId: bearerResult.userId,
-        });
-      }
-
-      // Header-based identity is a legacy fallback for local/dev setups only.
-      // In production this must stay disabled to prevent header spoofing.
+      // Header-based identity is a legacy fallback for local/dev test setups only.
+      // It trusts caller-supplied identity headers and must NEVER be enabled in production,
+      // because doing so would allow header spoofing to bypass Supabase Bearer auth.
       if (process.env.NODE_ENV === "production") {
         return sendApiError(req, res, {
           status: 401,
@@ -256,10 +261,7 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
         });
       }
 
-      logAuthEvent(req, "legacy_header_fallback_used", "medium", {
-        role: headerUser.role,
-        userId: headerUser.id,
-      });
+      warnNonProductionIdentityFallback(req, headerUser.role);
       attachAuthenticatedUser(req, headerUser);
       (req as any)[config.requestIdKey] = headerUser.id;
       (req as any)[config.requestUserKey] = headerUser;
