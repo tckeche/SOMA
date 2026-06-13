@@ -107,6 +107,23 @@ async function findAuthorizedUserByHeader(
   return { id: user.id, email: user.email, role: user.role as AppRole, displayName: user.displayName ?? null };
 }
 
+function getRequestPath(req: Request): string {
+  return req.originalUrl || req.url || "unknown";
+}
+
+function warnNonProductionIdentityFallback(req: Request, role: AppRole) {
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      event: "non_production_identity_header_fallback_used",
+      route: getRequestPath(req),
+      method: req.method,
+      role,
+      message: "Legacy identity header fallback was used outside production; never enable this fallback in production.",
+    }),
+  );
+}
+
 function attachAuthenticatedUser(req: Request, user: RequestUser) {
   (req as any).authUser = {
     id: user.id,
@@ -135,8 +152,9 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
         return next();
       }
 
-      // Header-based identity is a legacy fallback for local/dev setups only.
-      // In production this must stay disabled to prevent header spoofing.
+      // Header-based identity is a legacy fallback for local/dev test setups only.
+      // It trusts caller-supplied identity headers and must NEVER be enabled in production,
+      // because doing so would allow header spoofing to bypass Supabase Bearer auth.
       if (process.env.NODE_ENV === "production") {
         return res.status(401).json({ message: "Authentication required" });
       }
@@ -149,6 +167,7 @@ export function createRoleMiddleware(config: RoleMiddlewareConfig) {
         });
       }
 
+      warnNonProductionIdentityFallback(req, headerUser.role);
       attachAuthenticatedUser(req, headerUser);
       (req as any)[config.requestIdKey] = headerUser.id;
       (req as any)[config.requestUserKey] = headerUser;
