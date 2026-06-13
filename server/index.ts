@@ -6,6 +6,8 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { log } from "./utils/logging";
 import { requireSuperAdmin } from "./middleware/roles";
+import { sendApiError, sendInternalError, logInternalError } from "./utils/apiErrors";
+import { attachRequestId, installErrorResponseFormatter } from "./errorResponse";
 
 const app = express();
 const httpServer = createServer(app);
@@ -13,12 +15,6 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
-  }
-}
-
-declare module "express-serve-static-core" {
-  interface Request {
-    requestId: string;
   }
 }
 
@@ -195,25 +191,29 @@ app.get("/api/health/trace", requireSuperAdminForDiagnostics, async (req, res) =
   });
 });
 
+// Minimal snapshot of pool stats, only surfaced through super-admin diagnostics.
+function poolSnapshot(pool: any) {
+  if (!pool) return null;
+  return {
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount,
+  };
+}
+
 // Real DB liveness probe. Runs a `SELECT 1` against the actual pool
 // and reports timing + pool stats so we can see whether Supabase is
 // healthy, slow, or refusing connections.
-app.get("/api/health/db", requireSuperAdminForDiagnostics, async (_req, res) => {
+async function runDbHealthCheck({ diagnostics }: { diagnostics: boolean }) {
   const { db, pool } = await import("./db");
   const start = Date.now();
 
   if (!db || !pool) {
-    return sendApiError(_req, res, {
-      status: 503,
-      code: "DB_NOT_INITIALISED",
-      message: "The database is not ready. Please try again shortly.",
-      details: { reason: "db not initialised — connectDb() failed at startup" },
-    });
     return {
       statusCode: 503,
       body: diagnostics
-        ? { ok: false, elapsedMs, status: "unavailable", reason: "db_not_initialised", pool: poolSnapshot(pool) }
-        : { ok: false, elapsedMs, status: "unavailable", message: "Database health check failed" },
+        ? { ok: false, status: "unavailable", reason: "db_not_initialised", pool: poolSnapshot(pool) }
+        : { ok: false, status: "unavailable", message: "Database health check failed" },
     };
   }
 
@@ -242,18 +242,7 @@ app.get("/api/health/db", requireSuperAdminForDiagnostics, async (_req, res) => 
     };
   } catch (e: any) {
     const elapsedMs = Date.now() - start;
-    logInternalError(_req, e, "health.db");
-    res.status(503).json({
-      ok: false,
-      elapsedMs,
-      message: "Database health check failed.",
-      code: "DB_HEALTH_CHECK_FAILED",
-      pool: pool ? {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-      } : null,
-    });
+    console.error("[health.db] database health check failed:", e?.message ?? e);
 
     return {
       statusCode: 503,

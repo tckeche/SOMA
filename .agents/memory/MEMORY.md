@@ -1,0 +1,1 @@
+- [Botched multi-branch merge recovery](merge-recovery.md) — a TS1005 parse error at valid-looking code is usually a cascade; fix the parse error first, re-run tsc to surface hidden missing-symbol errors, recover lost defs via `git log -S`.
