@@ -270,8 +270,11 @@ function generateTrendData(stats: DashboardStats) {
 
 export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
+  const { weeks, studentsWithData } = useMemo(
+    () => (stats ? generateTrendData(stats) : { weeks: [], studentsWithData: [] }),
+    [stats],
+  );
   if (!stats) return null;
-  const { weeks, studentsWithData } = useMemo(() => generateTrendData(stats), [stats]);
   const allNames = (stats.studentInsights || []).map((s) => s.studentName);
 
   return (
@@ -305,22 +308,21 @@ export function PerformanceTrendAreaChart({ stats }: { stats: DashboardStats }) 
 
 export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
-  if (!stats) return null;
-  const allNames = (stats.studentInsights || []).map((s) => s.studentName);
+  const allNames = (stats?.studentInsights || []).map((s) => s.studentName);
 
   const { data, hasEnoughData } = useMemo(() => {
     const subjects = Array.from(new Set(
-      (stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean)
+      (stats?.recentSubmissions || []).map((r) => r.subject).filter(Boolean)
     )) as string[];
 
     // Check if any subject has at least 5 submissions
     const sufficientData = subjects.some((subj) => {
-      const count = (stats.recentSubmissions || []).filter((r) => r.subject === subj).length;
+      const count = (stats?.recentSubmissions || []).filter((r) => r.subject === subj).length;
       return count >= 5;
     });
 
     const data = subjects.map((subj) => {
-      const rows = (stats.recentSubmissions || []).filter((r) => r.subject === subj);
+      const rows = (stats?.recentSubmissions || []).filter((r) => r.subject === subj);
       const avg = rows.length
         ? Math.round(rows.reduce((a, b) => a + b.score, 0) / rows.length)
         : 0;
@@ -337,6 +339,8 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
     });
     return { data, hasEnoughData: sufficientData };
   }, [stats, allNames]);
+
+  if (!stats) return null;
 
   const activeStudents = allNames.filter((name) =>
     data.some((d) => d[name] !== undefined)
@@ -381,13 +385,12 @@ export function SubjectDistributionChart({ stats }: { stats: DashboardStats }) {
 
 export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
-  if (!stats) return null;
   const completedColor = "#16A34A";
   const pendingColor = "#CA8A04";
   const notStartedColor = palette.axisTickMuted;
   const { data, completedCount, total } = useMemo(() => {
     let completed = 0, awaiting = 0, notStarted = 0;
-    for (const s of stats.studentInsights || []) {
+    for (const s of stats?.studentInsights || []) {
       completed += s.completed;
       awaiting += s.awaiting;
       notStarted += Math.max(0, s.assigned - s.completed - s.awaiting);
@@ -400,6 +403,8 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
     ].filter((d) => d.value > 0);
     return { data, completedCount: completed, total };
   }, [stats, notStartedColor]);
+
+  if (!stats) return null;
 
   if (total === 0) {
     return (
@@ -478,18 +483,17 @@ export function CompletionDonutChart({ stats }: { stats: DashboardStats }) {
 export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
   const palette = useChartPalette();
   const isLight = palette === undefined ? false : palette.tooltipFg === "#0f172a";
-  if (!stats) return null;
   const { matrix, subjects, students } = useMemo(() => {
-    const subjects = Array.from(new Set((stats.cohortAverages || []).map((c) => c.subject)));
-    const subFromSubs = Array.from(new Set((stats.recentSubmissions || []).map((r) => r.subject).filter(Boolean) as string[]));
+    const subjects = Array.from(new Set((stats?.cohortAverages || []).map((c) => c.subject)));
+    const subFromSubs = Array.from(new Set((stats?.recentSubmissions || []).map((r) => r.subject).filter(Boolean) as string[]));
     const allSubjects = Array.from(new Set([...subjects, ...subFromSubs]));
 
-    const students = (stats.studentInsights || []).map((s) => s.studentName);
+    const students = (stats?.studentInsights || []).map((s) => s.studentName);
 
     const matrix: Record<string, Record<string, { avg: number; count: number }>> = {};
     for (const name of students) {
       matrix[name] = {};
-      const subs = (stats.recentSubmissions || []).filter((r) => r.studentName === name);
+      const subs = (stats?.recentSubmissions || []).filter((r) => r.studentName === name);
       for (const sub of allSubjects) {
         const subScores = subs.filter((r) => r.subject === sub);
         if (subScores.length > 0) {
@@ -503,6 +507,8 @@ export function WorkloadHeatmap({ stats }: { stats: DashboardStats }) {
 
     return { matrix, subjects: allSubjects, students };
   }, [stats]);
+
+  if (!stats) return null;
 
   if (subjects.length === 0 || students.length === 0) {
     return (

@@ -7,7 +7,12 @@
  * routes.ts; behaviour is unchanged.
  */
 import type { NextFunction, Request, Response } from "express";
-import { createRoleMiddleware, verifySupabaseToken } from "../auth";
+import {
+  classifyAndLogInvalidToken,
+  createRoleMiddleware,
+  logAuthEvent,
+  verifySupabaseToken,
+} from "../auth";
 import { storage } from "../storage";
 
 export const requireTutor = createRoleMiddleware({
@@ -37,6 +42,7 @@ export const requireSuperAdmin = createRoleMiddleware({
 export function requireSupabaseAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    logAuthEvent(req, "missing_auth_header", "low");
     return res.status(401).json({ message: "Authentication required" });
   }
 
@@ -45,6 +51,7 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
   verifySupabaseToken(token)
     .then((decoded) => {
       if (!decoded) {
+        classifyAndLogInvalidToken(req, token);
         return res.status(401).json({ message: "Invalid or expired token" });
       }
       const userId = decoded.sub;
@@ -52,6 +59,7 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
         .getSomaUserById(userId)
         .then((user) => {
           if (!user) {
+            logAuthEvent(req, "user_lookup_failure", "medium", { userId });
             return res.status(401).json({ message: "User not found" });
           }
           (req as any).authUser = {
@@ -63,10 +71,12 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
           next();
         })
         .catch(() => {
+          logAuthEvent(req, "user_lookup_failure", "medium", { userId });
           res.status(500).json({ message: "Failed to verify user identity" });
         });
     })
     .catch(() => {
+      classifyAndLogInvalidToken(req, token);
       res.status(401).json({ message: "Invalid or expired token" });
     });
 }
