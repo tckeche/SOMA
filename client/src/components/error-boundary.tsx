@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Home, RefreshCw } from "lucide-react";
+import { createClientErrorId, getActiveClientRequestId, sendClientErrorReport } from "@/lib/clientDiagnostics";
 
 type Props = {
   children: React.ReactNode;
@@ -10,19 +11,31 @@ type Props = {
 
 type State = {
   hasError: boolean;
-  message?: string;
+  errorId?: string;
 };
 
 export class ErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false };
 
-  static getDerivedStateFromError(error: unknown) {
-    const message = error instanceof Error ? error.message : String(error ?? "");
-    return { hasError: true, message };
+  static getDerivedStateFromError() {
+    return { hasError: true };
   }
 
-  componentDidCatch(error: unknown) {
-    console.error("UI runtime error:", error);
+  componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
+    const fallbackErrorId = getActiveClientRequestId() || createClientErrorId();
+    this.setState({ errorId: fallbackErrorId });
+    console.error("UI runtime error:", { error, errorId: fallbackErrorId });
+
+    void sendClientErrorReport({
+      error,
+      componentStack: errorInfo.componentStack,
+      boundaryTitle: this.props.title,
+      requestId: fallbackErrorId,
+    }).then((requestId) => {
+      this.setState({ errorId: requestId });
+    }).catch((reportError) => {
+      console.warn("Unable to send client error report", reportError);
+    });
   }
 
   private handleReturnHome = () => {
@@ -41,10 +54,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
             <CardContent className="py-12">
               <AlertCircle className="w-12 h-12 mx-auto text-destructive/60 mb-3" />
               <h2 className="font-serif text-xl font-bold">{this.props.title || "Something went wrong"}</h2>
-              <p className="text-sm text-muted-foreground mt-2">Please refresh the page and try again.</p>
-              {this.state.message && (
-                <p className="text-xs text-muted-foreground/70 mt-3 break-words font-mono" data-testid="text-error-detail">
-                  {this.state.message}
+              <p className="text-sm text-muted-foreground mt-2">
+                Something went wrong. Please reload the page or return to your dashboard.
+              </p>
+              {this.state.errorId && (
+                <p className="text-xs text-muted-foreground/70 mt-3" data-testid="text-error-reference">
+                  Error reference: {this.state.errorId}
                 </p>
               )}
               <div className="mt-4 flex items-center justify-center gap-2">

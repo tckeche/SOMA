@@ -11,7 +11,7 @@ import jwt from "jsonwebtoken";
 import { getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
 import { requireTutor, requireSuperAdmin, requireSupabaseAuth } from "./middleware/roles";
 import { registerDomainRoutes } from "./routes/index";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
@@ -31,7 +31,9 @@ import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGrap
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { buildSyllabusInsights } from "./services/syllabusInsights";
+import { logError, logInfo, logWarn, requestLogContext } from "./utils/logging";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
+import { logInternalError, sendInternalError } from "./utils/apiErrors";
 import {
   getTopicContext,
   listExaminingBodies,
@@ -322,7 +324,14 @@ const adminRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+const allowedImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const uploadTypeByExtension = new Map<string, string>([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+]);
 const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
 
 // ---------------------------------------------------------------------------
@@ -559,6 +568,104 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
   };
 }
 
+
+type BackgroundTaskSeverity = "info" | "warning" | "error" | "critical";
+
+type BackgroundTaskLogEntry = {
+  id: string;
+  timestamp: string;
+  taskName: string;
+  severity: BackgroundTaskSeverity;
+  requestId?: string | null;
+  userId?: string | null;
+  studentId?: string | null;
+  tutorId?: string | null;
+  reportId?: number | null;
+  quizId?: number | null;
+  error: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+};
+
+const BACKGROUND_TASK_LOG_LIMIT = 200;
+const backgroundTaskLog: BackgroundTaskLogEntry[] = [];
+
+function getRequestId(req: Request): string | null {
+  const header = req.header("x-request-id") || req.header("x-correlation-id");
+  if (header && header.trim()) return header.trim().slice(0, 120);
+  const candidate = (req as any).id ?? (req as any).requestId;
+  return candidate ? String(candidate).slice(0, 120) : null;
+}
+
+function serializeBackgroundError(err: unknown): BackgroundTaskLogEntry["error"] {
+  if (err instanceof Error) {
+    return {
+      name: err.name || "Error",
+      message: err.message || "Unknown error",
+      stack: err.stack,
+    };
+  }
+  let message = "Unknown error";
+  if (typeof err === "string") {
+    message = err;
+  } else {
+    try {
+      message = JSON.stringify(err) || "Unknown error";
+    } catch {
+      message = String(err);
+    }
+  }
+  return {
+    name: "NonError",
+    message,
+  };
+}
+
+function logBackgroundTaskFailure(
+  taskName: string,
+  severity: BackgroundTaskSeverity,
+  err: unknown,
+  context: Omit<Partial<BackgroundTaskLogEntry>, "id" | "timestamp" | "taskName" | "severity" | "error"> = {},
+): void {
+  const entry: BackgroundTaskLogEntry = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    taskName,
+    severity,
+    ...context,
+    error: serializeBackgroundError(err),
+  };
+  backgroundTaskLog.unshift(entry);
+  if (backgroundTaskLog.length > BACKGROUND_TASK_LOG_LIMIT) {
+    backgroundTaskLog.length = BACKGROUND_TASK_LOG_LIMIT;
+  }
+
+  const logPayload = {
+    taskName: entry.taskName,
+    severity: entry.severity,
+    requestId: entry.requestId ?? null,
+    userId: entry.userId ?? null,
+    studentId: entry.studentId ?? null,
+    tutorId: entry.tutorId ?? null,
+    reportId: entry.reportId ?? null,
+    quizId: entry.quizId ?? null,
+    errorName: entry.error.name,
+    errorMessage: entry.error.message,
+    errorStack: entry.error.stack,
+  };
+
+  const prefix = "[BackgroundTask]";
+  if (severity === "critical" || severity === "error") {
+    console.error(prefix, logPayload);
+  } else if (severity === "warning") {
+    console.warn(prefix, logPayload);
+  } else {
+    console.log(prefix, logPayload);
+  }
+}
+
 const analyzeClassLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // limit each IP to 20 analyze-class requests per window
@@ -566,11 +673,74 @@ const analyzeClassLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const RATE_LIMIT_MESSAGE = "Too many attempts. Please wait a few minutes and try again.";
+
+function hashEmailForLog(email: unknown): string | undefined {
+  if (typeof email !== "string") return undefined;
+  const normalised = canonicalEmail(email);
+  if (!normalised) return undefined;
+  return crypto.createHash("sha256").update(normalised).digest("hex");
+}
+
+function getRequestEmailHash(req: Request): string | undefined {
+  return hashEmailForLog(req.body?.email);
+}
+
+function logAuthRateLimit(req: Request, reason: string): void {
+  console.warn("[auth-rate-limit]", {
+    route: req.route?.path || req.path || req.originalUrl.split("?")[0],
+    method: req.method,
+    ip: req.ip,
+    emailHash: getRequestEmailHash(req),
+    reason,
+  });
+}
+
+function authRateLimitHandler(reason: string) {
+  return (req: Request, res: Response) => {
+    logAuthRateLimit(req, reason);
+    return res.status(429).json({ message: RATE_LIMIT_MESSAGE });
+  };
+}
+
 const authApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: authRateLimitHandler("auth_api_window_exceeded"),
+});
+
+const authSyncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("auth_sync_window_exceeded"),
+});
+
+const verificationResendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("verification_resend_window_exceeded"),
+});
+
+const verificationCodeSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("verification_code_send_window_exceeded"),
+});
+
+const verificationCodeVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: authRateLimitHandler("verification_code_verify_window_exceeded"),
 });
 
 const tutorApiLimiter = rateLimit({
@@ -602,26 +772,85 @@ const uploadImageLimiter = rateLimit({
 });
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      const dir = path.resolve(process.cwd(), "client/public/uploads");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    },
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
     if (!allowedImageTypes.has(file.mimetype)) {
-      cb(new Error("Only PNG, JPEG, WEBP, and SVG images are allowed"));
+      cb(new Error("Only PNG, JPEG, and WEBP images are allowed"));
       return;
     }
     cb(null, true);
   },
 });
+
+type ValidatedImageUpload = {
+  extension: ".png" | ".jpg" | ".jpeg" | ".webp";
+  contentType: "image/png" | "image/jpeg" | "image/webp";
+};
+
+function logRejectedUpload(req: Request, reason: string, file?: Express.Multer.File): void {
+  console.warn(JSON.stringify({
+    event: "upload_rejected",
+    reason,
+    ip: req.ip,
+    userAgent: req.get("user-agent")?.slice(0, 200),
+    originalExtension: file?.originalname ? path.extname(file.originalname).toLowerCase().slice(0, 16) : undefined,
+    mimetype: file?.mimetype,
+    size: file?.size,
+  }));
+}
+
+function hasImageMagicBytes(buffer: Buffer, contentType: string): boolean {
+  if (contentType === "image/png") {
+    return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  if (contentType === "image/jpeg") {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (contentType === "image/webp") {
+    return buffer.length >= 12
+      && buffer.subarray(0, 4).toString("ascii") === "RIFF"
+      && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+  }
+  return false;
+}
+
+function containsActiveTextPayload(buffer: Buffer): boolean {
+  const sample = buffer.subarray(0, Math.min(buffer.length, 4096)).toString("utf8").toLowerCase();
+  return /<\s*(?:!doctype\s+html|html|head|body|script|iframe|object|embed|svg|img|meta|link)\b/.test(sample)
+    || /javascript\s*:|onerror\s*=|onload\s*=|<\?php/.test(sample);
+}
+
+function validateImageUpload(req: Request, file: Express.Multer.File): ValidatedImageUpload | null {
+  const extension = path.extname(file.originalname).toLowerCase();
+  if (!allowedImageExtensions.has(extension)) {
+    logRejectedUpload(req, "unsupported_extension", file);
+    return null;
+  }
+  const expectedContentType = uploadTypeByExtension.get(extension);
+  if (!expectedContentType || expectedContentType !== file.mimetype) {
+    logRejectedUpload(req, "extension_mime_mismatch", file);
+    return null;
+  }
+  if (!hasImageMagicBytes(file.buffer, file.mimetype)) {
+    logRejectedUpload(req, "magic_bytes_mismatch", file);
+    return null;
+  }
+  if (containsActiveTextPayload(file.buffer)) {
+    logRejectedUpload(req, "active_content_detected", file);
+    return null;
+  }
+  return { extension: extension as ValidatedImageUpload["extension"], contentType: file.mimetype as ValidatedImageUpload["contentType"] };
+}
+
+async function persistImageUpload(file: Express.Multer.File, extension: string): Promise<string> {
+  await fs.promises.mkdir(UPLOAD_ROOT, { recursive: true, mode: 0o755 });
+  const filename = `${Date.now()}-${crypto.randomUUID()}${extension}`;
+  const destination = path.join(UPLOAD_ROOT, filename);
+  await fs.promises.writeFile(destination, file.buffer, { mode: 0o644, flag: "wx" });
+  await fs.promises.chmod(destination, 0o644);
+  return filename;
+}
 
 const pdfUpload = multer({ storage: multer.memoryStorage() });
 
@@ -690,6 +919,24 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   return res.status(401).json({ message: "Unauthorized" });
 }
 
+
+const clientErrorReportSchema = z.object({
+  timestamp: z.string().max(64),
+  route: z.string().max(2048),
+  boundaryTitle: z.string().max(256),
+  error: z.object({
+    name: z.string().max(256),
+    message: z.string().max(2000),
+    stack: z.string().max(4000).optional(),
+    componentStack: z.string().max(4000).optional(),
+  }),
+  user: z.object({
+    id: z.string().max(128).optional(),
+    role: z.string().max(64).optional(),
+  }).optional(),
+  requestId: z.string().max(128),
+});
+
 const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com";
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
@@ -705,6 +952,103 @@ function determineRole(email: string): "tutor" | "student" | "super_admin" {
 // per-domain modules under `./routes/*` share the same middleware
 // instances. See server/routes/README.md.
 
+
+function getSafeRateLimitUser(req: Request): { role: string; userId?: string } {
+  const authUser = (req as any).authUser as { id?: string; role?: string } | undefined;
+  const tutorId = (req as any).tutorId as string | undefined;
+  if (authUser?.role) {
+    return { role: authUser.role, userId: authUser.id };
+  }
+  if (tutorId) {
+    return { role: "tutor", userId: tutorId };
+  }
+  return { role: "legacy_admin" };
+}
+
+function logAiRateLimit(req: Request, reason: string, retryWindowMs: number): void {
+  const { role, userId } = getSafeRateLimitUser(req);
+  console.warn("[AI Rate Limit]", {
+    route: req.route?.path ?? req.path,
+    method: req.method,
+    role,
+    ...(userId ? { userId } : {}),
+    reason,
+    retryWindowMs,
+  });
+}
+
+function aiRateLimitMessage(retryWindowMs: number) {
+  const minutes = Math.max(1, Math.ceil(retryWindowMs / 60_000));
+  return {
+    error: {
+      code: "RATE_LIMITED",
+      message: `AI tools are busy for this account. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      details: { retryWindowMs },
+    },
+  };
+}
+
+function aiRateLimitKey(req: Request): string {
+  const { role, userId } = getSafeRateLimitUser(req);
+  return userId ? `${role}:${userId}` : `${role}:${ipKeyGenerator(req.ip ?? "unknown")}`;
+}
+
+function createAiRouteLimiter(options: {
+  windowMs: number;
+  limit: number | ((req: Request) => number);
+  reason: string;
+}) {
+  return rateLimit({
+    windowMs: options.windowMs,
+    limit: options.limit,
+    keyGenerator: aiRateLimitKey,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: aiRateLimitMessage(options.windowMs),
+    handler: (req, res, _next, opts) => {
+      const retryWindowMs = Number(opts.windowMs) || options.windowMs;
+      logAiRateLimit(req, options.reason, retryWindowMs);
+      res.status(opts.statusCode).json(aiRateLimitMessage(retryWindowMs));
+    },
+  });
+}
+
+const legacyAdminAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  reason: "legacy/admin AI generation limit exceeded",
+});
+
+const tutorGenerationAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  reason: "tutor AI generation limit exceeded",
+});
+
+const tutorCopilotAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  reason: "tutor copilot AI chat limit exceeded",
+});
+
+const tutorAnalyticsAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  reason: "tutor analytics AI limit exceeded",
+});
+
+const globalTutorAiLimiter = createAiRouteLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: (req) => {
+    const { role } = getSafeRateLimitUser(req);
+    if (role === "student") return 20;
+    if (role === "tutor") return 35;
+    if (role === "super_admin") return 45;
+    return 8;
+  },
+  reason: "global tutor AI chat limit exceeded",
+});
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -716,14 +1060,14 @@ const loginLimiter = rateLimit({
 const somaAiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
+  skip: (req) => req.path === "/generate" || req.path === "/global-tutor",
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error: {
-      code: "RATE_LIMITED",
-      message: "Too many requests. Please wait before trying again.",
-      details: { retryWindowMs: 60_000 },
-    },
+  message: aiRateLimitMessage(60_000),
+  handler: (req, res, _next, opts) => {
+    const retryWindowMs = Number(opts.windowMs) || 60_000;
+    logAiRateLimit(req, "generic SOMA API limit exceeded", retryWindowMs);
+    res.status(opts.statusCode).json(aiRateLimitMessage(retryWindowMs));
   },
 });
 
@@ -1105,7 +1449,7 @@ async function updateMasteryFromSubmission(
         title: `Mastery in ${stats.topic}`,
         message: `Nice work — your accuracy on ${subject} → ${stats.topic} just hit ${pct}%. Keep this topic warm with a short review next week.`,
         payload: { subject, topic: stats.topic, subtopic: stats.subtopic || null, percent: pct },
-      }).catch((err) => console.error("[Milestone Notification] failed:", err));
+      }).catch((err) => logError("grading.milestone_notification_failed", err, { severity: "medium", module: "routes", component: "updateMastery", studentId }));
     }
   }
 }
@@ -1120,7 +1464,7 @@ async function runBackgroundGrading(
 ) {
   const GRADING_TIMEOUT_MS = 180_000;
   try {
-    console.log(`[SOMA Grading] Starting background AI grading for report ${reportId}`);
+    logInfo("grading.started", { module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId });
 
     // Phase 2C — build per-answer diagnoses and roll up student
     // misconceptions BEFORE prompting the AI grader, so we can hand the
@@ -1146,11 +1490,11 @@ async function runBackgroundGrading(
         });
         diagnosisContext = renderDiagnosesForFeedback(diagResult.diagnoses);
         if (diagResult.matchedCount > 0) {
-          console.log(`[SOMA Grading] Report ${reportId} matched ${diagResult.matchedCount}/${diagResult.wrongCount} wrong answers to known examiner misconceptions.`);
+          logInfo("grading.diagnoses_matched", { module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId, matchedCount: diagResult.matchedCount, wrongCount: diagResult.wrongCount });
         }
       } catch (err: any) {
         // Diagnosis failures must never block the AI feedback.
-        console.warn(`[SOMA Grading] Diagnosis pass failed for report ${reportId}: ${err?.message ?? err}`);
+        logWarn("grading.diagnosis_failed", { severity: "medium", module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId, errorMessage: err?.message ?? String(err) });
       }
     }
 
@@ -1217,19 +1561,19 @@ Provide:
         title: "Feedback ready",
         message: `Your personalised feedback for "${studentMeta.quizTitle}" is ready. You scored ${scorePctNotif}%.`,
         payload: { reportId, quizTitle: studentMeta.quizTitle, quizSubject: studentMeta.quizSubject ?? null, scorePercent: scorePctNotif },
-      }).catch((err) => console.error("[Feedback Notification] failed:", err));
+      }).catch((err) => logError("grading.feedback_notification_failed", err, { severity: "medium", module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta.studentId }));
     }
 
-    console.log(`[SOMA Grading] Report ${reportId} graded successfully`);
+    logInfo("grading.completed", { module: "routes", component: "runBackgroundGrading", reportId, userId: studentMeta?.studentId });
   } catch (err: any) {
-    console.error(`[SOMA Grading] Failed for report ${reportId}:`, err.message || err);
+    console.error(JSON.stringify({ level: "error", event: "soma_grading_failed", reportId, error: { message: err?.message ?? String(err), name: err?.name, stack: err?.stack, code: err?.code } }));
     try {
       await storage.updateSomaReport(reportId, {
         status: "failed",
-        aiFeedbackHtml: `<p>Analysis failed: ${err.message || "Unknown error"}. Please contact your teacher or try again later.</p>`,
+        aiFeedbackHtml: "<p>We could not analyse this submission. Please contact your teacher or try again later.</p>",
       });
     } catch (dbErr: any) {
-      console.error(`[SOMA Grading] Failed to update report ${reportId} to failed status:`, dbErr.message);
+      console.error(JSON.stringify({ level: "error", event: "soma_grading_status_update_failed", reportId, error: { message: dbErr?.message ?? String(dbErr), name: dbErr?.name, stack: dbErr?.stack, code: dbErr?.code } }));
     }
   }
 }
@@ -1370,10 +1714,65 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.use("/api/quizzes", studentApiLimiter);
   app.use("/api/soma", somaAiLimiter);
 
+  app.get("/uploads/:filename", async (req, res) => {
+    const filename = path.basename(String(req.params.filename || ""));
+    if (!/^[0-9]+-[0-9a-f-]{36}\.(?:png|jpe?g|webp)$/i.test(filename)) {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+
+    const extension = path.extname(filename).toLowerCase();
+    const contentType = uploadTypeByExtension.get(extension);
+    if (!contentType) {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+
+    const filePath = path.join(UPLOAD_ROOT, filename);
+    if (!filePath.startsWith(`${UPLOAD_ROOT}${path.sep}`)) {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+
+    try {
+      await fs.promises.access(filePath, fs.constants.R_OK);
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; sandbox");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      return res.sendFile(filePath);
+    } catch {
+      return res.status(404).json({ message: "Upload not found" });
+    }
+  });
+
   // Per-domain route modules (see server/routes/README.md). Registered
   // before the legacy inline handlers below so any future domain takeover
   // can shadow a route here without conflict.
   registerDomainRoutes(app);
+
+
+  app.post("/api/diagnostics/client-error", requireSupabaseAuth, async (req, res) => {
+    const parsed = clientErrorReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid client error report" });
+    }
+
+    const authUser = (req as any).authUser as { id?: string; role?: string } | undefined;
+    const report = parsed.data;
+
+    console.warn("[client-error]", {
+      timestamp: report.timestamp,
+      route: report.route,
+      boundaryTitle: report.boundaryTitle,
+      errorName: report.error.name,
+      errorMessage: report.error.message,
+      requestId: report.requestId,
+      userId: authUser?.id || report.user?.id,
+      role: authUser?.role || report.user?.role,
+      stack: report.error.stack,
+      componentStack: report.error.componentStack,
+    });
+
+    res.status(202).json({ ok: true, requestId: report.requestId });
+  });
 
   app.post("/api/graph/render-svg", async (req, res) => {
     const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
@@ -1420,7 +1819,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return humanizeEmailPrefix(email);
   };
 
-  app.post("/api/auth/sync", async (req, res) => {
+  app.post("/api/auth/sync", authSyncLimiter, async (req, res) => {
     try {
       const user_metadata = req.body?.user_metadata as {
         display_name?: string;
@@ -1456,7 +1855,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(400).json({ message: "Missing id or email" });
       }
       const role = determineRole(email);
-      console.log(`[auth-sync] email=${email} domain=${email.split("@")[1]} role=${role}`);
+      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
       const existingUser = await storage.getSomaUserById(id);
       const parsed = insertSomaUserSchema.parse({
         id,
@@ -1498,8 +1897,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       res.json(user);
     } catch (err: any) {
-      console.error("Auth sync error:", err);
-      res.status(500).json({ message: err.message || "Failed to sync user" });
+      return sendInternalError(req, res, err, "auth.sync", "We could not sync your account. Please try again.");
     }
   });
 
@@ -1529,7 +1927,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let user = await storage.getSomaUserById(userId);
       if (!user) {
         const role = determineRole(email);
-        console.log(`[auth-me] auto-sync for missing user: email=${email} role=${role}`);
+        logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req as any), module: "routes", component: "authMe", userId, role, email });
         const parsed = insertSomaUserSchema.parse({
           id: userId,
           email,
@@ -1551,7 +1949,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.touchUserLastLogin(user.id);
       res.json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch user" });
+      return sendInternalError(req, res, err, "auth.me", "We could not load your account. Please try again.");
     }
   });
 
@@ -1584,12 +1982,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Always return 200 — never reveal whether the email exists.
       res.json({ message: "If that email is registered, a reset link has been sent." });
     } catch (err: any) {
-      console.error("[forgot-password]", err);
+      logError("route.forgot_password_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "forgotPassword" });
       res.status(500).json({ error: "Failed to process password reset request." });
     }
   });
 
-  app.post("/api/auth/resend-verification", async (req, res) => {
+  app.post("/api/auth/resend-verification", verificationResendLimiter, async (req, res) => {
     try {
       const email = canonicalEmail(String(req.body?.email || ""));
       if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
@@ -1607,7 +2005,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       const body = await resp.text();
       if (!resp.ok) {
-        console.error("[verification-resend-failed]", { email, status: resp.status, body: body.slice(0, 220) });
+        logError("route.verification_resend_failed", undefined, { ...requestLogContext(req as any), severity: "medium", module: "routes", component: "verificationResend", email, status: resp.status, responseBody: body.slice(0, 220) });
         return res.status(502).json({ message: "Could not resend verification email. Please try again shortly.", code: "VERIFICATION_RESEND_FAILED" });
       }
 
@@ -1615,12 +2013,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       verificationResendAttempts.set(email, attemptCount);
       return res.json({ ok: true, attemptCount, canUseCodeFallback: attemptCount >= 3 });
     } catch (err: any) {
-      console.error("[verification-resend-error]", err?.message || err);
+      logError("route.verification_resend_error", err, { ...requestLogContext(req as any), severity: "medium", module: "routes", component: "verificationResend" });
       return res.status(500).json({ message: "Verification resend failed", code: "VERIFICATION_RESEND_EXCEPTION" });
     }
   });
 
-  app.post("/api/auth/send-verification-code", async (req, res) => {
+  app.post("/api/auth/send-verification-code", verificationCodeSendLimiter, async (req, res) => {
     try {
       const email = canonicalEmail(String(req.body?.email || ""));
       if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
@@ -1673,7 +2071,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/auth/verify-verification-code", async (req, res) => {
+  app.post("/api/auth/verify-verification-code", verificationCodeVerifyLimiter, async (req, res) => {
     try {
       const email = canonicalEmail(String(req.body?.email || ""));
       const code = String(req.body?.code || "").trim();
@@ -1977,7 +2375,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         totalSubmitted: studentDetails.filter((s) => s.detailedStatus === "submitted" || s.detailedStatus === "feedback_ready").length,
       });
     } catch (err: any) {
-      console.error("Failed to fetch quiz details:", err);
+      logError("route.quiz_details_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "quizDetails", quizId: req.params.quizId });
       res.status(500).json({ message: err.message || "Failed to fetch quiz details" });
     }
   });
@@ -2655,7 +3053,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/tutor/ai/intervention-insights", requireTutor, async (req, res) => {
+  app.post("/api/tutor/ai/intervention-insights", requireTutor, tutorAnalyticsAiLimiter, async (req, res) => {
     try {
       const { students } = req.body;
       if (!Array.isArray(students) || students.length === 0) {
@@ -2697,7 +3095,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.post("/api/tutor/ai/student-summary", requireTutor, async (req, res) => {
+  app.post("/api/tutor/ai/student-summary", requireTutor, tutorAnalyticsAiLimiter, async (req, res) => {
     try {
       const { studentName, stats, topicPerformance, assignments } = req.body;
       if (!studentName) return res.status(400).json({ message: "studentName required" });
@@ -3561,7 +3959,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   });
 
   // Copilot chat for tutor quiz builder
-  app.post("/api/tutor/copilot-chat", requireTutor, async (req, res) => {
+  app.post("/api/tutor/copilot-chat", requireTutor, tutorCopilotAiLimiter, async (req, res) => {
     // ── SSE progress streaming ────────────────────────────────────────────
     // When the client sends `Accept: text/event-stream`, we keep the response
     // open and emit named events at each pipeline boundary so the builder UI
@@ -4175,10 +4573,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       }
     } catch (err: any) {
       if (wantsStream) {
-        sendEvent("error", { message: `Copilot failed: ${err.message}` });
+        logInternalError(req, err, "copilot.generate");
+        sendEvent("error", { message: "We could not generate the copilot response. Please try again." });
         res.end();
       } else {
-        res.status(500).json({ message: `Copilot failed: ${err.message}` });
+        return sendInternalError(req, res, err, "copilot.generate", "We could not generate the copilot response. Please try again.");
       }
     }
   });
@@ -4226,6 +4625,23 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to delete quiz" });
     }
+  });
+
+  app.get("/api/super-admin/background-task-diagnostics", requireSuperAdmin, async (req, res) => {
+    const severity = typeof req.query.severity === "string" ? req.query.severity : null;
+    const limitRaw = Number(req.query.limit ?? 50);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 200) : 50;
+    const entries = backgroundTaskLog
+      .filter((entry) => !severity || entry.severity === severity)
+      .slice(0, limit);
+
+    res.json({
+      entries,
+      totalStored: backgroundTaskLog.length,
+      criticalCount: backgroundTaskLog.filter((entry) => entry.severity === "critical").length,
+      errorCount: backgroundTaskLog.filter((entry) => entry.severity === "error").length,
+      warningCount: backgroundTaskLog.filter((entry) => entry.severity === "warning").length,
+    });
   });
 
   app.get("/api/super-admin/stats", requireSuperAdmin, async (_req, res) => {
@@ -4743,16 +5159,38 @@ ${JSON.stringify({
 
 
   app.post("/api/upload-image", uploadImageLimiter, requireAdmin, (req, res) => {
-    upload.single("image")(req, res, (err: any) => {
+    upload.single("image")(req, res, async (err: any) => {
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {
+          logRejectedUpload(req, "file_too_large");
           return res.status(400).json({ message: "Image exceeds 5MB size limit" });
         }
+        logRejectedUpload(req, err.message || "multer_rejected");
         return res.status(400).json({ message: err.message || "Invalid image upload" });
       }
-      if (!req.file) return res.status(400).json({ message: "No image uploaded" });
-      const url = `/uploads/${req.file.filename}`;
-      res.json({ url });
+      if (!req.file) {
+        logRejectedUpload(req, "missing_file");
+        return res.status(400).json({ message: "No image uploaded" });
+      }
+
+      const validated = validateImageUpload(req, req.file);
+      if (!validated) {
+        return res.status(400).json({ message: "Invalid image upload" });
+      }
+
+      try {
+        const filename = await persistImageUpload(req.file, validated.extension);
+        const url = `/uploads/${filename}`;
+        res.json({ url });
+      } catch (saveErr: any) {
+        console.error(JSON.stringify({
+          event: "upload_save_failed",
+          reason: saveErr?.code || saveErr?.message || "unknown",
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        }));
+        res.status(500).json({ message: "Failed to save image upload" });
+      }
     });
   });
 
@@ -4921,7 +5359,7 @@ ${JSON.stringify({
     }
   }
 
-  app.post("/api/soma/generate", requireAdmin, async (req, res) => {
+  app.post("/api/soma/generate", requireAdmin, legacyAdminAiLimiter, async (req, res) => {
     const traceId = newTraceId();
     try {
       const parsed = somaGenerateSchema.safeParse(req.body);
@@ -5057,13 +5495,12 @@ ${JSON.stringify({
         },
       });
     } catch (err: any) {
-      console.error("[SOMA] Generation failed:", err);
-      res.status(500).json({ message: `Pipeline failed: ${err.message}` });
+      return sendInternalError(req, res, err, "soma.generate", "We could not generate this quiz. Please try again.");
     }
   });
 
   // Tutor quiz generation — sets authorId and optionally assigns to students
-  app.post("/api/tutor/quizzes/generate", requireTutor, async (req, res) => {
+  app.post("/api/tutor/quizzes/generate", requireTutor, tutorGenerationAiLimiter, async (req, res) => {
     const traceId = newTraceId();
     try {
       const tutorId = (req as any).tutorId;
@@ -5202,46 +5639,60 @@ ${JSON.stringify({
         },
       });
     } catch (err: any) {
-      console.error("[SOMA Tutor] Generation failed:", err);
-      res.status(500).json({ message: `Pipeline failed: ${err.message}` });
+      return sendInternalError(req, res, err, "tutor.soma.generate", "We could not generate this quiz. Please try again.");
     }
   });
 
-  app.get("/api/soma/quizzes", async (_req, res) => {
+  app.get("/api/soma/quizzes", async (req, res) => {
     try {
-      const allQuizzes = await storage.getSomaQuizzes();
-      res.json(allQuizzes.filter((q) => !q.isArchived));
+      const authUser = (req as any).authUser as SomaReadAuthUser;
+      const authUserId = String(authUser.id);
+      const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
+
+      if (authUser.role === "super_admin") {
+        return res.json(allQuizzes);
+      }
+
+      if (authUser.role === "tutor") {
+        return res.json(allQuizzes.filter((q) => q.authorId === authUserId));
+      }
+
+      const assignments = await storage.getQuizAssignmentsForStudent(authUserId);
+      const assignedQuizIds = new Set(assignments.map((assignment) => assignment.quizId));
+      return res.json(allQuizzes.filter((q) => assignedQuizIds.has(q.id)));
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.list", "Something went wrong while loading quizzes. Please try again.");
     }
   });
 
-  app.get("/api/soma/quizzes/:id", async (req, res) => {
+  app.get("/api/soma/quizzes/:id", requireSupabaseAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
 
       const quiz = await storage.getSomaQuiz(id);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
+      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
       res.json(quiz);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.get", "Something went wrong while loading this quiz. Please try again.");
     }
   });
 
-  app.get("/api/soma/quizzes/:id/questions", async (req, res) => {
+  app.get("/api/soma/quizzes/:id/questions", requireSupabaseAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
 
       const quiz = await storage.getSomaQuiz(id);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
+      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
 
       const allQuestions = await storage.getSomaQuestionsByQuizId(id);
-      const sanitized = allQuestions.map(({ correctAnswer, explanation, ...rest }) => rest);
+      const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
       res.json(sanitized);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.questions", "Something went wrong while loading this quiz. Please try again.");
     }
   });
 
@@ -5306,7 +5757,12 @@ ${JSON.stringify({
       res.json(report);
 
       // Mark quiz assignment as completed
-      storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch(() => {});
+      const requestId = getRequestId(req);
+      storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch((err) => logBackgroundTaskFailure("quiz-assignment.update-status-completed", "warning", err, {
+        requestId,
+        quizId,
+        studentId,
+      }));
       const quiz = await storage.getSomaQuiz(quizId);
       if (quiz?.authorId) {
         const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
@@ -5318,7 +5774,13 @@ ${JSON.stringify({
           title: `${resolvedName} submitted ${quiz.title}`,
           message: `${resolvedName} submitted ${quiz.title} (${quiz.subject || "General subject"}) in ${durationText} and scored ${Math.round((totalScore / Math.max(1, allQuestions.reduce((s, q) => s + q.marks, 0))) * 100)}%.`,
           payload: { reportId: report.id, quizId, studentId, studentName: resolvedName, score: totalScore, completedAt: now.toISOString() },
-        });
+        }).catch((err) => logBackgroundTaskFailure("tutor-notification.student-submission", "warning", err, {
+          requestId,
+          reportId: report.id,
+          quizId,
+          studentId,
+          tutorId: quiz.authorId,
+        }));
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
@@ -5326,7 +5788,12 @@ ${JSON.stringify({
         studentId,
         quizTitle: quiz?.title || "your assessment",
         quizSubject: quiz?.subject ?? null,
-      }).catch(() => {});
+      }).catch((err) => logBackgroundTaskFailure("soma-report.background-grading.unhandled", "critical", err, {
+        requestId,
+        reportId: report.id,
+        quizId,
+        studentId,
+      }));
 
       // Phase 3.3 — mark any existing revision plans stale so the
       // student is prompted to refresh after each new submission.
@@ -5335,7 +5802,12 @@ ${JSON.stringify({
           const { markPlansStale } = await import("./services/revisionPlanStore");
           await markPlansStale(studentId, report.id);
         } catch (err) {
-          /* never block submission on plan housekeeping */
+          logBackgroundTaskFailure("revision-plan.mark-stale", "warning", err, {
+            requestId,
+            reportId: report.id,
+            quizId,
+            studentId,
+          });
         }
       })();
 
@@ -5362,7 +5834,7 @@ ${JSON.stringify({
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.submit", "We could not submit your answers. Please retry.");
     }
   });
 
@@ -5376,7 +5848,7 @@ ${JSON.stringify({
       const exists = await storage.checkSomaSubmission(quizId, studentId);
       res.json({ submitted: exists });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.quizzes.checkSubmission", "Something went wrong while checking your submission. Please try again.");
     }
   });
 
@@ -5428,7 +5900,7 @@ ${JSON.stringify({
         diagnoses,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.reports.review", "Something went wrong while loading this review. Please try again.");
     }
   });
 
@@ -5464,14 +5936,21 @@ ${JSON.stringify({
 
       res.json({ message: "Retry started", reportId });
 
-      runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore).catch(() => {});
+      runBackgroundGrading(reportId, questions, answers, report.score, maxPossibleScore, {
+        studentId: report.studentId ?? "",
+        quizTitle: "retried assessment",
+      }).catch((err) => logBackgroundTaskFailure("soma-report.retry-background-grading.unhandled", "critical", err, {
+        requestId: getRequestId(req),
+        reportId,
+        quizId: report.quizId,
+        studentId: report.studentId,
+      }));
     } catch (err: any) {
-      console.error("[Retry Grading] Error:", err.message);
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.grading_retry", "We could not retry grading this report. Please try again.");
     }
   });
 
-  app.post("/api/soma/global-tutor", requireSupabaseAuth, async (req, res) => {
+  app.post("/api/soma/global-tutor", requireSupabaseAuth, globalTutorAiLimiter, async (req, res) => {
     try {
       const authUser = (req as any).authUser as { id: string; role: string };
       const { message, studentId: requestedStudentId } = req.body;
@@ -5563,8 +6042,7 @@ Also answer any specific question the student asks, informed by their performanc
       });
       res.json({ reply: result.data });
     } catch (err: any) {
-      console.error("[Global Tutor] Error:", err.message);
-      res.status(500).json({ message: err.message });
+      return sendInternalError(req, res, err, "soma.global_tutor", "We could not generate a tutor response. Please try again.");
     }
   });
 

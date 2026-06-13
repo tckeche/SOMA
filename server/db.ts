@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "@shared/schema";
+import { logError, logInfo } from "./utils/logging";
 
 function shouldUseSsl(url: string): boolean {
   const lower = url.toLowerCase();
@@ -40,9 +41,12 @@ export async function connectDb() {
     process.env.SUPABASE_URL ||
     process.env.DATABASE_URL;
   if (!url) {
-    console.error(
-      "[db] No database URL set — looked for SUPABASE_DB_URL, SUPABASE_URL, DATABASE_URL",
-    );
+    logError("db.config_missing", undefined, {
+      severity: "critical",
+      module: "db",
+      component: "postgres",
+      requiredEnv: ["SUPABASE_DB_URL", "SUPABASE_URL", "DATABASE_URL"],
+    });
     pool = null;
     db = null;
     return;
@@ -52,12 +56,12 @@ export async function connectDb() {
     const p = createPool(url);
     await p.query("SELECT 1");
     const host = url.split("@")[1]?.split("/")[0] || "unknown";
-    console.log(`[db] connected to ${host}`);
+    logInfo("db.connected", { module: "db", component: "postgres", host });
     pool = p;
     db = drizzle(p, { schema });
   } catch (e: any) {
     const host = url.split("@")[1]?.split("/")[0] || "unknown";
-    console.error(`[db] failed to connect to ${host}: ${e.message}`);
+    logError("db.connection_failed", e, { severity: "critical", module: "db", component: "postgres", host });
     pool = null;
     db = null;
   }
