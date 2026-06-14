@@ -9,11 +9,11 @@
 import { numericallyEquivalent, explanationFinalAnswerMismatch } from "./mathValidator";
 
 export interface QualityContext {
-  subject?: string;
-  syllabus?: string;
-  level?: string;
-  topic?: string;
-  subtopic?: string;
+  subject?: string | null;
+  syllabus?: string | null;
+  level?: string | null;
+  topic?: string | null;
+  subtopic?: string | null;
 }
 
 export interface QualityResult {
@@ -154,3 +154,11 @@ export function validateQuestionQuality(q: QualityInput, _ctx?: QualityContext):
 
   return { reviewStatus, blocking, warnings };
 }
+
+/**
+ * Publish gate: only questions explicitly approved (or legacy rows where
+ * reviewStatus is null, which the DB defaults to "approved") may be served to
+ * students. Excludes "needs_review" and "auto_blocked".
+ */
+export const isServableToStudent = (q: { reviewStatus?: string | null }) =>
+  q.reviewStatus === "approved" || q.reviewStatus == null;

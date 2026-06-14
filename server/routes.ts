@@ -16,7 +16,7 @@ import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
-import { validateQuestionQuality } from "./services/questionQuality";
+import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -1281,7 +1281,7 @@ function perQuestionMisconceptionIds(
  * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
  * so it can be served to students before submission.
  */
-function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
+export function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
   return {
     id: q.id, quizId: q.quizId, stem: q.stem,
     options: q.options, marks: q.marks,
@@ -5836,7 +5836,44 @@ ${JSON.stringify({
     }
   });
 
-  app.get("/api/soma/quizzes", async (req, res) => {
+  type SomaReadAuthUser = { id: string | string[]; role?: string | null; email?: string | null };
+
+  function logSomaPermissionDenied(params: {
+    route: string;
+    quizId?: number;
+    userId?: string;
+    role?: string | null;
+    reason: string;
+  }) {
+    console.warn(JSON.stringify({ event: "permission_denied", resource: "soma_quiz", ...params }));
+  }
+
+  async function canReadSomaQuiz(quiz: any, authUser: SomaReadAuthUser): Promise<boolean> {
+    const userId = String(authUser.id);
+    if (authUser.role === "super_admin") return true;
+    if (authUser.role === "tutor") return quiz.authorId === userId;
+    const assignments = await storage.getQuizAssignmentsForStudent(userId);
+    return assignments.some((assignment) => assignment.quizId === quiz.id);
+  }
+
+  async function requireSomaQuizReadAccess(req: Request, res: Response, quiz: any): Promise<boolean> {
+    const authUser = (req as any).authUser as SomaReadAuthUser;
+    const allowed = await canReadSomaQuiz(quiz, authUser);
+    if (!allowed) {
+      logSomaPermissionDenied({
+        route: req.path,
+        quizId: quiz.id,
+        userId: String(authUser.id),
+        role: authUser.role,
+        reason: "soma_quiz_not_assigned_or_not_owned",
+      });
+      res.status(403).json({ message: "Forbidden: you do not have access to this quiz" });
+      return false;
+    }
+    return true;
+  }
+
+  app.get("/api/soma/quizzes", requireSupabaseAuth, async (req, res) => {
     try {
       const authUser = (req as any).authUser as SomaReadAuthUser;
       const authUserId = String(authUser.id);
@@ -5881,7 +5918,7 @@ ${JSON.stringify({
       if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
       if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
 
-      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter((q) => q.reviewStatus === "approved");
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter(isServableToStudent);
       const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
       res.json(sanitized);
     } catch (err: any) {
@@ -5909,7 +5946,7 @@ ${JSON.stringify({
         return res.status(409).json({ message: "You have already submitted this quiz." });
       }
 
-      const allQuestions = (await storage.getSomaQuestionsByQuizId(quizId)).filter((q) => q.reviewStatus === "approved");
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(quizId)).filter(isServableToStudent);
       if (!allQuestions.length) {
         return res.status(404).json({ message: "No questions found for this quiz." });
       }

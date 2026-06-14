@@ -135,6 +135,12 @@ export interface DraftQuestion {
   targetMisconceptionIds?: number[] | null;
   commandWord?: string | null;
   assessmentObjective?: string | null;
+  optionRationales?: Array<{
+    option: string;
+    isCorrect: boolean;
+    rationale: string;
+    misconceptionId: number | null;
+  }> | null;
 }
 
 export const somaUsers = pgTable("soma_users", {

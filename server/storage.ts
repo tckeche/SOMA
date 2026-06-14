@@ -1472,6 +1472,8 @@ class MemoryStorage implements IStorage {
       commandWord: q.commandWord ?? null,
       assessmentObjective: q.assessmentObjective ?? null,
       optionRationales: (q as { optionRationales?: unknown }).optionRationales as SomaQuestion["optionRationales"] ?? null,
+      reviewStatus: (q as { reviewStatus?: string }).reviewStatus ?? "approved",
+      generationMeta: (q as { generationMeta?: unknown }).generationMeta as SomaQuestion["generationMeta"] ?? null,
     }));
     this.somaQuestionsList.push(...created);
     return created;
