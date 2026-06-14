@@ -4,13 +4,38 @@ import { useParams, Link } from "wouter";
 import { authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Check, X, Pencil, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, Check, X, Pencil, AlertTriangle, Archive, RotateCcw, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface GenerationWarning {
   issue?: string;
@@ -33,11 +58,25 @@ interface ReviewQuestion {
   correctAnswer: string;
   explanation: string | null;
   marks: number;
-  reviewStatus: "approved" | "needs_review" | "auto_blocked";
+  reviewStatus: "approved" | "needs_review" | "auto_blocked" | "excluded";
   difficultyTag: string | null;
   topicTag: string | null;
   subtopicTag: string | null;
   generationMeta: GenerationMeta | null;
+}
+
+interface RegradeDetail {
+  reportId: number;
+  studentName: string;
+  oldScore: number;
+  newScore: number;
+  maxPossibleScore: number;
+}
+
+interface RegradeResult {
+  regraded: number;
+  changed: number;
+  details: RegradeDetail[];
 }
 
 const CARD_CLASS =
@@ -51,6 +90,8 @@ function statusBadge(status: ReviewQuestion["reviewStatus"]) {
       return <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">needs review</Badge>;
     case "auto_blocked":
       return <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40">blocked</Badge>;
+    case "excluded":
+      return <Badge className="bg-slate-500/20 text-slate-300 border border-slate-500/40">excluded</Badge>;
     default:
       return <Badge>{status}</Badge>;
   }
@@ -103,42 +144,79 @@ function QuestionCard({
     setEditing(false);
   }
 
+  const isExcluded = q.reviewStatus === "excluded";
+
   return (
-    <div className={CARD_CLASS} data-testid={`review-question-${q.id}`}>
+    <div
+      className={`${CARD_CLASS}${isExcluded ? " opacity-60" : ""}`}
+      data-testid={`review-question-${q.id}`}
+    >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {statusBadge(q.reviewStatus)}
+          {isExcluded ? (
+            <Badge
+              className="bg-slate-500/20 text-slate-300 border border-slate-500/40"
+              data-testid={`q-excluded-badge-${q.id}`}
+            >
+              Excluded
+            </Badge>
+          ) : (
+            statusBadge(q.reviewStatus)
+          )}
           {q.difficultyTag && <Badge variant="outline">{q.difficultyTag}</Badge>}
           {q.topicTag && <Badge variant="outline">{q.topicTag}</Badge>}
           <span className="text-xs text-muted-foreground">{q.marks} mark{q.marks === 1 ? "" : "s"}</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            data-testid={`edit-question-${q.id}`}
-            onClick={() => setEditing((e) => !e)}
-          >
-            <Pencil className="h-4 w-4 mr-1" /> {editing ? "Cancel" : "Edit"}
-          </Button>
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            disabled={pending}
-            data-testid={`approve-question-${q.id}`}
-            onClick={() => onMutate(q.id, { action: "approve" })}
-          >
-            <Check className="h-4 w-4 mr-1" /> Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={pending}
-            data-testid={`reject-question-${q.id}`}
-            onClick={() => onMutate(q.id, { action: "reject" })}
-          >
-            <X className="h-4 w-4 mr-1" /> Reject
-          </Button>
+          {isExcluded ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              data-testid={`q-restore-${q.id}`}
+              onClick={() => onMutate(q.id, { action: "restore" })}
+            >
+              <RotateCcw className="h-4 w-4 mr-1" /> Restore
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid={`edit-question-${q.id}`}
+                onClick={() => setEditing((e) => !e)}
+              >
+                <Pencil className="h-4 w-4 mr-1" /> {editing ? "Cancel" : "Edit"}
+              </Button>
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={pending}
+                data-testid={`approve-question-${q.id}`}
+                onClick={() => onMutate(q.id, { action: "approve" })}
+              >
+                <Check className="h-4 w-4 mr-1" /> Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={pending}
+                data-testid={`reject-question-${q.id}`}
+                onClick={() => onMutate(q.id, { action: "reject" })}
+              >
+                <X className="h-4 w-4 mr-1" /> Reject
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                data-testid={`q-exclude-${q.id}`}
+                onClick={() => onMutate(q.id, { action: "exclude" })}
+              >
+                <Archive className="h-4 w-4 mr-1" /> Exclude
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -248,6 +326,9 @@ export default function TutorQuizReview() {
     enabled: !!userId && quizId.length > 0,
   });
 
+  const [confirmRegrade, setConfirmRegrade] = useState(false);
+  const [regradeResult, setRegradeResult] = useState<RegradeResult | null>(null);
+
   const mutation = useMutation({
     mutationFn: async ({ questionId, body }: { questionId: number; body: Record<string, unknown> }) => {
       const res = await authFetch(`/api/tutor/quizzes/${quizId}/questions/${questionId}/review`, {
@@ -258,12 +339,50 @@ export default function TutorQuizReview() {
       if (!res.ok) throw new Error("Failed to update question");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey });
-      toast({ title: "Question updated" });
+      const action = variables.body.action;
+      if (action === "exclude") {
+        const affected = Number(data?.affectedSubmissionCount ?? 0);
+        if (affected > 0) {
+          toast({
+            title: "Question excluded",
+            description: `${affected} submission${affected === 1 ? "" : "s"} affected — run 'Regrade submissions' to update scores.`,
+          });
+        } else {
+          toast({ title: "Question excluded" });
+        }
+      } else if (action === "restore") {
+        toast({ title: "Question restored" });
+      } else {
+        toast({ title: "Question updated" });
+      }
     },
     onError: (err: any) => {
       toast({ title: "Update failed", description: err?.message, variant: "destructive" });
+    },
+  });
+
+  const regradeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/regrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to regrade submissions");
+      return res.json() as Promise<RegradeResult>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/details`] });
+      setRegradeResult(data);
+      toast({
+        title: "Regrade complete",
+        description: `Regraded ${data.regraded} submission${data.regraded === 1 ? "" : "s"}, ${data.changed} score${data.changed === 1 ? "" : "s"} changed.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Regrade failed", description: err?.message, variant: "destructive" });
     },
   });
 
@@ -271,7 +390,9 @@ export default function TutorQuizReview() {
     (a, b) => rankFlagged(a.reviewStatus) - rankFlagged(b.reviewStatus) || a.id - b.id,
   );
 
-  const flaggedCount = questions.filter((q) => q.reviewStatus !== "approved").length;
+  const flaggedCount = questions.filter(
+    (q) => q.reviewStatus !== "approved" && q.reviewStatus !== "excluded",
+  ).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -282,8 +403,85 @@ export default function TutorQuizReview() {
           </Link>
           <h1 className="text-lg font-semibold">Review questions</h1>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={regradeMutation.isPending}
+            data-testid="regrade-submissions"
+            onClick={() => setConfirmRegrade(true)}
+          >
+            {regradeMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-1" />
+            )}
+            Regrade submissions
+          </Button>
+          <ThemeToggle />
+        </div>
       </header>
+
+      <AlertDialog open={confirmRegrade} onOpenChange={setConfirmRegrade}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regrade submissions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This recomputes scores for all completed submissions using current
+              (non-excluded) questions. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="confirm-regrade"
+              onClick={() => regradeMutation.mutate()}
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={regradeResult !== null}
+        onOpenChange={(open) => !open && setRegradeResult(null)}
+      >
+        <DialogContent data-testid="regrade-results">
+          <DialogHeader>
+            <DialogTitle>Regrade complete</DialogTitle>
+            <DialogDescription>
+              Regraded {regradeResult?.regraded ?? 0} submission
+              {regradeResult?.regraded === 1 ? "" : "s"}, {regradeResult?.changed ?? 0}{" "}
+              score{regradeResult?.changed === 1 ? "" : "s"} changed.
+            </DialogDescription>
+          </DialogHeader>
+          {regradeResult && regradeResult.changed > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Student</TableHead>
+                  <TableHead className="text-right">Old</TableHead>
+                  <TableHead className="text-right">New</TableHead>
+                  <TableHead className="text-right">Max</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {regradeResult.details
+                  .filter((d) => d.oldScore !== d.newScore)
+                  .map((d) => (
+                    <TableRow key={d.reportId}>
+                      <TableCell>{d.studentName}</TableCell>
+                      <TableCell className="text-right">{d.oldScore}</TableCell>
+                      <TableCell className="text-right">{d.newScore}</TableCell>
+                      <TableCell className="text-right">{d.maxPossibleScore}</TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <main className="max-w-3xl mx-auto p-6 space-y-4">
         {isLoading ? (
