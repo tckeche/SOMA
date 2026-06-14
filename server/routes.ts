@@ -1253,6 +1253,29 @@ function sanitizeSubmittedAnswers(
 }
 
 /**
+ * Computes the per-question target misconception ids, preferring the per-option
+ * rationales (each distractor carries its own misconception id), falling back to
+ * the blueprint row's single targetMisconceptionId (only when the row is a
+ * misconception_probe), then to the batch-wide seed list. Each layer is more
+ * specific than the last; the marker reads whichever is populated.
+ */
+function perQuestionMisconceptionIds(
+  q: { option_rationales?: Array<{ misconceptionId: number | null }> | null },
+  planRow: { role?: string; targetMisconceptionId?: number | null } | undefined,
+  seedFallback: number[] | null | undefined,
+): number[] | null {
+  const optionRatIds = (q.option_rationales ?? [])
+    .map((r) => r.misconceptionId)
+    .filter((id): id is number => id != null);
+  const planIds = planRow && planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
+    ? [planRow.targetMisconceptionId] : [];
+  const ids = optionRatIds.length > 0
+    ? Array.from(new Set([...optionRatIds, ...planIds]))
+    : (planIds.length > 0 ? planIds : (seedFallback ?? []));
+  return ids.length > 0 ? ids : null;
+}
+
+/**
  * Returns only the student-safe fields of a question, deliberately omitting the
  * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
  * so it can be served to students before submission.
@@ -3423,33 +3446,25 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 status: "published",
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
-              questions: balancedGen.map((q, i) => {
-                // Per-question misconception attribution. Phase 4 prefers
-                // the per-option rationales (each distractor carries its
-                // own misconception id), falling back to the blueprint
-                // row's single targetMisconceptionId, then to the batch-
-                // wide seed list. Each layer is more specific than the
-                // last; the marker reads whichever is populated.
-                const planRow = generated.blueprint?.rows[i];
-                const optionRatIds = (q.option_rationales ?? [])
-                  .map((r) => r.misconceptionId)
-                  .filter((id): id is number => id != null);
-                const planIds = planRow && planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
-                  ? [planRow.targetMisconceptionId]
-                  : [];
-                const ids = optionRatIds.length > 0
-                  ? Array.from(new Set([...optionRatIds, ...planIds]))
-                  : (planIds.length > 0 ? planIds : (generated.seedMisconceptionIds ?? []));
-                return {
-                  stem: q.stem,
-                  options: q.options,
-                  correctAnswer: q.correct_answer,
-                  explanation: q.explanation,
-                  marks: q.marks,
-                  targetMisconceptionIds: ids.length > 0 ? ids : null,
-                  optionRationales: q.option_rationales ?? null,
-                };
-              }),
+              questions: balancedGen.map((q, i) => ({
+                stem: q.stem,
+                options: q.options,
+                correctAnswer: q.correct_answer,
+                explanation: q.explanation,
+                marks: q.marks,
+                difficultyTag: q.difficulty_tag ?? null,
+                topicTag: q.topic_tag ?? null,
+                subtopicTag: q.subtopic_tag ?? null,
+                optionRationales: q.option_rationales ?? null,
+                targetMisconceptionIds: perQuestionMisconceptionIds(q, generated.blueprint?.rows[i], generated.seedMisconceptionIds),
+                generationMeta: {
+                  makerModel: generated.telemetry.makerModel,
+                  verifierModel: generated.telemetry.checkerModel,
+                  warnings: generated.warnings.filter((w) => w.questionIndex === i + 1)
+                    .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
+                  requestedDifficulty: q.difficulty_tag,
+                },
+              })),
               assignedStudentIds: [studentId],
             });
             await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
@@ -4446,6 +4461,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
             difficultyTag: fixed.difficulty_tag ?? orig.difficultyTag,
             topicTag: fixed.topic_tag ?? orig.topicTag,
             subtopicTag: fixed.subtopic_tag ?? orig.subtopicTag,
+            optionRationales: fixed.option_rationales ?? orig.optionRationales,
           };
         });
       }
@@ -5478,15 +5494,27 @@ ${JSON.stringify({
         targetMisconceptionIds,
         targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
       }, traceId);
+      const balanced = balanceAnswerOptions(result.questions);
       const insertedQuestions = await storage.createSomaQuestions(
-        balanceAnswerOptions(result.questions).map((q) => ({
+        balanced.map((q, i) => ({
           quizId: quiz.id,
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
-          targetMisconceptionIds,
+          difficultyTag: q.difficulty_tag ?? null,
+          topicTag: q.topic_tag ?? null,
+          subtopicTag: q.subtopic_tag ?? null,
+          optionRationales: q.option_rationales ?? null,
+          targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
+          generationMeta: {
+            makerModel: result.telemetry.makerModel,
+            verifierModel: result.telemetry.checkerModel,
+            warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
+              .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
+            requestedDifficulty: q.difficulty_tag,
+          },
         }))
       );
       traceLog("route.somaGenerate.afterCreateSomaQuestions", {
@@ -5622,13 +5650,24 @@ ${JSON.stringify({
           status: "published",
           isArchived: false,
         },
-        questions: balanceAnswerOptions(result.questions).map((q) => ({
+        questions: balanceAnswerOptions(result.questions).map((q, i) => ({
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
-          targetMisconceptionIds,
+          difficultyTag: q.difficulty_tag ?? null,
+          topicTag: q.topic_tag ?? null,
+          subtopicTag: q.subtopic_tag ?? null,
+          optionRationales: q.option_rationales ?? null,
+          targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
+          generationMeta: {
+            makerModel: result.telemetry.makerModel,
+            verifierModel: result.telemetry.checkerModel,
+            warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
+              .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
+            requestedDifficulty: q.difficulty_tag,
+          },
         })),
         assignedStudentIds: validAssignedStudentIds,
       });
