@@ -211,6 +211,19 @@ function classifyMasteryStatus(m: StudentTopicMastery | undefined): "mastered" |
   return "needs_work";
 }
 
+/**
+ * A quiz is "playable" only when it exists, is not archived, and is published —
+ * the exact gate `/api/quizzes/available` and the quiz/questions endpoints
+ * enforce (both 404 an archived or unpublished quiz). An assignment to a
+ * non-playable quiz produces a dead `/soma/quiz/:id` link that hangs forever on
+ * "Loading assessment…", so it must not be surfaced as actionable work.
+ */
+export function isPlayableQuiz(
+  quiz: Pick<SomaQuiz, "isArchived" | "status"> | null | undefined,
+): boolean {
+  return !!quiz && !quiz.isArchived && quiz.status === "published";
+}
+
 function buildAssignmentRow(
   a: QuizAssignment & { quiz: SomaQuiz },
   report: SomaReport | undefined,
@@ -575,7 +588,17 @@ export async function buildStudentDashboard({ storage, student }: BuildDashboard
     }
   }
 
-  const assignmentRows = assignmentsRaw.map((a) =>
+  // Drop assignments that can neither be taken nor reviewed: a pending/overdue
+  // assignment whose quiz is archived or unpublished would render a dead
+  // "/soma/quiz/:id" link that hangs on "Loading assessment…" (the quiz and
+  // questions endpoints 404 such quizzes). Completed assignments are always
+  // kept — they carry a report and remain reviewable via reportId, preserving
+  // score history and stats even after a quiz is later archived.
+  const visibleAssignments = assignmentsRaw.filter(
+    (a) => isPlayableQuiz(a.quiz) || a.status === "completed",
+  );
+
+  const assignmentRows = visibleAssignments.map((a) =>
     buildAssignmentRow(a, reportByQuiz.get(a.quizId), maxScoreMap[a.quizId] ?? 0, now),
   );
 

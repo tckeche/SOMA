@@ -1,4 +1,1 @@
-- [Botched multi-branch merge recovery](merge-recovery.md) — a TS1005 parse error at valid-looking code is usually a cascade; fix the parse error first, re-run tsc to surface hidden missing-symbol errors, recover lost defs via `git log -S`.
-- [Long-running batch jobs](long-running-batch-jobs.md) — never `nohup &` in bash (dies on tool return); use a resumable Replit workflow, and after a per-doc wipe-reinsert job always orphan-check for docs left with zero rows.
-- [Signup role resolution](signup-role-resolution.md) — role from selector but clamped: requested_role honoured only on first-create, existing DB role frozen to block escalation; super_admin email-only.
-- [Database access](db-access.md) — app uses Supabase, not Replit's built-in Postgres; executeSql can't see app tables (wrong DB).
+- [SOMA grading & dashboard gates](grading-and-dashboard-gates.md) — grade with `answersMatch` (trim both sides, never `===`); link to quizzes only via `isPlayableQuiz` (published && !archived), same gate the quiz endpoints enforce.

@@ -15,7 +15,7 @@ import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
-import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
+import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
 import { recomputeReportScore } from "./services/regrade";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
@@ -1460,7 +1460,7 @@ async function updateMasteryFromSubmission(
         const word = normaliseCommandWord(q.commandWord ?? null) ?? extractCommandWordFromStem(q.stem ?? "");
         if (!word) continue;
         const answered = studentAnswers[String(q.id)];
-        const correct = !!answered && answered === gradedCorrectAnswer(q);
+        const correct = answersMatch(answered, gradedCorrectAnswer(q));
         await applyCommandWordResult({
           studentId,
           subject: cwSubject,
@@ -1502,7 +1502,7 @@ async function updateMasteryFromSubmission(
     bucket.total += 1;
     bucket.maxMarks += q.marks;
     const answered = studentAnswers[String(q.id)];
-    if (answered === gradedCorrectAnswer(q)) {
+    if (answersMatch(answered, gradedCorrectAnswer(q))) {
       bucket.correct += 1;
       bucket.marks += q.marks;
     }
@@ -1598,7 +1598,7 @@ async function runBackgroundGrading(
       const questionNumber = idx + 1;
       const studentAnswer = studentAnswers[String(q.id)] || "(no answer)";
       const correctAnswer = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
-      const isCorrect = studentAnswer === correctAnswer;
+      const isCorrect = answersMatch(studentAnswer, correctAnswer);
       return `Question ${questionNumber}: ${q.stem}\nStudent Answer: ${studentAnswer}\nCorrect Answer: ${correctAnswer}\nResult: ${isCorrect ? "CORRECT" : "INCORRECT"} (${q.marks} marks)`;
     }).join("\n\n");
 
@@ -2604,7 +2604,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const affectedSubmissionCount = reports.filter((r) => {
           if (r.status !== "completed") return false;
           const answers = (r.answersJson ?? {}) as Record<string, string>;
-          return answers[String(questionId)] === correct;
+          return answersMatch(answers[String(questionId)], correct);
         }).length;
         const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "excluded" });
         return res.json({ ...updated, affectedSubmissionCount });
@@ -3759,7 +3759,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 subject: normalizeLabel(a.quiz.subject, "General"),
                 topicTag: q.topicTag,
                 subtopicTag: q.subtopicTag,
-                correct: studentAnswer === effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
+                correct: answersMatch(studentAnswer, effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer)),
                 marks: q.marks,
               });
             }
@@ -6410,7 +6410,7 @@ ${JSON.stringify({
       let totalScore = 0;
       for (const q of allQuestions) {
         const correct = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
-        if (sanitizedAnswers[String(q.id)] === correct) {
+        if (answersMatch(sanitizedAnswers[String(q.id)], correct)) {
           totalScore += q.marks;
         }
       }

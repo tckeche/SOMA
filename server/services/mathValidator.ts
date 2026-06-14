@@ -693,3 +693,24 @@ export function effectiveCorrectAnswer(
   if (r.verifiable && r.matchedOption) return r.matchedOption;
   return storedCorrectAnswer;
 }
+
+/**
+ * Whitespace-tolerant equality used at grading time.
+ *
+ * Student answers are trimmed at intake (sanitizeSubmittedAnswers), but the
+ * correct value — `effectiveCorrectAnswer(...)`, which returns a verbatim
+ * option string or the stored answer — is NOT trimmed. If an option carries
+ * stray leading/trailing whitespace, a `studentAnswer === correctAnswer`
+ * comparison marks a correct selection wrong (a false negative). Trimming
+ * BOTH sides closes that gap. An empty side never matches, so an unanswered
+ * question (undefined) can never score.
+ */
+export function answersMatch(
+  studentAnswer: string | null | undefined,
+  correctAnswer: string | null | undefined,
+): boolean {
+  const s = (studentAnswer ?? "").trim();
+  const c = (correctAnswer ?? "").trim();
+  if (!s || !c) return false;
+  return s === c;
+}

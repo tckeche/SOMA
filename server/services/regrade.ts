@@ -1,5 +1,5 @@
 import type { SomaQuestion, SomaReport } from "@shared/schema";
-import { effectiveCorrectAnswer } from "./mathValidator";
+import { answersMatch, effectiveCorrectAnswer } from "./mathValidator";
 import { isServableToStudent } from "./questionQuality";
 
 export interface RecomputeResult {
@@ -29,7 +29,7 @@ export function recomputeReportScore(
     if (!isServableToStudent(q)) continue;
     maxPossibleScore += q.marks;
     const correct = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
-    if (answers[String(q.id)] === correct) {
+    if (answersMatch(answers[String(q.id)], correct)) {
       newScore += q.marks;
     }
   }
