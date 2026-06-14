@@ -17,7 +17,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
-const OUT_DIR = ".local/ui-audit";
+const OUT_DIR = process.env.OUT_DIR || ".local/ui-audit";
 
 const argRoutes = (process.argv.find((a) => a.startsWith("--routes=")) || "")
   .replace("--routes=", "")
@@ -199,16 +199,20 @@ async function main() {
       const page = await context.newPage();
       const consoleErrors = [];
       const pageErrors = [];
+      const failedRequests = [];
       page.on("console", (m) => {
         if (m.type() === "error") consoleErrors.push(m.text().slice(0, 200));
       });
       page.on("pageerror", (e) => pageErrors.push(String(e).slice(0, 200)));
+      page.on("response", (r) => {
+        if (r.status() >= 400) failedRequests.push(`${r.status()} ${r.request().method()} ${r.url().slice(0, 140)}`);
+      });
 
       let status = null;
       try {
         const resp = await page.goto(`${BASE_URL}${route}`, { waitUntil: "domcontentloaded", timeout: 30000 });
         status = resp ? resp.status() : null;
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(4000);
       } catch (e) {
         pageErrors.push("navigation: " + e.message);
       }
@@ -224,11 +228,12 @@ async function main() {
         screenshot: file,
         consoleErrors,
         pageErrors,
+        failedRequests,
         ...audit,
       });
 
       const n = (audit.issues || []).length;
-      console.log(`${vp.name.padEnd(7)} ${route.padEnd(20)} status=${status} issues=${n} consoleErr=${consoleErrors.length}`);
+      console.log(`${vp.name.padEnd(7)} ${route.padEnd(20)} status=${status} issues=${n} consoleErr=${consoleErrors.length} fail4xx=${failedRequests.length}`);
       await page.close();
     }
     await context.close();
