@@ -189,6 +189,8 @@ export default function TutorDashboard() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "notifications" | "insights" | "cohort">("overview");
+  // Intervention queue "View All": expand from the top-6 preview to the full list.
+  const [showAllInterventions, setShowAllInterventions] = useState(false);
   // Student-first assign flow: pre-select a student and let the tutor pick a quiz.
   const [assignForStudent, setAssignForStudent] = useState<{ id: string; name: string } | null>(null);
   const [assignForStudentQuizId, setAssignForStudentQuizId] = useState<number | null>(null);
@@ -742,9 +744,13 @@ export default function TutorDashboard() {
                         <p className="text-[10px] text-muted-foreground mt-0.5">Students who are slipping or stalled — auto-populated from scores and completion.</p>
                       </div>
                     </div>
-                    <Link href="/tutor/students">
-                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
-                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllInterventions((v) => !v)}
+                      className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold"
+                    >
+                      {showAllInterventions ? "Show Less" : "View All"} &rarr;
+                    </button>
                   </div>
                   {(() => {
                     const atRisk = studentPlaques.filter(
@@ -758,7 +764,7 @@ export default function TutorDashboard() {
                     );
                     return (
                       <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
-                        {atRisk.slice(0, 6).map((s) => {
+                        {(showAllInterventions ? atRisk : atRisk.slice(0, 6)).map((s) => {
                           const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
                           const insight = getInsightChip(s.studentName);
                           return (

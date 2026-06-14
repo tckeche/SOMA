@@ -5,6 +5,7 @@
  * and all Soma entity operations.
  */
 import { describe, it, expect, beforeEach } from "vitest";
+import { MemoryStorage } from "../server/storage";
 
 // We test MemoryStorage by importing it directly from the module.
 // To isolate, we recreate instances.
@@ -504,5 +505,76 @@ describe("Storage: Tutor pre-publish review gate", () => {
     ]);
     const updated = await applyReviewEdit(store, q, { options: ["1", "1", "3", "4"] });
     expect(updated?.reviewStatus).toBe("auto_blocked");
+  });
+});
+
+// ─── Tutor dashboard summary: cross-tutor / cross-subject scoping ──────────
+// Regression for the data leak where a tutor's dashboard counted another
+// tutor's assignments/reports for a shared student. The summary must only
+// reflect quizzes the requesting tutor authored.
+describe("getDashboardStatsForTutor — tutor-own-quiz scoping", () => {
+  it("excludes another tutor's assignments and reports for a shared student", async () => {
+    const store = new MemoryStorage();
+
+    const tutorA = "11111111-1111-1111-1111-111111111111";
+    const tutorB = "22222222-2222-2222-2222-222222222222";
+    const student = "33333333-3333-3333-3333-333333333333";
+
+    await store.upsertSomaUser({ id: tutorA, email: "a@t.com", displayName: "Tutor A", role: "tutor" } as any);
+    await store.upsertSomaUser({ id: tutorB, email: "b@t.com", displayName: "Tutor B", role: "tutor" } as any);
+    await store.upsertSomaUser({ id: student, email: "s@s.com", displayName: "Shared Student", role: "student" } as any);
+
+    // Both tutors adopt the same student.
+    await store.adoptStudent(tutorA, student);
+    await store.adoptStudent(tutorB, student);
+
+    // Tutor A authors a Maths quiz; Tutor B authors a Physics quiz.
+    const quizA = await store.createSomaQuiz({ title: "A-Maths", topic: "Algebra", subject: "Maths", authorId: tutorA } as any);
+    const quizB = await store.createSomaQuiz({ title: "B-Physics", topic: "Forces", subject: "Physics", authorId: tutorB } as any);
+
+    // The student is assigned both quizzes.
+    await store.createQuizAssignments(quizA.id, [student]);
+    await store.createQuizAssignments(quizB.id, [student]);
+
+    // Student submits low scores for both (low enough to be a "weak topic").
+    await store.createSomaReport({ quizId: quizA.id, studentId: student, studentName: "Shared Student", score: 20, status: "completed" } as any);
+    await store.createSomaReport({ quizId: quizB.id, studentId: student, studentName: "Shared Student", score: 10, status: "completed" } as any);
+
+    const summaryA = await store.getDashboardStatsForTutor(tutorA);
+    const insightA = summaryA.studentInsights.find((s) => s.studentId === student)!;
+    // Tutor A only sees their own (Maths) assignment, not Tutor B's Physics one.
+    expect(insightA.assigned).toBe(1);
+    expect(summaryA.totalQuizzes).toBe(1);
+    expect(insightA.weakTopics.map((t) => t.toLowerCase())).toContain("maths");
+    expect(insightA.weakTopics.map((t) => t.toLowerCase())).not.toContain("physics");
+
+    const summaryB = await store.getDashboardStatsForTutor(tutorB);
+    const insightB = summaryB.studentInsights.find((s) => s.studentId === student)!;
+    expect(insightB.assigned).toBe(1);
+    expect(insightB.weakTopics.map((t) => t.toLowerCase())).toContain("physics");
+    expect(insightB.weakTopics.map((t) => t.toLowerCase())).not.toContain("maths");
+  });
+
+  it("returns empty insights when the tutor authored no quizzes (no leak via empty list)", async () => {
+    const store = new MemoryStorage();
+    const tutorA = "44444444-4444-4444-4444-444444444444";
+    const tutorB = "55555555-5555-5555-5555-555555555555";
+    const student = "66666666-6666-6666-6666-666666666666";
+
+    await store.upsertSomaUser({ id: tutorB, email: "b2@t.com", role: "tutor" } as any);
+    await store.upsertSomaUser({ id: student, email: "s2@s.com", displayName: "S2", role: "student" } as any);
+    await store.adoptStudent(tutorA, student);
+
+    // Only tutor B has a quiz the student was assigned and submitted.
+    const quizB = await store.createSomaQuiz({ title: "B2", topic: "T", subject: "Chemistry", authorId: tutorB } as any);
+    await store.createQuizAssignments(quizB.id, [student]);
+    await store.createSomaReport({ quizId: quizB.id, studentId: student, studentName: "S2", score: 5, status: "completed" } as any);
+
+    const summaryA = await store.getDashboardStatsForTutor(tutorA);
+    const insightA = summaryA.studentInsights.find((s) => s.studentId === student)!;
+    expect(summaryA.totalQuizzes).toBe(0);
+    expect(insightA.assigned).toBe(0);
+    expect(insightA.completed).toBe(0);
+    expect(insightA.weakTopics).toEqual([]);
   });
 });
