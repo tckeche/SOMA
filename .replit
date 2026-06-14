@@ -33,10 +33,6 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Reextract 9709 fix"
-
 
 [[workflows.workflow]]
 name = "Start application"
@@ -46,17 +42,6 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Reextract 9709 fix"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npx tsx scripts/reextractExaminerMisconceptions.ts --board=Cambridge --model=mini --require-catalogue --syllabus-code=9709"
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [userenv]
 
