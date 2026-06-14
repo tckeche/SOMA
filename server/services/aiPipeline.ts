@@ -15,6 +15,7 @@ import { renderSeedsForPrompt } from "./examinerDistractorSeeds";
 import { describePrompt, PromptIds } from "./aiPromptRegistry";
 import { validateAgainstSchema } from "./aiContracts";
 import {
+  distributeDifficulty,
   inferPurposeFromPrompt,
   renderBlueprintForMaker,
   runBlueprintPlanner,
@@ -244,6 +245,54 @@ function dedupeOptions(options: string[], preferred?: string): DedupeOptionsResu
   return { options: out.slice(0, 4), gaps };
 }
 
+/**
+ * Normalise a free-text difficulty tag to one of "easy"/"medium"/"hard".
+ * Lowercases + trims; anything that isn't a known bucket becomes undefined so
+ * stored tags stay clean and drift reporting/quality gates don't trip on it.
+ */
+export function normalizeDifficultyTag(
+  tag: string | undefined,
+): "easy" | "medium" | "hard" | undefined {
+  if (typeof tag !== "string") return undefined;
+  const t = tag.trim().toLowerCase();
+  return t === "easy" || t === "medium" || t === "hard" ? t : undefined;
+}
+
+/**
+ * Compare the realised difficulty distribution of a finished question set
+ * against the requested target and, if any bucket has drifted beyond
+ * tolerance, return ONE summary warning. Pure + side-effect free so it can be
+ * unit-tested directly. `distribution` is the requested percentage mix.
+ */
+export function computeDifficultyDriftWarning(
+  questions: Array<{ difficulty_tag?: string }>,
+  distribution: { easy: number; medium: number; hard: number },
+): PipelineWarning | null {
+  const n = questions.length;
+  if (n === 0) return null;
+  const target = distributeDifficulty(n, distribution);
+  const actual = { easy: 0, medium: 0, hard: 0 };
+  let unspecified = 0;
+  for (const q of questions) {
+    const tag = normalizeDifficultyTag(q.difficulty_tag);
+    if (tag) actual[tag] += 1;
+    else unspecified += 1;
+  }
+  const tolerance = Math.max(1, Math.round(0.1 * n));
+  const drifted = (["easy", "medium", "hard"] as const).some(
+    (k) => Math.abs(actual[k] - target[k]) > tolerance,
+  );
+  if (!drifted) return null;
+  return {
+    questionIndex: 0,
+    field: "overall",
+    issue:
+      `Difficulty drift: requested easy=${target.easy}/med=${target.medium}/hard=${target.hard}, ` +
+      `got easy=${actual.easy}/med=${actual.medium}/hard=${actual.hard} (${unspecified} unspecified).`,
+    autoFixed: false,
+  };
+}
+
 export function applyDeterministicIntegrityGuards(
   questions: QuizResult["questions"],
 ): { questions: QuizResult["questions"]; warnings: PipelineWarning[] } {
@@ -263,6 +312,10 @@ export function applyDeterministicIntegrityGuards(
       });
     }
     const marks = Number.isInteger(q.marks) ? Math.min(10, Math.max(1, q.marks)) : 1;
+    // Normalise difficulty_tag for clean reporting: lowercase + trim, and drop
+    // anything that isn't one of the three known buckets so downstream drift
+    // accounting and quality gates don't trip on stray casing/values.
+    const normalizedDifficulty = normalizeDifficultyTag(q.difficulty_tag);
     const cleaned = {
       ...q,
       stem: normalizedStem || `Question ${idx + 1}`,
@@ -270,6 +323,7 @@ export function applyDeterministicIntegrityGuards(
       correct_answer: normalizedCorrect || guardedOptions[0],
       explanation: normalizedExplanation,
       marks,
+      difficulty_tag: normalizedDifficulty,
     };
     // dedupeOptions pads with "Option N" placeholders when the model returned
     // fewer than 4 distinct options. A student must never see that — mark
@@ -1272,9 +1326,17 @@ async function runOnePassQuiz(
     });
   }
 
+  // ── STAGE 5: post-generation difficulty drift check (informational) ──────
+  // The requested easy/medium/hard mix is only ever a hint to the maker, so
+  // the final set can drift. Compare the realised distribution to the target
+  // and surface ONE summary warning for the tutor. Never blocks.
+  const finalWarnings = [...upstreamWarnings, ...protocol.warnings];
+  const driftWarning = computeDifficultyDriftWarning(protocol.questions, distribution);
+  if (driftWarning) finalWarnings.push(driftWarning);
+
   return {
     questions: protocol.questions,
-    warnings: [...upstreamWarnings, ...protocol.warnings],
+    warnings: finalWarnings,
     telemetry: {
       makerModel,
       checkerModel,
