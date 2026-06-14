@@ -2330,6 +2330,9 @@ export class MemoryStorage implements IStorage {
     this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.quizId !== quizId);
     this.somaReportsList = this.somaReportsList.filter((r) => r.quizId !== quizId);
     this.quizAssignmentsList = this.quizAssignmentsList.filter((qa) => qa.quizId !== quizId);
+    // Mirror the DbStorage FK cascade: drop the quiz's attachment + submission rows.
+    this.assessmentAttachmentsList = this.assessmentAttachmentsList.filter((a) => a.quizId !== quizId);
+    this.submissionUploadsList = this.submissionUploadsList.filter((s) => s.quizId !== quizId);
     this.somaQuizzesList = this.somaQuizzesList.filter((q) => q.id !== quizId);
   }
 

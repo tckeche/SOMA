@@ -124,12 +124,22 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
   }
 
   async function downloadAttachment(attachmentId: number) {
+    // Open the tab synchronously (before any await) so popup blockers don't
+    // swallow it; null the opener manually since "noopener" makes open() null.
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      try {
+        (win as unknown as { opener: unknown }).opener = null;
+      } catch {}
+    }
     try {
       const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
       if (!res.ok) throw new Error("Download failed");
       const { url } = await res.json();
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (win) win.location.href = url;
+      else window.location.href = url;
     } catch (err) {
+      if (win) win.close();
       toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
     }
   }
@@ -215,7 +225,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
                   data-testid="student-response-score"
                   className="text-2xl font-bold text-emerald-300"
                 >
-                  {submission.score ?? 0} <span className="text-base text-muted-foreground font-normal">/ {submission.maxScore ?? 0}</span>
+                  {submission.score ?? 0}{submission.maxScore != null ? <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span> : null}
                 </p>
                 {submission.feedback && (
                   <div className="mt-3">

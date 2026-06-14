@@ -132,6 +132,7 @@ export async function uploadPdf(path: string, data: Buffer): Promise<void> {
 export async function createSignedDownloadUrl(
   path: string,
   expiresInSec = 300,
+  downloadName?: string,
 ): Promise<string> {
   const config = requireConfig("createSignedDownloadUrl");
   const resp = await storageFetch(config, `/object/sign/${UPLOAD_BUCKET}/${path}`, {
@@ -155,7 +156,11 @@ export async function createSignedDownloadUrl(
       JSON.stringify(json),
     );
   }
-  return `${config.url}/storage/v1${json.signedURL}`;
+  let url = `${config.url}/storage/v1${json.signedURL}`;
+  if (downloadName) {
+    url += `&download=${encodeURIComponent(downloadName)}`;
+  }
+  return url;
 }
 
 /** Delete an object from the bucket. 404 (already gone) is ignored. */

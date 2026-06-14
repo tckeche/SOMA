@@ -360,26 +360,34 @@ export default function TutorAssessmentDetails() {
     setSelectedFile(file);
   }
 
-  async function downloadAttachment(attachmentId: number) {
+  // Open a signed-download URL in a new tab. The tab is opened synchronously
+  // (before any await) so popup blockers don't swallow it; the opener is nulled
+  // manually since passing "noopener" to window.open() returns null.
+  async function openSigned(fetchUrl: string) {
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      try {
+        (win as unknown as { opener: unknown }).opener = null;
+      } catch {}
+    }
     try {
-      const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+      const res = await authFetch(fetchUrl);
       if (!res.ok) throw new Error("Download failed");
       const { url } = await res.json();
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (win) win.location.href = url;
+      else window.location.href = url;
     } catch (err) {
+      if (win) win.close();
       toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
     }
   }
 
+  async function downloadAttachment(attachmentId: number) {
+    await openSigned(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+  }
+
   async function downloadResponse(id: number) {
-    try {
-      const res = await authFetch(`/api/tutor/submission-uploads/${id}/download`);
-      if (!res.ok) throw new Error("Download failed");
-      const { url } = await res.json();
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
-    }
+    await openSigned(`/api/tutor/submission-uploads/${id}/download`);
   }
 
   function openMarkDialog(upload: SubmissionUpload) {
@@ -798,7 +806,7 @@ export default function TutorAssessmentDetails() {
                           Marked
                         </Badge>
                         <p className="text-xs text-foreground/80 mt-1">
-                          {resp.score ?? 0} / {resp.maxScore ?? 0}
+                          {resp.score ?? 0}{resp.maxScore != null ? ` / ${resp.maxScore}` : ""}
                         </p>
                       </div>
                     ) : (
@@ -949,16 +957,16 @@ export default function TutorAssessmentDetails() {
               data-testid="resp-mark-save"
               onClick={() => {
                 const score = parseInt(markScore, 10);
-                const maxScore = markMax.trim() === "" ? undefined : parseInt(markMax, 10);
+                const maxScore = parseInt(markMax, 10);
                 if (Number.isNaN(score) || score < 0) {
                   toast({ title: "Invalid score", description: "Score must be 0 or greater.", variant: "destructive" });
                   return;
                 }
-                if (maxScore !== undefined && (Number.isNaN(maxScore) || maxScore <= 0)) {
-                  toast({ title: "Invalid max score", description: "Max score must be greater than 0.", variant: "destructive" });
+                if (markMax.trim() === "" || Number.isNaN(maxScore) || maxScore <= 0) {
+                  toast({ title: "Max score required", description: "Enter a max score greater than 0.", variant: "destructive" });
                   return;
                 }
-                if (maxScore !== undefined && score > maxScore) {
+                if (score > maxScore) {
                   toast({ title: "Invalid score", description: "Score cannot exceed the max score.", variant: "destructive" });
                   return;
                 }

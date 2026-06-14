@@ -38,6 +38,7 @@ vi.mock("../server/services/fileStorage", async (importOriginal) => {
 });
 
 import { registerRoutes } from "../server/routes";
+import { deleteObject } from "../server/services/fileStorage";
 
 let app: express.Express;
 let httpServer: any;
@@ -115,7 +116,8 @@ describe("tutor worksheet attachments", () => {
       .attach("file", PDF, { filename: "worksheet.pdf", contentType: "application/pdf" });
     expect(up.status).toBe(201);
     expect(up.body.filename).toBe("worksheet.pdf");
-    expect(up.body.storagePath).toMatch(new RegExp(`^assessments/${quizId}/`));
+    // storagePath is an internal key and must not be exposed in responses.
+    expect(up.body.storagePath).toBeUndefined();
     const attachmentId = up.body.id;
 
     // (2) List (owner).
@@ -180,6 +182,19 @@ describe("tutor worksheet attachments", () => {
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/PDF required/i);
   });
+
+  it("rejects a spoofed Content-Type that is not a real PDF (magic bytes)", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    const res = await request
+      .post(`/api/tutor/quizzes/${quizId}/attachments`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .attach("file", Buffer.from("<html>not a pdf</html>"), {
+        filename: "fake.pdf",
+        contentType: "application/pdf",
+      });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/not a valid PDF/i);
+  });
 });
 
 describe("format enforcement (mcq assessments reject PDF flows)", () => {
@@ -214,7 +229,8 @@ describe("student submission uploads", () => {
       .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
     expect(first.status).toBe(201);
     expect(first.body.status).toBe("submitted");
-    expect(first.body.storagePath).toBe(`submissions/${quizId}/${STUDENT_ASSIGNED}.pdf`);
+    // storagePath is an internal key and must not be exposed in responses.
+    expect(first.body.storagePath).toBeUndefined();
     const submissionId = first.body.id;
 
     // Tutor marks it.
@@ -337,5 +353,29 @@ describe("tutor view + mark submission uploads", () => {
     expect(mark.body.feedback).toBe("good");
     expect(mark.body.status).toBe("marked");
     expect(mark.body.markedAt).toBeTruthy();
+  });
+});
+
+describe("quiz delete purges storage objects", () => {
+  it("calls deleteObject for the quiz's attachment + submission paths", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    await request
+      .post(`/api/tutor/quizzes/${quizId}/attachments`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .attach("file", PDF, { filename: "worksheet.pdf", contentType: "application/pdf" });
+    await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
+
+    (deleteObject as unknown as ReturnType<typeof vi.fn>).mockClear();
+    const del = await request
+      .delete(`/api/tutor/quizzes/${quizId}`)
+      .set("Authorization", `Bearer ${tutorAToken}`);
+    expect(del.status).toBe(200);
+
+    const calledPaths = (deleteObject as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(calledPaths.some((p: string) => p.startsWith(`assessments/${quizId}/`))).toBe(true);
+    expect(calledPaths).toContain(`submissions/${quizId}/${STUDENT_ASSIGNED}.pdf`);
   });
 });
