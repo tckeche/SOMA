@@ -33,6 +33,10 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Reextract misconceptions"
+
 
 [[workflows.workflow]]
 name = "Start application"
@@ -42,6 +46,17 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Reextract misconceptions"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx tsx scripts/reextractExaminerMisconceptions.ts --board=Cambridge --model=mini --require-catalogue"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [userenv]
 
