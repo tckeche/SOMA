@@ -2332,6 +2332,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // Unassign a student from a quiz
+  // Duplicate (clone) an assessment — Assignment Bank backend. Creates a new
+  // draft quiz owned by the tutor with all questions copied and no assignments.
+  app.post("/api/tutor/quizzes/:quizId/clone", requireTutor, tutorApiLimiter, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(String(req.params.quizId));
+      const source = await storage.getSomaQuiz(quizId);
+      // Treat "not yours" the same as "not found" to avoid leaking existence.
+      if (!source || source.authorId !== tutorId) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      const clone = await storage.cloneSomaQuiz(quizId, tutorId);
+      if (!clone) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      return res.status(201).json(clone);
+    } catch (err) {
+      return sendInternalError(req, res, err, "tutor.quizzes.clone", "Failed to duplicate assessment.");
+    }
+  });
+
   app.delete("/api/tutor/quizzes/:quizId/unassign/:studentId", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;

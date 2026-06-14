@@ -578,3 +578,125 @@ describe("getDashboardStatsForTutor — tutor-own-quiz scoping", () => {
     expect(insightA.weakTopics).toEqual([]);
   });
 });
+
+// ─── Duplicate / clone assessment (Assignment Bank backend) ────────────────
+// cloneSomaQuiz creates a NEW draft quiz owned by the tutor, copies every
+// question's content, and starts with no assignments/submissions of its own.
+describe("cloneSomaQuiz — duplicate assessment", () => {
+  const tutorA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const tutorB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const student = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+
+  async function seedSource(store: MemoryStorage) {
+    const source = await store.createSomaQuiz({
+      title: "Photosynthesis Test",
+      topic: "Biology",
+      topics: ["Biology", "Cells"],
+      syllabus: "IEB",
+      level: "Grade 10",
+      subject: "Life Sciences",
+      curriculumContext: "Term 2",
+      authorId: tutorA,
+      timeLimitMinutes: 45,
+      status: "published",
+    } as any);
+    await store.createSomaQuestions([
+      {
+        quizId: source.id,
+        stem: "Where does photosynthesis occur?",
+        options: ["Mitochondria", "Chloroplast", "Nucleus", "Ribosome"],
+        correctAnswer: "Chloroplast",
+        explanation: "Chloroplasts contain chlorophyll.",
+        marks: 2,
+        questionType: "multiple_choice",
+        topicTag: "Biology",
+        subtopicTag: "Cells",
+        difficultyTag: "medium",
+        commandWord: "state",
+        assessmentObjective: "AO1",
+        reviewStatus: "approved",
+      },
+      {
+        quizId: source.id,
+        stem: "What gas is released?",
+        options: ["CO2", "O2", "N2", "H2"],
+        correctAnswer: "O2",
+        explanation: "Oxygen is a by-product.",
+        marks: 1,
+        questionType: "multiple_choice",
+        reviewStatus: "approved",
+      },
+    ] as any);
+    return source;
+  }
+
+  it("creates a new draft quiz owned by the tutor with a (Copy) title", async () => {
+    const store = new MemoryStorage();
+    const source = await seedSource(store);
+
+    const clone = await store.cloneSomaQuiz(source.id, tutorA);
+    expect(clone).toBeDefined();
+    expect(clone!.id).not.toBe(source.id);
+    expect(clone!.authorId).toBe(tutorA);
+    expect(clone!.title).toBe("Photosynthesis Test (Copy)");
+    expect(clone!.title.endsWith("(Copy)")).toBe(true);
+    expect(clone!.status).toBe("draft");
+    expect(clone!.isArchived).toBe(false);
+    // Descriptive fields carried over.
+    expect(clone!.topic).toBe("Biology");
+    expect(clone!.topics).toEqual(["Biology", "Cells"]);
+    expect(clone!.timeLimitMinutes).toBe(45);
+    expect(clone!.subject).toBe("Life Sciences");
+  });
+
+  it("copies all questions preserving content fields", async () => {
+    const store = new MemoryStorage();
+    const source = await seedSource(store);
+    const sourceQs = await store.getSomaQuestionsByQuizId(source.id);
+
+    const clone = await store.cloneSomaQuiz(source.id, tutorA);
+    const cloneQs = await store.getSomaQuestionsByQuizId(clone!.id);
+
+    expect(cloneQs).toHaveLength(sourceQs.length);
+    const sample = cloneQs.find((q) => q.stem === "Where does photosynthesis occur?")!;
+    expect(sample).toBeDefined();
+    expect(sample.quizId).toBe(clone!.id);
+    expect(sample.options).toEqual(["Mitochondria", "Chloroplast", "Nucleus", "Ribosome"]);
+    expect(sample.correctAnswer).toBe("Chloroplast");
+    expect(sample.explanation).toBe("Chloroplasts contain chlorophyll.");
+    expect(sample.marks).toBe(2);
+    expect(sample.topicTag).toBe("Biology");
+    expect(sample.commandWord).toBe("state");
+    expect(sample.assessmentObjective).toBe("AO1");
+    expect(sample.reviewStatus).toBe("approved");
+  });
+
+  it("clone has ZERO assignments even when the source had assignments", async () => {
+    const store = new MemoryStorage();
+    const source = await seedSource(store);
+    await store.upsertSomaUser({ id: student, email: "stu@s.com", role: "student" } as any);
+    await store.createQuizAssignments(source.id, [student]);
+    expect(await store.getQuizAssignmentsForQuiz(source.id)).toHaveLength(1);
+
+    const clone = await store.cloneSomaQuiz(source.id, tutorA);
+    expect(await store.getQuizAssignmentsForQuiz(clone!.id)).toHaveLength(0);
+  });
+
+  it("leaves the source quiz unchanged", async () => {
+    const store = new MemoryStorage();
+    const source = await seedSource(store);
+
+    await store.cloneSomaQuiz(source.id, tutorB);
+
+    const reloaded = await store.getSomaQuiz(source.id);
+    expect(reloaded!.title).toBe("Photosynthesis Test");
+    expect(reloaded!.status).toBe("published");
+    expect(reloaded!.authorId).toBe(tutorA);
+    expect(await store.getSomaQuestionsByQuizId(source.id)).toHaveLength(2);
+  });
+
+  it("returns undefined for a non-existent source quiz", async () => {
+    const store = new MemoryStorage();
+    expect(await store.cloneSomaQuiz(99999, tutorA)).toBeUndefined();
+  });
+});

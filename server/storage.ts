@@ -37,6 +37,52 @@ function computeNextReviewDate(currentReviewAt: Date | null, attempts: number): 
   return new Date(Date.now() + days * 86400000);
 }
 
+// ─── Clone helpers ──────────────────────────────────────────────────────────
+// Build the InsertSomaQuiz for a duplicated assessment: copies the descriptive
+// fields, re-owns it to `tutorId`, marks it a draft (an unpublished copy) and
+// unarchived. id/createdAt are assigned fresh by the storage layer.
+function cloneSomaQuizInput(source: SomaQuiz, tutorId: string): InsertSomaQuiz {
+  return {
+    title: `${source.title} (Copy)`,
+    topic: source.topic,
+    topics: Array.isArray(source.topics) ? [...source.topics] : [],
+    syllabus: source.syllabus,
+    level: source.level,
+    subject: source.subject,
+    curriculumContext: source.curriculumContext,
+    authorId: tutorId,
+    timeLimitMinutes: source.timeLimitMinutes,
+    status: "draft",
+    isArchived: false,
+  };
+}
+
+// Strip identity columns (id/quizId/createdAt are absent on SomaQuestion's
+// non-PK fields anyway) and preserve every content field of a question so the
+// duplicate is a faithful copy. The new quizId is stamped by the bundle insert.
+function cloneSomaQuestionInput(q: SomaQuestion): InsertSomaQuestion {
+  return {
+    stem: q.stem,
+    options: Array.isArray(q.options) ? [...q.options] : [],
+    correctAnswer: q.correctAnswer,
+    explanation: q.explanation,
+    marks: q.marks,
+    questionType: q.questionType,
+    graphSpec: q.graphSpec ?? null,
+    topicTag: q.topicTag ?? null,
+    subtopicTag: q.subtopicTag ?? null,
+    difficultyTag: q.difficultyTag ?? null,
+    subtopicId: q.subtopicId ?? null,
+    learningRequirementId: q.learningRequirementId ?? null,
+    targetMisconceptionIds: Array.isArray(q.targetMisconceptionIds) ? [...q.targetMisconceptionIds] : null,
+    commandWord: q.commandWord ?? null,
+    assessmentObjective: q.assessmentObjective ?? null,
+    optionRationales: q.optionRationales ?? null,
+    reviewStatus: q.reviewStatus,
+    generationMeta: q.generationMeta ?? null,
+  } as InsertSomaQuestion;
+}
+
 type SomaQuizBundleQuestionInput = {
   stem: string;
   options: string[];
@@ -92,6 +138,7 @@ export interface IStorage {
     questions: SomaQuizBundleQuestionInput[];
     assignedStudentIds?: string[];
   }): Promise<{ quiz: SomaQuiz; questions: SomaQuestion[]; assignments: QuizAssignment[] }>;
+  cloneSomaQuiz(quizId: number, tutorId: string): Promise<SomaQuiz | undefined>;
   getSomaQuizzes(): Promise<SomaQuiz[]>;
   getSomaQuiz(id: number): Promise<SomaQuiz | undefined>;
   updateSomaQuiz(id: number, data: Partial<InsertSomaQuiz>): Promise<SomaQuiz | undefined>;
@@ -263,6 +310,20 @@ class DatabaseStorage implements IStorage {
 
       return { quiz, questions, assignments };
     });
+  }
+
+  async cloneSomaQuiz(quizId: number, tutorId: string): Promise<SomaQuiz | undefined> {
+    const source = await this.getSomaQuiz(quizId);
+    if (!source) return undefined;
+    const sourceQuestions = await this.getSomaQuestionsByQuizId(quizId);
+    // Reuse the bundle path (quiz + questions, no assignments) so the insert is
+    // atomic. A clone starts as a "draft", unarchived, with no assignments/
+    // submissions of its own.
+    const { quiz } = await this.createSomaQuizBundle({
+      quiz: cloneSomaQuizInput(source, tutorId),
+      questions: sourceQuestions.map(cloneSomaQuestionInput) as unknown as SomaQuizBundleQuestionInput[],
+    });
+    return quiz;
   }
 
   async getSomaQuizzes(): Promise<SomaQuiz[]> {
@@ -1466,6 +1527,17 @@ export class MemoryStorage implements IStorage {
     const questions = await this.createSomaQuestions(input.questions.map((q) => ({ ...q, quizId: quiz.id })));
     const assignments = await this.createQuizAssignments(quiz.id, Array.from(new Set(input.assignedStudentIds ?? [])));
     return { quiz, questions, assignments };
+  }
+
+  async cloneSomaQuiz(quizId: number, tutorId: string): Promise<SomaQuiz | undefined> {
+    const source = await this.getSomaQuiz(quizId);
+    if (!source) return undefined;
+    const sourceQuestions = await this.getSomaQuestionsByQuizId(quizId);
+    const { quiz } = await this.createSomaQuizBundle({
+      quiz: cloneSomaQuizInput(source, tutorId),
+      questions: sourceQuestions.map(cloneSomaQuestionInput) as unknown as SomaQuizBundleQuestionInput[],
+    });
+    return quiz;
   }
 
   async getSomaQuizzes(): Promise<SomaQuiz[]> { return [...this.somaQuizzesList]; }
