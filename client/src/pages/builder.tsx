@@ -14,7 +14,7 @@ import {
   ArrowLeft, Send, Loader2, Sparkles, FileStack, Trash2,
   X, Pencil,
   Scan, Brain, Search, CheckCircle2, Eye, PartyPopper, LayoutDashboard,
-  Save, AlertCircle, AlertTriangle, StopCircle, RefreshCw
+  Save, AlertCircle, AlertTriangle, StopCircle, RefreshCw, ListChecks, FileText
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -33,6 +33,8 @@ import {
 } from "@/lib/tutorAssessmentDraft";
 import DraftRecoveryBanner from "@/components/tutor/DraftRecoveryBanner";
 import AssessmentWizard from "@/components/tutor/AssessmentWizard";
+import QuestionReviewList from "@/components/tutor/QuestionReviewList";
+import TutorWorksheetManager from "@/components/tutor/TutorWorksheetManager";
 
 type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
 type GenerationState = "generation_started" | "generation_in_progress" | "generation_failed" | "partial_success" | "validation_failed" | "persistence_failed" | "ready_for_review";
@@ -168,6 +170,10 @@ export default function BuilderPage() {
   const [selectedTopicIds, setSelectedTopicIds] = useState<number[]>([]);
   const [selectedSubtopicIds, setSelectedSubtopicIds] = useState<number[]>([]);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
+  // Assessment delivery format. "mcq" = the Co-Pilot/MCQ engine flow;
+  // "pdf" = tutor uploads worksheet PDFs and students submit a PDF response
+  // (no questions, no timer, no MCQ engine). Chosen up front in the wizard.
+  const [format, setFormat] = useState<"mcq" | "pdf">("mcq");
   // Wizard step: 0=Body, 1=Level, 2=Subject, 3=Topics, 4=Time limit.
   // In edit mode we jump straight to the end (everything already filled).
   // Default to step 1 (Level) when quick-start is on at mount so we never
@@ -215,6 +221,7 @@ export default function BuilderPage() {
   const [includeGraphQuestions, setIncludeGraphQuestions] = useState(false);
 
   const [showPreview, setShowPreview] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastSavedCount, setLastSavedCount] = useState(0);
   const [metaDirty, setMetaDirty] = useState(false);
@@ -573,6 +580,7 @@ export default function BuilderPage() {
         if (singular && singular !== quizData.title) setSavedLegacyTopics([singular]);
       }
       setTimeLimitMinutes(quizData.timeLimitMinutes ?? 60);
+      setFormat((quizData as any).format === "pdf" ? "pdf" : "mcq");
       setPopulated(true);
       if (isEditMode) setWizardStep(4);
     }
@@ -689,6 +697,7 @@ export default function BuilderPage() {
       level: legacyLevelLabel || null,
       subject: legacySubjectName || null,
       timeLimitMinutes,
+      format,
     });
     const quiz = await quizRes.json();
     setActiveQuizId(quiz.id);
@@ -982,6 +991,7 @@ export default function BuilderPage() {
         subject: legacySubjectName || null,
         topics: selectedTopicTitles,
         timeLimitMinutes,
+        format,
       });
     },
     onSuccess: () => {
@@ -1009,44 +1019,57 @@ export default function BuilderPage() {
       return;
     }
     if (!activeQuizId) {
-      toast({ title: "Create the quiz first", description: "Use the copilot to generate some questions before publishing.", variant: "destructive" });
+      toast({
+        title: "Create the assessment first",
+        description: format === "pdf"
+          ? "Save the assessment details before publishing."
+          : "Use the copilot to generate some questions before publishing.",
+        variant: "destructive",
+      });
       return;
     }
-    if (draftQuestions.length === 0) {
-      toast({ title: "Draft is empty", description: "Add at least one question before publishing.", variant: "destructive" });
-      return;
-    }
-    const draftError = getDraftValidationError(draftQuestions);
-    if (draftError) {
-      toast({ title: "Draft not publishable", description: draftError, variant: "destructive" });
-      return;
+    const isPdf = format === "pdf";
+    // PDF assessments have no MCQ draft — they publish with zero questions and
+    // skip every draft-related gate. MCQ assessments keep the full validation.
+    if (!isPdf) {
+      if (draftQuestions.length === 0) {
+        toast({ title: "Draft is empty", description: "Add at least one question before publishing.", variant: "destructive" });
+        return;
+      }
+      const draftError = getDraftValidationError(draftQuestions);
+      if (draftError) {
+        toast({ title: "Draft not publishable", description: draftError, variant: "destructive" });
+        return;
+      }
     }
     setIsPublishing(true);
     try {
       // Always sync the latest local draft to the server immediately before publishing.
       // This is the safety net: even if an earlier syncDraft failed silently,
       // the server will get the current draft from the client here.
-      await syncDraft(activeQuizId, draftQuestions);
+      if (!isPdf) await syncDraft(activeQuizId, draftQuestions);
 
       const res = await authFetch(`/api/tutor/quizzes/${activeQuizId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Also send local draft in body as a double fallback
-        body: JSON.stringify({ questions: draftQuestions }),
+        body: JSON.stringify({ questions: isPdf ? [] : draftQuestions }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Publish failed");
-      if (!Array.isArray(data.questions) || data.questions.length === 0) {
+      if (!isPdf && (!Array.isArray(data.questions) || data.questions.length === 0)) {
         throw new Error("Publish did not return reviewable questions. Draft remains unpublished.");
       }
       setIsDraftDirty(false);
-      const publishedCount = data.publishedCount ?? draftQuestions.length;
+      const publishedCount = isPdf ? 0 : (data.publishedCount ?? draftQuestions.length);
       setLastSavedCount(publishedCount);
       setGenerationState("ready_for_review");
       setShowSuccessModal(true);
       toast({
         title: "Assessment published",
-        description: `${publishedCount} question${publishedCount !== 1 ? "s" : ""} saved and visible to students.`,
+        description: isPdf
+          ? "Worksheet assessment is now visible to students."
+          : `${publishedCount} question${publishedCount !== 1 ? "s" : ""} saved and visible to students.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", activeQuizId] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
@@ -1056,7 +1079,7 @@ export default function BuilderPage() {
     } finally {
       setIsPublishing(false);
     }
-  }, [activeQuizId, draftQuestions, authFetch, toast, validateMeta]);
+  }, [activeQuizId, draftQuestions, authFetch, toast, validateMeta, format]);
 
 
   const handleSend = () => {
@@ -1165,21 +1188,35 @@ export default function BuilderPage() {
             >
               {isDraftDirty ? "Unsaved changes" : "Draft saved · ready to review"}
             </Badge>
-            <Button
-              className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all"
-              size="default"
-              onClick={() => setShowPreview(true)}
-              disabled={totalQuestions === 0}
-              data-testid="button-preview-quiz"
-            >
-              <Eye className="w-4 h-4 md:mr-1.5" />
-              <span className="hidden md:inline">Preview</span>
-            </Button>
+            {format !== "pdf" && (
+              <>
+                <Button
+                  className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all"
+                  size="default"
+                  onClick={() => setShowPreview(true)}
+                  disabled={totalQuestions === 0}
+                  data-testid="button-preview-quiz"
+                >
+                  <Eye className="w-4 h-4 md:mr-1.5" />
+                  <span className="hidden md:inline">Preview</span>
+                </Button>
+                <Button
+                  className="border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all"
+                  size="default"
+                  onClick={() => setShowReview(true)}
+                  disabled={totalQuestions === 0}
+                  data-testid="button-review-quiz"
+                >
+                  <ListChecks className="w-4 h-4 md:mr-1.5" />
+                  <span className="hidden md:inline">Review</span>
+                </Button>
+              </>
+            )}
             <Button
               className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold"
               size="default"
               onClick={handlePublish}
-              disabled={isPublishing || !activeQuizId || !!draftValidationError}
+              disabled={isPublishing || !activeQuizId || (format !== "pdf" && !!draftValidationError)}
               data-testid="button-save-publish"
             >
               {isPublishing ? (
@@ -1313,6 +1350,9 @@ export default function BuilderPage() {
             metaDirty={metaDirty}
             onSaveMeta={() => updateMetaMutation.mutate()}
             saveMetaPending={updateMetaMutation.isPending}
+            format={format}
+            onFormatChange={(next) => { setFormat(next); markMeta(); }}
+            formatLocked={!!activeQuizId}
             quickStart={quickStart}
             onQuickStartChange={(next) => {
               setQuickStart(next);
@@ -1333,6 +1373,44 @@ export default function BuilderPage() {
           />
 
 
+          {/* 2a. PDF worksheet flow — replaces the Co-Pilot for pdf assessments */}
+          {format === "pdf" ? (
+            <div className="space-y-4">
+              {activeQuizId ? (
+                <TutorWorksheetManager quizId={activeQuizId} />
+              ) : (
+                <div className="glass-card p-6 text-center space-y-4" data-testid="panel-pdf-create">
+                  <FileText className="w-10 h-10 mx-auto text-violet-400" />
+                  <div>
+                    <h2 className="font-semibold text-foreground text-sm mb-1">PDF submission assessment</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Save the assessment details to start uploading worksheet PDFs. Students will download the worksheet and submit their own PDF response for you to mark.
+                    </p>
+                  </div>
+                  <Button
+                    className="glow-button min-h-[44px]"
+                    onClick={async () => {
+                      const validationError = validateMeta();
+                      if (validationError) {
+                        toast({ title: "Complete the details first", description: validationError, variant: "destructive" });
+                        return;
+                      }
+                      try {
+                        await ensureQuizExists();
+                        toast({ title: "Assessment created", description: "You can now upload worksheets." });
+                      } catch (err) {
+                        toast({ title: "Could not create assessment", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+                      }
+                    }}
+                    data-testid="button-pdf-create"
+                  >
+                    Save & add worksheets
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+          <>
           {/* 2. Co-Pilot — Main Focus */}
           <div className="glass-card flex flex-col overflow-hidden" style={{ minHeight: "400px" }}>
             <div className="px-4 py-3 border-b border-border/30 flex items-center gap-2">
@@ -1529,10 +1607,13 @@ export default function BuilderPage() {
               </label>
             </div>
           </div>
+          </>
+          )}
 
         </div>
 
-        {/* RIGHT COLUMN — Draft Questions (desktop sidebar) */}
+        {/* RIGHT COLUMN — Draft Questions (desktop sidebar). Hidden for pdf. */}
+        {format !== "pdf" && (
         <div className="md:col-span-4">
           <div className="glass-card p-4 md:p-5 md:sticky md:top-20 flex flex-col gap-3">
 
@@ -1633,6 +1714,7 @@ export default function BuilderPage() {
             )}
           </div>
         </div>
+        )}
       </main>
 
       {/* Success Modal */}
@@ -1645,18 +1727,22 @@ export default function BuilderPage() {
             <div>
               <h2 className="text-xl font-bold text-foreground mb-1" data-testid="text-success-title">Assessment Created Successfully!</h2>
               <p className="text-sm text-muted-foreground">
-                {lastSavedCount} question{lastSavedCount !== 1 ? "s" : ""} generated, audited, and saved to the database.
+                {format === "pdf"
+                  ? "Your worksheet assessment is published and visible to assigned students."
+                  : `${lastSavedCount} question${lastSavedCount !== 1 ? "s" : ""} generated, audited, and saved to the database.`}
               </p>
             </div>
             <div className="flex flex-col gap-2.5 pt-2">
-              <Button
-                className="w-full glow-button min-h-[48px]"
-                onClick={() => { setShowSuccessModal(false); setShowPreview(true); }}
-                data-testid="button-success-preview"
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                Preview Assessment
-              </Button>
+              {format !== "pdf" && (
+                <Button
+                  className="w-full glow-button min-h-[48px]"
+                  onClick={() => { setShowSuccessModal(false); setShowPreview(true); }}
+                  data-testid="button-success-preview"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview Assessment
+                </Button>
+              )}
               <Link href="/tutor/assessments">
                 <Button className="w-full glow-button-outline min-h-[48px]" data-testid="button-success-dashboard">
                   <LayoutDashboard className="w-4 h-4 mr-2" />
@@ -1677,6 +1763,41 @@ export default function BuilderPage() {
             previewQuestions={previewQuestions}
             onExitPreview={() => setShowPreview(false)}
           />
+        </div>
+      )}
+
+      {/* Review Modal — LaTeX-rendered, read-only audit of the draft questions */}
+      {showReview && (
+        <div className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="modal-review">
+          <div className="max-w-3xl mx-auto px-4 py-6">
+            <div className="flex items-center justify-between gap-3 mb-5 sticky top-0 bg-background/90 backdrop-blur-sm py-2 z-10">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Review · rendered</p>
+                <h2 className="text-lg font-bold gradient-text truncate" data-testid="text-review-title">
+                  {title || "Untitled Assessment"}
+                </h2>
+              </div>
+              <Button
+                className="glow-button-outline shrink-0"
+                onClick={() => setShowReview(false)}
+                data-testid="button-review-close"
+              >
+                <X className="w-4 h-4 mr-1" />
+                Close
+              </Button>
+            </div>
+            <QuestionReviewList
+              questions={draftQuestions.map((q) => ({
+                stem: q.stem,
+                options: q.options,
+                correctAnswer: q.correctAnswer,
+                explanation: q.explanation,
+                marks: q.marks,
+                difficultyTag: q.difficultyTag,
+                questionType: q.questionType,
+              }))}
+            />
+          </div>
         </div>
       )}
     </div>

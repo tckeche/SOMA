@@ -296,7 +296,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
 function BankView({
   quizzes, totalCount, loading,
   search, setSearch, subject, setSubject, level, setLevel, sort, setSort,
-  subjectOptions, levelOptions, onReassign, onDuplicate,
+  subjectOptions, levelOptions, onReassign, onDuplicate, onDelete,
 }: {
   quizzes: SomaQuiz[];
   totalCount: number;
@@ -313,6 +313,7 @@ function BankView({
   levelOptions: string[];
   onReassign: (quizId: number) => void;
   onDuplicate: (quizId: number, title: string) => void;
+  onDelete: (quizId: number, title: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -419,6 +420,12 @@ function BankView({
                   <span className={`px-2 py-0.5 rounded-full font-medium ${quiz.status === "draft" ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
                     {quiz.status === "draft" ? "Draft" : "Published"}
                   </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-medium ${(quiz as any).format === "pdf" ? "bg-cyan-500/15 text-cyan-300" : "bg-violet-500/15 text-violet-300"}`}
+                    data-testid={`bank-type-${quiz.id}`}
+                  >
+                    {(quiz as any).format === "pdf" ? "PDF Submission" : "Multiple Choice"}
+                  </span>
                   <span className="text-muted-foreground">{formatDate(quiz.createdAt)}</span>
                 </div>
                 <div className="flex items-center gap-2 mt-auto pt-1">
@@ -437,6 +444,14 @@ function BankView({
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Duplicate
+                  </button>
+                  <button
+                    onClick={() => onDelete(quiz.id, quiz.title)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all"
+                    data-testid={`bank-delete-${quiz.id}`}
+                    title="Delete assessment"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -881,6 +896,7 @@ export default function TutorAssessments() {
             levelOptions={levelOptions}
             onReassign={(quizId) => { setShowAssignModal(quizId); setSelectedStudentIds(new Set()); setDueDate(""); }}
             onDuplicate={(quizId, title) => setConfirmDuplicate({ quizId, title })}
+            onDelete={(quizId, title) => setConfirmDelete({ quizId, title })}
           />
         ) : (
         <>

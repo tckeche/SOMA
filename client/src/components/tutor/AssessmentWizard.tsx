@@ -9,6 +9,7 @@ import {
   GraduationCap,
   Library,
   ListChecks,
+  FileText,
   Timer,
   ChevronLeft,
   ChevronRight,
@@ -94,6 +95,14 @@ export interface AssessmentWizardProps {
   // not break the syllabus into machine-readable topics.
   quickStart: boolean;
   onQuickStartChange: (next: boolean) => void;
+
+  // Delivery format, chosen up front. "mcq" drives the Co-Pilot/MCQ engine;
+  // "pdf" switches the build to worksheet upload + student PDF submission.
+  format: "mcq" | "pdf";
+  onFormatChange: (next: "mcq" | "pdf") => void;
+  // Locked once the assessment exists so the format can't change after rows
+  // (questions or worksheets) are tied to one delivery model.
+  formatLocked?: boolean;
 }
 
 const STEPS: Array<{
@@ -121,6 +130,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     timeLimitMinutes, onTimeLimitChange,
     activeQuizId, metaDirty, onSaveMeta, saveMetaPending,
     quickStart, onQuickStartChange,
+    format, onFormatChange, formatLocked = false,
   } = props;
 
   // In quick-start mode the tutor only sees Level / Subject / Time. Examining
@@ -204,6 +214,44 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           Quick start on — examining body fixed to Cambridge, topics skipped. The Co-Pilot will infer scope from your prompt.
         </p>
       )}
+
+      {/* Assessment type — chosen up front. Drives the whole build flow. */}
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase text-muted-foreground">Assessment type</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { value: "mcq" as const, title: "Multiple Choice", desc: "AI-built MCQs, auto-marked", icon: ListChecks },
+            { value: "pdf" as const, title: "PDF Submission", desc: "Upload worksheet, mark by hand", icon: FileText },
+          ]).map((opt) => {
+            const Icon = opt.icon;
+            const selected = format === opt.value;
+            const disabled = formatLocked && !selected;
+            return (
+              <button
+                type="button"
+                key={opt.value}
+                onClick={() => { if (!formatLocked) onFormatChange(opt.value); }}
+                disabled={disabled}
+                className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                  selected
+                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                    : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
+                } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                data-testid={`wizard-format-${opt.value}`}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Icon className="w-3.5 h-3.5" />
+                  {opt.title}
+                </span>
+                <span className="block text-[11px] text-muted-foreground mt-0.5">{opt.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        {formatLocked && (
+          <p className="text-[11px] text-muted-foreground">Type is locked once the assessment is created.</p>
+        )}
+      </div>
 
       {/* Title lives above the stepper — tutor can edit it at any step. */}
       <div className="space-y-1.5">

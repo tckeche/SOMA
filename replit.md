@@ -37,6 +37,9 @@ The `syllabusInsights.ts` service generates per-student topic-coverage radar and
 ### Tutor Builder & Copilot
 The Tutor Portal features a Command Centre dashboard and an AI Copilot (Builder). This catalogue-driven wizard assists tutors in creating quizzes, saving drafts until publication. AI Dashboard Intelligence synthesizes assessment data into narratives and identifies weaknesses.
 
+### Assessment Type (Delivery Format)
+Each assessment carries a `format` column on `soma_quizzes` (`'mcq'` default, or `'pdf'`), chosen up front in the AssessmentWizard before building. The type is locked once the quiz row exists. For `mcq` the build runs the normal Co-Pilot → draft → Preview/Review → publish flow. For `pdf` the Co-Pilot panel is replaced by `TutorWorksheetManager` (worksheet PDF upload/list/delete via `/api/tutor/quizzes/:quizId/attachments`); publishing skips the empty-draft and 4-option MCQ gates and persists with zero questions. Students see a worksheet-download + PDF-response upload screen (`StudentAssessmentPdfSection`) instead of the MCQ engine, with no timer. The builder exposes a LaTeX-rendered **Review** modal (`QuestionReviewList` via `MarkdownRenderer`) next to **Preview** for mcq assessments; the published/pending review page (`TutorQuizReview`) renders question content through `MarkdownRenderer` as well. The Assessment Bank shows a type badge and supports deletion per assessment.
+
 ### Student Experience
 The Soma Quiz Engine provides a LaTeX-aware MCQ player and a summary view. The Soma Quiz Review offers post-quiz analysis, including explanations and AI feedback.
 

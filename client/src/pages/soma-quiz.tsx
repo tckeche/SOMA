@@ -21,6 +21,7 @@ import { emitSomaMutation } from "@/lib/realtimeEvents";
 import FlagQuestionButton from "@/components/student/FlagQuestionButton";
 import AutosaveIndicator from "@/components/student/AutosaveIndicator";
 import AssessmentStartScreen from "@/components/student/AssessmentStartScreen";
+import StudentAssessmentPdfSection from "@/components/student/StudentAssessmentPdfSection";
 import {
   buildAutosaveKey,
   readAutosave,
@@ -627,6 +628,41 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     }
     return <ErrorView message={(error as Error).message} />;
   }
+  // PDF-submission assessments have no MCQ engine: students just download the
+  // worksheet(s) and upload their response. No timer, no questions, no preview.
+  if (!isPreview && effectiveQuiz && (effectiveQuiz as any).format === "pdf") {
+    return (
+      <div className="min-h-screen bg-background px-4 py-8" data-testid="pdf-assessment-screen">
+        <div className="max-w-2xl mx-auto">
+          <div className="mb-4">
+            <Link href="/dashboard">
+              <Button
+                variant="ghost"
+                size="default"
+                className="text-muted-foreground hover:text-foreground"
+                data-testid="button-pdf-exit"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back to dashboard
+              </Button>
+            </Link>
+          </div>
+
+          <div className="glass-card p-6 md:p-10">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2 text-center">PDF submission</p>
+            <h1 className="text-2xl md:text-3xl font-bold gradient-text mb-2 text-center" data-testid="text-pdf-title">
+              {effectiveQuiz.title}
+            </h1>
+            <p className="text-sm text-muted-foreground text-center mb-6">
+              Download the worksheet, complete it, then upload your response as a PDF for your tutor to mark.
+            </p>
+            {quizId > 0 && <StudentAssessmentPdfSection quizId={quizId} />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!effectiveQuiz || !questions || questions.length === 0) {
     if (isPreview) {
       return <>{previewBanner}<div className="pt-12"><ErrorView message="No questions found for this assessment." /></div></>;

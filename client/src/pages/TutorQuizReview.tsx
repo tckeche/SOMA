@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import MarkdownRenderer from "@/components/MarkdownRenderer";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -278,7 +279,9 @@ function QuestionCard({
         </div>
       ) : (
         <div className="space-y-3">
-          <p className="text-foreground font-medium whitespace-pre-wrap">{q.stem}</p>
+          <div className="text-foreground font-medium" data-testid={`q-stem-${q.id}`}>
+            <MarkdownRenderer content={q.stem} />
+          </div>
           <ul className="space-y-1">
             {q.options.map((opt, i) => {
               const isCorrect = opt === q.correctAnswer;
@@ -289,17 +292,17 @@ function QuestionCard({
                     isCorrect ? "text-emerald-300 font-medium" : "text-muted-foreground"
                   }`}
                 >
-                  <span>{isCorrect ? "✓" : "•"}</span>
-                  <span className="whitespace-pre-wrap">{opt}</span>
+                  <span className="mt-0.5">{isCorrect ? "✓" : "•"}</span>
+                  <span className="min-w-0 flex-1"><MarkdownRenderer content={opt} /></span>
                 </li>
               );
             })}
           </ul>
           {q.explanation && (
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            <div className="text-sm text-muted-foreground" data-testid={`q-explanation-${q.id}`}>
               <span className="font-medium text-foreground">Explanation: </span>
-              {q.explanation}
-            </p>
+              <MarkdownRenderer content={q.explanation} />
+            </div>
           )}
         </div>
       )}

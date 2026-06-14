@@ -166,6 +166,11 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   curriculumContext: text("curriculum_context"),
   authorId: uuid("author_id").references(() => somaUsers.id, { onDelete: "set null" }),
   timeLimitMinutes: integer("time_limit_minutes").notNull().default(60),
+  // Assessment delivery format chosen up front in the builder:
+  //  - "mcq": the LaTeX-aware multiple-choice quiz engine (soma_questions).
+  //  - "pdf": a worksheet the tutor attaches; students submit a PDF response
+  //    that the tutor marks manually (no timer, no MCQ engine).
+  format: text("format").notNull().default("mcq"),
   status: text("status").notNull().default("published"),
   isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),

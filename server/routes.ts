@@ -4074,11 +4074,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
-      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes } = req.body;
+      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format } = req.body;
       if (!title) return res.status(400).json({ message: "title is required" });
       if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
         return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
       }
+      const normalizedFormat = format === "pdf" ? "pdf" : "mcq";
       const cleanTopics = Array.isArray(topics)
         ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
         : [];
@@ -4091,6 +4092,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         subject: subject ?? null,
         timeLimitMinutes: Number(timeLimitMinutes),
         authorId: tutorId,
+        format: normalizedFormat,
         status: "published",
       });
       res.json(quiz);
@@ -4179,6 +4181,16 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         draft = req.body.questions as DraftQuestion[];
         // Persist the client draft to the server store so it's canonical
         setDraft(quizId, draft);
+      }
+      // PDF-submission assessments carry no MCQ questions — the worksheet
+      // attachment IS the assessment and students submit a PDF response that
+      // the tutor marks manually. Skip the MCQ-only "draft empty" gate and the
+      // per-question validation below for that format.
+      const isPdfFormat = quiz.format === "pdf";
+      if (isPdfFormat) {
+        await storage.updateSomaQuiz(quizId, { status: "published" });
+        draftStore.delete(quizId);
+        return res.json({ quizId, publishedCount: 0, questions: [], format: "pdf" });
       }
       if (draft.length === 0) return res.status(400).json({ message: "Draft is empty — add questions before publishing" });
       traceLog("route.publish.draftLoaded", {
@@ -4281,12 +4293,22 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
 
-      const { title, syllabus, level, subject, topics, timeLimitMinutes } = req.body;
+      const { title, syllabus, level, subject, topics, timeLimitMinutes, format } = req.body;
       const updates: Record<string, string | number | string[] | null> = {};
       if (title !== undefined) updates.title = title;
       if (syllabus !== undefined) updates.syllabus = syllabus || null;
       if (level !== undefined) updates.level = level || null;
       if (subject !== undefined) updates.subject = subject || null;
+      // Format is chosen up front and locked once the quiz row exists — questions
+      // / worksheets are tied to one delivery model. Accept the field only when it
+      // matches the existing value (idempotent no-op); reject any actual change.
+      if (format !== undefined) {
+        const requested = format === "pdf" ? "pdf" : "mcq";
+        const current = (existing as any).format === "pdf" ? "pdf" : "mcq";
+        if (requested !== current) {
+          return res.status(409).json({ message: "Assessment type cannot be changed after creation." });
+        }
+      }
       if (topics !== undefined) {
         const clean = Array.isArray(topics)
           ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
