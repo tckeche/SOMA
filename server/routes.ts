@@ -1494,7 +1494,7 @@ async function updateMasteryFromSubmission(
 
 async function runBackgroundGrading(
   reportId: number,
-  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number; targetMisconceptionIds?: number[] | null }[],
+  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number; targetMisconceptionIds?: number[] | null; optionRationales?: Array<{ option: string; isCorrect: boolean; rationale: string; misconceptionId: number | null }> | null }[],
   studentAnswers: Record<string, string>,
   totalScore: number,
   maxPossibleScore: number,
@@ -1516,6 +1516,7 @@ async function runBackgroundGrading(
         studentAnswer,
         correctAnswer,
         targetMisconceptionIds: q.targetMisconceptionIds ?? [],
+        optionRationales: q.optionRationales,
       };
     });
     let diagnosisContext = "";

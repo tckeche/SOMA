@@ -1469,8 +1469,17 @@ async function runOnePassQuiz(
     checkerModel = "google/gemini-2.5-flash";
   }
 
+  // ── STAGE 2b: stem-drift guard ──────────────────────────────────────────
+  // Revert any stem the verifier silently rewrote WITHOUT flagging it. Legit
+  // verifier fixes carry a field:"stem" warning and are preserved.
+  const reconciled = reconcileCheckerStems(
+    draft.questions as QuizResult["questions"],
+    verified.questions,
+    verified.warnings,
+  );
+
   // ── STAGE 3: Deterministic guards ───────────────────────────────────────
-  const guarded = applyDeterministicIntegrityGuards(verified.questions);
+  const guarded = applyDeterministicIntegrityGuards(reconciled.questions);
   const validated = validateAndCorrectMcqAnswers(guarded.questions);
   const mathCheck = applyMathValidatorCorrections(validated.questions);
 
@@ -1485,6 +1494,7 @@ async function runOnePassQuiz(
   // question we cannot confidently mark correct; never silently coerce.
   const upstreamWarnings: PipelineWarning[] = [
     ...verified.warnings,
+    ...reconciled.driftWarnings,
     ...guarded.warnings,
     ...validated.warnings,
     ...mathCheck.warnings,
