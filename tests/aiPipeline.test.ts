@@ -10,7 +10,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import {
+  computeDifficultyDriftWarning,
   generateAuditedQuiz,
+  normalizeDifficultyTag,
   parsePdfTextFromBuffer,
   QuestionSchema,
   QuizResultSchema,
@@ -38,6 +40,56 @@ const originalStages = { ...pipelineStages };
 function stubStages(overrides: Partial<typeof pipelineStages>) {
   Object.assign(pipelineStages, originalStages, overrides);
 }
+
+// ─── Difficulty drift + tag normalization ───────────────────────────────────
+describe("normalizeDifficultyTag", () => {
+  it("lowercases and trims known buckets", () => {
+    expect(normalizeDifficultyTag("  Easy ")).toBe("easy");
+    expect(normalizeDifficultyTag("MEDIUM")).toBe("medium");
+    expect(normalizeDifficultyTag("hard")).toBe("hard");
+  });
+
+  it("drops unknown or missing tags", () => {
+    expect(normalizeDifficultyTag("trivial")).toBeUndefined();
+    expect(normalizeDifficultyTag("")).toBeUndefined();
+    expect(normalizeDifficultyTag(undefined)).toBeUndefined();
+  });
+});
+
+describe("computeDifficultyDriftWarning", () => {
+  const mk = (tag?: string) => ({ difficulty_tag: tag });
+
+  it("emits ONE overall drift warning when an all-hard set was asked for a mix", () => {
+    const questions = Array.from({ length: 8 }, () => mk("hard"));
+    const warning = computeDifficultyDriftWarning(questions, { easy: 25, medium: 50, hard: 25 });
+    expect(warning).not.toBeNull();
+    expect(warning!.questionIndex).toBe(0);
+    expect(warning!.field).toBe("overall");
+    expect(warning!.autoFixed).toBe(false);
+    expect(warning!.issue).toContain("Difficulty drift");
+    expect(warning!.issue).toContain("requested easy=2/med=4/hard=2");
+    expect(warning!.issue).toContain("got easy=0/med=0/hard=8");
+  });
+
+  it("returns null when the realised mix is within tolerance", () => {
+    const questions = [
+      mk("easy"), mk("easy"), mk("medium"), mk("medium"),
+      mk("medium"), mk("medium"), mk("hard"), mk("hard"),
+    ];
+    expect(computeDifficultyDriftWarning(questions, { easy: 25, medium: 50, hard: 25 })).toBeNull();
+  });
+
+  it("counts missing/invalid tags as unspecified", () => {
+    const questions = Array.from({ length: 8 }, () => mk("nonsense"));
+    const warning = computeDifficultyDriftWarning(questions, { easy: 25, medium: 50, hard: 25 });
+    expect(warning).not.toBeNull();
+    expect(warning!.issue).toContain("(8 unspecified)");
+  });
+
+  it("returns null for an empty question set", () => {
+    expect(computeDifficultyDriftWarning([], { easy: 25, medium: 50, hard: 25 })).toBeNull();
+  });
+});
 
 // ─── Schema tests ────────────────────────────────────────────────────────────
 describe("QuestionSchema validation", () => {

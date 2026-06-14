@@ -41,6 +41,13 @@ export interface GradedAnswer {
   correctAnswer: string;
   /** Question targets these misconception ids (from the seeded batch). */
   targetMisconceptionIds: number[];
+  /**
+   * Per-option rationales persisted with the question. When present, the
+   * chosen distractor's own rationale names its misconception id, enabling
+   * deterministic attribution (no Jaccard guessing). Null for legacy
+   * questions seeded before rationales were persisted.
+   */
+  optionRationales?: Array<{ option: string; isCorrect: boolean; rationale: string; misconceptionId: number | null }> | null;
 }
 
 export interface DiagnosisRow {
@@ -96,6 +103,60 @@ function pickBestMatch(
   return best;
 }
 
+export interface ResolvedMisconception {
+  row: ExaminerMisconception;
+  category: "matched_misconception";
+  rationale: string;
+  /** True when attributed deterministically via the option rationale id. */
+  exact: boolean;
+}
+
+/**
+ * Decide which misconception a wrong answer maps to.
+ *
+ * Gate 1 (deterministic): if the chosen option matches an optionRationale
+ * carrying a non-null misconceptionId, attribute to THAT misconception
+ * exactly — no token similarity involved.
+ *
+ * Gate 2 (fallback): only when no rationale-based id is available do we fall
+ * back to Jaccard matching over the candidate misconceptions. This preserves
+ * behavior for legacy questions whose optionRationales are null.
+ */
+export function resolveMisconceptionForWrongAnswer(
+  studentAnswer: string,
+  optionRationales: GradedAnswer["optionRationales"] | undefined,
+  candidatesById: Map<number, ExaminerMisconception>,
+): ResolvedMisconception | null {
+  const chosen = (studentAnswer || "").trim();
+  // Gate 1 — exact rationale-based attribution.
+  if (optionRationales && optionRationales.length > 0) {
+    const r = optionRationales.find((o) => (o.option ?? "").trim() === chosen);
+    if (r && r.misconceptionId != null) {
+      const row = candidatesById.get(r.misconceptionId);
+      if (row) {
+        return {
+          row,
+          category: "matched_misconception",
+          rationale: `Matched "${row.misconception}" (similarity 100%).`,
+          exact: true,
+        };
+      }
+    }
+  }
+  // Gate 2 — Jaccard fallback over candidate misconceptions.
+  const candidates = Array.from(candidatesById.values());
+  const match = pickBestMatch(studentAnswer, candidates);
+  if (match) {
+    return {
+      row: match.row,
+      category: "matched_misconception",
+      rationale: `Matched "${match.row.misconception}" (similarity ${(match.score * 100).toFixed(0)}%).`,
+      exact: false,
+    };
+  }
+  return null;
+}
+
 export interface BuildDiagnosesInput {
   reportId: number;
   studentId: string;
@@ -122,7 +183,16 @@ export async function buildAndPersistDiagnoses(
   // Collect all candidate misconception ids across the report so we
   // fetch the rows in a single query.
   const allIds = Array.from(
-    new Set(input.answers.flatMap((a) => a.targetMisconceptionIds || [])),
+    new Set(
+      input.answers.flatMap((a) => [
+        ...(a.targetMisconceptionIds || []),
+        // Include rationale-based ids so exact attribution can load them even
+        // when they fall outside the question's seeded target set.
+        ...((a.optionRationales || [])
+          .map((o) => o.misconceptionId)
+          .filter((id): id is number => id != null)),
+      ]),
+    ),
   ).filter((id) => Number.isInteger(id) && id > 0);
 
   const candidatesById = new Map<number, ExaminerMisconception>();
@@ -165,20 +235,35 @@ export async function buildAndPersistDiagnoses(
     }
 
     result.wrongCount++;
-    const candidates = (answer.targetMisconceptionIds || [])
-      .map((id) => candidatesById.get(id))
-      .filter((r): r is ExaminerMisconception => Boolean(r));
-    const match = pickBestMatch(answer.studentAnswer, candidates);
+    // Per-answer candidate map: the question's seeded targets PLUS the chosen
+    // option's rationale id (so exact attribution can resolve even when that
+    // id is outside the target set). Jaccard still ranks over this map.
+    const perAnswerCandidates = new Map<number, ExaminerMisconception>();
+    for (const id of answer.targetMisconceptionIds || []) {
+      const row = candidatesById.get(id);
+      if (row) perAnswerCandidates.set(id, row);
+    }
+    for (const o of answer.optionRationales || []) {
+      if (o.misconceptionId != null) {
+        const row = candidatesById.get(o.misconceptionId);
+        if (row) perAnswerCandidates.set(o.misconceptionId, row);
+      }
+    }
+    const resolved = resolveMisconceptionForWrongAnswer(
+      answer.studentAnswer,
+      answer.optionRationales,
+      perAnswerCandidates,
+    );
 
-    if (match) {
+    if (resolved) {
       result.matchedCount++;
       result.diagnoses.push({
         questionId: answer.questionId,
         studentAnswer: answer.studentAnswer,
         correct: false,
-        matchedMisconception: match.row,
+        matchedMisconception: resolved.row,
         category: "matched_misconception",
-        rationale: `Matched "${match.row.misconception}" (similarity ${(match.score * 100).toFixed(0)}%).`,
+        rationale: resolved.rationale,
       });
     } else {
       result.diagnoses.push({

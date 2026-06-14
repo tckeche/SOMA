@@ -15,6 +15,7 @@ import TutorStudents from "@/pages/TutorStudents";
 import TutorStudentDetail from "@/pages/TutorStudentDetail";
 import TutorAssessments from "@/pages/TutorAssessments";
 import TutorAssessmentDetails from "@/pages/TutorAssessmentDetails";
+import TutorQuizReview from "@/pages/TutorQuizReview";
 import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
 import SuperAdminTutorDetail from "@/pages/SuperAdminTutorDetail";
 import SuperAdminDiagnostics from "@/pages/SuperAdminDiagnostics";
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} />}</Route>
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>
       <Route path="/tutor/assessment/:quizId">{(params) => <ProtectedRoute component={TutorAssessmentDetails} params={params} />}</Route>
+      <Route path="/tutor/quizzes/:quizId/review">{(params) => <ProtectedRoute component={TutorQuizReview} params={params} />}</Route>
       <Route path="/tutor/students/:id">{(params) => <ProtectedRoute component={TutorStudentDetail} params={params} />}</Route>
       <Route path="/tutor/students">{() => <ProtectedRoute component={TutorStudents} />}</Route>
       <Route path="/tutor/assessments/edit/:id">{(params) => <ProtectedRoute component={BuilderPage} params={params} />}</Route>

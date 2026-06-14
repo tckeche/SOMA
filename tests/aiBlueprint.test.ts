@@ -220,6 +220,52 @@ describe("enforceAllocation", () => {
     expect(result.rows).toHaveLength(2);
   });
 
+  it("reassigns difficulty so counts exactly match distributeDifficulty (n=4, 25/50/25)", () => {
+    const input = baseInput({ questionCount: 4, examinerSeeds: [] });
+    const target = { easy: 25, medium: 50, hard: 25 };
+    const counts = distributeDifficulty(4, target); // caller passes COUNTS
+    const blueprint: Blueprint = {
+      rows: Array.from({ length: 4 }, (_, i) => ({
+        questionIndex: i + 1, role: "syllabus_coverage" as const, subtopicLabel: "", learningRequirement: "", commandWord: null, targetMisconceptionId: null, difficulty: "hard" as const, intent: "x",
+      })),
+    };
+    const result = enforceAllocation(blueprint, input, { coverage: 4, probe: 0 }, counts);
+    const tally = { easy: 0, medium: 0, hard: 0 };
+    for (const r of result.rows) tally[r.difficulty] += 1;
+    expect(tally).toEqual(distributeDifficulty(result.rows.length, target));
+  });
+
+  it("reassigns difficulty exactly even when rounding matters (n=7, 25/50/25)", () => {
+    const input = baseInput({ questionCount: 7, examinerSeeds: [] });
+    const target = { easy: 25, medium: 50, hard: 25 };
+    const counts = distributeDifficulty(7, target);
+    const blueprint: Blueprint = {
+      rows: Array.from({ length: 7 }, (_, i) => ({
+        questionIndex: i + 1, role: "syllabus_coverage" as const, subtopicLabel: "", learningRequirement: "", commandWord: null, targetMisconceptionId: null, difficulty: "easy" as const, intent: "x",
+      })),
+    };
+    const result = enforceAllocation(blueprint, input, { coverage: 7, probe: 0 }, counts);
+    const tally = { easy: 0, medium: 0, hard: 0 };
+    for (const r of result.rows) tally[r.difficulty] += 1;
+    expect(tally.easy + tally.medium + tally.hard).toBe(7);
+    expect(tally).toEqual(distributeDifficulty(7, target));
+  });
+
+  it("enforces the exact difficulty split even when the planner returned a different mix", () => {
+    const input = baseInput({ questionCount: 6, examinerSeeds: [] });
+    const target = { easy: 50, medium: 0, hard: 50 };
+    const counts = distributeDifficulty(6, target);
+    const blueprint: Blueprint = {
+      rows: Array.from({ length: 6 }, (_, i) => ({
+        questionIndex: i + 1, role: "syllabus_coverage" as const, subtopicLabel: "", learningRequirement: "", commandWord: null, targetMisconceptionId: null, difficulty: "medium" as const, intent: "x",
+      })),
+    };
+    const result = enforceAllocation(blueprint, input, { coverage: 6, probe: 0 }, counts);
+    const tally = { easy: 0, medium: 0, hard: 0 };
+    for (const r of result.rows) tally[r.difficulty] += 1;
+    expect(tally).toEqual({ easy: 3, medium: 0, hard: 3 });
+  });
+
   it("re-numbers questionIndex sequentially after editing", () => {
     const input = baseInput({ questionCount: 3 });
     const blueprint: Blueprint = {

@@ -450,7 +450,7 @@ export function enforceAllocation(
   blueprint: Blueprint,
   input: BlueprintInput,
   allocation: BlueprintAllocation,
-  _difficulty: { easy: number; medium: number; hard: number },
+  difficulty: { easy: number; medium: number; hard: number },
 ): Blueprint {
   const seedIds = new Set((input.examinerSeeds ?? []).map((s) => s.id));
   let rows = blueprint.rows.slice(0, input.questionCount).map((r) => {
@@ -514,6 +514,35 @@ export function enforceAllocation(
   }
 
   rows = rows.map((r, i) => ({ ...r, questionIndex: i + 1 }));
+
+  // FINAL step: deterministically reassign difficulty so the blueprint's
+  // difficulty counts exactly match the requested target. The maker only ever
+  // receives a hint about the mix, so we enforce it here rather than trust the
+  // LLM to honour it.
+  //
+  // The caller passes the already-distributed COUNTS object
+  // (distributeDifficulty output) — its components sum to questionCount, not
+  // ~100. distributeDifficulty is idempotent over counts (it normalises by the
+  // sum), so we can feed `difficulty` straight back in for the exact split
+  // across rows.length. We still detect the percentage case (sum ~= 100) for
+  // robustness in case a future caller passes raw percentages instead.
+  const difficultySum = difficulty.easy + difficulty.medium + difficulty.hard;
+  const looksLikePct = difficultySum >= 95 && difficultySum <= 105 && difficultySum !== rows.length;
+  const target =
+    rows.length === difficultySum && !looksLikePct
+      ? difficulty // already exact counts for this row count
+      : distributeDifficulty(rows.length, difficulty);
+
+  const pool: Array<BlueprintRow["difficulty"]> = [
+    ...Array(target.easy).fill("easy"),
+    ...Array(target.medium).fill("medium"),
+    ...Array(target.hard).fill("hard"),
+  ];
+  // Pad/truncate to row count to absorb any rounding mismatch.
+  while (pool.length < rows.length) pool.push("medium");
+  pool.length = rows.length;
+  rows = rows.map((r, i) => ({ ...r, difficulty: pool[i] }));
+
   return { rows };
 }
 

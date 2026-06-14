@@ -16,6 +16,7 @@ import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
+import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -1253,11 +1254,34 @@ function sanitizeSubmittedAnswers(
 }
 
 /**
+ * Computes the per-question target misconception ids, preferring the per-option
+ * rationales (each distractor carries its own misconception id), falling back to
+ * the blueprint row's single targetMisconceptionId (only when the row is a
+ * misconception_probe), then to the batch-wide seed list. Each layer is more
+ * specific than the last; the marker reads whichever is populated.
+ */
+function perQuestionMisconceptionIds(
+  q: { option_rationales?: Array<{ misconceptionId: number | null }> | null },
+  planRow: { role?: string; targetMisconceptionId?: number | null } | undefined,
+  seedFallback: number[] | null | undefined,
+): number[] | null {
+  const optionRatIds = (q.option_rationales ?? [])
+    .map((r) => r.misconceptionId)
+    .filter((id): id is number => id != null);
+  const planIds = planRow && planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
+    ? [planRow.targetMisconceptionId] : [];
+  const ids = optionRatIds.length > 0
+    ? Array.from(new Set([...optionRatIds, ...planIds]))
+    : (planIds.length > 0 ? planIds : (seedFallback ?? []));
+  return ids.length > 0 ? ids : null;
+}
+
+/**
  * Returns only the student-safe fields of a question, deliberately omitting the
  * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
  * so it can be served to students before submission.
  */
-function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
+export function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
   return {
     id: q.id, quizId: q.quizId, stem: q.stem,
     options: q.options, marks: q.marks,
@@ -1470,7 +1494,7 @@ async function updateMasteryFromSubmission(
 
 async function runBackgroundGrading(
   reportId: number,
-  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number; targetMisconceptionIds?: number[] | null }[],
+  questions: { id: number; stem: string; options: string[]; correctAnswer: string; marks: number; targetMisconceptionIds?: number[] | null; optionRationales?: Array<{ option: string; isCorrect: boolean; rationale: string; misconceptionId: number | null }> | null }[],
   studentAnswers: Record<string, string>,
   totalScore: number,
   maxPossibleScore: number,
@@ -1492,6 +1516,7 @@ async function runBackgroundGrading(
         studentAnswer,
         correctAnswer,
         targetMisconceptionIds: q.targetMisconceptionIds ?? [],
+        optionRationales: q.optionRationales,
       };
     });
     let diagnosisContext = "";
@@ -2391,6 +2416,113 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err: any) {
       logError("route.quiz_details_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "quizDetails", quizId: req.params.quizId });
       res.status(500).json({ message: err.message || "Failed to fetch quiz details" });
+    }
+  });
+
+  // Tutor pre-publish review: list the quiz's questions WITH the answer key.
+  app.get("/api/tutor/quizzes/:quizId/review", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const questions = (await storage.getSomaQuestionsByQuizId(quizId))
+        .slice()
+        .sort((a, b) => a.id - b.id)
+        .map((q) => ({
+          id: q.id,
+          stem: q.stem,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          marks: q.marks,
+          reviewStatus: q.reviewStatus,
+          difficultyTag: q.difficultyTag,
+          topicTag: q.topicTag,
+          subtopicTag: q.subtopicTag,
+          generationMeta: q.generationMeta,
+        }));
+      res.json(questions);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.review", "Failed to load questions for review.");
+    }
+  });
+
+  // Tutor pre-publish review action: approve / reject, or edit (which re-gates).
+  app.patch("/api/tutor/quizzes/:quizId/questions/:questionId/review", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      const questionId = parseInt(req.params.questionId as string);
+      if (isNaN(quizId) || isNaN(questionId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const bodySchema = z
+        .object({
+          action: z.enum(["approve", "reject"]).optional(),
+          stem: z.string().min(1).optional(),
+          options: z.array(z.string()).length(4).optional(),
+          correctAnswer: z.string().min(1).optional(),
+          explanation: z.string().min(1).optional(),
+        })
+        .refine(
+          (b) =>
+            b.action !== undefined ||
+            b.stem !== undefined ||
+            b.options !== undefined ||
+            b.correctAnswer !== undefined ||
+            b.explanation !== undefined,
+          { message: "Provide an action or at least one field to edit" },
+        );
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten() });
+      }
+      const body = parsed.data;
+
+      const questions = await storage.getSomaQuestionsByQuizId(quizId);
+      const existing = questions.find((q) => q.id === questionId);
+      if (!existing) return res.status(404).json({ message: "Question not found" });
+
+      if (body.action === "approve") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "approved" });
+        return res.json(updated);
+      }
+      if (body.action === "reject") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "auto_blocked" });
+        return res.json(updated);
+      }
+
+      // Edit path: apply edits, then re-run the quality gate on the edited
+      // question so a fixed question can become "approved" again.
+      const editPatch: { stem?: string; options?: string[]; correctAnswer?: string; explanation?: string } = {};
+      if (body.stem !== undefined) editPatch.stem = body.stem;
+      if (body.options !== undefined) editPatch.options = body.options;
+      if (body.correctAnswer !== undefined) editPatch.correctAnswer = body.correctAnswer;
+      if (body.explanation !== undefined) editPatch.explanation = body.explanation;
+
+      const merged = {
+        stem: editPatch.stem ?? existing.stem,
+        options: (editPatch.options ?? (existing.options as string[])) as string[],
+        correct_answer: editPatch.correctAnswer ?? existing.correctAnswer,
+        explanation: editPatch.explanation ?? existing.explanation,
+        difficulty_tag: existing.difficultyTag ?? undefined,
+      };
+      const quality = validateQuestionQuality(merged);
+      const updated = await storage.updateSomaQuestionReview(questionId, {
+        ...editPatch,
+        reviewStatus: quality.reviewStatus,
+      });
+      return res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.review.patch", "Failed to update question.");
     }
   });
 
@@ -3424,31 +3556,33 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
               questions: balancedGen.map((q, i) => {
-                // Per-question misconception attribution. Phase 4 prefers
-                // the per-option rationales (each distractor carries its
-                // own misconception id), falling back to the blueprint
-                // row's single targetMisconceptionId, then to the batch-
-                // wide seed list. Each layer is more specific than the
-                // last; the marker reads whichever is populated.
-                const planRow = generated.blueprint?.rows[i];
-                const optionRatIds = (q.option_rationales ?? [])
-                  .map((r) => r.misconceptionId)
-                  .filter((id): id is number => id != null);
-                const planIds = planRow && planRow.role === "misconception_probe" && planRow.targetMisconceptionId != null
-                  ? [planRow.targetMisconceptionId]
-                  : [];
-                const ids = optionRatIds.length > 0
-                  ? Array.from(new Set([...optionRatIds, ...planIds]))
-                  : (planIds.length > 0 ? planIds : (generated.seedMisconceptionIds ?? []));
+                const quality = validateQuestionQuality(
+                  { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
+                  { subject: item.subject, syllabus: cached.examBody, level: cached.level, topic: item.topic, subtopic: item.subtopic },
+                );
                 return {
-                  stem: q.stem,
-                  options: q.options,
-                  correctAnswer: q.correct_answer,
-                  explanation: q.explanation,
-                  marks: q.marks,
-                  targetMisconceptionIds: ids.length > 0 ? ids : null,
-                  optionRationales: q.option_rationales ?? null,
-                };
+                stem: q.stem,
+                options: q.options,
+                correctAnswer: q.correct_answer,
+                explanation: q.explanation,
+                marks: q.marks,
+                difficultyTag: q.difficulty_tag ?? null,
+                topicTag: q.topic_tag ?? null,
+                subtopicTag: q.subtopic_tag ?? null,
+                optionRationales: q.option_rationales ?? null,
+                targetMisconceptionIds: perQuestionMisconceptionIds(q, generated.blueprint?.rows[i], generated.seedMisconceptionIds),
+                reviewStatus: quality.reviewStatus,
+                generationMeta: {
+                  makerModel: generated.telemetry.makerModel,
+                  verifierModel: generated.telemetry.checkerModel,
+                  warnings: generated.warnings.filter((w) => w.questionIndex === i + 1)
+                    .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
+                  requestedDifficulty: q.difficulty_tag,
+                  blocked: quality.reviewStatus === "auto_blocked",
+                  blockReason: quality.blocking.join("; ") || undefined,
+                  qualityWarnings: quality.warnings,
+                },
+              };
               }),
               assignedStudentIds: [studentId],
             });
@@ -4446,6 +4580,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
             difficultyTag: fixed.difficulty_tag ?? orig.difficultyTag,
             topicTag: fixed.topic_tag ?? orig.topicTag,
             subtopicTag: fixed.subtopic_tag ?? orig.subtopicTag,
+            optionRationales: fixed.option_rationales ?? orig.optionRationales,
           };
         });
       }
@@ -5478,16 +5613,38 @@ ${JSON.stringify({
         targetMisconceptionIds,
         targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
       }, traceId);
+      const balanced = balanceAnswerOptions(result.questions);
       const insertedQuestions = await storage.createSomaQuestions(
-        balanceAnswerOptions(result.questions).map((q) => ({
+        balanced.map((q, i) => {
+          const quality = validateQuestionQuality(
+            { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
+            { subject, syllabus, level, topic, subtopic },
+          );
+          return {
           quizId: quiz.id,
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
-          targetMisconceptionIds,
-        }))
+          difficultyTag: q.difficulty_tag ?? null,
+          topicTag: q.topic_tag ?? null,
+          subtopicTag: q.subtopic_tag ?? null,
+          optionRationales: q.option_rationales ?? null,
+          targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
+          reviewStatus: quality.reviewStatus,
+          generationMeta: {
+            makerModel: result.telemetry.makerModel,
+            verifierModel: result.telemetry.checkerModel,
+            warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
+              .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
+            requestedDifficulty: q.difficulty_tag,
+            blocked: quality.reviewStatus === "auto_blocked",
+            blockReason: quality.blocking.join("; ") || undefined,
+            qualityWarnings: quality.warnings,
+          },
+        };
+        })
       );
       traceLog("route.somaGenerate.afterCreateSomaQuestions", {
         quizId: quiz.id,
@@ -5622,14 +5779,35 @@ ${JSON.stringify({
           status: "published",
           isArchived: false,
         },
-        questions: balanceAnswerOptions(result.questions).map((q) => ({
+        questions: balanceAnswerOptions(result.questions).map((q, i) => {
+          const quality = validateQuestionQuality(
+            { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
+            { subject, syllabus, level, topic, subtopic },
+          );
+          return {
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,
           explanation: q.explanation,
           marks: q.marks,
-          targetMisconceptionIds,
-        })),
+          difficultyTag: q.difficulty_tag ?? null,
+          topicTag: q.topic_tag ?? null,
+          subtopicTag: q.subtopic_tag ?? null,
+          optionRationales: q.option_rationales ?? null,
+          targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
+          reviewStatus: quality.reviewStatus,
+          generationMeta: {
+            makerModel: result.telemetry.makerModel,
+            verifierModel: result.telemetry.checkerModel,
+            warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
+              .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
+            requestedDifficulty: q.difficulty_tag,
+            blocked: quality.reviewStatus === "auto_blocked",
+            blockReason: quality.blocking.join("; ") || undefined,
+            qualityWarnings: quality.warnings,
+          },
+        };
+        }),
         assignedStudentIds: validAssignedStudentIds,
       });
       traceLog("route.tutorGenerate.afterCreateBundle", {
@@ -5668,11 +5846,6 @@ ${JSON.stringify({
     reason: string;
   }) {
     console.warn(JSON.stringify({ event: "permission_denied", resource: "soma_quiz", ...params }));
-  }
-
-  function sanitizeQuestionForPreSubmission(question: any) {
-    const { correctAnswer, explanation, ...safeQuestion } = question;
-    return safeQuestion;
   }
 
   async function canReadSomaQuiz(quiz: any, authUser: SomaReadAuthUser): Promise<boolean> {
@@ -5745,7 +5918,7 @@ ${JSON.stringify({
       if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
       if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
 
-      const allQuestions = await storage.getSomaQuestionsByQuizId(id);
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter(isServableToStudent);
       const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
       res.json(sanitized);
     } catch (err: any) {
@@ -5773,7 +5946,7 @@ ${JSON.stringify({
         return res.status(409).json({ message: "You have already submitted this quiz." });
       }
 
-      const allQuestions = await storage.getSomaQuestionsByQuizId(quizId);
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(quizId)).filter(isServableToStudent);
       if (!allQuestions.length) {
         return res.status(404).json({ message: "No questions found for this quiz." });
       }

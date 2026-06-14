@@ -204,11 +204,20 @@ function poolSnapshot(pool: any) {
 // Real DB liveness probe. Runs a `SELECT 1` against the actual pool
 // and reports timing + pool stats so we can see whether Supabase is
 // healthy, slow, or refusing connections.
-async function runDbHealthCheck({ diagnostics }: { diagnostics: boolean }) {
+function poolSnapshot(pool: any) {
+  return pool
+    ? { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }
+    : null;
+}
+
+async function runDbHealthCheck(
+  { diagnostics }: { diagnostics: boolean },
+): Promise<{ statusCode: number; body: any }> {
   const { db, pool } = await import("./db");
   const start = Date.now();
 
   if (!db || !pool) {
+    const elapsedMs = Date.now() - start;
     return {
       statusCode: 503,
       body: diagnostics
@@ -225,16 +234,12 @@ async function runDbHealthCheck({ diagnostics }: { diagnostics: boolean }) {
     const result = await db.execute(query);
     const elapsedMs = Date.now() - start;
     const row = (result as any).rows?.[0] ?? (result as any)[0] ?? {};
-
     return {
       statusCode: 200,
       body: diagnostics
         ? {
-          ok: true,
-          elapsedMs,
-          status: "ok",
-          db: row.db,
-          user: row.usr,
+          ok: true, elapsedMs, status: "ok",
+          db: row.db, user: row.usr,
           versionShort: typeof row.ver === "string" ? row.ver.slice(0, 60) : null,
           pool: poolSnapshot(pool),
         }
@@ -242,19 +247,10 @@ async function runDbHealthCheck({ diagnostics }: { diagnostics: boolean }) {
     };
   } catch (e: any) {
     const elapsedMs = Date.now() - start;
-    console.error("[health.db] database health check failed:", e?.message ?? e);
-
     return {
       statusCode: 503,
       body: diagnostics
-        ? {
-          ok: false,
-          elapsedMs,
-          status: "unavailable",
-          error: e?.message ?? String(e),
-          code: e?.code,
-          pool: poolSnapshot(pool),
-        }
+        ? { ok: false, elapsedMs, status: "unavailable", error: e?.message ?? String(e), code: e?.code, pool: poolSnapshot(pool) }
         : { ok: false, elapsedMs, status: "unavailable", message: "Database health check failed" },
     };
   }

@@ -342,6 +342,12 @@ export default function TutorAssessmentDetails() {
               <Plus className="w-4 h-4" />
               Add Students
             </button>
+            <Link href={`/tutor/quizzes/${quizId}/review`}>
+              <div className={`${STANDARD_ACTION_BUTTON_CLASS} cursor-pointer`} data-testid="review-questions-link">
+                <FileText className="w-4 h-4" />
+                Review Questions
+              </div>
+            </Link>
             {quiz.isArchived && (
               <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs">
                 Archived

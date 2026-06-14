@@ -15,6 +15,7 @@ import { renderSeedsForPrompt } from "./examinerDistractorSeeds";
 import { describePrompt, PromptIds } from "./aiPromptRegistry";
 import { validateAgainstSchema } from "./aiContracts";
 import {
+  distributeDifficulty,
   inferPurposeFromPrompt,
   renderBlueprintForMaker,
   runBlueprintPlanner,
@@ -103,6 +104,9 @@ export interface PipelineTelemetry {
   makerModel: string;
   checkerModel: string;
   polishModel: string | null;
+  /** Independent blind-solver provider/model (e.g. "google/gemini-2.5-flash")
+   *  or null when no independent provider was available / the solver did not run. */
+  solverModel?: string | null;
   totalDurationMs: number;
   /**
    * Phase 4 — number of re-roll passes that ran to backfill questions
@@ -244,6 +248,54 @@ function dedupeOptions(options: string[], preferred?: string): DedupeOptionsResu
   return { options: out.slice(0, 4), gaps };
 }
 
+/**
+ * Normalise a free-text difficulty tag to one of "easy"/"medium"/"hard".
+ * Lowercases + trims; anything that isn't a known bucket becomes undefined so
+ * stored tags stay clean and drift reporting/quality gates don't trip on it.
+ */
+export function normalizeDifficultyTag(
+  tag: string | undefined,
+): "easy" | "medium" | "hard" | undefined {
+  if (typeof tag !== "string") return undefined;
+  const t = tag.trim().toLowerCase();
+  return t === "easy" || t === "medium" || t === "hard" ? t : undefined;
+}
+
+/**
+ * Compare the realised difficulty distribution of a finished question set
+ * against the requested target and, if any bucket has drifted beyond
+ * tolerance, return ONE summary warning. Pure + side-effect free so it can be
+ * unit-tested directly. `distribution` is the requested percentage mix.
+ */
+export function computeDifficultyDriftWarning(
+  questions: Array<{ difficulty_tag?: string }>,
+  distribution: { easy: number; medium: number; hard: number },
+): PipelineWarning | null {
+  const n = questions.length;
+  if (n === 0) return null;
+  const target = distributeDifficulty(n, distribution);
+  const actual = { easy: 0, medium: 0, hard: 0 };
+  let unspecified = 0;
+  for (const q of questions) {
+    const tag = normalizeDifficultyTag(q.difficulty_tag);
+    if (tag) actual[tag] += 1;
+    else unspecified += 1;
+  }
+  const tolerance = Math.max(1, Math.round(0.1 * n));
+  const drifted = (["easy", "medium", "hard"] as const).some(
+    (k) => Math.abs(actual[k] - target[k]) > tolerance,
+  );
+  if (!drifted) return null;
+  return {
+    questionIndex: 0,
+    field: "overall",
+    issue:
+      `Difficulty drift: requested easy=${target.easy}/med=${target.medium}/hard=${target.hard}, ` +
+      `got easy=${actual.easy}/med=${actual.medium}/hard=${actual.hard} (${unspecified} unspecified).`,
+    autoFixed: false,
+  };
+}
+
 export function applyDeterministicIntegrityGuards(
   questions: QuizResult["questions"],
 ): { questions: QuizResult["questions"]; warnings: PipelineWarning[] } {
@@ -263,6 +315,10 @@ export function applyDeterministicIntegrityGuards(
       });
     }
     const marks = Number.isInteger(q.marks) ? Math.min(10, Math.max(1, q.marks)) : 1;
+    // Normalise difficulty_tag for clean reporting: lowercase + trim, and drop
+    // anything that isn't one of the three known buckets so downstream drift
+    // accounting and quality gates don't trip on stray casing/values.
+    const normalizedDifficulty = normalizeDifficultyTag(q.difficulty_tag);
     const cleaned = {
       ...q,
       stem: normalizedStem || `Question ${idx + 1}`,
@@ -270,6 +326,7 @@ export function applyDeterministicIntegrityGuards(
       correct_answer: normalizedCorrect || guardedOptions[0],
       explanation: normalizedExplanation,
       marks,
+      difficulty_tag: normalizedDifficulty,
     };
     // dedupeOptions pads with "Option N" placeholders when the model returned
     // fewer than 4 distinct options. A student must never see that — mark
@@ -578,6 +635,7 @@ export function applyDisagreementProtocol(
   drafts: DraftQuiz["questions"],
   verified: QuizResult["questions"],
   upstreamWarnings: PipelineWarning[],
+  solverVotes?: Map<number, { chosenOption: string | null; multipleCorrect: boolean }>,
 ): { questions: QuizResult["questions"]; warnings: PipelineWarning[]; blocked: BlockedQuestion[] } {
   const warnings: PipelineWarning[] = [];
   const blocked: BlockedQuestion[] = [];
@@ -662,6 +720,43 @@ export function applyDisagreementProtocol(
           autoFixed: false,
         });
       }
+    }
+
+    // Rule 2c: independent blind-solver vote (opt-in). Only consulted when the
+    // deterministic prover is NOT available — for math questions the prover is
+    // authoritative and the solver vote is ignored. The solver re-answered this
+    // question given only the stem + options (never the proposed key), so a
+    // disagreement means the unverifiable answer key cannot be trusted.
+    if (solverVotes && proverAnswer === null && solverVotes.has(oneBased)) {
+      const vote = solverVotes.get(oneBased)!;
+      if (vote.multipleCorrect === true) {
+        blocked.push({
+          originalIndex: oneBased,
+          reason: "Independent solver found more than one defensible correct option (ambiguous question).",
+          rejected: v,
+          votes: { maker: draft?.correct_answer ?? "(no draft)", verifier: v.correct_answer, prover: null },
+        });
+        continue;
+      }
+      if (
+        vote.chosenOption !== null &&
+        vote.chosenOption.trim() !== v.correct_answer.trim() &&
+        !numericallyEquivalent(vote.chosenOption, v.correct_answer)
+      ) {
+        blocked.push({
+          originalIndex: oneBased,
+          reason: `Independent blind solver disagreed (solver="${vote.chosenOption}", verifier="${v.correct_answer}"). Answer key unverified.`,
+          rejected: v,
+          votes: { maker: draft?.correct_answer ?? "(no draft)", verifier: v.correct_answer, prover: null },
+        });
+        continue;
+      }
+      warnings.push({
+        questionIndex: oneBased,
+        field: "correct_answer",
+        issue: `Independent blind solver agreed with the verifier ("${v.correct_answer}").`,
+        autoFixed: true,
+      });
     }
 
     // Rule 3: when verifier overrode the maker, surface that for tutor visibility.
@@ -978,6 +1073,138 @@ export async function runGeminiVerifier(
   );
 }
 
+// ─── Independent blind solver ─────────────────────────────────────────────
+//
+// A third model that re-answers each non-math question BLIND — given only the
+// stem and the four options, NOT the proposed correct answer or explanation.
+// Its vote is used by the disagreement protocol to block answer keys that the
+// deterministic prover cannot verify and a single verifier might have gotten
+// wrong. The provider is chosen to be INDEPENDENT of the maker and verifier so
+// the same model never both proposes and ratifies an answer.
+
+const BlindSolverResponseSchema = z.object({
+  answers: z.array(z.object({
+    index: z.number().int(),
+    letter: z.enum(["A", "B", "C", "D"]),
+    multipleCorrect: z.boolean(),
+  })),
+});
+
+type SolverVote = { chosenOption: string | null; multipleCorrect: boolean };
+
+interface SolverProvider {
+  provider: "google" | "openai" | "anthropic";
+  model: string;
+  envKey: string;
+}
+
+const SOLVER_PREFERENCE: SolverProvider[] = [
+  { provider: "google", model: "gemini-2.5-flash", envKey: "GEMINI_API_KEY" },
+  { provider: "openai", model: "gpt-4o", envKey: "OPENAI_API_KEY" },
+  { provider: "anthropic", model: "claude-sonnet-4-6", envKey: "ANTHROPIC_API_KEY" },
+];
+
+/** Pick the first preference-ordered provider that is (a) not excluded and
+ *  (b) has its env key present. Returns null when no independent provider is
+ *  available — the solver then simply does not run. */
+export function selectBlindSolverProvider(excludeProviders: string[]): SolverProvider | null {
+  const excluded = new Set(excludeProviders);
+  for (const p of SOLVER_PREFERENCE) {
+    if (excluded.has(p.provider)) continue;
+    if (!process.env[p.envKey]) continue;
+    return p;
+  }
+  return null;
+}
+
+function buildBlindSolverPrompt(questions: QuizResult["questions"]): string {
+  const blocks = questions.map((q, i) => {
+    const labels = ["A", "B", "C", "D"];
+    const opts = q.options.map((o, k) => `  ${labels[k]}. ${o}`).join("\n");
+    return `Question ${i + 1}:\n${q.stem}\nOptions:\n${opts}`;
+  });
+  return `You are an independent expert solver. For EACH question below, work out the single correct option yourself from first principles. You are NOT told which option is "correct" — decide independently.
+
+For each question return:
+- index: the question number (1-based) shown below.
+- letter: the LETTER (A, B, C, or D) of the single best correct option.
+- multipleCorrect: true ONLY if more than one option is defensibly correct (the question is ambiguous); otherwise false.
+
+${blocks.join("\n\n")}
+
+Return JSON of shape: { "answers": [ { "index": 1, "letter": "A", "multipleCorrect": false }, ... ] } with one entry per question.`;
+}
+
+/**
+ * Re-answer each question blind with an independent provider. Returns a Map
+ * keyed by 1-based question index. Never throws: any failure (no independent
+ * provider, network error, schema gate) yields an empty Map so the caller's
+ * behavior is identical to the solver not running.
+ */
+export async function runBlindSolver(
+  questions: QuizResult["questions"],
+  context: SomaGenerationContext,
+  opts: { excludeProviders: string[] },
+): Promise<Map<number, SolverVote>> {
+  const result = new Map<number, SolverVote>();
+  try {
+    const chosen = selectBlindSolverProvider(opts.excludeProviders);
+    if (!chosen) return result;
+
+    const systemPrompt = `You are an independent blind solver for subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}. Answer each question on its own merits.`;
+    const userPrompt = buildBlindSolverPrompt(questions);
+
+    let raw: string;
+    if (chosen.provider === "google") {
+      const schema = zodToJsonSchema(BlindSolverResponseSchema, "BlindSolverResponse");
+      raw = await callGoogle(chosen.model, systemPrompt, userPrompt, schema);
+    } else if (chosen.provider === "openai") {
+      const apiKey = process.env.OPENAI_API_KEY!;
+      const client = new OpenAI({ apiKey });
+      const completion = await client.chat.completions.create({
+        model: chosen.model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `${userPrompt}\n\nReturn JSON matching this schema only:\n${JSON.stringify(zodToJsonSchema(BlindSolverResponseSchema, "BlindSolverResponse"))}` },
+        ],
+      });
+      raw = completion.choices[0]?.message?.content || "";
+    } else {
+      const apiKey = process.env.ANTHROPIC_API_KEY!;
+      const anthropic = new Anthropic({ apiKey });
+      const inputSchema = zodToJsonSchema(BlindSolverResponseSchema, "BlindSolverResponse") as any;
+      const response = await anthropic.messages.create({
+        model: chosen.model,
+        max_tokens: clampMaxTokens(4096, "verification"),
+        temperature: 0,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+        tools: [{ name: "return_solver_answers", description: "Return blind solver answers JSON.", input_schema: inputSchema }],
+        tool_choice: { type: "tool", name: "return_solver_answers" },
+      });
+      const toolBlock = response.content.find((b: any) => b.type === "tool_use");
+      if (!toolBlock || toolBlock.type !== "tool_use") return result;
+      raw = JSON.stringify((toolBlock as any).input);
+    }
+
+    const validated = validateAgainstSchema(raw, BlindSolverResponseSchema);
+    if (!validated.ok) return result;
+
+    const letterToIdx: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+    for (const a of validated.value.answers) {
+      const q = questions[a.index - 1];
+      const optIdx = letterToIdx[a.letter];
+      const chosenOption = q && optIdx < q.options.length ? q.options[optIdx] : null;
+      result.set(a.index, { chosenOption: chosenOption ?? null, multipleCorrect: a.multipleCorrect });
+    }
+    return result;
+  } catch {
+    return new Map<number, SolverVote>();
+  }
+}
+
 // Mutable indirection so tests can swap stages without module-level mocks.
 export const pipelineStages = {
   runClaudeMakerSimple,
@@ -985,6 +1212,7 @@ export const pipelineStages = {
   runOpenAIVerifier,
   runGeminiVerifier,
   runBlueprintPlanner,
+  runBlindSolver,
 };
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
@@ -1241,8 +1469,17 @@ async function runOnePassQuiz(
     checkerModel = "google/gemini-2.5-flash";
   }
 
+  // ── STAGE 2b: stem-drift guard ──────────────────────────────────────────
+  // Revert any stem the verifier silently rewrote WITHOUT flagging it. Legit
+  // verifier fixes carry a field:"stem" warning and are preserved.
+  const reconciled = reconcileCheckerStems(
+    draft.questions as QuizResult["questions"],
+    verified.questions,
+    verified.warnings,
+  );
+
   // ── STAGE 3: Deterministic guards ───────────────────────────────────────
-  const guarded = applyDeterministicIntegrityGuards(verified.questions);
+  const guarded = applyDeterministicIntegrityGuards(reconciled.questions);
   const validated = validateAndCorrectMcqAnswers(guarded.questions);
   const mathCheck = applyMathValidatorCorrections(validated.questions);
 
@@ -1257,12 +1494,37 @@ async function runOnePassQuiz(
   // question we cannot confidently mark correct; never silently coerce.
   const upstreamWarnings: PipelineWarning[] = [
     ...verified.warnings,
+    ...reconciled.driftWarnings,
     ...guarded.warnings,
     ...validated.warnings,
     ...mathCheck.warnings,
     ...rationaleChecked.warnings,
   ];
-  const protocol = applyDisagreementProtocol(draft.questions, rationaleChecked.questions, upstreamWarnings);
+  // ── STAGE 4a: independent blind solver (non-math questions only) ─────────
+  // The deterministic prover handles math questions authoritatively. For every
+  // OTHER question (definitions, concepts, reasoning, word problems) a single
+  // verifier both decides correctness AND writes the explanation — so a
+  // confident-but-wrong key would ship unchecked. Re-answer those blind with an
+  // INDEPENDENT provider (excluding the maker's and checker's providers) and let
+  // the protocol block on disagreement. Best-effort: an empty Map (no provider,
+  // any error) reproduces the prior behavior exactly.
+  const protocolQuestions = rationaleChecked.questions;
+  const hasNonMath = protocolQuestions.some(
+    (q) => !validateMathQuestion(q.stem, q.options, q.correct_answer).verifiable,
+  );
+  let solverVotes: Map<number, { chosenOption: string | null; multipleCorrect: boolean }> | undefined;
+  let solverModel: string | null = null;
+  if (hasNonMath) {
+    const providerOf = (m: string): string => m.split("/")[0];
+    const excludeProviders = [providerOf(makerModel), providerOf(checkerModel)];
+    const chosen = selectBlindSolverProvider(excludeProviders);
+    if (chosen) {
+      solverModel = `${chosen.provider}/${chosen.model}`;
+      solverVotes = await pipelineStages.runBlindSolver(protocolQuestions, contextWithPlan, { excludeProviders });
+    }
+  }
+
+  const protocol = applyDisagreementProtocol(draft.questions, protocolQuestions, upstreamWarnings, solverVotes);
   for (const b of protocol.blocked) {
     upstreamWarnings.push({
       questionIndex: b.originalIndex,
@@ -1272,13 +1534,22 @@ async function runOnePassQuiz(
     });
   }
 
+  // ── STAGE 5: post-generation difficulty drift check (informational) ──────
+  // The requested easy/medium/hard mix is only ever a hint to the maker, so
+  // the final set can drift. Compare the realised distribution to the target
+  // and surface ONE summary warning for the tutor. Never blocks.
+  const finalWarnings = [...upstreamWarnings, ...protocol.warnings];
+  const driftWarning = computeDifficultyDriftWarning(protocol.questions, distribution);
+  if (driftWarning) finalWarnings.push(driftWarning);
+
   return {
     questions: protocol.questions,
-    warnings: [...upstreamWarnings, ...protocol.warnings],
+    warnings: finalWarnings,
     telemetry: {
       makerModel,
       checkerModel,
       polishModel: null,
+      solverModel,
       totalDurationMs: Date.now() - overallStart,
     },
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),

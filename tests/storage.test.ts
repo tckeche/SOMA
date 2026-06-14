@@ -128,6 +128,24 @@ class TestMemoryStorage {
   async getSomaQuestionsByQuizId(quizId: number) {
     return this.somaQuestionsList.filter((q) => q.quizId === quizId);
   }
+  async updateSomaQuestionReview(
+    id: number,
+    patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string },
+  ) {
+    const idx = this.somaQuestionsList.findIndex((q) => q.id === id);
+    if (idx === -1) return undefined;
+    const current = this.somaQuestionsList[idx];
+    const updated = {
+      ...current,
+      ...(patch.reviewStatus !== undefined ? { reviewStatus: patch.reviewStatus } : {}),
+      ...(patch.stem !== undefined ? { stem: patch.stem } : {}),
+      ...(patch.options !== undefined ? { options: [...patch.options] } : {}),
+      ...(patch.correctAnswer !== undefined ? { correctAnswer: patch.correctAnswer } : {}),
+      ...(patch.explanation !== undefined ? { explanation: patch.explanation } : {}),
+    };
+    this.somaQuestionsList[idx] = updated;
+    return updated;
+  }
 }
 
 let store: TestMemoryStorage;
@@ -389,5 +407,102 @@ describe("Storage: Soma Quiz & Questions", () => {
     const quiz = await store.createSomaQuiz({ title: "Empty", topic: "T", status: "published" });
     const qs = await store.getSomaQuestionsByQuizId(quiz.id);
     expect(qs).toHaveLength(0);
+  });
+});
+
+// ─── Tutor pre-publish review gate ─────────────────────────────────────────────
+import { validateQuestionQuality } from "../server/services/questionQuality";
+
+/**
+ * Mirrors the edit-path logic in PATCH
+ * /api/tutor/quizzes/:quizId/questions/:questionId/review: apply edits to the
+ * existing row, re-run the quality gate, and persist with the resulting status.
+ */
+async function applyReviewEdit(
+  s: TestMemoryStorage,
+  existing: any,
+  editPatch: { stem?: string; options?: string[]; correctAnswer?: string; explanation?: string },
+) {
+  const merged = {
+    stem: editPatch.stem ?? existing.stem,
+    options: (editPatch.options ?? existing.options) as string[],
+    correct_answer: editPatch.correctAnswer ?? existing.correctAnswer,
+    explanation: editPatch.explanation ?? existing.explanation ?? undefined,
+    difficulty_tag: existing.difficultyTag ?? undefined,
+  };
+  const quality = validateQuestionQuality(merged);
+  return s.updateSomaQuestionReview(existing.id, { ...editPatch, reviewStatus: quality.reviewStatus });
+}
+
+describe("Storage: Tutor pre-publish review gate", () => {
+  async function seedFlagged() {
+    const quiz = await store.createSomaQuiz({ title: "Q", topic: "T", status: "published" });
+    const [q] = await store.createSomaQuestions([
+      {
+        quizId: quiz.id,
+        stem: "What is 2 + 2?",
+        // Duplicate option => hard fail => auto_blocked.
+        options: ["4", "4", "5", "6"],
+        correctAnswer: "4",
+        marks: 1,
+        reviewStatus: "auto_blocked",
+      },
+    ]);
+    return q;
+  }
+
+  it("updateSomaQuestionReview updates only provided fields and returns the row", async () => {
+    const q = await seedFlagged();
+    const updated = await store.updateSomaQuestionReview(q.id, { reviewStatus: "approved" });
+    expect(updated?.reviewStatus).toBe("approved");
+    expect(updated?.stem).toBe("What is 2 + 2?"); // untouched
+    expect(updated?.correctAnswer).toBe("4"); // untouched
+  });
+
+  it("returns undefined for a missing question id", async () => {
+    expect(await store.updateSomaQuestionReview(9999, { reviewStatus: "approved" })).toBeUndefined();
+  });
+
+  it("approve action sets reviewStatus to approved", async () => {
+    const q = await seedFlagged();
+    const updated = await store.updateSomaQuestionReview(q.id, { reviewStatus: "approved" });
+    expect(updated?.reviewStatus).toBe("approved");
+  });
+
+  it("reject action sets reviewStatus to auto_blocked", async () => {
+    const q = await seedFlagged();
+    await store.updateSomaQuestionReview(q.id, { reviewStatus: "approved" });
+    const rejected = await store.updateSomaQuestionReview(q.id, { reviewStatus: "auto_blocked" });
+    expect(rejected?.reviewStatus).toBe("auto_blocked");
+  });
+
+  it("edit re-gates: fixing the duplicate option re-approves the question", async () => {
+    const q = await seedFlagged();
+    // Sanity: the flagged version still fails the gate.
+    expect(validateQuestionQuality({
+      stem: q.stem,
+      options: q.options,
+      correct_answer: q.correctAnswer,
+    }).reviewStatus).toBe("auto_blocked");
+
+    const updated = await applyReviewEdit(store, q, { options: ["4", "3", "5", "6"] });
+    expect(updated?.options).toEqual(["4", "3", "5", "6"]);
+    expect(updated?.reviewStatus).toBe("approved");
+  });
+
+  it("edit re-gates: an edit that re-introduces a fault stays blocked", async () => {
+    const quiz = await store.createSomaQuiz({ title: "Q2", topic: "T", status: "published" });
+    const [q] = await store.createSomaQuestions([
+      {
+        quizId: quiz.id,
+        stem: "Pick a number.",
+        options: ["1", "2", "3", "4"],
+        correctAnswer: "1",
+        marks: 1,
+        reviewStatus: "approved",
+      },
+    ]);
+    const updated = await applyReviewEdit(store, q, { options: ["1", "1", "3", "4"] });
+    expect(updated?.reviewStatus).toBe("auto_blocked");
   });
 });

@@ -7,13 +7,14 @@ Branch: `claude/gracious-noether-s8jgpm`. Commit after each phase. Test: `npm te
 | 1 | C-1 undefined `sanitizeQuestionForPreSubmission`; C-2 review uses `effectiveCorrectAnswer`; C-6 grading gets sanitized answers | ☑ 38881f6 |
 | 2 | Schema: `reviewStatus`, `generationMeta`, difficulty CHECK + migration | ☑ d85d29f (migration 0008; difficulty CHECK deferred to Phase 6 app-level) |
 | 3 | C-5 safe `balanceAnswerOptions` (reorder rationales, handle dup/missing) + apply in main generate paths | ☑ 449427f |
-| 4 | C-3 persist `optionRationales`, difficulty/topic/subtopic tags, per-question misconception ids in all save paths | ☐ |
-| 5 | §7 `validateQuestionQuality` gate + C-4 publish gate (status draft until approved; never serve auto_blocked) | ☐ |
-| 6 | L-2 enforce difficulty in `enforceAllocation` + post-gen drift check | ☐ |
-| 7 | L-1/§9 independent blind-solver vote for non-math questions | ☐ |
-| 8 | L-4 per-question attribution + better distractor match; L-5 re-enable stem drift guard; L-6 explanation gate all types; audit columns wired | ☐ |
-| 9 | Tutor pre-publish review UI (approve/edit/reject; surface warnings + reviewStatus) | ☐ |
-| 10 | Tests (§14) + full suite green | ☐ |
+| 4 | C-3 persist `optionRationales`, difficulty/topic/subtopic tags, per-question misconception ids in all save paths | ☑ c30fa25 (+ generationMeta wired; helper perQuestionMisconceptionIds) |
+| 5 | §7 `validateQuestionQuality` gate + C-4 publish gate (never serve auto_blocked) | ☑ 749e066 (gate in 3 paths; student endpoints filter auto_blocked; full tutor approve-UI is Phase 9) |
+| 6 | L-2 enforce difficulty in `enforceAllocation` + post-gen drift check | ☑ c4f1fa4 (+ normalizeDifficultyTag) |
+| 7 | L-1/§9 independent blind-solver vote for non-math questions | ☑ 0bc548e (first attempt stalled; relaunched) |
+| 8 | L-4 per-question attribution + better distractor match; L-5 re-enable stem drift guard; L-6 explanation gate all types; audit columns wired | ☑ 80d6424 (L-6 covered by Phase5 gate + Phase7 solver; audit via generationMeta in Phase4/5) |
+| 9 | Tutor pre-publish review UI (approve/edit/reject; surface warnings + reviewStatus) | ☑ 8eeb0b3 (+ student serve gate tightened to approved-only) |
+| 10 | Tests (§14) + full suite green | ☑ 295702a (789 passed; 21 pre-existing stale auth fails in routes.test.ts) |
+| ⚠ | Build-breaker found by typecheck gate: `server/index.ts` runDbHealthCheck merge damage (ALSO on main) — esbuild build failed | ☑ 8617f2e (npm run build now exits 0) |
 
 ## Decisions
 - C-2: keep `effectiveCorrectAnswer` at marking; make review endpoint use the SAME value (no migration, consistent everywhere). New questions also pass answer∈options via the Phase 5 gate.

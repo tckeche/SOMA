@@ -97,6 +97,7 @@ export interface IStorage {
   updateSomaQuiz(id: number, data: Partial<InsertSomaQuiz>): Promise<SomaQuiz | undefined>;
   createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]>;
   getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]>;
+  updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined>;
   getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>>;
   deleteSomaQuestion(id: number): Promise<void>;
   deleteSomaQuestionsByQuizId(quizId: number): Promise<void>;
@@ -336,6 +337,21 @@ class DatabaseStorage implements IStorage {
 
   async getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]> {
     return this.database.select().from(somaQuestions).where(eq(somaQuestions.quizId, quizId));
+  }
+
+  async updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined> {
+    const set: Partial<typeof somaQuestions.$inferInsert> = {};
+    if (patch.reviewStatus !== undefined) set.reviewStatus = patch.reviewStatus;
+    if (patch.stem !== undefined) set.stem = patch.stem;
+    if (patch.options !== undefined) set.options = patch.options;
+    if (patch.correctAnswer !== undefined) set.correctAnswer = patch.correctAnswer;
+    if (patch.explanation !== undefined) set.explanation = patch.explanation;
+    if (Object.keys(set).length === 0) {
+      const [existing] = await this.database.select().from(somaQuestions).where(eq(somaQuestions.id, id));
+      return existing;
+    }
+    const [result] = await this.database.update(somaQuestions).set(set).where(eq(somaQuestions.id, id)).returning();
+    return result;
   }
 
   async createSyllabusDocument(document: InsertSyllabusDocument, chunks: Omit<InsertSyllabusChunk, "documentId">[]): Promise<{ document: SyllabusDocument; chunks: SyllabusChunk[] }> {
@@ -1456,6 +1472,8 @@ class MemoryStorage implements IStorage {
       commandWord: q.commandWord ?? null,
       assessmentObjective: q.assessmentObjective ?? null,
       optionRationales: (q as { optionRationales?: unknown }).optionRationales as SomaQuestion["optionRationales"] ?? null,
+      reviewStatus: (q as { reviewStatus?: string }).reviewStatus ?? "approved",
+      generationMeta: (q as { generationMeta?: unknown }).generationMeta as SomaQuestion["generationMeta"] ?? null,
     }));
     this.somaQuestionsList.push(...created);
     return created;
@@ -1463,6 +1481,22 @@ class MemoryStorage implements IStorage {
 
   async getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]> {
     return this.somaQuestionsList.filter((q) => q.quizId === quizId);
+  }
+
+  async updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined> {
+    const idx = this.somaQuestionsList.findIndex((q) => q.id === id);
+    if (idx === -1) return undefined;
+    const current = this.somaQuestionsList[idx];
+    const updated: SomaQuestion = {
+      ...current,
+      ...(patch.reviewStatus !== undefined ? { reviewStatus: patch.reviewStatus } : {}),
+      ...(patch.stem !== undefined ? { stem: patch.stem } : {}),
+      ...(patch.options !== undefined ? { options: [...patch.options] } : {}),
+      ...(patch.correctAnswer !== undefined ? { correctAnswer: patch.correctAnswer } : {}),
+      ...(patch.explanation !== undefined ? { explanation: patch.explanation } : {}),
+    };
+    this.somaQuestionsList[idx] = updated;
+    return updated;
   }
 
   async getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>> {
