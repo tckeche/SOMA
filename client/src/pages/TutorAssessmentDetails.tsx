@@ -665,6 +665,10 @@ export default function TutorAssessmentDetails() {
           </div>
         </div>
 
+        {/* Worksheets + PDF responses only apply to PDF-format assessments.
+            MCQ assessments skip straight to the question-review surfaces. */}
+        {quiz.format === "pdf" && (
+        <>
         {/* Worksheets / Attachments */}
         <div className={CARD_CLASS}>
           <div className="flex items-center justify-between mb-6">
@@ -824,6 +828,8 @@ export default function TutorAssessmentDetails() {
             </div>
           )}
         </div>
+        </>
+        )}
 
         {/* Student-flagged questions for this assessment */}
         <TutorFlagsPanel quizId={quizId} />

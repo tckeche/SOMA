@@ -2671,6 +2671,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (!quiz || quiz.authorId !== tutorId) {
           return res.status(403).json({ message: "Access denied" });
         }
+        if (quiz.format !== "pdf") {
+          return res.status(400).json({ message: "Worksheets can only be added to PDF-format assessments" });
+        }
 
         const storagePath = `assessments/${quizId}/${crypto.randomUUID()}.pdf`;
         await uploadPdf(storagePath, file.buffer);
@@ -2816,9 +2819,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "PDF required" });
 
-        const assignment = await storage.getQuizAssignment(quizId, studentId);
+        const [assignment, quiz] = await Promise.all([
+          storage.getQuizAssignment(quizId, studentId),
+          storage.getSomaQuiz(quizId),
+        ]);
         if (!assignment) {
           return res.status(403).json({ message: "Access denied" });
+        }
+        if (!quiz || quiz.format !== "pdf") {
+          return res.status(400).json({ message: "This assessment does not accept PDF responses" });
         }
 
         const storagePath = `submissions/${quizId}/${studentId}.pdf`;

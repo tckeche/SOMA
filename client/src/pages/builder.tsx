@@ -33,7 +33,7 @@ import {
 } from "@/lib/tutorAssessmentDraft";
 import DraftRecoveryBanner from "@/components/tutor/DraftRecoveryBanner";
 import AssessmentWizard from "@/components/tutor/AssessmentWizard";
-import QuestionReviewList from "@/components/tutor/QuestionReviewList";
+import DraftQuestionReviewEditor from "@/components/tutor/DraftQuestionReviewEditor";
 import TutorWorksheetManager from "@/components/tutor/TutorWorksheetManager";
 
 type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
@@ -1766,13 +1766,14 @@ export default function BuilderPage() {
         </div>
       )}
 
-      {/* Review Modal — LaTeX-rendered, read-only audit of the draft questions */}
+      {/* Review Modal — LaTeX-rendered, EDITABLE audit of the draft questions.
+          Edits write back to the local draft (autosaved) and persist on publish. */}
       {showReview && (
         <div className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="modal-review">
           <div className="max-w-3xl mx-auto px-4 py-6">
             <div className="flex items-center justify-between gap-3 mb-5 sticky top-0 bg-background/90 backdrop-blur-sm py-2 z-10">
               <div className="min-w-0">
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">Review · rendered</p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Review &amp; edit</p>
                 <h2 className="text-lg font-bold gradient-text truncate" data-testid="text-review-title">
                   {title || "Untitled Assessment"}
                 </h2>
@@ -1786,16 +1787,15 @@ export default function BuilderPage() {
                 Close
               </Button>
             </div>
-            <QuestionReviewList
-              questions={draftQuestions.map((q) => ({
-                stem: q.stem,
-                options: q.options,
-                correctAnswer: q.correctAnswer,
-                explanation: q.explanation,
-                marks: q.marks,
-                difficultyTag: q.difficultyTag,
-                questionType: q.questionType,
-              }))}
+            <DraftQuestionReviewEditor
+              questions={draftQuestions}
+              onSave={(index, patch) =>
+                updateDraft((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
+              }
+              onDelete={(index) => {
+                const target = draftQuestions[index];
+                if (target) deleteDraftQuestion(target.draftId);
+              }}
             />
           </div>
         </div>
