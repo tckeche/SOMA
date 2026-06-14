@@ -1647,6 +1647,7 @@ export class MemoryStorage implements IStorage {
       timeLimitMinutes: quiz.timeLimitMinutes ?? 60,
       status: quiz.status ?? "published",
       isArchived: quiz.isArchived ?? false,
+      acceptsPdfResponse: quiz.acceptsPdfResponse ?? false,
     };
     this.somaQuizzesList.push(created);
     return created;
@@ -2329,6 +2330,8 @@ export class MemoryStorage implements IStorage {
     this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.quizId !== quizId);
     this.somaReportsList = this.somaReportsList.filter((r) => r.quizId !== quizId);
     this.quizAssignmentsList = this.quizAssignmentsList.filter((qa) => qa.quizId !== quizId);
+    this.assessmentAttachmentsList = this.assessmentAttachmentsList.filter((a) => a.quizId !== quizId);
+    this.submissionUploadsList = this.submissionUploadsList.filter((s) => s.quizId !== quizId);
     this.somaQuizzesList = this.somaQuizzesList.filter((q) => q.id !== quizId);
   }
 

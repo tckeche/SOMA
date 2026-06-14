@@ -168,6 +168,9 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   timeLimitMinutes: integer("time_limit_minutes").notNull().default(60),
   status: text("status").notNull().default("published"),
   isArchived: boolean("is_archived").notNull().default(false),
+  // When true, students see a "Your response" PDF upload box for this
+  // assessment. Off by default so normal MCQ quizzes stay uncluttered.
+  acceptsPdfResponse: boolean("accepts_pdf_response").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -45,7 +45,13 @@ function StorageNotice() {
   );
 }
 
-export default function StudentAssessmentPdfSection({ quizId }: { quizId: number }) {
+export default function StudentAssessmentPdfSection({
+  quizId,
+  acceptsPdfResponse = false,
+}: {
+  quizId: number;
+  acceptsPdfResponse?: boolean;
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -124,22 +130,35 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
   }
 
   async function downloadAttachment(attachmentId: number) {
+    // Open the tab synchronously inside the click gesture, THEN fill it after
+    // the async sign call — opening after an await is silently blocked by most
+    // popup blockers. (Can't use noopener here or window.open returns null.)
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      try { (win as unknown as { opener: unknown }).opener = null; } catch { /* noop */ }
+    }
     try {
       const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
       if (!res.ok) throw new Error("Download failed");
       const { url } = await res.json();
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (win) win.location.href = url;
+      else window.location.href = url;
     } catch (err) {
+      if (win) win.close();
       toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
     }
   }
 
   const isMarked = submission?.status === "marked";
   const hasWorksheets = attachments.length > 0;
+  // Upload controls only when the tutor has opted this assessment in. A response
+  // card still renders for an existing submission even if the flag was later
+  // turned off, so the student keeps seeing their mark/feedback.
+  const showUpload = Boolean(acceptsPdfResponse);
+  const showResponseCard = Boolean(acceptsPdfResponse || submission);
 
-  // Don't clutter the screen: hide the worksheets section entirely if there are
-  // none, but always show the response section so the student can upload.
   if (storageUnconfigured) {
+    if (!acceptsPdfResponse) return null;
     return (
       <div className="text-left bg-foreground/[0.03] border border-border/30 rounded-xl p-4 md:p-5 mb-6">
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Worksheets &amp; your response</p>
@@ -147,6 +166,9 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
       </div>
     );
   }
+
+  // Don't render anything if there's nothing relevant to show.
+  if (!hasWorksheets && !showResponseCard) return null;
 
   return (
     <>
@@ -184,6 +206,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
         </div>
       )}
 
+      {showResponseCard && (
       <div className="text-left bg-foreground/[0.03] border border-border/30 rounded-xl p-4 md:p-5 mb-6">
         <p className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground mb-3">
           <FileCheck className="w-3.5 h-3.5 text-violet-300" />
@@ -215,7 +238,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
                   data-testid="student-response-score"
                   className="text-2xl font-bold text-emerald-300"
                 >
-                  {submission.score ?? 0} <span className="text-base text-muted-foreground font-normal">/ {submission.maxScore ?? 0}</span>
+                  {submission.score ?? 0}{submission.maxScore != null && <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span>}
                 </p>
                 {submission.feedback && (
                   <div className="mt-3">
@@ -233,6 +256,8 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
           </div>
         )}
 
+        {showUpload && (
+          <>
         {isMarked && (
           <div className="flex items-start gap-2 mb-3 text-xs text-amber-300/90">
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -268,7 +293,10 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
           )}
         </div>
         <p className="text-[11px] text-muted-foreground mt-3">PDF only, up to 20MB.</p>
+          </>
+        )}
       </div>
+      )}
     </>
   );
 }
