@@ -141,9 +141,11 @@ type AuthMode = "login" | "signup" | "reset";
 
 export default function StudentAuth() {
   const [mode, setMode] = useState<AuthMode>("login");
+  const [accountType, setAccountType] = useState<"student" | "tutor">("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [surname, setSurname] = useState("");
   const [subject, setSubject] = useState("");
   const [syllabus, setSyllabus] = useState("");
   const [level, setLevel] = useState("");
@@ -163,7 +165,8 @@ export default function StudentAuth() {
   const resetForm = () => {
     setEmail("");
     setPassword("");
-    setDisplayName("");
+    setFirstName("");
+    setSurname("");
     setSubject("");
     setSyllabus("");
     setLevel("");
@@ -272,15 +275,15 @@ export default function StudentAuth() {
     const nextErrors: { email?: string; password?: string } = {};
     if (!email.trim()) nextErrors.email = "Please enter your email address.";
     if (!password.trim()) nextErrors.password = "Please create a password.";
-    if (!displayName.trim()) {
+    if (!firstName.trim() || !surname.trim()) {
       toast({
         title: "Name required",
-        description: "Please enter your first name and surname so your tutor can recognise you.",
+        description: "Please enter both your first name and surname.",
         variant: "destructive",
       });
       return;
     }
-    if (!subject || !syllabus || !level) {
+    if (accountType === "student" && (!subject || !syllabus || !level)) {
       toast({
         title: "Missing required fields",
         description: "Please add subject, exam body/syllabus, and level.",
@@ -313,12 +316,19 @@ export default function StudentAuth() {
     setLoading(true);
 
     try {
-      const { data, error } = await withTimeout(() => supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            display_name: displayName.trim(),
+      const fullName = `${firstName.trim()} ${surname.trim()}`.trim();
+      const signupData = accountType === "tutor"
+        ? {
+            display_name: fullName,
+            first_name: firstName.trim(),
+            surname: surname.trim(),
+            requested_role: "tutor",
+          }
+        : {
+            display_name: fullName,
+            first_name: firstName.trim(),
+            surname: surname.trim(),
+            requested_role: "student",
             subject,
             syllabus,
             // Syllabus code is no longer collected at signup (students found it
@@ -327,7 +337,12 @@ export default function StudentAuth() {
             syllabus_code: "",
             level,
             subjects: [{ subject, examBody: syllabus, syllabusCode: "", level }],
-          },
+          };
+      const { data, error } = await withTimeout(() => supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: signupData,
         },
       }), { timeoutMs: 18000, stage: "supabase_signup" });
       if (requestId !== activeRequestId.current) return;
@@ -510,7 +525,7 @@ export default function StudentAuth() {
             SOMA
           </h1>
           <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">Student &amp; Tutor Portal</p>
-          <p className="text-[11px] text-muted-foreground mt-2">Same login for students and tutors — your role is set by your email.</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Same login for students and tutors — choose your role when you sign up.</p>
         </div>
 
         <div className="bg-card/50 backdrop-blur-md border border-border/50 rounded-2xl p-8 shadow-xl">
@@ -557,27 +572,87 @@ export default function StudentAuth() {
               <>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                    Full Name <span className="text-red-400">*</span>
+                    I am signing up as
                   </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="First name and surname"
-                      required
-                      className="glass-input w-full pl-10 pr-4 py-3 text-sm"
-                      data-testid="input-display-name"
-                    />
+                  <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Account type">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={accountType === "student"}
+                      onClick={() => setAccountType("student")}
+                      className={`flex items-center justify-center gap-2 py-3 px-3 text-sm rounded-lg border transition-colors min-h-[44px] ${
+                        accountType === "student"
+                          ? "border-violet-500 bg-violet-500/15 text-foreground"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground/80"
+                      }`}
+                      data-testid="button-account-type-student"
+                    >
+                      <GraduationCap className="w-4 h-4" />
+                      Student
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={accountType === "tutor"}
+                      onClick={() => setAccountType("tutor")}
+                      className={`flex items-center justify-center gap-2 py-3 px-3 text-sm rounded-lg border transition-colors min-h-[44px] ${
+                        accountType === "tutor"
+                          ? "border-violet-500 bg-violet-500/15 text-foreground"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground/80"
+                      }`}
+                      data-testid="button-account-type-tutor"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      Tutor
+                    </button>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
+                      First Name <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="First name"
+                        required
+                        className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                        data-testid="input-first-name"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
+                      Surname <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={surname}
+                        onChange={(e) => setSurname(e.target.value)}
+                        placeholder="Surname"
+                        required
+                        className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                        data-testid="input-surname"
+                      />
+                    </div>
+                  </div>
+                </div>
+                {accountType === "student" && (
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Subject <span className="text-red-400">*</span>
                   </label>
                   <SubjectCombobox value={subject} onChange={setSubject} />
                 </div>
+                )}
+                {accountType === "student" && (
+                <>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Exam Body / Syllabus <span className="text-red-400">*</span>
@@ -631,6 +706,8 @@ export default function StudentAuth() {
                     </select>
                   </div>
                 </div>
+                </>
+                )}
               </>
             )}
 

@@ -944,10 +944,19 @@ const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com"
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
 
-function determineRole(email: string): "tutor" | "student" | "super_admin" {
+function determineRole(
+  email: string,
+  requestedRole?: string,
+): "tutor" | "student" | "super_admin" {
   if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
   const domain = email.split("@")[1]?.toLowerCase();
-  return domain === TUTOR_EMAIL_DOMAIN.toLowerCase() ? "tutor" : "student";
+  if (domain === TUTOR_EMAIL_DOMAIN.toLowerCase()) return "tutor";
+  // Honour the role the user picked at signup, but clamp it: a self-selected
+  // role can only ever be "tutor" or "student" — never "super_admin". This is
+  // only consulted for brand-new accounts (see auth/sync), so it cannot be used
+  // to escalate an existing account by mutating Supabase user_metadata.
+  if (requestedRole === "tutor") return "tutor";
+  return "student";
 }
 
 // Role middleware (requireTutor, requireSuperAdmin, requireSupabaseAuth) is
@@ -1865,6 +1874,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const user_metadata = req.body?.user_metadata as {
         display_name?: string;
         full_name?: string;
+        requested_role?: string;
         subject?: string;
         syllabus?: string;
         syllabus_code?: string;
@@ -1895,9 +1905,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!id || !email) {
         return res.status(400).json({ message: "Missing id or email" });
       }
-      const role = determineRole(email);
-      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
       const existingUser = await storage.getSomaUserById(id);
+      // For a brand-new account, honour the role chosen at signup (clamped by
+      // determineRole). For a returning account, keep the role already stored
+      // in our DB — never recompute it from request metadata, so a student
+      // cannot escalate to tutor by editing their Supabase user_metadata.
+      const role = existingUser
+        ? existingUser.role
+        : determineRole(email, user_metadata?.requested_role);
+      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
       const parsed = insertSomaUserSchema.parse({
         id,
         email,
@@ -1948,6 +1964,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let userId = "";
       let email = "";
       let tokenName: string | undefined;
+      let tokenRequestedRole: string | undefined;
 
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
@@ -1956,6 +1973,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         userId = decoded.sub;
         email = decoded.email;
         tokenName = decoded.metadataName;
+        tokenRequestedRole = decoded.requestedRole;
       } else if (process.env.NODE_ENV !== "production") {
         // Legacy local/test fallback
         userId = String(req.query.userId || "");
@@ -1967,7 +1985,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!userId || !email) return res.status(400).json({ message: "userId required" });
       let user = await storage.getSomaUserById(userId);
       if (!user) {
-        const role = determineRole(email);
+        // First-create here mirrors /api/auth/sync: honour the role the user
+        // selected at signup (carried in the verified token's user_metadata,
+        // already clamped to tutor|student), so a tutor signup is not silently
+        // downgraded to student if this endpoint provisions the row first.
+        const role = determineRole(email, tokenRequestedRole);
         logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req as any), module: "routes", component: "authMe", userId, role, email });
         const parsed = insertSomaUserSchema.parse({
           id: userId,
