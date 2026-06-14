@@ -2551,7 +2551,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // score from stored answers (NO AI). This is an explicit, transparent action
   // a tutor triggers after excluding/restoring questions. Only "completed"
   // reports are touched; pending/failed reports are left alone.
-  app.post("/api/tutor/quizzes/:quizId/regrade", requireTutor, async (req, res) => {
+  app.post("/api/tutor/quizzes/:quizId/regrade", tutorApiLimiter, requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
       const quizId = parseInt(req.params.quizId as string);
