@@ -357,7 +357,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const { data: quiz, isLoading: quizLoading, error: quizError } = useQuery<SomaQuiz>({
     queryKey: ["/api/soma/quizzes", quizId],
     queryFn: async () => {
-      const res = await fetch(`/api/soma/quizzes/${quizId}`);
+      const res = await authFetch(`/api/soma/quizzes/${quizId}`);
       if (!res.ok) throw new Error("Failed to load quiz");
       return res.json();
     },
@@ -367,7 +367,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const { data: fetchedQuestions, isLoading: questionsLoading, error: questionsError } = useQuery<StudentQuestion[]>({
     queryKey: ["/api/soma/quizzes", quizId, "questions"],
     queryFn: async () => {
-      const res = await fetch(`/api/soma/quizzes/${quizId}/questions`);
+      const res = await authFetch(`/api/soma/quizzes/${quizId}/questions`);
       if (!res.ok) throw new Error("Failed to load questions");
       return res.json();
     },
