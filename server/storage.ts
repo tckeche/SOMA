@@ -124,6 +124,7 @@ export interface IStorage {
   createQuizAssignments(quizId: number, studentIds: string[], dueDate?: Date | null): Promise<QuizAssignment[]>;
   getQuizAssignmentsForStudent(studentId: string): Promise<(QuizAssignment & { quiz: SomaQuiz })[]>;
   getQuizAssignmentsForQuiz(quizId: number): Promise<(QuizAssignment & { student: SomaUser })[]>;
+  getQuizAssignment(quizId: number, studentId: string): Promise<QuizAssignment | undefined>;
   getTutorAssessmentsOverview(tutorId: string): Promise<Array<{
     quizId: number;
     assignedStudentIds: string[];
@@ -229,7 +230,7 @@ export interface IStorage {
   getSubmissionUploadsByQuiz(quizId: number): Promise<SubmissionUpload[]>;
   getSubmissionUpload(id: number): Promise<SubmissionUpload | undefined>;
   getSubmissionUploadByStudent(quizId: number, studentId: string): Promise<SubmissionUpload | undefined>;
-  markSubmissionUpload(id: number, marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null }): Promise<SubmissionUpload | undefined>;
+  markSubmissionUpload(id: number, marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null }): Promise<SubmissionUpload | undefined>;
 
 }
 
@@ -947,6 +948,14 @@ class DatabaseStorage implements IStorage {
     return rows.map((r) => ({ ...r.assignment, student: r.student }));
   }
 
+  async getQuizAssignment(quizId: number, studentId: string): Promise<QuizAssignment | undefined> {
+    const [row] = await this.database
+      .select()
+      .from(quizAssignments)
+      .where(and(eq(quizAssignments.quizId, quizId), eq(quizAssignments.studentId, studentId)));
+    return row;
+  }
+
   async getAssignedSubjectsForStudents(studentIds: string[]): Promise<Record<string, string[]>> {
     const result: Record<string, string[]> = {};
     for (const id of studentIds) result[id] = [];
@@ -1494,7 +1503,7 @@ class DatabaseStorage implements IStorage {
 
   async markSubmissionUpload(
     id: number,
-    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null },
+    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null },
   ): Promise<SubmissionUpload | undefined> {
     const [row] = await this.database
       .update(submissionUploads)
@@ -1503,6 +1512,7 @@ class DatabaseStorage implements IStorage {
         feedback: marks.feedback,
         status: marks.status,
         markedAt: marks.markedAt,
+        ...(marks.maxScore !== undefined ? { maxScore: marks.maxScore } : {}),
       })
       .where(eq(submissionUploads.id, id))
       .returning();
@@ -1807,6 +1817,10 @@ export class MemoryStorage implements IStorage {
   async updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void> {
     const qa = this.quizAssignmentsList.find((a) => a.quizId === quizId && a.studentId === studentId);
     if (qa) qa.status = status;
+  }
+
+  async getQuizAssignment(quizId: number, studentId: string): Promise<QuizAssignment | undefined> {
+    return this.quizAssignmentsList.find((a) => a.quizId === quizId && a.studentId === studentId);
   }
 
   async getTutorAssessmentsOverview(tutorId: string): Promise<Array<{
@@ -2487,7 +2501,7 @@ export class MemoryStorage implements IStorage {
 
   async markSubmissionUpload(
     id: number,
-    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null },
+    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null },
   ): Promise<SubmissionUpload | undefined> {
     const row = this.submissionUploadsList.find((s) => s.id === id);
     if (!row) return undefined;
@@ -2495,6 +2509,7 @@ export class MemoryStorage implements IStorage {
     row.feedback = marks.feedback;
     row.status = marks.status;
     row.markedAt = marks.markedAt;
+    if (marks.maxScore !== undefined) row.maxScore = marks.maxScore;
     return row;
   }
 }
