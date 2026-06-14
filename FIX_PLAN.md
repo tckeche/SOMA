@@ -12,7 +12,7 @@ Branch: `claude/gracious-noether-s8jgpm`. Commit after each phase. Test: `npm te
 | 6 | L-2 enforce difficulty in `enforceAllocation` + post-gen drift check | ☑ c4f1fa4 (+ normalizeDifficultyTag) |
 | 7 | L-1/§9 independent blind-solver vote for non-math questions | ☑ 0bc548e (first attempt stalled; relaunched) |
 | 8 | L-4 per-question attribution + better distractor match; L-5 re-enable stem drift guard; L-6 explanation gate all types; audit columns wired | ☑ 80d6424 (L-6 covered by Phase5 gate + Phase7 solver; audit via generationMeta in Phase4/5) |
-| 9 | Tutor pre-publish review UI (approve/edit/reject; surface warnings + reviewStatus) | ☐ |
+| 9 | Tutor pre-publish review UI (approve/edit/reject; surface warnings + reviewStatus) | ☑ 8eeb0b3 (+ student serve gate tightened to approved-only) |
 | 10 | Tests (§14) + full suite green | ☐ |
 
 ## Decisions
