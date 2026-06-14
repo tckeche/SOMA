@@ -157,24 +157,30 @@ export function scoreSyllabusChunks(chunks: Array<{ content: string }>, query: s
     .map((item) => item.content);
 }
 
-function shuffleArray<T>(items: T[]): T[] {
-  const arr = [...items];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-export function balanceAnswerOptions<T extends { options: string[]; correct_answer: string }>(questions: T[]): T[] {
-  const targetPositions = shuffleArray(questions.map((_, index) => index % 4));
+export function balanceAnswerOptions<
+  T extends { options: string[]; correct_answer: string; option_rationales?: any[] }
+>(questions: T[]): T[] {
   return questions.map((question, index) => {
-    const correct = question.correct_answer;
-    const distractors = shuffleArray(question.options.filter((option) => option !== correct));
-    const desiredIndex = targetPositions[index];
-    const nextOptions = [...distractors];
-    nextOptions.splice(desiredIndex, 0, correct);
-    return { ...question, options: nextOptions, correct_answer: correct };
+    const opts = question.options;
+    const correctIdx = opts.findIndex((o) => o.trim() === question.correct_answer.trim());
+    // Can't locate the correct option -> leave untouched; the quality gate
+    // (Phase 5) will flag/block it rather than us silently corrupting options.
+    if (correctIdx < 0 || opts.length !== 4) return question;
+    // Build a permutation of [0..n-1], then rotate so the correct option lands
+    // at a position that varies across the set (index % n), deterministically.
+    const order = opts.map((_, i) => i);
+    // Fisher-Yates using a per-question seed for spread without true randomness
+    let seed = (index + 1) * 2654435761;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const newOptions = order.map((i) => opts[i]);
+    const newRationales = Array.isArray(question.option_rationales) && question.option_rationales.length === opts.length
+      ? order.map((i) => question.option_rationales![i])
+      : question.option_rationales;
+    return { ...question, options: newOptions, option_rationales: newRationales, correct_answer: question.correct_answer };
   });
 }
 

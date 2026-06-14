@@ -3411,6 +3411,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               console.error(`[AI Publish] Quiz "${item.topic}" produced 0 usable questions after re-rolls — skipping publish.`);
               continue;
             }
+            const balancedGen = balanceAnswerOptions(generated.questions);
             const quiz = await storage.createSomaQuizBundle({
               quiz: {
                 title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
@@ -3422,7 +3423,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 status: "published",
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
-              questions: generated.questions.map((q, i) => {
+              questions: balancedGen.map((q, i) => {
                 // Per-question misconception attribution. Phase 4 prefers
                 // the per-option rationales (each distractor carries its
                 // own misconception id), falling back to the blueprint
@@ -5478,7 +5479,7 @@ ${JSON.stringify({
         targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
       }, traceId);
       const insertedQuestions = await storage.createSomaQuestions(
-        result.questions.map((q) => ({
+        balanceAnswerOptions(result.questions).map((q) => ({
           quizId: quiz.id,
           stem: q.stem,
           options: q.options,
@@ -5621,7 +5622,7 @@ ${JSON.stringify({
           status: "published",
           isArchived: false,
         },
-        questions: result.questions.map((q) => ({
+        questions: balanceAnswerOptions(result.questions).map((q) => ({
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,

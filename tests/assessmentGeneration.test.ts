@@ -6,19 +6,59 @@ import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, scoreSy
 import GraphPlot from "@/components/GraphPlot";
 
 describe("balanced answer option randomisation", () => {
-  it("balances correct answer positions across A/B/C/D while preserving correctness", () => {
+  it("always returns exactly 4 options, keeps the correct option present, and preserves correct_answer text", () => {
     const questions = Array.from({ length: 8 }, (_, index) => ({
       options: [`correct-${index}`, `b-${index}`, `c-${index}`, `d-${index}`],
       correct_answer: `correct-${index}`,
     }));
     const balanced = balanceAnswerOptions(questions);
-    const counts = [0, 0, 0, 0];
     balanced.forEach((question, index) => {
-      const position = question.options.indexOf(`correct-${index}`);
-      expect(position).toBeGreaterThanOrEqual(0);
-      counts[position] += 1;
+      expect(question.options).toHaveLength(4);
+      expect(question.correct_answer).toBe(`correct-${index}`);
+      expect(question.options).toContain(`correct-${index}`);
     });
-    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+  });
+
+  it("returns the question unchanged when correct_answer is not in options (no 5-option bug)", () => {
+    const question = {
+      options: ["a", "b", "c", "d"],
+      correct_answer: "not-present",
+    };
+    const [result] = balanceAnswerOptions([question]);
+    expect(result.options).toHaveLength(4);
+    expect(result.options).toEqual(["a", "b", "c", "d"]);
+    expect(result.correct_answer).toBe("not-present");
+  });
+
+  it("keeps exactly 4 options without crashing when options contain a duplicate of the correct text", () => {
+    const question = {
+      options: ["dup", "dup", "c", "d"],
+      correct_answer: "dup",
+    };
+    const [result] = balanceAnswerOptions([question]);
+    expect(result.options).toHaveLength(4);
+    expect(result.options.filter((o) => o === "dup")).toHaveLength(2);
+    expect(result.correct_answer).toBe("dup");
+  });
+
+  it("reorders option_rationales with the same permutation so they stay aligned to options", () => {
+    const questions = Array.from({ length: 8 }, (_, index) => ({
+      options: [`a-${index}`, `b-${index}`, `c-${index}`, `d-${index}`],
+      correct_answer: `a-${index}`,
+      option_rationales: [
+        { option: `a-${index}`, text: "ra" },
+        { option: `b-${index}`, text: "rb" },
+        { option: `c-${index}`, text: "rc" },
+        { option: `d-${index}`, text: "rd" },
+      ],
+    }));
+    const balanced = balanceAnswerOptions(questions);
+    balanced.forEach((question) => {
+      expect(question.option_rationales).toHaveLength(4);
+      question.options.forEach((opt, i) => {
+        expect(question.option_rationales![i].option).toBe(opt);
+      });
+    });
   });
 });
 
