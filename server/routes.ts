@@ -2586,6 +2586,97 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Tutor manual per-question marks override on a completed submission.
+  // Accepts a batch of overrides: { overrides: { [questionId]: number|null } }.
+  // A numeric value sets/replaces the awarded marks for that question (clamped
+  // server-side to 0..q.marks and validated as an integer in range here);
+  // `null` CLEARS that question's override (reverting it to computed marks).
+  // The merged manualMarks map is persisted and the report's score is recomputed
+  // via recomputeReportScore (which honours overrides), so a later regrade can
+  // never clobber the tutor's manual marks.
+  app.post("/api/tutor/reports/:reportId/marks", tutorApiLimiter, requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const reportId = parseInt(req.params.reportId as string);
+      if (isNaN(reportId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const bodySchema = z.object({
+        overrides: z.record(
+          z.string(),
+          z.union([z.number().int(), z.null()]),
+        ),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten() });
+      }
+      const { overrides } = parsed.data;
+
+      const report = await storage.getSomaReportById(reportId);
+      if (!report || report.quiz.authorId !== tutorId) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      if (report.status !== "completed") {
+        return res.status(409).json({ message: "Marks can only be overridden on completed submissions" });
+      }
+
+      const questions = await storage.getSomaQuestionsByQuizId(report.quizId);
+      const byId = new Map(questions.map((q) => [String(q.id), q]));
+
+      // Validate every override before mutating anything.
+      for (const [qid, value] of Object.entries(overrides)) {
+        const q = byId.get(qid);
+        if (!q) {
+          return res.status(400).json({ message: `Unknown questionId for this quiz: ${qid}` });
+        }
+        if (value === null) continue;
+        if (!Number.isInteger(value) || value < 0 || value > q.marks) {
+          return res.status(400).json({
+            message: `Marks for question ${qid} must be an integer between 0 and ${q.marks}`,
+          });
+        }
+      }
+
+      // Merge into existing manualMarks; null clears a key.
+      const merged: Record<string, number> = {
+        ...((report.manualMarks ?? {}) as Record<string, number>),
+      };
+      for (const [qid, value] of Object.entries(overrides)) {
+        if (value === null) {
+          delete merged[qid];
+        } else {
+          merged[qid] = value;
+        }
+      }
+      const nextManualMarks = Object.keys(merged).length > 0 ? merged : null;
+
+      const { newScore, maxPossibleScore } = recomputeReportScore(
+        { ...report, manualMarks: nextManualMarks },
+        questions,
+      );
+
+      await storage.updateSomaReport(reportId, {
+        manualMarks: nextManualMarks,
+        score: newScore,
+      });
+
+      logInfo("tutor.reports.manualMarks", {
+        module: "routes",
+        component: "tutor.manualMarks",
+        reportId,
+        quizId: report.quizId,
+        userId: tutorId,
+        overrideCount: Object.keys(overrides).length,
+        score: newScore,
+        maxPossibleScore,
+      });
+
+      return res.json({ score: newScore, maxPossibleScore, manualMarks: nextManualMarks });
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.reports.manualMarks.post", "Failed to update marks.");
+    }
+  });
+
   // Revoke a student's quiz assignment
   app.delete("/api/tutor/quizzes/:quizId/assignments/:studentId", requireTutor, async (req, res) => {
     try {

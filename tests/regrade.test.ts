@@ -45,8 +45,12 @@ function q(
   } as SomaQuestion;
 }
 
-function report(answers: Record<string, string>, score: number): Pick<SomaReport, "score" | "answersJson"> {
-  return { score, answersJson: answers };
+function report(
+  answers: Record<string, string>,
+  score: number,
+  manualMarks: Record<string, number> | null = null,
+): Pick<SomaReport, "score" | "answersJson" | "manualMarks"> {
+  return { score, answersJson: answers, manualMarks };
 }
 
 describe("recomputeReportScore", () => {
@@ -86,5 +90,56 @@ describe("recomputeReportScore", () => {
     const r = recomputeReportScore(report(answers, 3), questions);
     expect(r.newScore).toBe(3);
     expect(r.maxPossibleScore).toBe(3);
+  });
+
+  describe("manual marks overrides", () => {
+    it("(a) override raises a wrong answer to partial/full marks", () => {
+      // Q3 wrong (0) -> tutor awards 2 of its 4 marks (partial credit).
+      const questions = [q(1, "A"), q(2, "B"), q(3, "C", "approved", 4)];
+      const r = recomputeReportScore(report(answers, 2, { "3": 2 }), questions);
+      // Q1(1) + Q2(1) + Q3 override(2) = 4 of 6.
+      expect(r.newScore).toBe(4);
+      expect(r.maxPossibleScore).toBe(6);
+    });
+
+    it("(b) override lowers a correct answer", () => {
+      // Q1 right (2 marks) but tutor knocks it down to 1.
+      const questions = [q(1, "A", "approved", 2), q(2, "B"), q(3, "C")];
+      const r = recomputeReportScore(report(answers, 3, { "1": 1 }), questions);
+      // Q1 override(1) + Q2(1) + Q3 wrong(0) = 2 of 4.
+      expect(r.newScore).toBe(2);
+      expect(r.maxPossibleScore).toBe(4);
+    });
+
+    it("(c) override is clamped to 0..q.marks", () => {
+      const questions = [q(1, "A", "approved", 3), q(2, "B"), q(3, "C")];
+      // 99 clamps to 3; -5 clamps to 0.
+      const high = recomputeReportScore(report(answers, 0, { "1": 99 }), questions);
+      expect(high.newScore).toBe(3 + 1); // Q1 clamped to 3 + Q2 right 1
+      const low = recomputeReportScore(report(answers, 0, { "2": -5 }), questions);
+      expect(low.newScore).toBe(3 + 0); // Q1 right 3 (default marks=1? no: q1 marks 3) + Q2 clamped to 0
+    });
+
+    it("(d) clearing (no key) falls back to computed marks", () => {
+      const questions = [q(1, "A"), q(2, "B"), q(3, "C")];
+      // Only Q3 has an override; Q1/Q2 fall back to computed (both right).
+      const r = recomputeReportScore(report(answers, 2, { "3": 1 }), questions);
+      expect(r.newScore).toBe(1 + 1 + 1); // computed Q1 + computed Q2 + override Q3
+      // With no manualMarks at all -> pure computed.
+      const r2 = recomputeReportScore(report(answers, 2, null), questions);
+      expect(r2.newScore).toBe(2);
+    });
+
+    it("(e) regrade + overrides: excluded question drops out, override on a served question respected", () => {
+      const questions = [
+        q(1, "A", "excluded", 2), // got right but excluded -> dropped entirely
+        q(2, "B", "approved", 1), // served, right
+        q(3, "C", "approved", 4), // served, wrong -> overridden to 3
+      ];
+      const r = recomputeReportScore(report(answers, 3, { "1": 5, "3": 3 }), questions);
+      // Q1 excluded (override ignored, not in denom); Q2 computed 1; Q3 override 3.
+      expect(r.newScore).toBe(4); // 1 + 3
+      expect(r.maxPossibleScore).toBe(5); // Q2(1) + Q3(4)
+    });
   });
 });
