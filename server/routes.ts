@@ -16,6 +16,7 @@ import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
+import { validateQuestionQuality } from "./services/questionQuality";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -3446,7 +3447,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 status: "published",
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
-              questions: balancedGen.map((q, i) => ({
+              questions: balancedGen.map((q, i) => {
+                const quality = validateQuestionQuality(
+                  { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
+                  { subject: item.subject, syllabus: cached.examBody, level: cached.level, topic: item.topic, subtopic: item.subtopic },
+                );
+                return {
                 stem: q.stem,
                 options: q.options,
                 correctAnswer: q.correct_answer,
@@ -3457,14 +3463,19 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 subtopicTag: q.subtopic_tag ?? null,
                 optionRationales: q.option_rationales ?? null,
                 targetMisconceptionIds: perQuestionMisconceptionIds(q, generated.blueprint?.rows[i], generated.seedMisconceptionIds),
+                reviewStatus: quality.reviewStatus,
                 generationMeta: {
                   makerModel: generated.telemetry.makerModel,
                   verifierModel: generated.telemetry.checkerModel,
                   warnings: generated.warnings.filter((w) => w.questionIndex === i + 1)
                     .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
                   requestedDifficulty: q.difficulty_tag,
+                  blocked: quality.reviewStatus === "auto_blocked",
+                  blockReason: quality.blocking.join("; ") || undefined,
+                  qualityWarnings: quality.warnings,
                 },
-              })),
+              };
+              }),
               assignedStudentIds: [studentId],
             });
             await storage.updateSuggestedAssessmentStatus(item.id, tutorId, "published", quiz.quiz.id);
@@ -5496,7 +5507,12 @@ ${JSON.stringify({
       }, traceId);
       const balanced = balanceAnswerOptions(result.questions);
       const insertedQuestions = await storage.createSomaQuestions(
-        balanced.map((q, i) => ({
+        balanced.map((q, i) => {
+          const quality = validateQuestionQuality(
+            { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
+            { subject, syllabus, level, topic, subtopic },
+          );
+          return {
           quizId: quiz.id,
           stem: q.stem,
           options: q.options,
@@ -5508,14 +5524,19 @@ ${JSON.stringify({
           subtopicTag: q.subtopic_tag ?? null,
           optionRationales: q.option_rationales ?? null,
           targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
+          reviewStatus: quality.reviewStatus,
           generationMeta: {
             makerModel: result.telemetry.makerModel,
             verifierModel: result.telemetry.checkerModel,
             warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
               .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
             requestedDifficulty: q.difficulty_tag,
+            blocked: quality.reviewStatus === "auto_blocked",
+            blockReason: quality.blocking.join("; ") || undefined,
+            qualityWarnings: quality.warnings,
           },
-        }))
+        };
+        })
       );
       traceLog("route.somaGenerate.afterCreateSomaQuestions", {
         quizId: quiz.id,
@@ -5650,7 +5671,12 @@ ${JSON.stringify({
           status: "published",
           isArchived: false,
         },
-        questions: balanceAnswerOptions(result.questions).map((q, i) => ({
+        questions: balanceAnswerOptions(result.questions).map((q, i) => {
+          const quality = validateQuestionQuality(
+            { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
+            { subject, syllabus, level, topic, subtopic },
+          );
+          return {
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,
@@ -5661,14 +5687,19 @@ ${JSON.stringify({
           subtopicTag: q.subtopic_tag ?? null,
           optionRationales: q.option_rationales ?? null,
           targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
+          reviewStatus: quality.reviewStatus,
           generationMeta: {
             makerModel: result.telemetry.makerModel,
             verifierModel: result.telemetry.checkerModel,
             warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
               .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
             requestedDifficulty: q.difficulty_tag,
+            blocked: quality.reviewStatus === "auto_blocked",
+            blockReason: quality.blocking.join("; ") || undefined,
+            qualityWarnings: quality.warnings,
           },
-        })),
+        };
+        }),
         assignedStudentIds: validAssignedStudentIds,
       });
       traceLog("route.tutorGenerate.afterCreateBundle", {
@@ -5742,7 +5773,7 @@ ${JSON.stringify({
       if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
       if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
 
-      const allQuestions = await storage.getSomaQuestionsByQuizId(id);
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter((q) => q.reviewStatus !== "auto_blocked");
       const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
       res.json(sanitized);
     } catch (err: any) {
@@ -5770,7 +5801,7 @@ ${JSON.stringify({
         return res.status(409).json({ message: "You have already submitted this quiz." });
       }
 
-      const allQuestions = await storage.getSomaQuestionsByQuizId(quizId);
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(quizId)).filter((q) => q.reviewStatus !== "auto_blocked");
       if (!allQuestions.length) {
         return res.status(404).json({ message: "No questions found for this quiz." });
       }
