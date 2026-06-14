@@ -5,7 +5,7 @@ Branch: `claude/gracious-noether-s8jgpm`. Commit after each phase. Test: `npm te
 | Phase | Scope | Status |
 |------|-------|--------|
 | 1 | C-1 undefined `sanitizeQuestionForPreSubmission`; C-2 review uses `effectiveCorrectAnswer`; C-6 grading gets sanitized answers | ☑ 38881f6 |
-| 2 | Schema: `reviewStatus`, `generationMeta`, difficulty CHECK + migration | ☐ |
+| 2 | Schema: `reviewStatus`, `generationMeta`, difficulty CHECK + migration | ☑ d85d29f (migration 0008; difficulty CHECK deferred to Phase 6 app-level) |
 | 3 | C-5 safe `balanceAnswerOptions` (reorder rationales, handle dup/missing) + apply in main generate paths | ☐ |
 | 4 | C-3 persist `optionRationales`, difficulty/topic/subtopic tags, per-question misconception ids in all save paths | ☐ |
 | 5 | §7 `validateQuestionQuality` gate + C-4 publish gate (status draft until approved; never serve auto_blocked) | ☐ |
