@@ -918,7 +918,8 @@ class DatabaseStorage implements IStorage {
       .select({ assignment: quizAssignments, quiz: somaQuizzes })
       .from(quizAssignments)
       .innerJoin(somaQuizzes, eq(quizAssignments.quizId, somaQuizzes.id))
-      .where(eq(quizAssignments.studentId, studentId));
+      .where(eq(quizAssignments.studentId, studentId))
+      .orderBy(desc(quizAssignments.createdAt));
     return rows.map((r) => ({ ...r.assignment, quiz: r.quiz }));
   }
 
@@ -927,7 +928,8 @@ class DatabaseStorage implements IStorage {
       .select({ assignment: quizAssignments, student: somaUsers })
       .from(quizAssignments)
       .innerJoin(somaUsers, eq(quizAssignments.studentId, somaUsers.id))
-      .where(eq(quizAssignments.quizId, quizId));
+      .where(eq(quizAssignments.quizId, quizId))
+      .orderBy(desc(quizAssignments.createdAt));
     return rows.map((r) => ({ ...r.assignment, student: r.student }));
   }
 
