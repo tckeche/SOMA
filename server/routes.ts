@@ -4915,6 +4915,19 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
+  app.delete("/api/student/notifications/:id", requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid notification id" });
+      const deleted = await storage.deleteStudentNotification(id, studentId);
+      if (!deleted) return res.status(404).json({ message: "Notification not found" });
+      res.json({ deleted: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to dismiss notification" });
+    }
+  });
+
   app.get("/api/student/syllabus-insights", requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;

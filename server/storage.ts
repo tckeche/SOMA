@@ -206,6 +206,7 @@ export interface IStorage {
   listStudentNotifications(studentId: string, options?: { limit?: number }): Promise<StudentNotification[]>;
   markStudentNotificationRead(notificationId: number, studentId: string): Promise<StudentNotification | undefined>;
   markAllStudentNotificationsRead(studentId: string): Promise<number>;
+  deleteStudentNotification(notificationId: number, studentId: string): Promise<boolean>;
 
   // Question-level flag raised by a student during a quiz
   flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion>;
@@ -611,6 +612,14 @@ class DatabaseStorage implements IStorage {
       .where(and(eq(studentNotifications.studentId, studentId), isNull(studentNotifications.readAt)))
       .returning();
     return rows.length;
+  }
+
+  async deleteStudentNotification(notificationId: number, studentId: string): Promise<boolean> {
+    const rows = await this.database
+      .delete(studentNotifications)
+      .where(and(eq(studentNotifications.id, notificationId), eq(studentNotifications.studentId, studentId)))
+      .returning();
+    return rows.length > 0;
   }
 
   async flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion> {
@@ -2191,6 +2200,15 @@ export class MemoryStorage implements IStorage {
       }
     }
     return n;
+  }
+
+  async deleteStudentNotification(notificationId: number, studentId: string): Promise<boolean> {
+    const idx = this.studentNotificationsList.findIndex(
+      (n) => n.id === notificationId && n.studentId === studentId,
+    );
+    if (idx === -1) return false;
+    this.studentNotificationsList.splice(idx, 1);
+    return true;
   }
 
   async flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion> {
