@@ -100,12 +100,48 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: s
   const percentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
 
   const tier = percentage >= 80
-    ? { label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", glow: "rgba(16,185,129,0.4)", message: "Outstanding work! You've demonstrated a strong grasp of the material." }
+    ? {
+        label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", glow: "rgba(16,185,129,0.4)",
+        messages: [
+          "Outstanding work! You've demonstrated a strong grasp of the material.",
+          "Brilliant! This is exactly the kind of mastery examiners love to see.",
+          "Exceptional result — your hard work is clearly paying off.",
+          "Top marks territory! Keep this momentum going.",
+        ],
+      }
     : percentage >= 65
-      ? { label: "Good", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30", glow: "rgba(6,182,212,0.4)", message: "Well done! You're on the right track. Review any areas you found tricky." }
+      ? {
+          label: "Good", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30", glow: "rgba(6,182,212,0.4)",
+          messages: [
+            "Well done! You're on the right track. Review any areas you found tricky.",
+            "Nice work — a confident result with a little room to push higher.",
+            "Good going! Tighten up the trickier topics and you'll be flying.",
+            "Solid performance. A focused review will turn this into a top grade.",
+          ],
+        }
       : percentage >= 50
-        ? { label: "Satisfactory", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", glow: "rgba(245,158,11,0.4)", message: "A solid effort! Focus on the areas you found challenging to keep improving." }
-        : { label: "Needs Practice", color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30", glow: "rgba(244,63,94,0.4)", message: "Don't worry — every expert was once a beginner. Review the feedback and try again!" };
+        ? {
+            label: "Satisfactory", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", glow: "rgba(245,158,11,0.4)",
+            messages: [
+              "A solid effort! Focus on the areas you found challenging to keep improving.",
+              "You're getting there — revisit the feedback and the gaps will close fast.",
+              "Decent start. A bit more practice on the weak spots will lift this nicely.",
+              "Halfway and climbing — target the tricky questions next time.",
+            ],
+          }
+        : {
+            label: "Needs Practice", color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30", glow: "rgba(244,63,94,0.4)",
+            messages: [
+              "Don't worry — every expert was once a beginner. Review the feedback and try again!",
+              "This is a starting point, not the finish line. Work through the feedback and go again.",
+              "Tough one, but it's all useful data. Focus on the basics and you'll improve.",
+              "Keep going — the feedback below shows exactly what to work on next.",
+            ],
+          };
+
+  // Deterministically vary the encouragement so it isn't identical every time,
+  // using the score itself to pick from this tier's messages.
+  const message = tier.messages[percentage % tier.messages.length];
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -131,7 +167,7 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: s
         </div>
 
         <p className="text-sm text-foreground/80 mb-2" data-testid="text-encouragement">
-          {tier.message}
+          {message}
         </p>
         <p className="text-xs text-muted-foreground italic mb-8" data-testid="text-wait-message">
           Your detailed report is being generated. Check your dashboard shortly for feedback.
@@ -166,6 +202,7 @@ function SummaryView({
   isSubmitting: boolean;
 }) {
   const answeredCount = Object.keys(answers).length;
+  const unansweredCount = questions.length - answeredCount;
   const totalMarks = questions.reduce((s, q) => s + q.marks, 0);
 
   return (
@@ -182,10 +219,25 @@ function SummaryView({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-violet-300" data-testid="text-summary-answered">{answeredCount}</p>
               <p className="text-xs text-muted-foreground">Answered</p>
+            </div>
+            <div
+              className={`rounded-xl p-4 border text-center ${
+                unansweredCount > 0
+                  ? "bg-yellow-500/15 border-yellow-500/50 ring-1 ring-yellow-500/40"
+                  : "bg-foreground/5 border-border/50"
+              }`}
+            >
+              <p
+                className={`text-2xl font-bold ${unansweredCount > 0 ? "text-yellow-300" : "text-foreground/80"}`}
+                data-testid="text-summary-unanswered"
+              >
+                {unansweredCount}
+              </p>
+              <p className={`text-xs ${unansweredCount > 0 ? "text-yellow-200/80" : "text-muted-foreground"}`}>Unanswered</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-foreground/80" data-testid="text-summary-total">{questions.length}</p>
@@ -206,19 +258,19 @@ function SummaryView({
                   className={`flex items-center gap-3 rounded-lg p-3 border transition-all ${
                     isAnswered
                       ? "bg-blue-500/10 border-blue-500/40 ring-2 ring-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                      : "bg-muted/40 border-border/40 opacity-50 grayscale"
+                      : "bg-yellow-500/15 border-yellow-500/50 ring-1 ring-yellow-500/40"
                   }`}
                 >
-                  <span className={`text-xs font-mono w-6 text-right ${isAnswered ? "text-cyan-400" : "text-muted-foreground"}`}>{idx + 1}</span>
+                  <span className={`text-xs font-mono w-6 text-right ${isAnswered ? "text-cyan-400" : "text-yellow-300"}`}>{idx + 1}</span>
                   {isAnswered ? (
                     <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
                   ) : (
-                    <Circle className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Circle className="w-4 h-4 text-yellow-400 shrink-0" />
                   )}
-                  <span className={`text-sm truncate flex-1 ${isAnswered ? "text-foreground" : "text-muted-foreground"}`}>
+                  <span className={`text-sm truncate flex-1 ${isAnswered ? "text-foreground" : "text-yellow-100"}`}>
                     {q.stem.slice(0, 60)}{q.stem.length > 60 ? "..." : ""}
                   </span>
-                  <Badge className={`text-xs ${isAnswered ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/30" : "bg-muted/60 text-muted-foreground border-border/40"}`}>
+                  <Badge className={`text-xs ${isAnswered ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/30" : "bg-yellow-500/15 text-yellow-300 border-yellow-500/40"}`}>
                     [{q.marks}]
                   </Badge>
                 </div>
@@ -851,7 +903,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                   ? "bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.6)] scale-125"
                   : answers[q.id]
                     ? "bg-emerald-500/60"
-                    : "bg-white/15 hover:bg-white/30"
+                    : "bg-yellow-500/60 hover:bg-yellow-500/80 ring-1 ring-yellow-500/40"
               }`}
               aria-label={`Go to question ${idx + 1}`}
               data-testid={`dot-question-${idx}`}
