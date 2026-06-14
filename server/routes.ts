@@ -2691,7 +2691,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   }
 
   // (4) Worksheet attachment list for students (and tutor author).
-  app.get("/api/quizzes/:quizId/attachments", requireSupabaseAuth, async (req, res) => {
+  app.get("/api/quizzes/:quizId/attachments", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
     try {
       const userId = (req as any).authUser.id as string;
       const quizId = parseInt(req.params.quizId as string);
@@ -2709,6 +2709,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // (5) Signed download URL for a worksheet attachment (student or author).
   app.get(
     "/api/quizzes/:quizId/attachments/:attachmentId/download",
+    studentApiLimiter,
     requireSupabaseAuth,
     async (req, res) => {
       try {
@@ -2740,6 +2741,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // (6) Student uploads (or replaces) their PDF response for a quiz.
   app.post(
     "/api/quizzes/:quizId/submission-upload",
+    studentApiLimiter,
     requireSupabaseAuth,
     pdfUploadField("file"),
     async (req, res) => {
@@ -2777,7 +2779,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   );
 
   // (7) Student fetches their own submission upload (status + score/feedback).
-  app.get("/api/quizzes/:quizId/submission-upload", requireSupabaseAuth, async (req, res) => {
+  app.get("/api/quizzes/:quizId/submission-upload", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id as string;
       const quizId = parseInt(req.params.quizId as string);
