@@ -4,3 +4,5 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+# Large source PDFs (parsed into DB; re-add to re-ingest)
+curriculum-docs/

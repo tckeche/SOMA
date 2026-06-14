@@ -1,0 +1,2 @@
+- [Botched multi-branch merge recovery](merge-recovery.md) — a TS1005 parse error at valid-looking code is usually a cascade; fix the parse error first, re-run tsc to surface hidden missing-symbol errors, recover lost defs via `git log -S`.
+- [Long-running batch jobs](long-running-batch-jobs.md) — never `nohup &` in bash (dies on tool return); use a resumable Replit workflow, and after a per-doc wipe-reinsert job always orphan-check for docs left with zero rows.
