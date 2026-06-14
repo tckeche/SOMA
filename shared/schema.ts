@@ -444,6 +444,43 @@ export const flaggedQuestions = pgTable("flagged_questions", {
   uniqueIndex("flagged_question_unique_idx").on(table.studentId, table.questionId),
 ]);
 
+// ── PDF uploads foundation ──────────────────────────────────────────────────
+// Tutor-uploaded worksheets/resources attached to a quiz. The binary lives in
+// the private "soma-uploads" Supabase Storage bucket; `storagePath` is the
+// object key, the rest is metadata for listing/serving.
+export const assessmentAttachments = pgTable("assessment_attachments", {
+  id: serial("id").primaryKey(),
+  quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  storagePath: text("storage_path").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  uploadedBy: uuid("uploaded_by").references(() => somaUsers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Student PDF responses to a quiz — one row per (quiz, student). The marking
+// fields (score/maxScore/feedback/markedAt) are populated when a tutor marks
+// the upload; re-uploading replaces the file and resets those back to an
+// unmarked, "submitted" state.
+export const submissionUploads = pgTable("submission_uploads", {
+  id: serial("id").primaryKey(),
+  quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => somaUsers.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  storagePath: text("storage_path").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  score: integer("score"),
+  maxScore: integer("max_score"),
+  feedback: text("feedback"),
+  status: text("status").notNull().default("submitted"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  markedAt: timestamp("marked_at"),
+}, (table) => [
+  uniqueIndex("submission_upload_quiz_student_idx").on(table.quizId, table.studentId),
+]);
+
 // Structured topic inventory extracted from syllabus documents via AI
 export const syllabusTopicInventory = pgTable("syllabus_topic_inventory", {
   id: serial("id").primaryKey(),
@@ -1145,6 +1182,15 @@ export type InsertStudentNotification = z.infer<typeof insertStudentNotification
 export const insertFlaggedQuestionSchema = createInsertSchema(flaggedQuestions).omit({ id: true, createdAt: true, resolvedAt: true, tutorViewedAt: true });
 export type FlaggedQuestion = typeof flaggedQuestions.$inferSelect;
 export type InsertFlaggedQuestion = z.infer<typeof insertFlaggedQuestionSchema>;
+
+// ── PDF uploads foundation: insert schemas & select types ───────────────────
+export const insertAssessmentAttachmentSchema = createInsertSchema(assessmentAttachments).omit({ id: true, createdAt: true });
+export type AssessmentAttachment = typeof assessmentAttachments.$inferSelect;
+export type InsertAssessmentAttachment = z.infer<typeof insertAssessmentAttachmentSchema>;
+
+export const insertSubmissionUploadSchema = createInsertSchema(submissionUploads).omit({ id: true, createdAt: true, markedAt: true });
+export type SubmissionUpload = typeof submissionUploads.$inferSelect;
+export type InsertSubmissionUpload = z.infer<typeof insertSubmissionUploadSchema>;
 
 // ── Syllabus intelligence: insert schemas & select types ────────────────────
 

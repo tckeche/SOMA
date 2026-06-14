@@ -115,6 +115,12 @@ const BOOTSTRAP_QUERIES = [
   `CREATE INDEX IF NOT EXISTS examiner_misconceptions_board_code_topic_idx ON examiner_misconceptions (board, syllabus_code, topic)`,
   `CREATE INDEX IF NOT EXISTS examiner_misconceptions_subject_idx ON examiner_misconceptions (subject)`,
   `CREATE INDEX IF NOT EXISTS syllabus_documents_type_code_idx ON syllabus_documents (document_type, syllabus_code)`,
+  // PDF uploads foundation: tutor-attached worksheets + student PDF responses.
+  // The binaries live in the private "soma-uploads" Supabase Storage bucket;
+  // these tables hold the object key + metadata + (for submissions) marking.
+  `CREATE TABLE IF NOT EXISTS assessment_attachments (id SERIAL PRIMARY KEY, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, filename TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, uploaded_by UUID REFERENCES soma_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS submission_uploads (id SERIAL PRIMARY KEY, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, filename TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, score INTEGER, max_score INTEGER, feedback TEXT, status TEXT NOT NULL DEFAULT 'submitted', created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL, marked_at TIMESTAMPTZ)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS submission_upload_quiz_student_idx ON submission_uploads(quiz_id, student_id)`,
 ] as const;
 
 export async function applyBootstrapMigrations() {
@@ -134,6 +140,17 @@ export async function applyBootstrapMigrations() {
     log("schema migrations applied", "bootstrap");
   } finally {
     client.release();
+  }
+
+  // Provision the private Supabase Storage bucket for PDF uploads. This is
+  // best-effort: a failure or missing config must only warn, never block
+  // startup. ensureUploadBucket() itself no-ops (with a warning) when storage
+  // is unconfigured, so the try/catch here only guards genuine network errors.
+  try {
+    const { ensureUploadBucket } = await import("./services/fileStorage");
+    await ensureUploadBucket();
+  } catch (err: any) {
+    log(`upload bucket provisioning warning (non-fatal): ${err?.message ?? err}`, "bootstrap");
   }
 
   // After bootstrap, sanity-check that every table/column declared in

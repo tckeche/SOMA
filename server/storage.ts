@@ -16,11 +16,14 @@ import {
   type SyllabusTopicInventoryItem, type InsertSyllabusTopicInventoryItem,
   type StudentNotification, type InsertStudentNotification,
   type FlaggedQuestion, type InsertFlaggedQuestion,
+  type AssessmentAttachment, type InsertAssessmentAttachment,
+  type SubmissionUpload, type InsertSubmissionUpload,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
   studentSubjects, tutorNotifications, studentTopicMastery, suggestedAssessments,
   examinerMisconceptions, syllabusTopicInventory,
   studentNotifications, flaggedQuestions,
+  assessmentAttachments, submissionUploads,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
@@ -214,6 +217,19 @@ export interface IStorage {
   listFlaggedQuestionsForStudent(studentId: string): Promise<Array<FlaggedQuestion & { question: SomaQuestion; quiz: SomaQuiz }>>;
   resolveFlaggedQuestion(flagId: number, tutorId: string): Promise<FlaggedQuestion | undefined>;
   unflagQuestion(studentId: string, questionId: number): Promise<void>;
+
+  // PDF uploads foundation — tutor worksheet attachments
+  createAssessmentAttachment(row: InsertAssessmentAttachment): Promise<AssessmentAttachment>;
+  getAssessmentAttachmentsByQuiz(quizId: number): Promise<AssessmentAttachment[]>;
+  getAssessmentAttachment(id: number): Promise<AssessmentAttachment | undefined>;
+  deleteAssessmentAttachment(id: number): Promise<void>;
+
+  // PDF uploads foundation — student submission uploads (one per quiz+student)
+  upsertSubmissionUpload(row: InsertSubmissionUpload): Promise<SubmissionUpload>;
+  getSubmissionUploadsByQuiz(quizId: number): Promise<SubmissionUpload[]>;
+  getSubmissionUpload(id: number): Promise<SubmissionUpload | undefined>;
+  getSubmissionUploadByStudent(quizId: number, studentId: string): Promise<SubmissionUpload | undefined>;
+  markSubmissionUpload(id: number, marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null }): Promise<SubmissionUpload | undefined>;
 
 }
 
@@ -1401,6 +1417,97 @@ class DatabaseStorage implements IStorage {
       sql`INSERT INTO password_reset_requests (email) VALUES (${email})`
     );
   }
+
+  // ── PDF uploads foundation ──────────────────────────────────────────────
+  async createAssessmentAttachment(row: InsertAssessmentAttachment): Promise<AssessmentAttachment> {
+    const [result] = await this.database.insert(assessmentAttachments).values(row).returning();
+    return result;
+  }
+
+  async getAssessmentAttachmentsByQuiz(quizId: number): Promise<AssessmentAttachment[]> {
+    return this.database
+      .select()
+      .from(assessmentAttachments)
+      .where(eq(assessmentAttachments.quizId, quizId))
+      .orderBy(desc(assessmentAttachments.createdAt));
+  }
+
+  async getAssessmentAttachment(id: number): Promise<AssessmentAttachment | undefined> {
+    const [row] = await this.database
+      .select()
+      .from(assessmentAttachments)
+      .where(eq(assessmentAttachments.id, id));
+    return row;
+  }
+
+  async deleteAssessmentAttachment(id: number): Promise<void> {
+    await this.database.delete(assessmentAttachments).where(eq(assessmentAttachments.id, id));
+  }
+
+  async upsertSubmissionUpload(row: InsertSubmissionUpload): Promise<SubmissionUpload> {
+    const [result] = await this.database
+      .insert(submissionUploads)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [submissionUploads.quizId, submissionUploads.studentId],
+        set: {
+          filename: row.filename,
+          storagePath: row.storagePath,
+          mimeType: row.mimeType,
+          sizeBytes: row.sizeBytes,
+          // Re-uploading replaces the file and resets it to an unmarked state.
+          score: null,
+          maxScore: null,
+          feedback: null,
+          status: "submitted",
+          markedAt: null,
+          createdAt: new Date(),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async getSubmissionUploadsByQuiz(quizId: number): Promise<SubmissionUpload[]> {
+    return this.database
+      .select()
+      .from(submissionUploads)
+      .where(eq(submissionUploads.quizId, quizId))
+      .orderBy(desc(submissionUploads.createdAt));
+  }
+
+  async getSubmissionUpload(id: number): Promise<SubmissionUpload | undefined> {
+    const [row] = await this.database
+      .select()
+      .from(submissionUploads)
+      .where(eq(submissionUploads.id, id));
+    return row;
+  }
+
+  async getSubmissionUploadByStudent(quizId: number, studentId: string): Promise<SubmissionUpload | undefined> {
+    const [row] = await this.database
+      .select()
+      .from(submissionUploads)
+      .where(and(eq(submissionUploads.quizId, quizId), eq(submissionUploads.studentId, studentId)));
+    return row;
+  }
+
+  async markSubmissionUpload(
+    id: number,
+    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null },
+  ): Promise<SubmissionUpload | undefined> {
+    const [row] = await this.database
+      .update(submissionUploads)
+      .set({
+        score: marks.score,
+        feedback: marks.feedback,
+        status: marks.status,
+        markedAt: marks.markedAt,
+      })
+      .where(eq(submissionUploads.id, id))
+      .returning();
+    return row;
+  }
 }
 
 export class MemoryStorage implements IStorage {
@@ -1421,6 +1528,8 @@ export class MemoryStorage implements IStorage {
   private syllabusTopicInventoryList: SyllabusTopicInventoryItem[] = [];
   private studentNotificationsList: StudentNotification[] = [];
   private flaggedQuestionsList: FlaggedQuestion[] = [];
+  private assessmentAttachmentsList: AssessmentAttachment[] = [];
+  private submissionUploadsList: SubmissionUpload[] = [];
   private somaQuizId = 1;
   private somaQuestionId = 1;
   private somaReportId = 1;
@@ -1436,6 +1545,8 @@ export class MemoryStorage implements IStorage {
   private syllabusTopicInventoryId = 1;
   private studentNotificationId = 1;
   private flaggedQuestionId = 1;
+  private assessmentAttachmentId = 1;
+  private submissionUploadId = 1;
 
   async createSomaQuiz(quiz: InsertSomaQuiz): Promise<SomaQuiz> {
     const created: SomaQuiz = {
@@ -2291,6 +2402,100 @@ export class MemoryStorage implements IStorage {
     this.flaggedQuestionsList = this.flaggedQuestionsList.filter(
       (f) => !(f.studentId === studentId && f.questionId === questionId),
     );
+  }
+
+  // ── PDF uploads foundation ──────────────────────────────────────────────
+  async createAssessmentAttachment(row: InsertAssessmentAttachment): Promise<AssessmentAttachment> {
+    const created: AssessmentAttachment = {
+      id: this.assessmentAttachmentId++,
+      quizId: row.quizId,
+      filename: row.filename,
+      storagePath: row.storagePath,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      uploadedBy: row.uploadedBy ?? null,
+      createdAt: new Date(),
+    };
+    this.assessmentAttachmentsList.push(created);
+    return created;
+  }
+
+  async getAssessmentAttachmentsByQuiz(quizId: number): Promise<AssessmentAttachment[]> {
+    return this.assessmentAttachmentsList
+      .filter((a) => a.quizId === quizId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getAssessmentAttachment(id: number): Promise<AssessmentAttachment | undefined> {
+    return this.assessmentAttachmentsList.find((a) => a.id === id);
+  }
+
+  async deleteAssessmentAttachment(id: number): Promise<void> {
+    this.assessmentAttachmentsList = this.assessmentAttachmentsList.filter((a) => a.id !== id);
+  }
+
+  async upsertSubmissionUpload(row: InsertSubmissionUpload): Promise<SubmissionUpload> {
+    const existing = this.submissionUploadsList.find(
+      (s) => s.quizId === row.quizId && s.studentId === row.studentId,
+    );
+    if (existing) {
+      // Re-uploading replaces the file and resets it to an unmarked state.
+      existing.filename = row.filename;
+      existing.storagePath = row.storagePath;
+      existing.mimeType = row.mimeType;
+      existing.sizeBytes = row.sizeBytes;
+      existing.score = null;
+      existing.maxScore = null;
+      existing.feedback = null;
+      existing.status = "submitted";
+      existing.markedAt = null;
+      existing.createdAt = new Date();
+      return existing;
+    }
+    const created: SubmissionUpload = {
+      id: this.submissionUploadId++,
+      quizId: row.quizId,
+      studentId: row.studentId,
+      filename: row.filename,
+      storagePath: row.storagePath,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      score: row.score ?? null,
+      maxScore: row.maxScore ?? null,
+      feedback: row.feedback ?? null,
+      status: row.status ?? "submitted",
+      createdAt: new Date(),
+      markedAt: null,
+    };
+    this.submissionUploadsList.push(created);
+    return created;
+  }
+
+  async getSubmissionUploadsByQuiz(quizId: number): Promise<SubmissionUpload[]> {
+    return this.submissionUploadsList
+      .filter((s) => s.quizId === quizId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getSubmissionUpload(id: number): Promise<SubmissionUpload | undefined> {
+    return this.submissionUploadsList.find((s) => s.id === id);
+  }
+
+  async getSubmissionUploadByStudent(quizId: number, studentId: string): Promise<SubmissionUpload | undefined> {
+    return this.submissionUploadsList.find((s) => s.quizId === quizId && s.studentId === studentId);
+  }
+
+  async markSubmissionUpload(
+    id: number,
+    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null },
+  ): Promise<SubmissionUpload | undefined> {
+    const row = this.submissionUploadsList.find((s) => s.id === id);
+    if (!row) return undefined;
+    row.score = marks.score;
+    row.feedback = marks.feedback;
+    row.status = marks.status;
+    row.markedAt = marks.markedAt;
+    return row;
   }
 }
 
