@@ -5365,11 +5365,16 @@ ${JSON.stringify({
     level: z.string().min(1).default("Grade 6-12"),
     curriculumContext: z.string().optional(),
     subtopic: z.string().optional(),
-    questionCount: z.number().int().min(1).max(50).default(8),
+    questionCount: z.number()
+      .int("Question count must be a whole number")
+      .min(1, "Generate at least 1 question")
+      .max(50, "You can generate at most 50 questions at once")
+      .default(8),
     difficultyDistribution: z.object({
-      easy: z.number().min(0).max(100),
-      medium: z.number().min(0).max(100),
-      hard: z.number().min(0).max(100),
+      // 0 is valid — a tutor may want an exam with no easy (or no hard) questions.
+      easy: z.number().min(0, "Easy percentage cannot be negative").max(100, "Easy percentage cannot exceed 100"),
+      medium: z.number().min(0, "Medium percentage cannot be negative").max(100, "Medium percentage cannot exceed 100"),
+      hard: z.number().min(0, "Hard percentage cannot be negative").max(100, "Hard percentage cannot exceed 100"),
     }).optional(),
     // Phase 6 — optional catalogue-keyed identifiers. When supplied the
     // pipeline pulls a rich syllabus digest (subtopics / learning requirements

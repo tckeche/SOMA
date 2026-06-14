@@ -137,15 +137,23 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
   // A step counts as "complete" once its required value is filled. Topics is
   // optional (empty selection = whole subject) and ticks complete as soon as
   // the tutor lands on the step.
+  // A title is required before the tutor can leave the first visible step.
+  // In quick-start mode the first visible step is Level (1); otherwise it is
+  // Examining body (0). Gate that step on the title as well as its own value.
+  const firstVisibleStep = visibleStepKeys[0];
+  const titleProvided = !!title.trim();
+
   const stepDone = useMemo<Record<0 | 1 | 2 | 3 | 4, boolean>>(() => ({
-    0: !!examiningBodySlug,
-    1: !!levelCode,
+    0: !!examiningBodySlug && (firstVisibleStep !== 0 || titleProvided),
+    1: !!levelCode && (firstVisibleStep !== 1 || titleProvided),
     2: !!subjectSlug,
     3: !!subjectSlug, // topics step is optional — done once reachable
     4: Number.isFinite(timeLimitMinutes) && timeLimitMinutes >= 1 && timeLimitMinutes <= 300,
-  }), [examiningBodySlug, levelCode, subjectSlug, timeLimitMinutes]);
+  }), [examiningBodySlug, levelCode, subjectSlug, timeLimitMinutes, firstVisibleStep, titleProvided]);
 
   const canAdvance = (from: 0 | 1 | 2 | 3 | 4): boolean => {
+    // The title gate applies to whichever step is the first visible one.
+    if (from === firstVisibleStep && !titleProvided) return false;
     // Mirror stepDone but treat step 3 (topics) as always advanceable.
     if (from === 3) return !!subjectSlug;
     return stepDone[from];
@@ -217,6 +225,12 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           }`}
           data-testid="input-quiz-title"
         />
+        {!titleProvided && (
+          <p className="text-[11px] text-amber-300/90 flex items-center gap-1" data-testid="hint-title-required">
+            <AlertCircle className="w-3 h-3 shrink-0" />
+            Title is required before you can continue.
+          </p>
+        )}
       </div>
 
       <StepBar steps={visibleSteps} current={step} onStep={onStep} stepDone={stepDone} />
