@@ -204,6 +204,19 @@ export const somaQuestions = pgTable("soma_questions", {
     rationale: string;
     misconceptionId: number | null;
   }>>(),
+  // Phase 5 review gate. Default "approved" so existing/legacy rows stay
+  // servable; the generation quality gate sets "needs_review"/"auto_blocked"
+  // explicitly on new questions.
+  reviewStatus: text("review_status").notNull().default("approved"),
+  // Audit trail of how this question was generated (models, prompt version,
+  // prover result, warnings, requested-vs-actual difficulty, block reason).
+  generationMeta: jsonb("generation_meta").$type<{
+    makerModel?: string; verifierModel?: string; promptVersion?: string;
+    proverPattern?: string | null;
+    warnings?: Array<{ questionIndex: number; field: string; issue: string; autoFixed: boolean }>;
+    requestedDifficulty?: "easy" | "medium" | "hard";
+    blocked?: boolean; blockReason?: string;
+  }>(),
 });
 
 
