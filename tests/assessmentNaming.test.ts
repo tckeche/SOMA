@@ -8,8 +8,10 @@ import {
 } from "../client/src/lib/assessmentNaming";
 
 describe("formatDateShort", () => {
+  // Use local-time Date constructors so the assertions are deterministic
+  // regardless of the runtime timezone (the formatter renders in local time).
   it("renders a compact '23 Jun' style date", () => {
-    expect(formatDateShort("2026-06-23T10:30:00Z")).toBe("23 Jun");
+    expect(formatDateShort(new Date(2026, 5, 23, 10, 30))).toBe("23 Jun");
   });
 
   it("returns em dash for null / empty / invalid dates", () => {
@@ -19,7 +21,7 @@ describe("formatDateShort", () => {
   });
 
   it("accepts a Date instance", () => {
-    expect(formatDateShort(new Date("2026-01-05T00:00:00Z"))).toBe("5 Jan");
+    expect(formatDateShort(new Date(2026, 0, 5))).toBe("5 Jan");
   });
 });
 
