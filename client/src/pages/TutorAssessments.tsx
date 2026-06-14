@@ -9,7 +9,7 @@ import {
   LogOut, Users, BookOpen, Plus, X, ChevronDown, ChevronUp,
   Loader2, Check, LayoutDashboard, Clock, Award, Timer,
   FileText, Eye, UserPlus, UserMinus, Trash2, AlertTriangle,
-  ClockArrowUp, Pencil, Search,
+  ClockArrowUp, Pencil, Search, Copy,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { renderMathInHtml } from "@/lib/renderMathInHtml";
@@ -293,6 +293,161 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
   );
 }
 
+function BankView({
+  quizzes, totalCount, loading,
+  search, setSearch, subject, setSubject, level, setLevel, sort, setSort,
+  subjectOptions, levelOptions, onReassign, onDuplicate,
+}: {
+  quizzes: SomaQuiz[];
+  totalCount: number;
+  loading: boolean;
+  search: string;
+  setSearch: (v: string) => void;
+  subject: string;
+  setSubject: (v: string) => void;
+  level: string;
+  setLevel: (v: string) => void;
+  sort: "newest" | "title";
+  setSort: (v: "newest" | "title") => void;
+  subjectOptions: string[];
+  levelOptions: string[];
+  onReassign: (quizId: number) => void;
+  onDuplicate: (quizId: number, title: string) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className={`${CARD_CLASS} flex flex-wrap items-end gap-3 p-4`}>
+        <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Search</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by title..."
+              className="w-full h-9 pl-9 pr-3 rounded-lg bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
+              data-testid="bank-search"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Subject</label>
+          <select
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[140px] h-9"
+            data-testid="bank-filter-subject"
+          >
+            <option value="">All subjects</option>
+            {subjectOptions.map((s) => (<option key={s} value={s}>{s}</option>))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Level</label>
+          <select
+            value={level}
+            onChange={(e) => setLevel(e.target.value)}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[120px] h-9"
+            data-testid="bank-filter-level"
+          >
+            <option value="">All levels</option>
+            {levelOptions.map((l) => (<option key={l} value={l}>{l}</option>))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Sort by</label>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as "newest" | "title")}
+            className="bg-card border border-border rounded-lg px-2 py-1.5 text-xs text-foreground/80 min-w-[140px] h-9"
+            data-testid="bank-sort"
+          >
+            <option value="newest">Newest</option>
+            <option value="title">Title (A–Z)</option>
+          </select>
+        </div>
+        {(search || subject || level) && (
+          <button
+            type="button"
+            onClick={() => { setSearch(""); setSubject(""); setLevel(""); }}
+            className="text-xs text-muted-foreground hover:text-foreground underline self-end pb-2"
+            data-testid="bank-clear-filters"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+        </div>
+      ) : totalCount === 0 ? (
+        <div className={`${CARD_CLASS} text-center py-12`}>
+          <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-sm text-muted-foreground">Your bank is empty — create an assessment to start your library.</p>
+        </div>
+      ) : quizzes.length === 0 ? (
+        <div className={`${CARD_CLASS} text-center py-12`}>
+          <Search className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-sm text-muted-foreground">No assessments match your search.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {quizzes.map((quiz) => {
+            const sc = getSubjectColor(quiz.subject);
+            const SubIcon = getSubjectIcon(quiz.subject);
+            return (
+              <div
+                key={quiz.id}
+                className="bg-card/60 backdrop-blur-md border border-card-border rounded-xl p-4 flex flex-col gap-3"
+                data-testid={`bank-card-${quiz.id}`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${sc.border} shrink-0`} style={{ backgroundColor: `${sc.hex}15` }}>
+                    <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold text-foreground line-clamp-2">{quiz.title}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {[quiz.subject, quiz.level].filter(Boolean).join(" · ") || quiz.topic}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                  <span className={`px-2 py-0.5 rounded-full font-medium ${quiz.status === "draft" ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                    {quiz.status === "draft" ? "Draft" : "Published"}
+                  </span>
+                  <span className="text-muted-foreground">{formatDate(quiz.createdAt)}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-auto pt-1">
+                  <button
+                    onClick={() => onReassign(quiz.id)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all"
+                    data-testid={`bank-reassign-${quiz.id}`}
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Re-assign
+                  </button>
+                  <button
+                    onClick={() => onDuplicate(quiz.id, quiz.title)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25 transition-all"
+                    data-testid={`bank-duplicate-${quiz.id}`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Duplicate
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TutorAssessments() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -313,6 +468,12 @@ export default function TutorAssessments() {
   const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
   const [allocationDateFilter, setAllocationDateFilter] = useState("");
   const [assignSearch, setAssignSearch] = useState("");
+  const [view, setView] = useState<"list" | "bank">("list");
+  const [bankSearch, setBankSearch] = useState("");
+  const [bankSubject, setBankSubject] = useState("");
+  const [bankLevel, setBankLevel] = useState("");
+  const [bankSort, setBankSort] = useState<"newest" | "title">("newest");
+  const [confirmDuplicate, setConfirmDuplicate] = useState<{ quizId: number; title: string } | null>(null);
   const [assignResult, setAssignResult] = useState<{
     quizId: number;
     requested: number;
@@ -451,13 +612,62 @@ export default function TutorAssessments() {
         perStudent: Array.isArray(data?.perStudent) ? data.perStudent : [],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", variables.quizId, "assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/assessments-overview"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/dashboard-stats"] });
+      const n = data?.assigned ?? 0;
+      if (n > 0) {
+        toast({ title: "Assigned", description: `Assigned to ${n} student${n !== 1 ? "s" : ""}.` });
+      }
       emitSomaMutation({ type: "assessment_assigned", quizId: variables.quizId });
     },
     onError: (err: Error) => {
       toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
     },
   });
+
+  const cloneMutation = useMutation({
+    mutationFn: async (quizId: number) => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/clone`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to duplicate" }));
+        throw new Error(err.message);
+      }
+      return res.json() as Promise<SomaQuiz>;
+    },
+    onSuccess: (newQuiz) => {
+      setConfirmDuplicate(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
+      emitSomaMutation({ type: "assessment_created" });
+      toast({
+        title: "Assessment duplicated",
+        description: `Find "${newQuiz.title}" as a draft.`,
+      });
+      // Open the duplicate in the builder so the tutor can immediately edit it,
+      // matching how an existing assessment is opened for editing.
+      setLocation(`/tutor/assessments/edit/${newQuiz.id}`);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Duplicate failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const bankQuizzes = useMemo(() => {
+    const q = bankSearch.trim().toLowerCase();
+    let list = tutorQuizzes.filter((quiz) => {
+      if (q && !(quiz.title || "").toLowerCase().includes(q)) return false;
+      if (bankSubject && quiz.subject !== bankSubject) return false;
+      if (bankLevel && quiz.level !== bankLevel) return false;
+      return true;
+    });
+    list = [...list];
+    list.sort((a, b) =>
+      bankSort === "title"
+        ? (a.title || "").localeCompare(b.title || "")
+        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    return list;
+  }, [tutorQuizzes, bankSearch, bankSubject, bankLevel, bankSort]);
 
   const { data: quizAssignments = [], isLoading: assignmentsLoading } = useQuery<QuizAssignmentWithStudent[]>({
     queryKey: ["/api/tutor/quizzes", expandedQuiz, "assignments"],
@@ -619,8 +829,12 @@ export default function TutorAssessments() {
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">My Assessments</h2>
-            <p className="text-sm text-muted-foreground mt-1">{filteredSortedQuizzes.length} of {tutorQuizzes.length} assessment{tutorQuizzes.length !== 1 ? "s" : ""}</p>
+            <h2 className="text-2xl font-bold text-foreground">{view === "bank" ? "Assignment Bank" : "My Assessments"}</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {view === "bank"
+                ? `${bankQuizzes.length} of ${tutorQuizzes.length} assessment${tutorQuizzes.length !== 1 ? "s" : ""} · re-use & re-assign`
+                : `${filteredSortedQuizzes.length} of ${tutorQuizzes.length} assessment${tutorQuizzes.length !== 1 ? "s" : ""}`}
+            </p>
           </div>
           <Link href="/tutor/assessments/new">
             <span className="glow-button flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-semibold cursor-pointer" data-testid="button-create-new">
@@ -630,6 +844,46 @@ export default function TutorAssessments() {
           </Link>
         </div>
 
+        <div className="flex items-center gap-1 border-b border-card-border/40">
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${view === "list" ? "text-violet-300 border-violet-500" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
+            data-testid="tab-list"
+          >
+            My Assessments
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("bank")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${view === "bank" ? "text-violet-300 border-violet-500" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
+            data-testid="tab-bank"
+          >
+            <BookOpen className="w-4 h-4" />
+            Bank
+          </button>
+        </div>
+
+        {view === "bank" ? (
+          <BankView
+            quizzes={bankQuizzes}
+            totalCount={tutorQuizzes.length}
+            loading={authLoading || quizzesLoading}
+            search={bankSearch}
+            setSearch={setBankSearch}
+            subject={bankSubject}
+            setSubject={setBankSubject}
+            level={bankLevel}
+            setLevel={setBankLevel}
+            sort={bankSort}
+            setSort={setBankSort}
+            subjectOptions={subjectOptions}
+            levelOptions={levelOptions}
+            onReassign={(quizId) => { setShowAssignModal(quizId); setSelectedStudentIds(new Set()); setDueDate(""); }}
+            onDuplicate={(quizId, title) => setConfirmDuplicate({ quizId, title })}
+          />
+        ) : (
+        <>
         <div className={`${CARD_CLASS} flex flex-wrap items-end gap-3 p-4`}>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Subject</label>
@@ -966,6 +1220,8 @@ export default function TutorAssessments() {
             })}
           </div>
         )}
+        </>
+        )}
       </main>
 
       {showAssignModal !== null && (
@@ -1229,6 +1485,45 @@ export default function TutorAssessments() {
                   <Loader2 className="w-4 h-4 animate-spin mx-auto" />
                 ) : (
                   "Delete Permanently"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Assessment Confirmation Dialog */}
+      {confirmDuplicate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setConfirmDuplicate(null)}>
+          <div className="bg-card border border-violet-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
+                <BookOpen className="w-5 h-5 text-violet-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Duplicate Assessment</h3>
+                <p className="text-xs text-muted-foreground">Creates an editable draft copy</p>
+              </div>
+            </div>
+            <p className="text-sm text-foreground/80 mb-1">A copy of this assessment (with all questions, no assignments) will be created as a draft:</p>
+            <p className="text-sm font-semibold text-violet-300 mb-6">"{confirmDuplicate.title} (Copy)"</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDuplicate(null)}
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => cloneMutation.mutate(confirmDuplicate.quizId)}
+                disabled={cloneMutation.isPending}
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 transition-all"
+                data-testid="button-confirm-duplicate"
+              >
+                {cloneMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                ) : (
+                  "Duplicate"
                 )}
               </button>
             </div>

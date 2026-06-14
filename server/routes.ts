@@ -17,6 +17,7 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
+import { recomputeReportScore } from "./services/regrade";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -989,10 +990,19 @@ const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com"
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
 
-function determineRole(email: string): "tutor" | "student" | "super_admin" {
+function determineRole(
+  email: string,
+  requestedRole?: string,
+): "tutor" | "student" | "super_admin" {
   if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
   const domain = email.split("@")[1]?.toLowerCase();
-  return domain === TUTOR_EMAIL_DOMAIN.toLowerCase() ? "tutor" : "student";
+  if (domain === TUTOR_EMAIL_DOMAIN.toLowerCase()) return "tutor";
+  // Honour the role the user picked at signup, but clamp it: a self-selected
+  // role can only ever be "tutor" or "student" — never "super_admin". This is
+  // only consulted for brand-new accounts (see auth/sync), so it cannot be used
+  // to escalate an existing account by mutating Supabase user_metadata.
+  if (requestedRole === "tutor") return "tutor";
+  return "student";
 }
 
 // Role middleware (requireTutor, requireSuperAdmin, requireSupabaseAuth) is
@@ -1910,6 +1920,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const user_metadata = req.body?.user_metadata as {
         display_name?: string;
         full_name?: string;
+        requested_role?: string;
         subject?: string;
         syllabus?: string;
         syllabus_code?: string;
@@ -1940,9 +1951,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!id || !email) {
         return res.status(400).json({ message: "Missing id or email" });
       }
-      const role = determineRole(email);
-      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
       const existingUser = await storage.getSomaUserById(id);
+      // For a brand-new account, honour the role chosen at signup (clamped by
+      // determineRole). For a returning account, keep the role already stored
+      // in our DB — never recompute it from request metadata, so a student
+      // cannot escalate to tutor by editing their Supabase user_metadata.
+      const role = existingUser
+        ? existingUser.role
+        : determineRole(email, user_metadata?.requested_role);
+      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
       const parsed = insertSomaUserSchema.parse({
         id,
         email,
@@ -1993,6 +2010,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let userId = "";
       let email = "";
       let tokenName: string | undefined;
+      let tokenRequestedRole: string | undefined;
 
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
@@ -2001,6 +2019,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         userId = decoded.sub;
         email = decoded.email;
         tokenName = decoded.metadataName;
+        tokenRequestedRole = decoded.requestedRole;
       } else if (process.env.NODE_ENV !== "production") {
         // Legacy local/test fallback
         userId = String(req.query.userId || "");
@@ -2012,7 +2031,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!userId || !email) return res.status(400).json({ message: "userId required" });
       let user = await storage.getSomaUserById(userId);
       if (!user) {
-        const role = determineRole(email);
+        // First-create here mirrors /api/auth/sync: honour the role the user
+        // selected at signup (carried in the verified token's user_metadata,
+        // already clamped to tutor|student), so a tutor signup is not silently
+        // downgraded to student if this endpoint provisions the row first.
+        const role = determineRole(email, tokenRequestedRole);
         logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req as any), module: "routes", component: "authMe", userId, role, email });
         const parsed = insertSomaUserSchema.parse({
           id: userId,
@@ -2378,6 +2401,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // Unassign a student from a quiz
+  // Duplicate (clone) an assessment — Assignment Bank backend. Creates a new
+  // draft quiz owned by the tutor with all questions copied and no assignments.
+  app.post("/api/tutor/quizzes/:quizId/clone", requireTutor, tutorApiLimiter, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(String(req.params.quizId));
+      const source = await storage.getSomaQuiz(quizId);
+      // Treat "not yours" the same as "not found" to avoid leaking existence.
+      if (!source || source.authorId !== tutorId) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      const clone = await storage.cloneSomaQuiz(quizId, tutorId);
+      if (!clone) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      return res.status(201).json(clone);
+    } catch (err) {
+      return sendInternalError(req, res, err, "tutor.quizzes.clone", "Failed to duplicate assessment.");
+    }
+  });
+
   app.delete("/api/tutor/quizzes/:quizId/unassign/:studentId", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
@@ -2513,7 +2557,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const bodySchema = z
         .object({
-          action: z.enum(["approve", "reject"]).optional(),
+          action: z.enum(["approve", "reject", "exclude", "restore"]).optional(),
           stem: z.string().min(1).optional(),
           options: z.array(z.string()).length(4).optional(),
           correctAnswer: z.string().min(1).optional(),
@@ -2545,6 +2589,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (body.action === "reject") {
         const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "auto_blocked" });
         return res.json(updated);
+      }
+      if (body.action === "restore") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "approved" });
+        return res.json(updated);
+      }
+      if (body.action === "exclude") {
+        // Count submissions whose stored answer for this question matched the
+        // (currently) correct answer — i.e. reports whose score would drop if
+        // regraded after this question is excluded. Computed from stored data
+        // only; the actual regrade remains an explicit, separate call.
+        const correct = effectiveCorrectAnswer(existing.stem, existing.options as string[], existing.correctAnswer);
+        const reports = await storage.getSomaReportsByQuizId(quizId);
+        const affectedSubmissionCount = reports.filter((r) => {
+          if (r.status !== "completed") return false;
+          const answers = (r.answersJson ?? {}) as Record<string, string>;
+          return answers[String(questionId)] === correct;
+        }).length;
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "excluded" });
+        return res.json({ ...updated, affectedSubmissionCount });
       }
 
       // Edit path: apply edits, then re-run the quality gate on the edited

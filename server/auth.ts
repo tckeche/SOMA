@@ -120,20 +120,21 @@ export function parseCookies(req: Request) {
 
 export async function verifySupabaseToken(
   token: string,
-): Promise<{ sub: string; email?: string; metadataName?: string } | null> {
+): Promise<{ sub: string; email?: string; metadataName?: string; requestedRole?: string } | null> {
   const secret = getSupabaseJwtSecret();
   if (secret) {
     try {
       const decoded = jwt.verify(token, secret) as {
         sub?: string;
         email?: string;
-        user_metadata?: { display_name?: string; full_name?: string; name?: string };
+        user_metadata?: { display_name?: string; full_name?: string; name?: string; requested_role?: string };
       };
       if (decoded.sub) {
         return {
           sub: decoded.sub,
           email: decoded.email,
           metadataName: extractMetadataName(decoded.user_metadata),
+          requestedRole: extractRequestedRole(decoded.user_metadata),
         };
       }
     } catch {}
@@ -149,10 +150,22 @@ export async function verifySupabaseToken(
     });
     if (!resp.ok) return null;
     const user = await resp.json();
-    if (user?.id) return { sub: user.id, email: user.email, metadataName: extractMetadataName(user.user_metadata) };
+    if (user?.id) return {
+      sub: user.id,
+      email: user.email,
+      metadataName: extractMetadataName(user.user_metadata),
+      requestedRole: extractRequestedRole(user.user_metadata),
+    };
   } catch {}
 
   return null;
+}
+
+function extractRequestedRole(
+  meta: { requested_role?: string } | undefined,
+): string | undefined {
+  const role = (meta?.requested_role || "").trim().toLowerCase();
+  return role === "tutor" || role === "student" ? role : undefined;
 }
 
 function extractMetadataName(

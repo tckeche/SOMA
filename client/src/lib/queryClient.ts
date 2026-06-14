@@ -34,6 +34,27 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * Best-effort Supabase Bearer header for the shared fetchers below.
+ *
+ * Loaded via dynamic import to avoid a static circular dependency
+ * (supabase.ts imports getOrCreateRequestId from this module). If the session
+ * lookup fails for any reason we degrade to no auth header — identical to the
+ * pre-hardening behaviour — so a telemetry hiccup can never break a request.
+ *
+ * This is what stops the "bare fetch to an auth-gated route -> 401" class of
+ * bug: every request made through apiRequest / the default query fetcher now
+ * carries the token automatically, exactly like authFetch.
+ */
+async function authHeader(): Promise<Record<string, string>> {
+  try {
+    const { getAuthHeaders } = await import("./supabase");
+    return await getAuthHeaders();
+  } catch {
+    return {};
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -62,6 +83,7 @@ export async function apiRequest(
   const requestId = getOrCreateRequestId();
   const headers = new Headers(data ? { "Content-Type": "application/json" } : {});
   headers.set("x-request-id", requestId);
+  for (const [k, v] of Object.entries(await authHeader())) headers.set(k, v);
 
   const res = await fetch(url, {
     method,
@@ -83,6 +105,7 @@ export const getQueryFn: <T>(options: {
     const requestId = getOrCreateRequestId();
     const headers = new Headers();
     headers.set("x-request-id", requestId);
+    for (const [k, v] of Object.entries(await authHeader())) headers.set(k, v);
 
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",

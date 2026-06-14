@@ -384,7 +384,7 @@ export default function TutorDashboard() {
 
 
   const studentPlaques = useMemo(() => {
-    return (stats?.studentInsights || []).map((s) => {
+    const plaques = (stats?.studentInsights || []).map((s) => {
       const chip = getStatusChip(s);
       const completionPct = s.assigned > 0 ? Math.round((s.completed / s.assigned) * 100) : 0;
       // Match by studentId (reliable) with a legacy fallback to studentName.
@@ -404,6 +404,14 @@ export default function TutorDashboard() {
       const lastActivity = lastSubmission ? lastSubmission.createdAt : null;
 
       return { ...s, chip, completionPct, recentScores, lastScore, coveragePct, lowestCoverage, lastActivity, lastSubmission };
+    });
+    // Order: students I've assigned work to first, then those without any of my
+    // work; alphabetical by name within each group.
+    return plaques.sort((a, b) => {
+      const aHasWork = a.assigned > 0 ? 0 : 1;
+      const bHasWork = b.assigned > 0 ? 0 : 1;
+      if (aHasWork !== bHasWork) return aHasWork - bHasWork;
+      return a.studentName.localeCompare(b.studentName);
     });
   }, [stats, aiInsights]);
 
