@@ -16,7 +16,7 @@ Branch: `claude/gracious-noether-s8jgpm`. Commit after each phase. Test: `npm te
 | 10 | Tests (§14) + full suite green | ☑ 295702a (789 passed; 21 pre-existing stale auth fails in routes.test.ts) |
 | ⚠ | Build-breaker found by typecheck gate: `server/index.ts` runDbHealthCheck merge damage (ALSO on main) — esbuild build failed | ☑ 8617f2e (npm run build now exits 0) |
 
-## Decisions
+| ✚ | Stale `tests/routes.test.ts` cases: authenticate to current authed-access contract | ☑ 4551703 (full suite 811 passed / 0 failed) |
 - C-2: keep `effectiveCorrectAnswer` at marking; make review endpoint use the SAME value (no migration, consistent everywhere). New questions also pass answer∈options via the Phase 5 gate.
 - Quizzes become `status:"draft"` at generation; publish only after gate marks questions `approved`/auto-approved. `auto_blocked` questions are never served to students.
 
