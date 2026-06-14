@@ -267,6 +267,10 @@ export const somaReports = pgTable("soma_reports", {
   status: text("status").notNull().default("pending"),
   aiFeedbackHtml: text("ai_feedback_html"),
   answersJson: jsonb("answers_json"),
+  // Tutor manual per-question marks override: map of questionId (string) ->
+  // awardedMarks (int). Null/absent means "no override; use computed marks".
+  // Honoured by recomputeReportScore so regrade never clobbers manual marks.
+  manualMarks: jsonb("manual_marks").$type<Record<string, number>>(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
