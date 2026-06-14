@@ -9,7 +9,7 @@ import { toProperCase, getInitials } from "@/lib/utils";
 import {
   ArrowLeft, BookOpen, Users, Trash2, Plus, FileText,
   Loader2, Check, X, MoreVertical, Archive, ArchiveX,
-  CalendarDays, Clock, Search, Mail,
+  CalendarDays, Clock, Search, Mail, Upload, Download, Paperclip, FileCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -64,6 +64,37 @@ interface AdoptedStudent {
   displayName: string | null;
 }
 
+interface QuizAttachment {
+  id: number;
+  filename: string;
+  sizeBytes: number;
+  mimeType: string;
+  createdAt: string;
+}
+
+interface SubmissionUpload {
+  id: number;
+  studentId: string;
+  studentName: string;
+  filename: string;
+  sizeBytes: number;
+  status: "submitted" | "marked";
+  score: number | null;
+  maxScore: number | null;
+  feedback: string | null;
+  createdAt: string;
+  markedAt: string | null;
+}
+
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+function formatBytes(bytes: number) {
+  if (!bytes || bytes < 1024) return `${bytes || 0} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
 const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all";
 
@@ -103,6 +134,12 @@ export default function TutorAssessmentDetails() {
   const [newDueDate, setNewDueDate] = useState("");
   const [assignDueDate, setAssignDueDate] = useState("");
   const [assignSearch, setAssignSearch] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [deleteAttachmentId, setDeleteAttachmentId] = useState<number | null>(null);
+  const [markUpload, setMarkUpload] = useState<SubmissionUpload | null>(null);
+  const [markScore, setMarkScore] = useState("");
+  const [markMax, setMarkMax] = useState("");
+  const [markFeedback, setMarkFeedback] = useState("");
   const { toast } = useToast();
 
   const { userId } = useSupabaseSession();
@@ -206,6 +243,151 @@ export default function TutorAssessmentDetails() {
       toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
     },
   });
+
+  // ---- PDF uploads: worksheet attachments + student responses ----
+  const attachmentsKey = [`/api/tutor/quizzes/${quizId}/attachments`, userId];
+  const responsesKey = [`/api/tutor/quizzes/${quizId}/submission-uploads`, userId];
+
+  const {
+    data: attachments = [],
+    error: attachmentsError,
+  } = useQuery<QuizAttachment[]>({
+    queryKey: attachmentsKey,
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/attachments`);
+      if (res.status === 503) throw new Error("STORAGE_UNCONFIGURED");
+      if (!res.ok) throw new Error("Failed to load attachments");
+      return res.json();
+    },
+    enabled: !!userId && quizId > 0,
+    retry: false,
+  });
+
+  const {
+    data: responses = [],
+    error: responsesError,
+  } = useQuery<SubmissionUpload[]>({
+    queryKey: responsesKey,
+    queryFn: async () => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/submission-uploads`);
+      if (res.status === 503) throw new Error("STORAGE_UNCONFIGURED");
+      if (!res.ok) throw new Error("Failed to load responses");
+      return res.json();
+    },
+    enabled: !!userId && quizId > 0,
+    retry: false,
+  });
+
+  const storageUnconfigured =
+    (attachmentsError as Error | null)?.message === "STORAGE_UNCONFIGURED" ||
+    (responsesError as Error | null)?.message === "STORAGE_UNCONFIGURED";
+
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      // Multipart: use authFetch (adds Bearer token) but DO NOT set Content-Type
+      // so the browser sets the multipart boundary automatically.
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/attachments`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.status === 503) throw new Error("File storage isn't configured on the server yet.");
+      if (!res.ok) throw new Error("Upload failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/attachments`] });
+      setSelectedFile(null);
+      toast({ title: "Worksheet uploaded", description: "The attachment was added." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: number) => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/attachments/${attachmentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      return res.json().catch(() => ({}));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/attachments`] });
+      setDeleteAttachmentId(null);
+      toast({ title: "Worksheet removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const markMutation = useMutation({
+    mutationFn: async ({ id, score, maxScore, feedback }: { id: number; score: number; maxScore?: number; feedback?: string }) => {
+      const res = await authFetch(`/api/tutor/submission-uploads/${id}/mark`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score, maxScore, feedback }),
+      });
+      if (!res.ok) throw new Error("Failed to save mark");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/submission-uploads`] });
+      setMarkUpload(null);
+      toast({ title: "Marked", description: "The response was marked." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Marking failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  function handleSelectFile(file: File | null) {
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      toast({ title: "Invalid file", description: "Only PDF files are allowed.", variant: "destructive" });
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast({ title: "File too large", description: "Maximum file size is 20MB.", variant: "destructive" });
+      return;
+    }
+    setSelectedFile(file);
+  }
+
+  async function downloadAttachment(attachmentId: number) {
+    try {
+      const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+      if (!res.ok) throw new Error("Download failed");
+      const { url } = await res.json();
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
+    }
+  }
+
+  async function downloadResponse(id: number) {
+    try {
+      const res = await authFetch(`/api/tutor/submission-uploads/${id}/download`);
+      if (!res.ok) throw new Error("Download failed");
+      const { url } = await res.json();
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
+    }
+  }
+
+  function openMarkDialog(upload: SubmissionUpload) {
+    setMarkUpload(upload);
+    setMarkScore(upload.score != null ? String(upload.score) : "");
+    setMarkMax(upload.maxScore != null ? String(upload.maxScore) : "");
+    setMarkFeedback(upload.feedback ?? "");
+  }
 
   function toggleStudentSelection(id: string) {
     setSelectedStudentIds((prev) => {
@@ -483,6 +665,166 @@ export default function TutorAssessmentDetails() {
           </div>
         </div>
 
+        {/* Worksheets / Attachments */}
+        <div className={CARD_CLASS}>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <Paperclip className="w-5 h-5" />
+              Worksheets / Attachments
+            </h2>
+          </div>
+
+          {storageUnconfigured ? (
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+              File storage isn't configured on the server yet.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-3 mb-5">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  data-testid="attach-file-input"
+                  onChange={(e) => handleSelectFile(e.target.files?.[0] ?? null)}
+                  className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-violet-300 hover:file:bg-violet-500/30"
+                />
+                <button
+                  data-testid="attach-upload"
+                  onClick={() => selectedFile && uploadMutation.mutate(selectedFile)}
+                  disabled={!selectedFile || uploadMutation.isPending}
+                  className={`${STANDARD_ACTION_BUTTON_CLASS} disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {uploadMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                  Upload
+                </button>
+                {selectedFile && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    {selectedFile.name} ({formatBytes(selectedFile.size)})
+                  </span>
+                )}
+              </div>
+
+              {attachments.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No worksheets uploaded yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {attachments.map((att) => (
+                    <div
+                      key={att.id}
+                      data-testid={`attach-row-${att.id}`}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 border border-border/50 px-4 py-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="w-4 h-4 text-violet-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{att.filename}</p>
+                          <p className="text-xs text-muted-foreground">{formatBytes(att.sizeBytes)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          data-testid={`attach-download-${att.id}`}
+                          onClick={() => downloadAttachment(att.id)}
+                          className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <button
+                          data-testid={`attach-delete-${att.id}`}
+                          onClick={() => setDeleteAttachmentId(att.id)}
+                          className="p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Student PDF Responses */}
+        <div className={CARD_CLASS}>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <FileCheck className="w-5 h-5" />
+              PDF Responses
+            </h2>
+          </div>
+
+          {storageUnconfigured ? (
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+              File storage isn't configured on the server yet.
+            </div>
+          ) : responses.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No PDF responses submitted yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {responses.map((resp) => (
+                <div
+                  key={resp.id}
+                  data-testid={`resp-row-${resp.id}`}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 border border-border/50 px-4 py-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(resp.studentId)}`}>
+                      {getInitials(resp.studentName)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{toProperCase(resp.studentName)}</p>
+                      <p className="text-xs text-muted-foreground truncate">{resp.filename}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {resp.status === "marked" ? (
+                      <div className="text-right">
+                        <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs">
+                          Marked
+                        </Badge>
+                        <p className="text-xs text-foreground/80 mt-1">
+                          {resp.score ?? 0} / {resp.maxScore ?? 0}
+                        </p>
+                      </div>
+                    ) : (
+                      <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs">
+                        Submitted
+                      </Badge>
+                    )}
+                    <button
+                      data-testid={`resp-download-${resp.id}`}
+                      onClick={() => downloadResponse(resp.id)}
+                      className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                      title="Download"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button
+                      data-testid={`resp-mark-${resp.id}`}
+                      onClick={() => openMarkDialog(resp)}
+                      className={STANDARD_ACTION_BUTTON_CLASS}
+                    >
+                      <Check className="w-4 h-4" />
+                      Mark
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Student-flagged questions for this assessment */}
         <TutorFlagsPanel quizId={quizId} />
       </div>
@@ -519,6 +861,111 @@ export default function TutorAssessmentDetails() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Delete Attachment Confirmation Dialog */}
+      <AlertDialog open={deleteAttachmentId !== null} onOpenChange={(open) => { if (!open) setDeleteAttachmentId(null); }}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-300">Delete Worksheet</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              This will permanently remove this worksheet attachment. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setDeleteAttachmentId(null)}
+              className="bg-muted text-foreground/80 border-border hover:bg-slate-700"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { if (deleteAttachmentId !== null) deleteAttachmentMutation.mutate(deleteAttachmentId); }}
+              disabled={deleteAttachmentMutation.isPending}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deleteAttachmentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Mark Response Dialog */}
+      {markUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setMarkUpload(null)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-violet-400" />
+                Mark Response
+              </h3>
+              <button onClick={() => setMarkUpload(null)} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground/80 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              {toProperCase(markUpload.studentName)} — {markUpload.filename}
+            </p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-foreground/80 mb-1.5">Score</label>
+                <input
+                  type="number"
+                  min={0}
+                  data-testid="resp-mark-score"
+                  value={markScore}
+                  onChange={(e) => setMarkScore(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-foreground/80 mb-1.5">Max Score</label>
+                <input
+                  type="number"
+                  min={1}
+                  data-testid="resp-mark-max"
+                  value={markMax}
+                  onChange={(e) => setMarkMax(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-foreground/80 mb-1.5">Feedback (optional)</label>
+              <textarea
+                data-testid="resp-mark-feedback"
+                value={markFeedback}
+                onChange={(e) => setMarkFeedback(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 resize-none"
+              />
+            </div>
+            <button
+              data-testid="resp-mark-save"
+              onClick={() => {
+                const score = parseInt(markScore, 10);
+                const maxScore = markMax.trim() === "" ? undefined : parseInt(markMax, 10);
+                if (Number.isNaN(score) || score < 0) {
+                  toast({ title: "Invalid score", description: "Score must be 0 or greater.", variant: "destructive" });
+                  return;
+                }
+                if (maxScore !== undefined && (Number.isNaN(maxScore) || maxScore <= 0)) {
+                  toast({ title: "Invalid max score", description: "Max score must be greater than 0.", variant: "destructive" });
+                  return;
+                }
+                if (maxScore !== undefined && score > maxScore) {
+                  toast({ title: "Invalid score", description: "Score cannot exceed the max score.", variant: "destructive" });
+                  return;
+                }
+                markMutation.mutate({ id: markUpload.id, score, maxScore, feedback: markFeedback.trim() || undefined });
+              }}
+              disabled={markMutation.isPending}
+              className="w-full py-3 min-h-[44px] rounded-xl text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {markMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Save Mark"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Due Date Picker Modal */}
       {showDueDatePicker && (

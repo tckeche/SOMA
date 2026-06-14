@@ -2,6 +2,7 @@ import { Link } from "wouter";
 import { BookOpen, Clock, Hash, Award, ArrowLeft, Play, Save, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SomaQuiz } from "@shared/schema";
+import StudentAssessmentPdfSection from "@/components/student/StudentAssessmentPdfSection";
 
 // Pre-quiz "ready to begin?" screen. Shown once on a fresh attempt so the
 // student can see what they're walking into before the timer starts.
@@ -11,11 +12,17 @@ export function AssessmentStartScreen({
   questionCount,
   totalMarks,
   onStart,
+  quizId,
+  isStudent = false,
 }: {
   quiz: Pick<SomaQuiz, "title" | "subject" | "level" | "syllabus" | "timeLimitMinutes">;
   questionCount: number;
   totalMarks: number;
   onStart: () => void;
+  // PDF worksheets/response section is shown to real students on the landing
+  // screen. Omitted (e.g. tutor preview) when these aren't provided.
+  quizId?: number;
+  isStudent?: boolean;
 }) {
   const rows: Array<{ label: string; value: string; icon: typeof BookOpen }> = [];
   if (quiz.subject) rows.push({ label: "Subject", value: quiz.subject, icon: BookOpen });
@@ -85,6 +92,10 @@ export function AssessmentStartScreen({
             <Expect icon={Save} text="Your answers are auto-saved. You can close the tab and come back." />
             <Expect icon={CheckCircle2} text="You can review and change answers before submitting." />
           </div>
+
+          {isStudent && quizId != null && quizId > 0 && (
+            <StudentAssessmentPdfSection quizId={quizId} />
+          )}
 
           <Button
             className="glow-button w-full min-h-[52px] text-base font-semibold"
