@@ -125,6 +125,19 @@ async function getTutorToken(): Promise<string> {
   return _tutorToken;
 }
 
+// Stable UUID for the test super-admin user (tckeche@gmail.com → super_admin role,
+// matching the default SUPER_ADMIN_EMAIL fallback). A super_admin can read ANY
+// soma quiz, so this is the credential used to exercise the (now authed) soma
+// read endpoints regardless of who authored the quiz.
+const TEST_SUPER_ADMIN_UUID = "ffffffff-2222-3333-4444-666666666666";
+let _superAdminToken: string | null = null;
+async function getSuperAdminToken(): Promise<string> {
+  if (!_superAdminToken) {
+    _superAdminToken = await createAuthToken(TEST_SUPER_ADMIN_UUID, "tckeche@gmail.com");
+  }
+  return _superAdminToken;
+}
+
 // Helper: login as admin and get cookie
 async function loginAsAdmin() {
   const res = await request
@@ -284,41 +297,51 @@ describe("Protected routes: requireTutor middleware", () => {
   });
 });
 
-// ─── QUIZ: Public endpoints (soma) ────────────────────────────────────────────
+// ─── QUIZ: Soma read endpoints (authenticated) ────────────────────────────────
 describe("GET /api/soma/quizzes", () => {
-  it("returns 200 with array of quizzes (public)", async () => {
+  it("returns 401 without authentication (protected endpoint)", async () => {
     const res = await request.get("/api/soma/quizzes");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 200 with array of quizzes for an authenticated super admin", async () => {
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 });
 
 describe("GET /api/soma/quizzes/:id", () => {
-  it("returns 404 for non-existent quiz", async () => {
-    const res = await request.get("/api/soma/quizzes/99999");
+  it("returns 404 for non-existent quiz (authenticated)", async () => {
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/99999").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
-  it("returns quiz data for existing quiz", async () => {
+  it("returns quiz data for existing quiz (authenticated)", async () => {
     const cookie = await loginAsAdmin();
-    const quiz = await createTestQuiz(cookie, { title: "Public Quiz" });
-    const res = await request.get(`/api/soma/quizzes/${quiz.id}`);
+    const token = await getSuperAdminToken();
+    const quiz = await createTestQuiz(cookie, { title: "Authed Quiz" });
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.title).toBe("Public Quiz");
+    expect(res.body.title).toBe("Authed Quiz");
   });
 });
 
 describe("GET /api/soma/quizzes/:id/questions", () => {
-  it("returns 404 for non-existent quiz", async () => {
-    const res = await request.get("/api/soma/quizzes/99999/questions");
+  it("returns 404 for non-existent quiz (authenticated)", async () => {
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/99999/questions").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
   it("does NOT include correctAnswer in response (student safety)", async () => {
     const cookie = await loginAsAdmin();
+    const token = await getSuperAdminToken();
     const quiz = await createTestQuiz(cookie);
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     if (res.body.length > 0) {
@@ -329,9 +352,10 @@ describe("GET /api/soma/quizzes/:id/questions", () => {
 
   it("returns options array for each question", async () => {
     const cookie = await loginAsAdmin();
+    const token = await getSuperAdminToken();
     const quiz = await createTestQuiz(cookie);
     await addQuestions(cookie, quiz.id);
-    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     if (res.body.length > 0) {
       expect(Array.isArray(res.body[0].options)).toBe(true);
@@ -381,7 +405,8 @@ describe("Admin Quiz CRUD", () => {
     const quiz = await createTestQuiz(cookie, { title: "To Delete" });
     const delRes = await request.delete(`/api/tutor/quizzes/${quiz.id}`).set("Authorization", `Bearer ${token}`);
     expect(delRes.status).toBe(200);
-    const getRes = await request.get(`/api/soma/quizzes/${quiz.id}`);
+    const superToken = await getSuperAdminToken();
+    const getRes = await request.get(`/api/soma/quizzes/${quiz.id}`).set("Authorization", `Bearer ${superToken}`);
     expect(getRes.status).toBe(404);
   });
 });
@@ -726,45 +751,50 @@ describe("POST /api/soma/generate", () => {
   });
 });
 
-describe("GET /api/soma/quizzes", () => {
-  it("returns 200 with array (public endpoint)", async () => {
-    const res = await request.get("/api/soma/quizzes");
+describe("GET /api/soma/quizzes (generated, authenticated)", () => {
+  it("returns 200 with array for an authenticated super admin", async () => {
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 });
 
-describe("GET /api/soma/quizzes/:id", () => {
+describe("GET /api/soma/quizzes/:id (generated, authenticated)", () => {
   it("returns 404 for non-existent soma quiz", async () => {
-    const res = await request.get("/api/soma/quizzes/99999");
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/99999").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
   it("returns 400 for invalid (non-integer) ID", async () => {
-    const res = await request.get("/api/soma/quizzes/abc");
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/abc").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
   });
 
   it("returns quiz data for existing soma quiz", async () => {
     const cookie = await loginAsAdmin();
+    const token = await getSuperAdminToken();
     const genRes = await request.post("/api/soma/generate")
       .set("Cookie", cookie)
       .send({ topic: "Probability" });
     const quizId = genRes.body.quiz.id;
-    const res = await request.get(`/api/soma/quizzes/${quizId}`);
+    const res = await request.get(`/api/soma/quizzes/${quizId}`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.topic).toBe("Probability");
   });
 });
 
-describe("GET /api/soma/quizzes/:id/questions", () => {
+describe("GET /api/soma/quizzes/:id/questions (generated, authenticated)", () => {
   it("does NOT include correctAnswer (student-safe)", async () => {
     const cookie = await loginAsAdmin();
+    const token = await getSuperAdminToken();
     const genRes = await request.post("/api/soma/generate")
       .set("Cookie", cookie)
       .send({ topic: "Trigonometry" });
     const quizId = genRes.body.quiz.id;
-    const res = await request.get(`/api/soma/quizzes/${quizId}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quizId}/questions`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     if (res.body.length > 0) {
       expect(res.body[0].correctAnswer).toBeUndefined();
@@ -773,12 +803,14 @@ describe("GET /api/soma/quizzes/:id/questions", () => {
   });
 
   it("returns 404 for non-existent soma quiz (quiz existence validated)", async () => {
-    const res = await request.get("/api/soma/quizzes/99999/questions");
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/99999/questions").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
   it("returns 400 for invalid ID", async () => {
-    const res = await request.get("/api/soma/quizzes/xyz/questions");
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/xyz/questions").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
   });
 });
@@ -882,7 +914,8 @@ describe("Security: Input sanitization", () => {
   });
 
   it("non-integer soma quiz ID handled gracefully (returns 400 not 500)", async () => {
-    const res = await request.get("/api/soma/quizzes/abc");
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes/abc").set("Authorization", `Bearer ${token}`);
     expect([404, 400]).toContain(res.status);
     expect(res.status).not.toBe(500);
   });
@@ -892,8 +925,9 @@ describe("Security: Input sanitization", () => {
 describe("Edge cases", () => {
   it("GET /api/soma/quizzes/:id returns quiz with correct structure", async () => {
     const cookie = await loginAsAdmin();
+    const token = await getSuperAdminToken();
     const quiz = await createTestQuiz(cookie, { title: "Structure Test" });
-    const res = await request.get(`/api/soma/quizzes/${quiz.id}`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}`).set("Authorization", `Bearer ${token}`);
     expect(res.body).toHaveProperty("id");
     expect(res.body).toHaveProperty("title");
     expect(res.body).toHaveProperty("timeLimitMinutes");
@@ -902,8 +936,9 @@ describe("Edge cases", () => {
 
   it("Empty question array is handled for a soma quiz (returns empty array)", async () => {
     const cookie = await loginAsAdmin();
+    const token = await getSuperAdminToken();
     const quiz = await createTestQuiz(cookie, { title: "No Questions Quiz" });
-    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
+    const res = await request.get(`/api/soma/quizzes/${quiz.id}/questions`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
@@ -1323,13 +1358,14 @@ describe("Cascade delete behavior", () => {
   it("deleting a quiz removes its questions", async () => {
     const quiz = await createTestQuiz(cookie, { title: "Cascade Quiz" });
     await addQuestions(cookie, quiz.id);
-    // Verify questions exist via soma public endpoint
-    const qRes = await request.get(`/api/soma/quizzes/${quiz.id}/questions`);
+    const superToken = await getSuperAdminToken();
+    // Verify questions exist via the (authenticated) soma read endpoint
+    const qRes = await request.get(`/api/soma/quizzes/${quiz.id}/questions`).set("Authorization", `Bearer ${superToken}`);
     expect(qRes.body.length).toBeGreaterThan(0);
     // Delete quiz via tutor route
     await request.delete(`/api/tutor/quizzes/${quiz.id}`).set("Authorization", `Bearer ${token}`);
     // Quiz is gone
-    const getRes = await request.get(`/api/soma/quizzes/${quiz.id}`);
+    const getRes = await request.get(`/api/soma/quizzes/${quiz.id}`).set("Authorization", `Bearer ${superToken}`);
     expect(getRes.status).toBe(404);
   });
 });
@@ -1403,7 +1439,8 @@ describe("Soma endpoints: additional coverage", () => {
   });
 
   it("GET /api/soma/quizzes returns generated quiz in list", async () => {
-    const res = await request.get("/api/soma/quizzes");
+    const token = await getSuperAdminToken();
+    const res = await request.get("/api/soma/quizzes").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     const found = res.body.find((q: any) => q.id === generatedQuizId);
     expect(found).toBeDefined();
@@ -1411,7 +1448,8 @@ describe("Soma endpoints: additional coverage", () => {
   });
 
   it("GET /api/soma/quizzes/:id/questions returns questions for generated quiz", async () => {
-    const res = await request.get(`/api/soma/quizzes/${generatedQuizId}/questions`);
+    const token = await getSuperAdminToken();
+    const res = await request.get(`/api/soma/quizzes/${generatedQuizId}/questions`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThan(0);
@@ -1424,7 +1462,8 @@ describe("Soma endpoints: additional coverage", () => {
   });
 
   it("generated soma quiz has correct structure", async () => {
-    const res = await request.get(`/api/soma/quizzes/${generatedQuizId}`);
+    const token = await getSuperAdminToken();
+    const res = await request.get(`/api/soma/quizzes/${generatedQuizId}`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("id");
     expect(res.body).toHaveProperty("title");
