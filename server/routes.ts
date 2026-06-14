@@ -39,6 +39,7 @@ import {
   getTopicContext,
   listExaminingBodies,
   listLevelsForBody,
+  listAllSubjectNames,
   listSubjectsForBodyLevel,
   listTopics as listCatalogueTopics,
   resolveSyllabus,
@@ -2822,6 +2823,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(levels);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to list levels" });
+    }
+  });
+
+  // Public (no-auth) subject-name list for the signup autocomplete. Returns
+  // catalogue subject names only — nothing sensitive — sourced from the same
+  // catalogue tables as the authed /api/catalogue/subjects endpoint.
+  app.get("/api/auth/catalogue/subjects", async (_req, res) => {
+    try {
+      const names = await listAllSubjectNames();
+      res.json(names);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list subjects" });
     }
   });
 

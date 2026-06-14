@@ -235,6 +235,22 @@ export async function listSubjectsForBodyLevel(
   return rows;
 }
 
+/**
+ * Public, unscoped list of all distinct active subject NAMES across the
+ * catalogue. Used by the public signup autocomplete — names only, nothing
+ * sensitive. Returns a sorted, de-duplicated string array.
+ */
+export async function listAllSubjectNames(): Promise<string[]> {
+  const handle = requireDb();
+  const rows = await handle
+    .selectDistinct({ name: subjects.name })
+    .from(subjects)
+    .innerJoin(syllabi, eq(syllabi.subjectId, subjects.id))
+    .where(eq(syllabi.isActive, true))
+    .orderBy(asc(subjects.name));
+  return rows.map((r) => r.name).filter((n): n is string => !!n);
+}
+
 // ---------------------------------------------------------------------------
 // Syllabus resolution + topic listing
 // ---------------------------------------------------------------------------
