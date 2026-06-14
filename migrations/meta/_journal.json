@@ -71,6 +71,13 @@
       "when": 1781438641382,
       "tag": "0010_quiz_format",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781438641383,
+      "tag": "0011_structured_answers",
+      "breakpoints": true
     }
   ]
 }

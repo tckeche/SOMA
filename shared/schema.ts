@@ -111,6 +111,32 @@ export type GraphQuestionSpec = z.infer<typeof graphQuestionSpecSchema>;
  * the client-side builder UI (`client/src/pages/builder.tsx`) so both sides
  * stay in sync. Not a DB row — drafts live only in memory until persisted.
  */
+/**
+ * The set of question types a quiz question can take. "structured" is a
+ * free-text / written answer marked by the AI on understanding (not exact
+ * wording); the others mark deterministically against `correctAnswer`.
+ */
+export type QuestionType = "multiple_choice" | "graph" | "structured";
+
+/**
+ * AI marking record for a single structured/written answer, stored on
+ * `somaReports.structuredMarking` keyed by question id. The AI fills the `ai*`
+ * fields; the tutor confirmation flow fills `tutorMarks` and flips `confirmed`.
+ */
+export interface StructuredAnswerMark {
+  maxMarks: number;
+  aiMarks: number;
+  // Short, student-facing feedback on the answer.
+  aiFeedback: string;
+  // One-to-two sentence analysis of what the student understands / is missing,
+  // surfaced in the review so they can see where their thinking landed.
+  aiUnderstanding: string;
+  // Tutor override; null until the tutor confirms. When confirmed the
+  // effective mark is `tutorMarks ?? aiMarks`.
+  tutorMarks: number | null;
+  confirmed: boolean;
+}
+
 export interface DraftQuestion {
   draftId: string;
   stem: string;
@@ -118,7 +144,10 @@ export interface DraftQuestion {
   correctAnswer: string;
   explanation: string;
   marks: number;
-  questionType: "multiple_choice" | "graph";
+  questionType: QuestionType;
+  // Model answer / marking points for structured questions (mirrors
+  // `somaQuestions.markScheme`). Null/omitted for MCQ and graph questions.
+  markScheme?: string | null;
   graphSpec?: GraphQuestionSpec | null;
   topicTag?: string | null;
   subtopicTag?: string | null;
@@ -171,6 +200,21 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   //  - "pdf": a worksheet the tutor attaches; students submit a PDF response
   //    that the tutor marks manually (no timer, no MCQ engine).
   format: text("format").notNull().default("mcq"),
+  // Sub-type of a quiz-engine assessment (only meaningful when format = "mcq",
+  // i.e. NOT a PDF submission). Decides which question types the builder
+  // generates and which answer UI students see:
+  //  - "mcq":        multiple-choice only (the legacy behaviour).
+  //  - "structured": written / structured answers only.
+  //  - "hybrid":     a mix of both, split by `structuredCount`.
+  quizMode: text("quiz_mode").notNull().default("mcq"),
+  // Authoritative total number of questions for the assessment (1–15). The
+  // Co-Pilot must generate exactly this many; it is no longer inferred from
+  // the tutor's free-text prompt. Hybrid quizzes require at least 2.
+  questionCount: integer("question_count").notNull().default(5),
+  // How many of `questionCount` are structured/written answers. 0 for a pure
+  // MCQ quiz, equal to `questionCount` for a pure structured quiz, and a value
+  // in between for hybrid. MCQ count is `questionCount - structuredCount`.
+  structuredCount: integer("structured_count").notNull().default(0),
   status: text("status").notNull().default("published"),
   isArchived: boolean("is_archived").notNull().default(false),
   // When true, students see a "Your response" PDF upload box for this
@@ -189,6 +233,11 @@ export const somaQuestions = pgTable("soma_questions", {
   marks: integer("marks").notNull().default(1),
   questionType: text("question_type").notNull().default("multiple_choice"),
   graphSpec: jsonb("graph_spec").$type<GraphQuestionSpec | null>(),
+  // Marking guidance for structured/written-answer questions. Holds the model
+  // answer / the marking points the AI marker checks the student's response
+  // against (sentiment / understanding, not exact wording). Null for MCQ and
+  // graph questions, which mark via `correctAnswer`.
+  markScheme: text("mark_scheme"),
   topicTag: text("topic_tag"),
   subtopicTag: text("subtopic_tag"),
   difficultyTag: text("difficulty_tag"),
@@ -275,6 +324,11 @@ export const somaReports = pgTable("soma_reports", {
   status: text("status").notNull().default("pending"),
   aiFeedbackHtml: text("ai_feedback_html"),
   answersJson: jsonb("answers_json"),
+  // Per-question AI marking for structured/written answers, keyed by question
+  // id (as a string). The AI *suggests* marks + feedback; the report stays in
+  // "awaiting_review" status until the tutor confirms or overrides, at which
+  // point `confirmed` flips true and the confirmed marks fold into `score`.
+  structuredMarking: jsonb("structured_marking").$type<Record<string, StructuredAnswerMark>>(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
