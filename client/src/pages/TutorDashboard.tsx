@@ -18,6 +18,8 @@ import {
   Radar, Grid3X3, BarChart2, ClipboardCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronDown } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { useToast } from "@/hooks/use-toast";
@@ -189,6 +191,11 @@ export default function TutorDashboard() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [dueDate, setDueDate] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "notifications" | "insights" | "cohort">("overview");
+  // Intervention queue "View All": expand from the top-6 preview to the full list.
+  const [showAllInterventions, setShowAllInterventions] = useState(false);
+  // Overview is decongested into secondary tabs; Student Flags collapses to reduce noise.
+  const [overviewSection, setOverviewSection] = useState<"action" | "analytics" | "students" | "activity">("action");
+  const [showStudentFlags, setShowStudentFlags] = useState(false);
   // Student-first assign flow: pre-select a student and let the tutor pick a quiz.
   const [assignForStudent, setAssignForStudent] = useState<{ id: string; name: string } | null>(null);
   const [assignForStudentQuizId, setAssignForStudentQuizId] = useState<number | null>(null);
@@ -721,7 +728,27 @@ export default function TutorDashboard() {
             )}
 
             {/* ── OVERVIEW TAB ───────────────────────────────────── */}
-            {activeTab === "overview" && (<>
+            {activeTab === "overview" && (
+            <Tabs value={overviewSection} onValueChange={(v) => setOverviewSection(v as typeof overviewSection)} className="space-y-6">
+              <TabsList className="flex flex-wrap h-auto w-full sm:w-fit gap-1 bg-foreground/[0.04] border border-border/60 rounded-xl p-1">
+                <TabsTrigger value="action" data-testid="dash-tab-action" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Action Center
+                </TabsTrigger>
+                <TabsTrigger value="analytics" data-testid="dash-tab-analytics" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                  <Radar className="w-3.5 h-3.5" /> Cohort Analytics
+                </TabsTrigger>
+                <TabsTrigger value="students" data-testid="dash-tab-students" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                  <Users className="w-3.5 h-3.5" /> Students
+                </TabsTrigger>
+                <TabsTrigger value="activity" data-testid="dash-tab-activity" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                  <Activity className="w-3.5 h-3.5" /> Activity &amp; Insights
+                </TabsTrigger>
+              </TabsList>
+
+            {/* ══════════════════════════════════════════════════════
+                ACTION CENTER — Intervention Queue + Pending + Flags
+               ══════════════════════════════════════════════════════ */}
+            <TabsContent value="action" className="space-y-6 mt-0">
 
             {/* ══════════════════════════════════════════════════════
                 ROW 1 — Intervention Queue + Pending Submissions
@@ -742,9 +769,13 @@ export default function TutorDashboard() {
                         <p className="text-[10px] text-muted-foreground mt-0.5">Students who are slipping or stalled — auto-populated from scores and completion.</p>
                       </div>
                     </div>
-                    <Link href="/tutor/students">
-                      <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold">View All &rarr;</span>
-                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllInterventions((v) => !v)}
+                      className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold"
+                    >
+                      {showAllInterventions ? "Show Less" : "View All"} &rarr;
+                    </button>
                   </div>
                   {(() => {
                     const atRisk = studentPlaques.filter(
@@ -758,7 +789,7 @@ export default function TutorDashboard() {
                     );
                     return (
                       <div className="divide-y divide-white/[0.03] max-h-[340px] overflow-y-auto">
-                        {atRisk.slice(0, 6).map((s) => {
+                        {(showAllInterventions ? atRisk : atRisk.slice(0, 6)).map((s) => {
                           const borderColor = s.trend === "declining" ? "#EF4444" : s.completed === 0 ? "#FBBF24" : "#F97316";
                           const insight = getInsightChip(s.studentName);
                           return (
@@ -865,11 +896,17 @@ export default function TutorDashboard() {
             </FadeInSection>
 
             {/* ══════════════════════════════════════════════════════
-                Flagged Questions — cross-quiz view for tutor triage
+                Flagged Questions — collapsible, cross-quiz tutor triage
                ══════════════════════════════════════════════════════ */}
             <FadeInSection>
               <div className={`${GP}`}>
-                <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60">
+                <button
+                  type="button"
+                  onClick={() => setShowStudentFlags((v) => !v)}
+                  aria-expanded={showStudentFlags}
+                  className="w-full px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 text-left hover:bg-foreground/[0.02] transition-colors"
+                  data-testid="toggle-student-flags"
+                >
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
@@ -879,12 +916,22 @@ export default function TutorDashboard() {
                       <p className="text-[10px] text-muted-foreground mt-0.5">Questions your students flagged for review — across all assessments.</p>
                     </div>
                   </div>
-                </div>
-                <div className="p-5">
-                  <TutorFlagsPanel />
-                </div>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${showStudentFlags ? "rotate-180" : ""}`} />
+                </button>
+                {showStudentFlags && (
+                  <div className="p-5">
+                    <TutorFlagsPanel />
+                  </div>
+                )}
               </div>
             </FadeInSection>
+
+            </TabsContent>
+
+            {/* ══════════════════════════════════════════════════════
+                COHORT ANALYTICS
+               ══════════════════════════════════════════════════════ */}
+            <TabsContent value="analytics" className="space-y-6 mt-0">
 
             {/* ══════════════════════════════════════════════════════
                 ROW 2 — Cohort Overview: Radar + Donut + Mini Trend
@@ -926,6 +973,31 @@ export default function TutorDashboard() {
             </FadeInSection>}
 
             {/* ══════════════════════════════════════════════════════
+                ROW 7 — Heatmap + Subject Distribution
+               ══════════════════════════════════════════════════════ */}
+            <FadeInSection delay={0.05}>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <ChartCard className="lg:col-span-3">
+                  <SectionHeader icon={Grid3X3} title="Workload Heatmap" subtitle="Student × Subject performance matrix" />
+                  <WorkloadHeatmap stats={stats!} />
+                </ChartCard>
+                <ChartCard className="lg:col-span-2">
+                  <SectionHeader icon={Target} title="Score Distribution" subtitle="Individual scores per subject" />
+                  <div style={{ height: 300 }}>
+                    <SubjectDistributionChart stats={stats!} />
+                  </div>
+                </ChartCard>
+              </div>
+            </FadeInSection>
+
+            </TabsContent>
+
+            {/* ══════════════════════════════════════════════════════
+                STUDENTS — Student Card Grid
+               ══════════════════════════════════════════════════════ */}
+            <TabsContent value="students" className="space-y-6 mt-0">
+
+            {/* ══════════════════════════════════════════════════════
                 ROW 4 — Student Card Grid
                ══════════════════════════════════════════════════════ */}
             <FadeInSection delay={0.05}>
@@ -954,23 +1026,12 @@ export default function TutorDashboard() {
               )}
             </FadeInSection>
 
+            </TabsContent>
+
             {/* ══════════════════════════════════════════════════════
-                ROW 7 — Heatmap + Subject Distribution
+                ACTIVITY & INSIGHTS
                ══════════════════════════════════════════════════════ */}
-            <FadeInSection delay={0.05}>
-              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-                <ChartCard className="lg:col-span-3">
-                  <SectionHeader icon={Grid3X3} title="Workload Heatmap" subtitle="Student × Subject performance matrix" />
-                  <WorkloadHeatmap stats={stats!} />
-                </ChartCard>
-                <ChartCard className="lg:col-span-2">
-                  <SectionHeader icon={Target} title="Score Distribution" subtitle="Individual scores per subject" />
-                  <div style={{ height: 300 }}>
-                    <SubjectDistributionChart stats={stats!} />
-                  </div>
-                </ChartCard>
-              </div>
-            </FadeInSection>
+            <TabsContent value="activity" className="space-y-6 mt-0">
 
             {/* ══════════════════════════════════════════════════════
                 ROW 8 — Activity Timeline (stacked bar)
@@ -1146,7 +1207,9 @@ export default function TutorDashboard() {
               </FadeInSection>
             )}
 
-            </>)}
+            </TabsContent>
+            </Tabs>
+            )}
           </div>
         )}
       </main>

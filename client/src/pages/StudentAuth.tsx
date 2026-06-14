@@ -1,10 +1,141 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { AuthRequestError, supabase, authFetch, withTimeout } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft, BookOpen, Hash, GraduationCap } from "lucide-react";
+import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft, BookOpen, GraduationCap, Check, ChevronsUpDown } from "lucide-react";
 import { Link } from "wouter";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+
+/**
+ * Searchable subject select for signup. Fetches catalogue subject names from the
+ * public endpoint and lets the user filter + pick. Falls back to free-text entry
+ * if the list fails to load so signup is never hard-blocked. The selected value
+ * is always a plain subject-name string (same shape the payload expects).
+ */
+function SubjectCombobox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [options, setOptions] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/catalogue/subjects");
+        if (!res.ok) throw new Error("Failed to load subjects");
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data)) {
+          setOptions(data.filter((s): s is string => typeof s === "string"));
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Free-text fallback if the catalogue could not be loaded.
+  if (failed) {
+    return (
+      <div className="relative">
+        <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="e.g. Mathematics"
+          required
+          className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+          data-testid="input-subject"
+        />
+      </div>
+    );
+  }
+
+  const filtered = query.trim()
+    ? options.filter((o) => o.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className="glass-input w-full pl-10 pr-9 py-3 text-sm flex items-center justify-between relative text-left"
+          data-testid="input-subject"
+        >
+          <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <span className={cn("truncate", !value && "text-muted-foreground")}>
+            {value || "Search and select a subject"}
+          </span>
+          <ChevronsUpDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <div className="p-2 border-b border-border/40">
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type to search subjects..."
+            className="glass-input w-full px-3 py-2 text-sm"
+            data-testid="input-subject-search"
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              {query.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(query.trim());
+                    setOpen(false);
+                  }}
+                  className="text-violet-400 hover:text-violet-300"
+                >
+                  Use "{query.trim()}"
+                </button>
+              ) : (
+                "No subjects found."
+              )}
+            </div>
+          ) : (
+            filtered.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => {
+                  onChange(opt);
+                  setOpen(false);
+                  setQuery("");
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-violet-500/10 transition-colors"
+              >
+                <Check className={cn("w-4 h-4", value === opt ? "opacity-100 text-violet-400" : "opacity-0")} />
+                <span className="truncate">{opt}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 type AuthMode = "login" | "signup" | "reset";
 
@@ -15,7 +146,6 @@ export default function StudentAuth() {
   const [displayName, setDisplayName] = useState("");
   const [subject, setSubject] = useState("");
   const [syllabus, setSyllabus] = useState("");
-  const [syllabusCode, setSyllabusCode] = useState("");
   const [level, setLevel] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -36,7 +166,6 @@ export default function StudentAuth() {
     setDisplayName("");
     setSubject("");
     setSyllabus("");
-    setSyllabusCode("");
     setLevel("");
     setShowPassword(false);
     setFormErrors({});
@@ -151,10 +280,10 @@ export default function StudentAuth() {
       });
       return;
     }
-    if (!subject || !syllabus || !syllabusCode.trim() || !level) {
+    if (!subject || !syllabus || !level) {
       toast({
         title: "Missing required fields",
-        description: "Please add subject, exam body/syllabus, syllabus code, and level.",
+        description: "Please add subject, exam body/syllabus, and level.",
         variant: "destructive",
       });
       return;
@@ -192,9 +321,12 @@ export default function StudentAuth() {
             display_name: displayName.trim(),
             subject,
             syllabus,
-            syllabus_code: syllabusCode.trim(),
+            // Syllabus code is no longer collected at signup (students found it
+            // confusing). Sent empty so downstream profile sync keeps the key
+            // shape; it can be derived/edited later.
+            syllabus_code: "",
             level,
-            subjects: [{ subject, examBody: syllabus, syllabusCode: syllabusCode.trim(), level }],
+            subjects: [{ subject, examBody: syllabus, syllabusCode: "", level }],
           },
         },
       }), { timeoutMs: 18000, stage: "supabase_signup" });
@@ -234,8 +366,13 @@ export default function StudentAuth() {
       if (requestId !== activeRequestId.current) return;
       const msg = err?.message || "";
       let friendly = "Could not create account.";
-      if (msg.includes("already registered") || msg.includes("already been registered")) {
-        friendly = "An account with this email already exists. Try logging in instead.";
+      if (
+        msg.includes("already registered") ||
+        msg.includes("already been registered") ||
+        msg.includes("User already registered") ||
+        err?.code === "user_already_exists"
+      ) {
+        friendly = "This account already exists. Please log in or click 'Forgot password' to reset your password.";
       } else if (err instanceof AuthRequestError && err.code === "TIMEOUT") {
         friendly = "Sign up timed out. Please retry. If this keeps happening, check your email for a verification link before retrying.";
       } else if (msg) {
@@ -439,18 +576,7 @@ export default function StudentAuth() {
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
                     Subject <span className="text-red-400">*</span>
                   </label>
-                  <div className="relative">
-                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input
-                      type="text"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      placeholder="e.g. Mathematics"
-                      required
-                      className="glass-input w-full pl-10 pr-4 py-3 text-sm"
-                      data-testid="input-subject"
-                    />
-                  </div>
+                  <SubjectCombobox value={subject} onChange={setSubject} />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
@@ -474,23 +600,6 @@ export default function StudentAuth() {
                       <option value="AQA">AQA</option>
                       <option value="Other">Other</option>
                     </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                    Syllabus Code <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input
-                      type="text"
-                      value={syllabusCode}
-                      onChange={(e) => setSyllabusCode(e.target.value)}
-                      placeholder="e.g. 0580, MAA HL"
-                      required
-                      className="glass-input w-full pl-10 pr-4 py-3 text-sm"
-                      data-testid="input-syllabus-code"
-                    />
                   </div>
                 </div>
                 <div>

@@ -17,7 +17,6 @@ import {
   Save, AlertCircle, AlertTriangle, StopCircle, RefreshCw
 } from "lucide-react";
 import 'katex/dist/katex.min.css';
-import { unescapeLatex } from '@/lib/render-latex';
 import { ThemeToggle } from "@/components/ThemeToggle";
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import SomaQuizEngine from "./soma-quiz";
@@ -1041,9 +1040,14 @@ export default function BuilderPage() {
         throw new Error("Publish did not return reviewable questions. Draft remains unpublished.");
       }
       setIsDraftDirty(false);
-      setLastSavedCount(data.publishedCount ?? draftQuestions.length);
+      const publishedCount = data.publishedCount ?? draftQuestions.length;
+      setLastSavedCount(publishedCount);
       setGenerationState("ready_for_review");
       setShowSuccessModal(true);
+      toast({
+        title: "Assessment published",
+        description: `${publishedCount} question${publishedCount !== 1 ? "s" : ""} saved and visible to students.`,
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes", activeQuizId] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/quizzes"] });
     } catch (err: unknown) {
@@ -1085,7 +1089,7 @@ export default function BuilderPage() {
     draftQuestions.map((q, idx) => ({
       id: idx,
       quizId: activeQuizId || 0,
-      stem: unescapeLatex(q.stem),
+      stem: q.stem,
       options: q.options,
       marks: q.marks,
       questionType: q.questionType,
@@ -1154,7 +1158,12 @@ export default function BuilderPage() {
           <div className="flex items-center gap-2 shrink-0">
             <Badge className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-foreground/5 text-muted-foreground border-border/50"}`}>
               {totalQuestions} Q{totalQuestions !== 1 ? "s" : ""}
-              {isDraftDirty && <span className="ml-1 hidden md:inline">· unsaved</span>}
+            </Badge>
+            <Badge
+              className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"}`}
+              data-testid="badge-save-status"
+            >
+              {isDraftDirty ? "Unsaved changes" : "Draft saved · ready to review"}
             </Badge>
             <Button
               className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all"
@@ -1352,6 +1361,20 @@ export default function BuilderPage() {
               {generationState === "ready_for_review" && <span className="text-emerald-400">Draft is ready for review and publish.</span>}
               {generationState === "generation_started" && !pipelineActive && <span className="text-muted-foreground">Ready to generate when you send a prompt.</span>}
             </div>
+
+            {/* Generation-complete cue: tells the tutor exactly what to do next. */}
+            {!pipelineActive && draftQuestions.length > 0 &&
+              (generationState === "ready_for_review" || generationState === "partial_success") && (
+              <div
+                className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+                data-testid="banner-generation-complete"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  Generation complete — review the draft questions on the right, then Save &amp; Publish.
+                </span>
+              </div>
+            )}
 
             {/* Pipeline Progress */}
             {pipelineActive && (
@@ -1551,7 +1574,7 @@ export default function BuilderPage() {
                   >
                     <span className="text-xs font-mono text-amber-400 font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs text-foreground/80 line-clamp-2"><MarkdownRenderer content={unescapeLatex(q.stem)} /></div>
+                      <div className="text-xs text-foreground/80 line-clamp-2"><MarkdownRenderer content={q.stem} /></div>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.options.length} opts</Badge>
                         <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.marks}m</Badge>

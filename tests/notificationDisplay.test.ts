@@ -7,6 +7,10 @@ import {
   getNotificationIcon,
   formatDueLabel,
   extractDueDate,
+  getNotificationStyle,
+  NOTIFICATION_TYPE_STYLES,
+  getNotificationDateBucket,
+  groupNotificationsByDate,
 } from "../client/src/lib/notificationDisplay";
 import type { DashboardNotification } from "../client/src/types/studentDashboard";
 
@@ -178,5 +182,81 @@ describe("extractDueDate", () => {
   it("returns the dueDate when present", () => {
     const iso = "2026-04-22T09:00:00Z";
     expect(extractDueDate(makeNotif({ payload: { dueDate: iso } }))).toBe(iso);
+  });
+});
+
+describe("getNotificationStyle (explicit 1:1 type -> category + colour)", () => {
+  it.each([
+    ["assignment_new", "Assessments", "sky"],
+    ["feedback_ready", "Assessments", "emerald"],
+    ["due_today", "Reminders", "rose"],
+    ["overdue", "Reminders", "rose"],
+    ["due_tomorrow", "Reminders", "amber"],
+    ["tutor_comment", "Messages", "cyan"],
+    ["milestone_mastery", "Milestones", "violet"],
+  ] as const)("maps %s -> %s / %s", (type, category, color) => {
+    const style = getNotificationStyle(type);
+    expect(style.category).toBe(category);
+    expect(style.color).toBe(color);
+    expect(style.accent).toContain(color);
+    expect(style.card).toContain(color);
+    expect(style.iconWrap).toContain(color);
+  });
+
+  it("falls back to a neutral slate 'Other' for unknown types", () => {
+    const style = getNotificationStyle("mystery_type");
+    expect(style.category).toBe("Other");
+    expect(style.color).toBe("slate");
+  });
+
+  it("exposes the same entries via NOTIFICATION_TYPE_STYLES", () => {
+    expect(NOTIFICATION_TYPE_STYLES.assignment_new.color).toBe("sky");
+    expect(NOTIFICATION_TYPE_STYLES.tutor_comment.category).toBe("Messages");
+    expect(Object.keys(NOTIFICATION_TYPE_STYLES)).toHaveLength(7);
+  });
+});
+
+describe("getNotificationDateBucket", () => {
+  const now = new Date("2026-04-19T10:30:00Z");
+
+  it("buckets same-day createdAt as Today", () => {
+    expect(getNotificationDateBucket("2026-04-19T01:00:00Z", now)).toBe("Today");
+    expect(getNotificationDateBucket("2026-04-19T23:00:00Z", now)).toBe("Today");
+  });
+
+  it("buckets the previous calendar day as Yesterday", () => {
+    expect(getNotificationDateBucket("2026-04-18T20:00:00Z", now)).toBe("Yesterday");
+  });
+
+  it("buckets older dates as Earlier", () => {
+    expect(getNotificationDateBucket("2026-04-10T12:00:00Z", now)).toBe("Earlier");
+  });
+
+  it("treats invalid dates as Earlier", () => {
+    expect(getNotificationDateBucket("not-a-date", now)).toBe("Earlier");
+  });
+});
+
+describe("groupNotificationsByDate", () => {
+  const now = new Date("2026-04-19T10:30:00Z");
+
+  it("groups into ordered Today / Yesterday / Earlier sections, omitting empty buckets", () => {
+    const items = [
+      makeNotif({ id: 1, createdAt: "2026-04-19T09:00:00Z" }),
+      makeNotif({ id: 2, createdAt: "2026-04-18T09:00:00Z" }),
+      makeNotif({ id: 3, createdAt: "2026-04-10T09:00:00Z" }),
+      makeNotif({ id: 4, createdAt: "2026-04-19T08:00:00Z" }),
+    ];
+    const groups = groupNotificationsByDate(items, now);
+    expect(groups.map((g) => g.bucket)).toEqual(["Today", "Yesterday", "Earlier"]);
+    expect(groups[0].items.map((n) => n.id)).toEqual([1, 4]);
+    expect(groups[1].items.map((n) => n.id)).toEqual([2]);
+    expect(groups[2].items.map((n) => n.id)).toEqual([3]);
+  });
+
+  it("omits buckets that have no items", () => {
+    const items = [makeNotif({ id: 1, createdAt: "2026-04-19T09:00:00Z" })];
+    const groups = groupNotificationsByDate(items, now);
+    expect(groups.map((g) => g.bucket)).toEqual(["Today"]);
   });
 });

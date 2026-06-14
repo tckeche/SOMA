@@ -9,7 +9,12 @@ interface Props {
 }
 
 export default function AssignmentsList({ assignments }: Props) {
-  const open = assignments.filter((a) => a.status !== "completed");
+  // Only show genuinely DUE work: overdue items, or pending items that have a
+  // due date. Pending items with no due date aren't actually "due" yet, so they
+  // are excluded from this list. Completed items are never shown here.
+  const open = assignments.filter(
+    (a) => a.status === "overdue" || (a.status === "pending" && !!a.dueDate),
+  );
   if (open.length === 0) {
     return (
       <div className="rounded-2xl border border-card-border bg-card/70 p-8 text-center" data-testid="empty-assignments">

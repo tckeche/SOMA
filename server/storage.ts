@@ -206,6 +206,7 @@ export interface IStorage {
   listStudentNotifications(studentId: string, options?: { limit?: number }): Promise<StudentNotification[]>;
   markStudentNotificationRead(notificationId: number, studentId: string): Promise<StudentNotification | undefined>;
   markAllStudentNotificationsRead(studentId: string): Promise<number>;
+  deleteStudentNotification(notificationId: number, studentId: string): Promise<boolean>;
 
   // Question-level flag raised by a student during a quiz
   flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion>;
@@ -611,6 +612,14 @@ class DatabaseStorage implements IStorage {
       .where(and(eq(studentNotifications.studentId, studentId), isNull(studentNotifications.readAt)))
       .returning();
     return rows.length;
+  }
+
+  async deleteStudentNotification(notificationId: number, studentId: string): Promise<boolean> {
+    const rows = await this.database
+      .delete(studentNotifications)
+      .where(and(eq(studentNotifications.id, notificationId), eq(studentNotifications.studentId, studentId)))
+      .returning();
+    return rows.length > 0;
   }
 
   async flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion> {
@@ -1052,6 +1061,11 @@ class DatabaseStorage implements IStorage {
       return { totalStudents: 0, totalQuizzes: tutorQuizzes.length, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [] };
     }
 
+    // A tutor must only see a student's progress for quizzes THAT TUTOR authored.
+    const tutorQuizIds = (
+      await this.database.select({ id: somaQuizzes.id }).from(somaQuizzes).where(eq(somaQuizzes.authorId, tutorId))
+    ).map((r) => r.id);
+
     // Subject visibility: a tutor only sees a student's performance for subjects
     // they've actually been assigned a quiz in. Build per-student and union sets.
     const assignedSubjectsByStudent = await this.getAssignedSubjectsForStudents(adoptedIds);
@@ -1161,18 +1175,30 @@ class DatabaseStorage implements IStorage {
     const insights: { studentId: string; studentName: string; assigned: number; completed: number; awaiting: number; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[] = [];
     for (const sid of adoptedIds) {
       const [student] = await this.database.select().from(somaUsers).where(eq(somaUsers.id, sid));
-      const studentAssignments = await this.database.select({ status: quizAssignments.status }).from(quizAssignments).where(eq(quizAssignments.studentId, sid));
+      // Restrict to quizzes this tutor authored. If the tutor has no quizzes,
+      // there can be no assignments/reports to count for this student.
+      const studentAssignments = tutorQuizIds.length === 0
+        ? []
+        : await this.database.select({ status: quizAssignments.status }).from(quizAssignments).where(and(
+          eq(quizAssignments.studentId, sid),
+          inArray(quizAssignments.quizId, tutorQuizIds),
+        ));
       const assigned = studentAssignments.length;
       const completed = studentAssignments.filter((a) => a.status === "completed").length;
       const awaiting = studentAssignments.filter((a) => a.status !== "completed").length;
 
-      const reportRows = await this.database
-        .select({ score: somaReports.score, quizId: somaReports.quizId, subject: somaQuizzes.subject })
-        .from(somaReports)
-        .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
-        .where(eq(somaReports.studentId, sid))
-        .orderBy(desc(somaReports.createdAt))
-        .limit(6);
+      const reportRows = tutorQuizIds.length === 0
+        ? []
+        : await this.database
+          .select({ score: somaReports.score, quizId: somaReports.quizId, subject: somaQuizzes.subject })
+          .from(somaReports)
+          .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+          .where(and(
+            eq(somaReports.studentId, sid),
+            inArray(somaReports.quizId, tutorQuizIds),
+          ))
+          .orderBy(desc(somaReports.createdAt))
+          .limit(6);
       const recent = reportRows.slice(0, 3).map((r) => r.score);
       const prev = reportRows.slice(3, 6).map((r) => r.score);
       const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
@@ -1377,7 +1403,7 @@ class DatabaseStorage implements IStorage {
   }
 }
 
-class MemoryStorage implements IStorage {
+export class MemoryStorage implements IStorage {
   private somaQuizzesList: SomaQuiz[] = [];
   private somaQuestionsList: SomaQuestion[] = [];
   private somaUsersList: SomaUser[] = [];
@@ -1745,7 +1771,89 @@ class MemoryStorage implements IStorage {
 
   async getDashboardStatsForTutor(tutorId: string) {
     const adoptedIds = this.tutorStudentsList.filter((ts) => ts.tutorId === tutorId).map((ts) => ts.studentId);
-    return { totalStudents: adoptedIds.length, totalQuizzes: 0, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [], belowThresholdCount: 0, weakestTopic: null };
+    const totalStudents = adoptedIds.length;
+
+    // A tutor must only see a student's progress for quizzes THAT TUTOR authored.
+    const tutorQuizIds = this.somaQuizzesList.filter((q) => q.authorId === tutorId).map((q) => q.id);
+    const tutorQuizIdSet = new Set(tutorQuizIds);
+
+    if (totalStudents === 0) {
+      return { totalStudents: 0, totalQuizzes: tutorQuizIds.length, cohortAverages: [], recentSubmissions: [], pendingAssignments: [], studentInsights: [], belowThresholdCount: 0, weakestTopic: null };
+    }
+
+    // Subject visibility: a tutor only sees a student's performance for subjects
+    // they've actually been assigned a quiz in.
+    const assignedSubjectsByStudent = await this.getAssignedSubjectsForStudents(adoptedIds);
+    const visibleSubjectKeys = (sid: string) =>
+      new Set((assignedSubjectsByStudent[sid] || []).map((s) => s.toLowerCase()));
+
+    const insights: { studentId: string; studentName: string; assigned: number; completed: number; awaiting: number; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[] = [];
+    for (const sid of adoptedIds) {
+      const student = this.somaUsersList.find((u) => u.id === sid);
+
+      // Restrict to quizzes this tutor authored. If the tutor has no quizzes,
+      // there can be no assignments/reports to count for this student.
+      const studentAssignments = tutorQuizIds.length === 0
+        ? []
+        : this.quizAssignmentsList.filter((a) => a.studentId === sid && tutorQuizIdSet.has(a.quizId));
+      const assigned = studentAssignments.length;
+      const completed = studentAssignments.filter((a) => a.status === "completed").length;
+      const awaiting = studentAssignments.filter((a) => a.status !== "completed").length;
+
+      const reportRows = (tutorQuizIds.length === 0
+        ? []
+        : this.somaReportsList.filter((r) => r.studentId === sid && tutorQuizIdSet.has(r.quizId)))
+        .map((r) => ({ score: r.score, quizId: r.quizId, subject: this.somaQuizzesList.find((q) => q.id === r.quizId)?.subject ?? null }))
+        .slice(0, 6);
+      const recent = reportRows.slice(0, 3).map((r) => r.score);
+      const prev = reportRows.slice(3, 6).map((r) => r.score);
+      const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+      const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : recentAvg;
+      const trend: "improving" | "declining" | "stable" = recentAvg - prevAvg > 5 ? "improving" : prevAvg - recentAvg > 5 ? "declining" : "stable";
+
+      const studentVisible = visibleSubjectKeys(sid);
+      const weakTopics = Object.entries(reportRows.reduce<Record<string, { s: number; c: number }>>((acc, row) => {
+        const k = row.subject || "General";
+        if (!acc[k]) acc[k] = { s: 0, c: 0 };
+        acc[k].s += row.score;
+        acc[k].c += 1;
+        return acc;
+      }, {}))
+        .map(([topic, v]) => ({ topic, avg: v.c ? v.s / v.c : 0 }))
+        .filter((x) => x.avg < 55)
+        .filter((x) => studentVisible.has(x.topic.toLowerCase()))
+        .sort((a, b) => a.avg - b.avg)
+        .map((x) => x.topic)
+        .slice(0, 3);
+
+      insights.push({
+        studentId: sid,
+        studentName: student?.displayName || student?.email || "Student",
+        assigned,
+        completed,
+        awaiting,
+        trend,
+        weakTopics,
+      });
+    }
+
+    const belowThresholdCount = insights.filter((s) => s.weakTopics.length > 0 || s.trend === "declining").length;
+    const topicWeaknessMap: Record<string, number> = {};
+    for (const s of insights) {
+      for (const t of s.weakTopics) topicWeaknessMap[t] = (topicWeaknessMap[t] || 0) + 1;
+    }
+    const weakestTopic = Object.entries(topicWeaknessMap).sort(([, a], [, b]) => b - a)[0]?.[0] || null;
+
+    return {
+      totalStudents,
+      totalQuizzes: tutorQuizIds.length,
+      cohortAverages: [],
+      recentSubmissions: [],
+      pendingAssignments: [],
+      studentInsights: insights,
+      belowThresholdCount,
+      weakestTopic,
+    };
   }
 
 
@@ -2092,6 +2200,15 @@ class MemoryStorage implements IStorage {
       }
     }
     return n;
+  }
+
+  async deleteStudentNotification(notificationId: number, studentId: string): Promise<boolean> {
+    const idx = this.studentNotificationsList.findIndex(
+      (n) => n.id === notificationId && n.studentId === studentId,
+    );
+    if (idx === -1) return false;
+    this.studentNotificationsList.splice(idx, 1);
+    return true;
   }
 
   async flagQuestion(input: InsertFlaggedQuestion): Promise<FlaggedQuestion> {

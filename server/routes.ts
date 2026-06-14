@@ -39,6 +39,7 @@ import {
   getTopicContext,
   listExaminingBodies,
   listLevelsForBody,
+  listAllSubjectNames,
   listSubjectsForBodyLevel,
   listTopics as listCatalogueTopics,
   resolveSyllabus,
@@ -2825,6 +2826,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Public (no-auth) subject-name list for the signup autocomplete. Returns
+  // catalogue subject names only — nothing sensitive — sourced from the same
+  // catalogue tables as the authed /api/catalogue/subjects endpoint.
+  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (_req, res) => {
+    try {
+      const names = await listAllSubjectNames();
+      res.json(names);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to list subjects" });
+    }
+  });
+
   app.get("/api/catalogue/subjects", requireTutor, async (req, res) => {
     const parsed = catalogueQuerySchemas.subjects.safeParse(req.query);
     if (!parsed.success) {
@@ -4905,13 +4918,26 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
-  app.post("/api/student/notifications/read-all", requireSupabaseAuth, async (req, res) => {
+  app.post("/api/student/notifications/read-all", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
       const count = await storage.markAllStudentNotificationsRead(studentId);
       res.json({ updated: count });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to mark notifications read" });
+    }
+  });
+
+  app.delete("/api/student/notifications/:id", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id;
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid notification id" });
+      const deleted = await storage.deleteStudentNotification(id, studentId);
+      if (!deleted) return res.status(404).json({ message: "Notification not found" });
+      res.json({ deleted: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to dismiss notification" });
     }
   });
 
@@ -5352,11 +5378,16 @@ ${JSON.stringify({
     level: z.string().min(1).default("Grade 6-12"),
     curriculumContext: z.string().optional(),
     subtopic: z.string().optional(),
-    questionCount: z.number().int().min(1).max(50).default(8),
+    questionCount: z.number()
+      .int("Question count must be a whole number")
+      .min(1, "Generate at least 1 question")
+      .max(50, "You can generate at most 50 questions at once")
+      .default(8),
     difficultyDistribution: z.object({
-      easy: z.number().min(0).max(100),
-      medium: z.number().min(0).max(100),
-      hard: z.number().min(0).max(100),
+      // 0 is valid — a tutor may want an exam with no easy (or no hard) questions.
+      easy: z.number().min(0, "Easy percentage cannot be negative").max(100, "Easy percentage cannot exceed 100"),
+      medium: z.number().min(0, "Medium percentage cannot be negative").max(100, "Medium percentage cannot exceed 100"),
+      hard: z.number().min(0, "Hard percentage cannot be negative").max(100, "Hard percentage cannot exceed 100"),
     }).optional(),
     // Phase 6 — optional catalogue-keyed identifiers. When supplied the
     // pipeline pulls a rich syllabus digest (subtopics / learning requirements

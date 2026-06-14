@@ -135,6 +135,174 @@ export function getNotificationIcon(type: string): typeof Bell {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Explicit 1:1 TYPE -> category + colour mapping.
+//
+// Unlike getNotificationTone (which buckets by severity), this maps each
+// notification type directly to a single category and a distinct colour so the
+// panel is colour-coded by *type*. Unknown types fall back to a neutral slate.
+// ---------------------------------------------------------------------------
+
+export type NotificationCategory =
+  | "Assessments"
+  | "Reminders"
+  | "Messages"
+  | "Milestones"
+  | "Other";
+
+export interface NotificationStyle {
+  category: NotificationCategory;
+  // Tailwind colour name root (e.g. "sky", "rose") for reference / testing.
+  color: string;
+  // Card surface + border
+  card: string;
+  // Left accent bar colour
+  accent: string;
+  // Icon tile background + text colour
+  iconWrap: string;
+  // Chip colour (due-date pill)
+  chip: string;
+  // Section/category text colour
+  label: string;
+}
+
+export const NOTIFICATION_TYPE_STYLES: Record<string, NotificationStyle> = {
+  // Assessments
+  assignment_new: {
+    category: "Assessments",
+    color: "sky",
+    card: "border-sky-500/30 bg-sky-500/5",
+    accent: "bg-sky-400",
+    iconWrap: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
+    chip: "bg-sky-500/15 text-sky-200 border-sky-500/30",
+    label: "text-sky-300",
+  },
+  feedback_ready: {
+    category: "Assessments",
+    color: "emerald",
+    card: "border-emerald-500/30 bg-emerald-500/5",
+    accent: "bg-emerald-400",
+    iconWrap: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
+    chip: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30",
+    label: "text-emerald-300",
+  },
+  // Reminders
+  due_today: {
+    category: "Reminders",
+    color: "rose",
+    card: "border-rose-500/40 bg-rose-500/5",
+    accent: "bg-rose-500",
+    iconWrap: "bg-rose-500/15 text-rose-300 border border-rose-500/30",
+    chip: "bg-rose-500/15 text-rose-200 border-rose-500/30",
+    label: "text-rose-300",
+  },
+  overdue: {
+    category: "Reminders",
+    color: "rose",
+    card: "border-rose-500/40 bg-rose-500/5",
+    accent: "bg-rose-500",
+    iconWrap: "bg-rose-500/15 text-rose-300 border border-rose-500/30",
+    chip: "bg-rose-500/15 text-rose-200 border-rose-500/30",
+    label: "text-rose-300",
+  },
+  due_tomorrow: {
+    category: "Reminders",
+    color: "amber",
+    card: "border-amber-500/30 bg-amber-500/5",
+    accent: "bg-amber-400",
+    iconWrap: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+    chip: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+    label: "text-amber-300",
+  },
+  // Messages
+  tutor_comment: {
+    category: "Messages",
+    color: "cyan",
+    card: "border-cyan-500/30 bg-cyan-500/5",
+    accent: "bg-cyan-400",
+    iconWrap: "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30",
+    chip: "bg-cyan-500/15 text-cyan-200 border-cyan-500/30",
+    label: "text-cyan-300",
+  },
+  // Milestones
+  milestone_mastery: {
+    category: "Milestones",
+    color: "violet",
+    card: "border-violet-500/30 bg-violet-500/5",
+    accent: "bg-violet-400",
+    iconWrap: "bg-violet-500/15 text-violet-300 border border-violet-500/30",
+    chip: "bg-violet-500/15 text-violet-200 border-violet-500/30",
+    label: "text-violet-300",
+  },
+};
+
+export const NOTIFICATION_FALLBACK_STYLE: NotificationStyle = {
+  category: "Other",
+  color: "slate",
+  card: "border-slate-500/30 bg-slate-500/5",
+  accent: "bg-slate-400",
+  iconWrap: "bg-slate-500/15 text-slate-300 border border-slate-500/30",
+  chip: "bg-slate-500/15 text-slate-200 border-slate-500/30",
+  label: "text-slate-300",
+};
+
+// 1:1 type -> style lookup with a neutral fallback for unknown types.
+export function getNotificationStyle(type: string): NotificationStyle {
+  return NOTIFICATION_TYPE_STYLES[type] ?? NOTIFICATION_FALLBACK_STYLE;
+}
+
+// ---------------------------------------------------------------------------
+// Date grouping: bucket notifications into Today / Yesterday / Earlier by
+// createdAt (local calendar day). Exported for testability.
+// ---------------------------------------------------------------------------
+
+export type NotificationDateBucket = "Today" | "Yesterday" | "Earlier";
+
+export function getNotificationDateBucket(
+  createdAt: string | Date,
+  now: Date = new Date(),
+): NotificationDateBucket {
+  const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return "Earlier";
+
+  const startOfDay = (d: Date) => {
+    const copy = new Date(d);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+  };
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const days = Math.round(
+    (startOfDay(now).getTime() - startOfDay(created).getTime()) / msPerDay,
+  );
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return "Earlier";
+}
+
+export interface NotificationGroup {
+  bucket: NotificationDateBucket;
+  items: DashboardNotification[];
+}
+
+// Groups notifications into ordered Today / Yesterday / Earlier sections.
+// Empty buckets are omitted. Order within each bucket is preserved (callers
+// typically pass already-sorted items).
+export function groupNotificationsByDate(
+  items: DashboardNotification[],
+  now: Date = new Date(),
+): NotificationGroup[] {
+  const order: NotificationDateBucket[] = ["Today", "Yesterday", "Earlier"];
+  const map = new Map<NotificationDateBucket, DashboardNotification[]>();
+  for (const n of items) {
+    const bucket = getNotificationDateBucket(n.createdAt, now);
+    if (!map.has(bucket)) map.set(bucket, []);
+    map.get(bucket)!.push(n);
+  }
+  return order
+    .filter((b) => map.has(b))
+    .map((bucket) => ({ bucket, items: map.get(bucket)! }));
+}
+
 // Returns a short, human-friendly due-date label, or null if no date.
 // Examples:
 //   "3 days overdue", "1 day overdue"
