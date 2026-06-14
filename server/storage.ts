@@ -1111,7 +1111,17 @@ class DatabaseStorage implements IStorage {
         .orderBy(sql`${somaReports.createdAt} desc`)
         .limit(10),
 
-      this.database
+      // Pending assignments must be scoped to quizzes THIS TUTOR authored —
+      // a tutor should never see assignments created by another tutor, even for
+      // a shared student. If the tutor has authored no quizzes there can be no
+      // assignments of theirs, so skip the query entirely.
+      tutorQuizIds.length === 0
+        ? Promise.resolve([] as Array<{
+            assignmentId: number; quizId: number; quizTitle: string;
+            subject: string | null; studentId: string; studentName: string;
+            dueDate: Date | null; assignedAt: Date;
+          }>)
+        : this.database
         .select({
           assignmentId: quizAssignments.id,
           quizId: quizAssignments.quizId,
@@ -1127,6 +1137,7 @@ class DatabaseStorage implements IStorage {
         .innerJoin(somaUsers, eq(quizAssignments.studentId, somaUsers.id))
         .where(and(
           inArray(quizAssignments.studentId, adoptedIds),
+          inArray(quizAssignments.quizId, tutorQuizIds),
           eq(quizAssignments.status, "pending"),
         ))
         .orderBy(sql`${quizAssignments.createdAt} desc`),
