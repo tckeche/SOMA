@@ -351,6 +351,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const savedToastShownRef = useRef(false);
 
   const userId = session?.user?.id;
+  const quizRole = (session?.user?.app_metadata?.role ?? session?.user?.user_metadata?.role) as string | undefined;
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Student";
   const autosaveKey = !isPreview ? buildAutosaveKey(quizId, userId) : null;
 
@@ -665,6 +666,10 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         quiz={effectiveQuiz}
         questionCount={questions.length}
         totalMarks={totalMarks}
+        quizId={quizId}
+        // This screen only renders when !isPreview, and tutors/admins reach the
+        // quiz via preview. A logged-in viewer here taking the quiz is a student.
+        isStudent={!isPreview && quizRole !== "tutor" && quizRole !== "super_admin"}
         onStart={() => {
           setQuizStartedAt(new Date().toISOString());
           setHasStarted(true);
