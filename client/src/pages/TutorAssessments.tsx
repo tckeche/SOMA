@@ -773,7 +773,7 @@ export default function TutorAssessments() {
                         <UserPlus className="w-3.5 h-3.5" />
                         Assign to Students
                       </button>
-                      <Link href={`/tutor/assessments/edit/${quiz.id}`}>
+                      <Link href={`/tutor/assessments/edit/${quiz.id}`} aria-label="Edit assessment">
                         <span
                           onClick={(e) => e.stopPropagation()}
                           className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-violet-300 hover:bg-violet-500/10 transition-all"

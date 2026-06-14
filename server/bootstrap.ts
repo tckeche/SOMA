@@ -71,6 +71,11 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS command_word TEXT`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS assessment_objective TEXT`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS option_rationales JSONB`,
+  // Phase 5 review gate + generation audit trail. Declared in schema.ts but
+  // historically missing from bootstrap, so SELECTs joining soma_questions
+  // (e.g. /api/tutor/flagged-questions) 500ed on a fresh/drifted DB.
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS generation_meta JSONB`,
   // Per-student question flagging (tutor review queue). Defined in schema.ts
   // but historically missing from bootstrap, so a fresh DB never got the
   // table and `/api/tutor/flagged-questions` 500ed.
