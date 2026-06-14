@@ -677,7 +677,9 @@ export default function StudentAuth() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-foreground/80 transition-colors"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    title={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground/80 transition-colors"
                     data-testid="button-toggle-password"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

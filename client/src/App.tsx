@@ -59,8 +59,26 @@ function Router() {
   );
 }
 
+const TITLE_SUFFIX = "SOMA";
+function titleForPath(path: string): string {
+  if (path === "/") return "SOMA — Intelligent Assessment Platform";
+  if (path === "/login") return `Sign In · ${TITLE_SUFFIX}`;
+  if (path === "/forgot-password" || path === "/reset-password") return `Reset Password · ${TITLE_SUFFIX}`;
+  if (path.startsWith("/super-admin")) return `Admin · ${TITLE_SUFFIX}`;
+  if (path.startsWith("/tutor")) return `Tutor Portal · ${TITLE_SUFFIX}`;
+  if (path.startsWith("/soma/quiz")) return `Quiz · ${TITLE_SUFFIX}`;
+  if (path.startsWith("/soma/review")) return `Quiz Review · ${TITLE_SUFFIX}`;
+  if (path.startsWith("/soma/chat")) return `Soma Chat · ${TITLE_SUFFIX}`;
+  if (path === "/portal" || path === "/dashboard") return `Dashboard · ${TITLE_SUFFIX}`;
+  return TITLE_SUFFIX;
+}
+
 function App() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    document.title = titleForPath(location);
+  }, [location]);
 
   useEffect(() => {
     // ── Recovery-token interceptor ──────────────────────────────────────

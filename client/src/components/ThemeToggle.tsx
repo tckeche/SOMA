@@ -18,7 +18,7 @@ export function ThemeToggle({ className, size = "md" }: ThemeToggleProps) {
   const isLight = mounted && resolvedTheme === "light";
   const nextLabel = isLight ? "Switch to dark theme" : "Switch to light theme";
 
-  const dimensions = size === "sm" ? "h-8 w-8" : "h-9 w-9";
+  const dimensions = size === "sm" ? "h-9 w-9" : "h-10 w-10";
 
   return (
     <Button

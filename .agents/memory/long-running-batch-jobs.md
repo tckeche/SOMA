@@ -38,3 +38,14 @@ The script does NOT write to `ai_usage_logs` (that's app-only). The only reliabl
 progress signal is DB row counts against the real Supabase DB (see the diagnostics
 note about querying it with a root-level `pg` script). Per-doc lines also appear in
 the workflow console log (`[N/total] ... inserted= taxonomyDrops= closedSet=`).
+
+## Playwright against the Vite dev server
+When auditing/testing the running app with Playwright in dev, **never** use
+`waitUntil: "networkidle"`. Vite's HMR websocket stays open, so networkidle never
+fires and every `page.goto` burns the full timeout (~30s) before continuing — six
+pages = a silent multi-minute hang that looks like a crash. Use
+`waitUntil: "domcontentloaded"` plus a short fixed `waitForTimeout` to let the SPA
+render. The reusable auditor lives at `scripts/uiUxAudit.mjs` (screenshots + a11y/
+layout/contrast heuristics → `.local/ui-audit/`). Most app pages are auth-gated
+(Supabase, roles student/tutor/super_admin); set SOMA_EMAIL/SOMA_PASSWORD to crawl
+them.
