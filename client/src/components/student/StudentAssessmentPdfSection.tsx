@@ -130,12 +130,13 @@ export default function StudentAssessmentPdfSection({
   }
 
   async function downloadAttachment(attachmentId: number) {
-    // Open the tab synchronously inside the click gesture, THEN fill it after
-    // the async sign call — opening after an await is silently blocked by most
-    // popup blockers. (Can't use noopener here or window.open returns null.)
+    // Open the tab synchronously (before any await) so popup blockers don't
+    // swallow it; null the opener manually since "noopener" makes open() null.
     const win = window.open("about:blank", "_blank");
     if (win) {
-      try { (win as unknown as { opener: unknown }).opener = null; } catch { /* noop */ }
+      try {
+        (win as unknown as { opener: unknown }).opener = null;
+      } catch {}
     }
     try {
       const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
@@ -238,7 +239,7 @@ export default function StudentAssessmentPdfSection({
                   data-testid="student-response-score"
                   className="text-2xl font-bold text-emerald-300"
                 >
-                  {submission.score ?? 0}{submission.maxScore != null && <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span>}
+                  {submission.score ?? 0}{submission.maxScore != null ? <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span> : null}
                 </p>
                 {submission.feedback && (
                   <div className="mt-3">

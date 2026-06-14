@@ -378,13 +378,15 @@ export default function TutorAssessmentDetails() {
     setSelectedFile(file);
   }
 
-  // Open the tab synchronously inside the click gesture, then fill it after the
-  // async sign call — opening after an await is silently blocked by popup
-  // blockers. (Can't pass noopener or window.open returns null.)
+  // Open a signed-download URL in a new tab. The tab is opened synchronously
+  // (before any await) so popup blockers don't swallow it; the opener is nulled
+  // manually since passing "noopener" to window.open() returns null.
   async function openSigned(fetchUrl: string) {
     const win = window.open("about:blank", "_blank");
     if (win) {
-      try { (win as unknown as { opener: unknown }).opener = null; } catch { /* noop */ }
+      try {
+        (win as unknown as { opener: unknown }).opener = null;
+      } catch {}
     }
     try {
       const res = await authFetch(fetchUrl);
@@ -398,12 +400,12 @@ export default function TutorAssessmentDetails() {
     }
   }
 
-  function downloadAttachment(attachmentId: number) {
-    return openSigned(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+  async function downloadAttachment(attachmentId: number) {
+    await openSigned(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
   }
 
-  function downloadResponse(id: number) {
-    return openSigned(`/api/tutor/submission-uploads/${id}/download`);
+  async function downloadResponse(id: number) {
+    await openSigned(`/api/tutor/submission-uploads/${id}/download`);
   }
 
   function openMarkDialog(upload: SubmissionUpload) {

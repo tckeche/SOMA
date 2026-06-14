@@ -903,6 +903,26 @@ function pdfUploadField(field: string) {
   };
 }
 
+/**
+ * Server-side PDF magic-byte check. The client-supplied Content-Type is
+ * spoofable, so verify the first 5 bytes are the "%PDF-" signature.
+ */
+function looksLikePdf(buf: Buffer | undefined): boolean {
+  return Boolean(buf && buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-");
+}
+
+/** Strip the internal storage key from an attachment row before returning it. */
+function publicAttachment<T extends { storagePath?: string }>(row: T) {
+  const { storagePath, ...rest } = row;
+  return rest;
+}
+
+/** Strip the internal storage key from a submission row before returning it. */
+function publicSubmission<T extends { storagePath?: string }>(row: T) {
+  const { storagePath, ...rest } = row;
+  return rest;
+}
+
 
 const ADMIN_COOKIE_NAME = "admin_session";
 
@@ -2652,16 +2672,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return true;
   }
 
-  // Defense against MIME spoofing: multer's fileFilter only trusts the
-  // client-supplied Content-Type, so verify the actual bytes start with the
-  // PDF magic header before we store anything.
-  function looksLikePdf(buf: Buffer | undefined): boolean {
-    return Boolean(buf && buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-");
-  }
-
-  // Best-effort removal of a quiz's storage objects. The DB rows cascade on
-  // quiz delete, but the bucket objects would otherwise be orphaned forever, so
-  // collect their paths BEFORE the rows disappear and delete them.
+  // Remove a quiz's Supabase Storage objects so deleting the quiz (which
+  // cascades the DB rows) does not leave orphaned bucket files behind.
   async function purgeQuizStorageObjects(quizId: number): Promise<void> {
     if (!isStorageConfigured()) return;
     try {
@@ -2669,24 +2681,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         storage.getAssessmentAttachmentsByQuiz(quizId),
         storage.getSubmissionUploadsByQuiz(quizId),
       ]);
-      const paths = [
-        ...attachments.map((a) => a.storagePath),
-        ...submissions.map((s) => s.storagePath),
-      ];
+      const paths = [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)];
       await Promise.all(paths.map((p) => deleteObject(p).catch(() => {})));
     } catch (err) {
       logWarn("quiz_storage_purge_failed", { quizId, error: (err as Error)?.message });
     }
-  }
-
-  // Never expose internal storage keys to clients.
-  function publicAttachment<T extends { storagePath?: string }>(row: T) {
-    const { storagePath, ...rest } = row;
-    return rest;
-  }
-  function publicSubmission<T extends { storagePath?: string }>(row: T) {
-    const { storagePath, ...rest } = row;
-    return rest;
   }
 
   // (1) Tutor uploads a worksheet attachment to one of their quizzes.
@@ -2703,9 +2702,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "PDF required" });
-        if (!looksLikePdf(file.buffer)) {
-          return res.status(400).json({ message: "File is not a valid PDF" });
-        }
+        if (!looksLikePdf(file.buffer)) return res.status(400).json({ message: "File is not a valid PDF" });
 
         const quiz = await storage.getSomaQuiz(quizId);
         if (!quiz || quiz.authorId !== tutorId) {
@@ -2858,9 +2855,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "PDF required" });
-        if (!looksLikePdf(file.buffer)) {
-          return res.status(400).json({ message: "File is not a valid PDF" });
-        }
+        if (!looksLikePdf(file.buffer)) return res.status(400).json({ message: "File is not a valid PDF" });
 
         const [assignment, quiz] = await Promise.all([
           storage.getQuizAssignment(quizId, studentId),

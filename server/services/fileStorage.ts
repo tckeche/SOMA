@@ -156,11 +156,11 @@ export async function createSignedDownloadUrl(
       JSON.stringify(json),
     );
   }
-  // The signed URL already carries a `?token=...` query, so a download-filename
-  // override (sets Content-Disposition so the browser saves the original name
-  // instead of the opaque storage key) is appended with `&`.
-  const suffix = downloadName ? `&download=${encodeURIComponent(downloadName)}` : "";
-  return `${config.url}/storage/v1${json.signedURL}${suffix}`;
+  let url = `${config.url}/storage/v1${json.signedURL}`;
+  if (downloadName) {
+    url += `&download=${encodeURIComponent(downloadName)}`;
+  }
+  return url;
 }
 
 /** Delete an object from the bucket. 404 (already gone) is ignored. */
