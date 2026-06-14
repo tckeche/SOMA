@@ -17,6 +17,7 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
+import { recomputeReportScore } from "./services/regrade";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -2467,7 +2468,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const bodySchema = z
         .object({
-          action: z.enum(["approve", "reject"]).optional(),
+          action: z.enum(["approve", "reject", "exclude", "restore"]).optional(),
           stem: z.string().min(1).optional(),
           options: z.array(z.string()).length(4).optional(),
           correctAnswer: z.string().min(1).optional(),
@@ -2500,6 +2501,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "auto_blocked" });
         return res.json(updated);
       }
+      if (body.action === "restore") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "approved" });
+        return res.json(updated);
+      }
+      if (body.action === "exclude") {
+        // Count submissions whose stored answer for this question matched the
+        // (currently) correct answer — i.e. reports whose score would drop if
+        // regraded after this question is excluded. Computed from stored data
+        // only; the actual regrade remains an explicit, separate call.
+        const correct = effectiveCorrectAnswer(existing.stem, existing.options as string[], existing.correctAnswer);
+        const reports = await storage.getSomaReportsByQuizId(quizId);
+        const affectedSubmissionCount = reports.filter((r) => {
+          if (r.status !== "completed") return false;
+          const answers = (r.answersJson ?? {}) as Record<string, string>;
+          return answers[String(questionId)] === correct;
+        }).length;
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "excluded" });
+        return res.json({ ...updated, affectedSubmissionCount });
+      }
 
       // Edit path: apply edits, then re-run the quality gate on the edited
       // question so a fixed question can become "approved" again.
@@ -2524,6 +2544,45 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.json(updated);
     } catch (err: any) {
       return sendInternalError(req, res, err, "tutor.quizzes.review.patch", "Failed to update question.");
+    }
+  });
+
+  // Regrade all completed submissions for a quiz by recomputing each report's
+  // score from stored answers (NO AI). This is an explicit, transparent action
+  // a tutor triggers after excluding/restoring questions. Only "completed"
+  // reports are touched; pending/failed reports are left alone.
+  app.post("/api/tutor/quizzes/:quizId/regrade", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const questions = await storage.getSomaQuestionsByQuizId(quizId);
+      const reports = await storage.getSomaReportsByQuizId(quizId);
+
+      const details: Array<{ reportId: number; studentName: string; oldScore: number; newScore: number; maxPossibleScore: number }> = [];
+      let regraded = 0;
+      let changed = 0;
+      for (const report of reports) {
+        if (report.status !== "completed") continue;
+        regraded++;
+        const { oldScore, newScore, maxPossibleScore } = recomputeReportScore(report, questions);
+        if (newScore !== oldScore) {
+          changed++;
+          await storage.updateSomaReport(report.id, { score: newScore });
+        }
+        details.push({ reportId: report.id, studentName: report.studentName, oldScore, newScore, maxPossibleScore });
+      }
+
+      logInfo("tutor.quizzes.regrade", { module: "routes", component: "tutor.regrade", quizId, userId: tutorId, regraded, changed });
+      return res.json({ regraded, changed, details });
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.regrade.post", "Failed to regrade submissions.");
     }
   });
 
