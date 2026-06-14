@@ -2419,6 +2419,113 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Tutor pre-publish review: list the quiz's questions WITH the answer key.
+  app.get("/api/tutor/quizzes/:quizId/review", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const questions = (await storage.getSomaQuestionsByQuizId(quizId))
+        .slice()
+        .sort((a, b) => a.id - b.id)
+        .map((q) => ({
+          id: q.id,
+          stem: q.stem,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          marks: q.marks,
+          reviewStatus: q.reviewStatus,
+          difficultyTag: q.difficultyTag,
+          topicTag: q.topicTag,
+          subtopicTag: q.subtopicTag,
+          generationMeta: q.generationMeta,
+        }));
+      res.json(questions);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.review", "Failed to load questions for review.");
+    }
+  });
+
+  // Tutor pre-publish review action: approve / reject, or edit (which re-gates).
+  app.patch("/api/tutor/quizzes/:quizId/questions/:questionId/review", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      const questionId = parseInt(req.params.questionId as string);
+      if (isNaN(quizId) || isNaN(questionId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const bodySchema = z
+        .object({
+          action: z.enum(["approve", "reject"]).optional(),
+          stem: z.string().min(1).optional(),
+          options: z.array(z.string()).length(4).optional(),
+          correctAnswer: z.string().min(1).optional(),
+          explanation: z.string().min(1).optional(),
+        })
+        .refine(
+          (b) =>
+            b.action !== undefined ||
+            b.stem !== undefined ||
+            b.options !== undefined ||
+            b.correctAnswer !== undefined ||
+            b.explanation !== undefined,
+          { message: "Provide an action or at least one field to edit" },
+        );
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten() });
+      }
+      const body = parsed.data;
+
+      const questions = await storage.getSomaQuestionsByQuizId(quizId);
+      const existing = questions.find((q) => q.id === questionId);
+      if (!existing) return res.status(404).json({ message: "Question not found" });
+
+      if (body.action === "approve") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "approved" });
+        return res.json(updated);
+      }
+      if (body.action === "reject") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "auto_blocked" });
+        return res.json(updated);
+      }
+
+      // Edit path: apply edits, then re-run the quality gate on the edited
+      // question so a fixed question can become "approved" again.
+      const editPatch: { stem?: string; options?: string[]; correctAnswer?: string; explanation?: string } = {};
+      if (body.stem !== undefined) editPatch.stem = body.stem;
+      if (body.options !== undefined) editPatch.options = body.options;
+      if (body.correctAnswer !== undefined) editPatch.correctAnswer = body.correctAnswer;
+      if (body.explanation !== undefined) editPatch.explanation = body.explanation;
+
+      const merged = {
+        stem: editPatch.stem ?? existing.stem,
+        options: (editPatch.options ?? (existing.options as string[])) as string[],
+        correct_answer: editPatch.correctAnswer ?? existing.correctAnswer,
+        explanation: editPatch.explanation ?? existing.explanation,
+        difficulty_tag: existing.difficultyTag ?? undefined,
+      };
+      const quality = validateQuestionQuality(merged);
+      const updated = await storage.updateSomaQuestionReview(questionId, {
+        ...editPatch,
+        reviewStatus: quality.reviewStatus,
+      });
+      return res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.review.patch", "Failed to update question.");
+    }
+  });
+
   // Revoke a student's quiz assignment
   app.delete("/api/tutor/quizzes/:quizId/assignments/:studentId", requireTutor, async (req, res) => {
     try {
@@ -5774,7 +5881,7 @@ ${JSON.stringify({
       if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
       if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
 
-      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter((q) => q.reviewStatus !== "auto_blocked");
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter((q) => q.reviewStatus === "approved");
       const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
       res.json(sanitized);
     } catch (err: any) {
@@ -5802,7 +5909,7 @@ ${JSON.stringify({
         return res.status(409).json({ message: "You have already submitted this quiz." });
       }
 
-      const allQuestions = (await storage.getSomaQuestionsByQuizId(quizId)).filter((q) => q.reviewStatus !== "auto_blocked");
+      const allQuestions = (await storage.getSomaQuestionsByQuizId(quizId)).filter((q) => q.reviewStatus === "approved");
       if (!allQuestions.length) {
         return res.status(404).json({ message: "No questions found for this quiz." });
       }
