@@ -2998,6 +2998,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     },
   );
 
+  // (11) Tutor toggles whether this assessment accepts student PDF responses.
+  app.patch(
+    "/api/tutor/quizzes/:quizId/pdf-responses",
+    tutorApiLimiter,
+    requireTutor,
+    async (req, res) => {
+      try {
+        const tutorId = (req as any).tutorId;
+        const quizId = parseInt(req.params.quizId as string);
+        if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+        const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request" });
+        }
+        const quiz = await storage.getSomaQuiz(quizId);
+        if (!quiz || quiz.authorId !== tutorId) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        const updated = await storage.updateSomaQuiz(quizId, { acceptsPdfResponse: parsed.data.enabled });
+        return res.json({ acceptsPdfResponse: updated?.acceptsPdfResponse ?? parsed.data.enabled });
+      } catch (err: any) {
+        return sendInternalError(req, res, err, "tutor.quizzes.pdfResponses", "Failed to update setting.");
+      }
+    },
+  );
+
   // Revoke a student's quiz assignment
   app.delete("/api/tutor/quizzes/:quizId/assignments/:studentId", requireTutor, async (req, res) => {
     try {

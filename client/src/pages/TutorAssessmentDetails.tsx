@@ -344,6 +344,24 @@ export default function TutorAssessmentDetails() {
     },
   });
 
+  const pdfResponsesToggleMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/pdf-responses`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error("Failed to update setting");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/details`, userId] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   function handleSelectFile(file: File | null) {
     if (!file) {
       setSelectedFile(null);
@@ -767,11 +785,22 @@ export default function TutorAssessmentDetails() {
 
         {/* Student PDF Responses */}
         <div className={CARD_CLASS}>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <FileCheck className="w-5 h-5" />
               PDF Responses
             </h2>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                data-testid="toggle-pdf-responses"
+                checked={Boolean(details?.quiz?.acceptsPdfResponse)}
+                disabled={pdfResponsesToggleMutation.isPending}
+                onChange={(e) => pdfResponsesToggleMutation.mutate(e.target.checked)}
+                className="h-4 w-4 rounded border-border/60 accent-violet-500"
+              />
+              Accept student PDF responses
+            </label>
           </div>
 
           {storageUnconfigured ? (

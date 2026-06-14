@@ -102,6 +102,15 @@ async function createQuizWithAssignedStudent(format: "mcq" | "pdf" = "pdf"): Pro
     .set("Authorization", `Bearer ${tutorAToken}`)
     .send({ studentIds: [STUDENT_ASSIGNED] });
   expect([200, 201]).toContain(assignRes.status);
+
+  if (acceptPdf) {
+    const toggle = await request
+      .patch(`/api/tutor/quizzes/${quizId}/pdf-responses`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .send({ enabled: true });
+    expect(toggle.status).toBe(200);
+    expect(toggle.body.acceptsPdfResponse).toBe(true);
+  }
   return quizId;
 }
 
@@ -220,6 +229,26 @@ describe("format enforcement (mcq assessments reject PDF flows)", () => {
 });
 
 describe("student submission uploads", () => {
+  it("rejects upload when the assessment doesn't accept PDF responses", async () => {
+    const quizId = await createQuizWithAssignedStudent(false);
+    const res = await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/does not accept PDF responses/i);
+  });
+
+  it("rejects a file whose bytes are not a real PDF (magic-byte spoof)", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    const res = await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", Buffer.from("<html>not a pdf</html>"), { filename: "x.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/not a valid PDF/i);
+  });
+
   it("assigned student upsert creates then replaces & resets the mark", async () => {
     const quizId = await createQuizWithAssignedStudent();
 
