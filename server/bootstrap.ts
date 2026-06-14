@@ -57,6 +57,7 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`,
   `UPDATE soma_reports SET student_name = su.display_name FROM soma_users su WHERE soma_reports.student_id = su.id AND su.display_name IS NOT NULL AND su.display_name != '' AND soma_reports.student_name != su.display_name AND su.display_name NOT LIKE '%@%'`,
   `CREATE TABLE IF NOT EXISTS password_reset_requests (id SERIAL PRIMARY KEY, email TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS accepts_pdf_response BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'multiple_choice'`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS graph_spec JSONB`,
   `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS topic_tag TEXT`,

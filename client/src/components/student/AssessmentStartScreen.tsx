@@ -15,7 +15,9 @@ export function AssessmentStartScreen({
   quizId,
   isStudent = false,
 }: {
-  quiz: Pick<SomaQuiz, "title" | "subject" | "level" | "syllabus" | "timeLimitMinutes">;
+  quiz: Pick<SomaQuiz, "title" | "subject" | "level" | "syllabus" | "timeLimitMinutes"> & {
+    acceptsPdfResponse?: boolean;
+  };
   questionCount: number;
   totalMarks: number;
   onStart: () => void;
@@ -94,7 +96,7 @@ export function AssessmentStartScreen({
           </div>
 
           {isStudent && quizId != null && quizId > 0 && (
-            <StudentAssessmentPdfSection quizId={quizId} />
+            <StudentAssessmentPdfSection quizId={quizId} acceptsPdfResponse={quiz.acceptsPdfResponse ?? false} />
           )}
 
           <Button

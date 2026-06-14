@@ -344,6 +344,24 @@ export default function TutorAssessmentDetails() {
     },
   });
 
+  const pdfResponsesToggleMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await authFetch(`/api/tutor/quizzes/${quizId}/pdf-responses`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error("Failed to update setting");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/details`, userId] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   function handleSelectFile(file: File | null) {
     if (!file) {
       setSelectedFile(null);
@@ -360,26 +378,32 @@ export default function TutorAssessmentDetails() {
     setSelectedFile(file);
   }
 
-  async function downloadAttachment(attachmentId: number) {
+  // Open the tab synchronously inside the click gesture, then fill it after the
+  // async sign call — opening after an await is silently blocked by popup
+  // blockers. (Can't pass noopener or window.open returns null.)
+  async function openSigned(fetchUrl: string) {
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      try { (win as unknown as { opener: unknown }).opener = null; } catch { /* noop */ }
+    }
     try {
-      const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+      const res = await authFetch(fetchUrl);
       if (!res.ok) throw new Error("Download failed");
       const { url } = await res.json();
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (win) win.location.href = url;
+      else window.location.href = url;
     } catch (err) {
+      if (win) win.close();
       toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
     }
   }
 
-  async function downloadResponse(id: number) {
-    try {
-      const res = await authFetch(`/api/tutor/submission-uploads/${id}/download`);
-      if (!res.ok) throw new Error("Download failed");
-      const { url } = await res.json();
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
-    }
+  function downloadAttachment(attachmentId: number) {
+    return openSigned(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+  }
+
+  function downloadResponse(id: number) {
+    return openSigned(`/api/tutor/submission-uploads/${id}/download`);
   }
 
   function openMarkDialog(upload: SubmissionUpload) {
@@ -755,11 +779,22 @@ export default function TutorAssessmentDetails() {
 
         {/* Student PDF Responses */}
         <div className={CARD_CLASS}>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <FileCheck className="w-5 h-5" />
               PDF Responses
             </h2>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                data-testid="toggle-pdf-responses"
+                checked={Boolean(details?.quiz?.acceptsPdfResponse)}
+                disabled={pdfResponsesToggleMutation.isPending}
+                onChange={(e) => pdfResponsesToggleMutation.mutate(e.target.checked)}
+                className="h-4 w-4 rounded border-border/60 accent-violet-500"
+              />
+              Accept student PDF responses
+            </label>
           </div>
 
           {storageUnconfigured ? (
@@ -794,7 +829,7 @@ export default function TutorAssessmentDetails() {
                           Marked
                         </Badge>
                         <p className="text-xs text-foreground/80 mt-1">
-                          {resp.score ?? 0} / {resp.maxScore ?? 0}
+                          {resp.score ?? 0}{resp.maxScore != null ? ` / ${resp.maxScore}` : ""}
                         </p>
                       </div>
                     ) : (
@@ -943,16 +978,16 @@ export default function TutorAssessmentDetails() {
               data-testid="resp-mark-save"
               onClick={() => {
                 const score = parseInt(markScore, 10);
-                const maxScore = markMax.trim() === "" ? undefined : parseInt(markMax, 10);
+                const maxScore = parseInt(markMax, 10);
                 if (Number.isNaN(score) || score < 0) {
                   toast({ title: "Invalid score", description: "Score must be 0 or greater.", variant: "destructive" });
                   return;
                 }
-                if (maxScore !== undefined && (Number.isNaN(maxScore) || maxScore <= 0)) {
-                  toast({ title: "Invalid max score", description: "Max score must be greater than 0.", variant: "destructive" });
+                if (markMax.trim() === "" || Number.isNaN(maxScore) || maxScore <= 0) {
+                  toast({ title: "Max score required", description: "Enter a max score greater than 0.", variant: "destructive" });
                   return;
                 }
-                if (maxScore !== undefined && score > maxScore) {
+                if (score > maxScore) {
                   toast({ title: "Invalid score", description: "Score cannot exceed the max score.", variant: "destructive" });
                   return;
                 }

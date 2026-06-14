@@ -85,7 +85,7 @@ beforeAll(async () => {
 afterAll(() => httpServer.close());
 
 // Create a quiz owned by TUTOR_A and assign STUDENT_ASSIGNED to it.
-async function createQuizWithAssignedStudent(): Promise<number> {
+async function createQuizWithAssignedStudent(acceptPdf = true): Promise<number> {
   const quizRes = await request
     .post("/api/tutor/quizzes")
     .set("Authorization", `Bearer ${tutorAToken}`)
@@ -101,6 +101,15 @@ async function createQuizWithAssignedStudent(): Promise<number> {
     .set("Authorization", `Bearer ${tutorAToken}`)
     .send({ studentIds: [STUDENT_ASSIGNED] });
   expect([200, 201]).toContain(assignRes.status);
+
+  if (acceptPdf) {
+    const toggle = await request
+      .patch(`/api/tutor/quizzes/${quizId}/pdf-responses`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .send({ enabled: true });
+    expect(toggle.status).toBe(200);
+    expect(toggle.body.acceptsPdfResponse).toBe(true);
+  }
   return quizId;
 }
 
@@ -115,7 +124,8 @@ describe("tutor worksheet attachments", () => {
       .attach("file", PDF, { filename: "worksheet.pdf", contentType: "application/pdf" });
     expect(up.status).toBe(201);
     expect(up.body.filename).toBe("worksheet.pdf");
-    expect(up.body.storagePath).toMatch(new RegExp(`^assessments/${quizId}/`));
+    // Internal storage key must never be exposed to clients.
+    expect(up.body.storagePath).toBeUndefined();
     const attachmentId = up.body.id;
 
     // (2) List (owner).
@@ -183,6 +193,26 @@ describe("tutor worksheet attachments", () => {
 });
 
 describe("student submission uploads", () => {
+  it("rejects upload when the assessment doesn't accept PDF responses", async () => {
+    const quizId = await createQuizWithAssignedStudent(false);
+    const res = await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/does not accept PDF responses/i);
+  });
+
+  it("rejects a file whose bytes are not a real PDF (magic-byte spoof)", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    const res = await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", Buffer.from("<html>not a pdf</html>"), { filename: "x.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/not a valid PDF/i);
+  });
+
   it("assigned student upsert creates then replaces & resets the mark", async () => {
     const quizId = await createQuizWithAssignedStudent();
 
@@ -192,7 +222,7 @@ describe("student submission uploads", () => {
       .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
     expect(first.status).toBe(201);
     expect(first.body.status).toBe("submitted");
-    expect(first.body.storagePath).toBe(`submissions/${quizId}/${STUDENT_ASSIGNED}.pdf`);
+    expect(first.body.storagePath).toBeUndefined();
     const submissionId = first.body.id;
 
     // Tutor marks it.
