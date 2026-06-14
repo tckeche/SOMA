@@ -149,6 +149,58 @@ describe("applyDisagreementProtocol", () => {
     expect(result.questions).toHaveLength(1);
     expect(result.blocked).toHaveLength(0);
   });
+
+  // ── Independent blind-solver vote (opt-in 4th arg) ──────────────────────────
+
+  it("blocks a non-math question when the independent blind solver disagrees", () => {
+    const solverVotes = new Map([
+      [1, { chosenOption: "Newton", multipleCorrect: false }],
+    ]);
+    const result = applyDisagreementProtocol([proseDraft], [proseQuestion], [], solverVotes);
+    expect(result.questions).toHaveLength(0);
+    expect(result.blocked).toHaveLength(1);
+    expect(result.blocked[0].reason).toMatch(/Independent blind solver disagreed/i);
+    expect(result.blocked[0].reason).toMatch(/solver="Newton"/);
+    expect(result.blocked[0].reason).toMatch(/verifier="Darwin"/);
+  });
+
+  it("keeps a non-math question when the independent blind solver agrees", () => {
+    const solverVotes = new Map([
+      [1, { chosenOption: "Darwin", multipleCorrect: false }],
+    ]);
+    const result = applyDisagreementProtocol([proseDraft], [proseQuestion], [], solverVotes);
+    expect(result.questions).toHaveLength(1);
+    expect(result.blocked).toHaveLength(0);
+  });
+
+  it("blocks a non-math question when the solver flags multiple defensible answers", () => {
+    const solverVotes = new Map([
+      [1, { chosenOption: "Darwin", multipleCorrect: true }],
+    ]);
+    const result = applyDisagreementProtocol([proseDraft], [proseQuestion], [], solverVotes);
+    expect(result.questions).toHaveLength(0);
+    expect(result.blocked).toHaveLength(1);
+    expect(result.blocked[0].reason).toMatch(/more than one defensible correct option/i);
+  });
+
+  it("ignores the solver vote for math-verifiable questions (prover is authoritative)", () => {
+    // Solver picks the wrong option, but the deterministic prover can re-solve
+    // 2+2 and agrees with the verifier ("4"), so the solver vote is ignored.
+    const solverVotes = new Map([
+      [1, { chosenOption: "5", multipleCorrect: false }],
+    ]);
+    const result = applyDisagreementProtocol([mathDraft], [mathQuestion], [], solverVotes);
+    expect(result.questions).toHaveLength(1);
+    expect(result.blocked).toHaveLength(0);
+  });
+
+  it("behaves identically to the 3-arg call when no solverVotes are supplied", () => {
+    const withArg = applyDisagreementProtocol([proseDraft], [proseQuestion], [], undefined);
+    const withoutArg = applyDisagreementProtocol([proseDraft], [proseQuestion], []);
+    expect(withArg).toEqual(withoutArg);
+    expect(withArg.questions).toHaveLength(1);
+    expect(withArg.blocked).toHaveLength(0);
+  });
 });
 
 // ─── Per-option rationale validator ────────────────────────────────────────
