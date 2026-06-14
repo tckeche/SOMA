@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion } from "@shared/schema";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { z } from "zod";
 import multer from "multer";
@@ -1250,6 +1250,20 @@ function sanitizeSubmittedAnswers(
   }
 
   return sanitized;
+}
+
+/**
+ * Returns only the student-safe fields of a question, deliberately omitting the
+ * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
+ * so it can be served to students before submission.
+ */
+function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
+  return {
+    id: q.id, quizId: q.quizId, stem: q.stem,
+    options: q.options, marks: q.marks,
+    questionType: q.questionType, graphSpec: q.graphSpec,
+    // omit: correctAnswer, explanation, optionRationales, targetMisconceptionIds
+  };
 }
 
 /**
@@ -5784,7 +5798,7 @@ ${JSON.stringify({
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
-      runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore, {
+      runBackgroundGrading(report.id, allQuestions, sanitizedAnswers, totalScore, maxPossibleScore, {
         studentId,
         quizTitle: quiz?.title || "your assessment",
         quizSubject: quiz?.subject ?? null,
@@ -5890,7 +5904,7 @@ ${JSON.stringify({
           id: q.id,
           stem: q.stem,
           options: q.options,
-          correctAnswer: q.correctAnswer,
+          correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
           marks: q.marks,
           explanation: q.explanation,
         })),
