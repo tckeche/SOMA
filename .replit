@@ -33,10 +33,6 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Install Playwright browsers"
-
 
 [[workflows.workflow]]
 name = "Start application"
@@ -46,17 +42,6 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Install Playwright browsers"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npx playwright install chromium"
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [userenv]
 
