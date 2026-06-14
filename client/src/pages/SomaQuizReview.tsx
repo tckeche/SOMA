@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { authFetch } from "@/lib/supabase";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
-  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check, Quote,
+  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check, Quote, RotateCcw,
 } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ReportPdfView, { type ReportPdfData } from "@/components/student/ReportPdfView";
@@ -30,6 +31,8 @@ interface ReviewReport {
   score: number;
   status: string;
   answersJson: Record<string, string> | null;
+  /** Per-question awarded-marks overrides (questionId → marks). Null = none. */
+  manualMarks: Record<string, number> | null;
   aiFeedbackHtml: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -72,12 +75,29 @@ export default function SomaQuizReview() {
   const pdfRef = useRef<HTMLDivElement>(null);
   const params = useParams<{ reportId: string }>();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const reportId = parseInt(params.reportId || "0");
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  const { session } = useSupabaseSession();
+  // Canonical role source mirrors RoleRouter — marks editing is tutor-only.
+  const { data: viewer } = useQuery<{ role?: string }>({
+    queryKey: ["/api/auth/me", session?.user?.id],
+    queryFn: async () => {
+      const res = await authFetch("/api/auth/me");
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!session?.user?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+  const isTutor = viewer?.role === "tutor" || viewer?.role === "super_admin";
+
+  const reviewQueryKey = ["/api/soma/reports", reportId, "review"];
+
   const { data, isLoading, error } = useQuery<ReviewData>({
-    queryKey: ["/api/soma/reports", reportId, "review"],
+    queryKey: reviewQueryKey,
     queryFn: async () => {
       const res = await authFetch(`/api/soma/reports/${reportId}/review`);
       if (!res.ok) {
@@ -113,6 +133,38 @@ export default function SomaQuizReview() {
     if (!data?.questions) return 0;
     return data.questions.reduce((s, q) => s + q.marks, 0);
   }, [data]);
+
+  const manualMarks = data?.report?.manualMarks ?? null;
+  const reportCompleted = (data?.report?.status ?? "") === "completed";
+  const canEditMarks = isTutor && reportCompleted;
+
+  // Per-question draft values for the editable inputs (questionId → string).
+  const [marksDraft, setMarksDraft] = useState<Record<string, string>>({});
+  const [savingQid, setSavingQid] = useState<string | null>(null);
+
+  const marksMutation = useMutation({
+    mutationFn: async (overrides: Record<string, number | null>) => {
+      const res = await authFetch(`/api/tutor/reports/${reportId}/marks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides }),
+      });
+      if (!res.ok) {
+        let msg = "Failed to update marks";
+        try {
+          const body = await res.json();
+          if (body?.message) msg = body.message;
+        } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      return res.json() as Promise<{ score: number; maxPossibleScore: number; manualMarks: Record<string, number> | null }>;
+    },
+    onSettled: () => {
+      setSavingQid(null);
+      // Refresh the whole review so totals/badges reflect persisted score.
+      queryClient.invalidateQueries({ queryKey: reviewQueryKey });
+    },
+  });
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -326,6 +378,31 @@ export default function SomaQuizReview() {
           {questions.map((q, idx) => {
             const studentAnswer = studentAnswers[String(q.id)] || null;
             const isCorrect = studentAnswer === q.correctAnswer;
+            const qid = String(q.id);
+            const hasOverride = !!manualMarks && Object.prototype.hasOwnProperty.call(manualMarks, qid);
+            const autoMarks = isCorrect ? q.marks : 0;
+            const awarded = hasOverride ? manualMarks![qid] : autoMarks;
+            const draftValue = marksDraft[qid] ?? String(awarded);
+            const isSavingThis = savingQid === qid && marksMutation.isPending;
+
+            const commitMarks = () => {
+              const raw = parseInt(draftValue, 10);
+              const clamped = Number.isNaN(raw) ? awarded : Math.max(0, Math.min(q.marks, raw));
+              setMarksDraft((d) => ({ ...d, [qid]: String(clamped) }));
+              if (clamped === awarded) return; // no-op
+              setSavingQid(qid);
+              marksMutation.mutate({ [qid]: clamped });
+            };
+
+            const resetMarks = () => {
+              setMarksDraft((d) => {
+                const next = { ...d };
+                delete next[qid];
+                return next;
+              });
+              setSavingQid(qid);
+              marksMutation.mutate({ [qid]: null });
+            };
 
             return (
               <div key={q.id} className="glass-card p-6" data-testid={`review-question-${idx + 1}`}>
@@ -333,12 +410,63 @@ export default function SomaQuizReview() {
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/20 flex items-center justify-center border border-violet-500/30 text-sm font-bold text-violet-300">
                     {idx + 1}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 flex items-center gap-2">
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Q{idx + 1}</p>
+                    {hasOverride && (
+                      <Badge
+                        className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30"
+                        data-testid={`marks-adjusted-${qid}`}
+                      >
+                        Adjusted
+                      </Badge>
+                    )}
                   </div>
-                  <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>
-                    {isCorrect ? "Correct" : studentAnswer ? "Incorrect" : "Skipped"} [{q.marks}]
-                  </Badge>
+                  {canEditMarks ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={q.marks}
+                        value={draftValue}
+                        disabled={isSavingThis}
+                        onChange={(e) => setMarksDraft((d) => ({ ...d, [qid]: e.target.value }))}
+                        onBlur={commitMarks}
+                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        className="w-14 h-8 px-2 rounded-lg bg-foreground/5 border border-border/60 text-sm text-foreground text-center focus:outline-none focus:border-violet-500/60"
+                        data-testid={`marks-input-${qid}`}
+                        aria-label={`Awarded marks for question ${idx + 1}`}
+                      />
+                      <span className="text-xs text-muted-foreground">/ {q.marks}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                        onClick={commitMarks}
+                        disabled={isSavingThis}
+                        data-testid={`marks-save-${qid}`}
+                        title="Save marks"
+                      >
+                        {isSavingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      </Button>
+                      {hasOverride && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-foreground/10"
+                          onClick={resetMarks}
+                          disabled={isSavingThis}
+                          data-testid={`marks-reset-${qid}`}
+                          title="Reset to auto-computed"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>
+                      {isCorrect ? "Correct" : studentAnswer ? "Incorrect" : "Skipped"} [{awarded}/{q.marks}]
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="text-base text-foreground leading-relaxed mb-4" data-testid={`text-review-stem-${idx + 1}`}>
