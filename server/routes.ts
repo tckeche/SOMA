@@ -2711,6 +2711,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (!quiz || quiz.authorId !== tutorId) {
           return res.status(403).json({ message: "Access denied" });
         }
+        if (quiz.format !== "pdf") {
+          return res.status(400).json({ message: "Worksheets can only be added to PDF-format assessments" });
+        }
 
         const storagePath = `assessments/${quizId}/${crypto.randomUUID()}.pdf`;
         await uploadPdf(storagePath, file.buffer);
@@ -2866,8 +2869,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (!assignment) {
           return res.status(403).json({ message: "Access denied" });
         }
-        // Server-side enforcement of the opt-in flag — not just a hidden UI box.
-        if (!quiz?.acceptsPdfResponse) {
+        if (!quiz || quiz.format !== "pdf") {
           return res.status(400).json({ message: "This assessment does not accept PDF responses" });
         }
 

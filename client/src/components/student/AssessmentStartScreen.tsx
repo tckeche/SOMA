@@ -15,9 +15,7 @@ export function AssessmentStartScreen({
   quizId,
   isStudent = false,
 }: {
-  quiz: Pick<SomaQuiz, "title" | "subject" | "level" | "syllabus" | "timeLimitMinutes"> & {
-    acceptsPdfResponse?: boolean;
-  };
+  quiz: Pick<SomaQuiz, "title" | "subject" | "level" | "syllabus" | "timeLimitMinutes" | "format">;
   questionCount: number;
   totalMarks: number;
   onStart: () => void;
@@ -95,8 +93,10 @@ export function AssessmentStartScreen({
             <Expect icon={CheckCircle2} text="You can review and change answers before submitting." />
           </div>
 
-          {isStudent && quizId != null && quizId > 0 && (
-            <StudentAssessmentPdfSection quizId={quizId} acceptsPdfResponse={quiz.acceptsPdfResponse ?? false} />
+          {/* Worksheet/response upload belongs only to PDF-format assessments,
+              which have their own dedicated screen — never on the MCQ start screen. */}
+          {isStudent && quizId != null && quizId > 0 && quiz.format === "pdf" && (
+            <StudentAssessmentPdfSection quizId={quizId} />
           )}
 
           <Button

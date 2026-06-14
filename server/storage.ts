@@ -1645,6 +1645,7 @@ export class MemoryStorage implements IStorage {
       curriculumContext: quiz.curriculumContext ?? null,
       authorId: quiz.authorId ?? null,
       timeLimitMinutes: quiz.timeLimitMinutes ?? 60,
+      format: quiz.format ?? "mcq",
       status: quiz.status ?? "published",
       isArchived: quiz.isArchived ?? false,
       acceptsPdfResponse: quiz.acceptsPdfResponse ?? false,

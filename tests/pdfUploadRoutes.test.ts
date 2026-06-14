@@ -85,11 +85,11 @@ beforeAll(async () => {
 afterAll(() => httpServer.close());
 
 // Create a quiz owned by TUTOR_A and assign STUDENT_ASSIGNED to it.
-async function createQuizWithAssignedStudent(acceptPdf = true): Promise<number> {
+async function createQuizWithAssignedStudent(format: "mcq" | "pdf" = "pdf"): Promise<number> {
   const quizRes = await request
     .post("/api/tutor/quizzes")
     .set("Authorization", `Bearer ${tutorAToken}`)
-    .send({ title: "Worksheet Quiz", timeLimitMinutes: 30 });
+    .send({ title: "Worksheet Quiz", timeLimitMinutes: 30, format });
   const quizId = quizRes.body.id;
 
   await request
@@ -189,6 +189,28 @@ describe("tutor worksheet attachments", () => {
       .attach("file", Buffer.from("hello"), { filename: "notes.txt", contentType: "text/plain" });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/PDF required/i);
+  });
+});
+
+describe("format enforcement (mcq assessments reject PDF flows)", () => {
+  it("rejects a student PDF response on an mcq-format assessment", async () => {
+    const quizId = await createQuizWithAssignedStudent("mcq");
+    const res = await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/does not accept PDF responses/i);
+  });
+
+  it("rejects a tutor worksheet upload on an mcq-format assessment", async () => {
+    const quizId = await createQuizWithAssignedStudent("mcq");
+    const res = await request
+      .post(`/api/tutor/quizzes/${quizId}/attachments`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .attach("file", PDF, { filename: "worksheet.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/PDF-format/i);
   });
 });
 
