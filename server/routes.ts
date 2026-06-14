@@ -4918,7 +4918,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
-  app.post("/api/student/notifications/read-all", requireSupabaseAuth, async (req, res) => {
+  app.post("/api/student/notifications/read-all", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
       const count = await storage.markAllStudentNotificationsRead(studentId);
@@ -4928,7 +4928,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     }
   });
 
-  app.delete("/api/student/notifications/:id", requireSupabaseAuth, async (req, res) => {
+  app.delete("/api/student/notifications/:id", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
       const id = parseInt(String(req.params.id), 10);
