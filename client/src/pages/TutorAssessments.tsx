@@ -58,6 +58,61 @@ function formatDate(dateStr: string | Date | null): string {
   return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+// Compact "23 Jun" date used on assessment tabs/cards.
+function formatDateShort(dateStr: string | Date | null): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+// Paper codes (P1, Paper 2, …) are NOT subtopics and must never appear in the
+// computed assessment name.
+function isPaperCode(s: string): boolean {
+  const t = s.trim();
+  return /^p\s*\d+$/i.test(t) || /^paper\s*\d+$/i.test(t);
+}
+
+type AssessmentNameInput = {
+  level?: string | null;
+  subject?: string | null;
+  topics?: string[] | null;
+  topic?: string | null;
+  title?: string | null;
+};
+
+// Curriculum subtopics for a quiz, drawn from the `topics` array (falling back to
+// the legacy single `topic` string), with paper codes stripped out.
+function subtopicSegments(quiz: AssessmentNameInput): string[] {
+  const fromArray = Array.isArray(quiz.topics) ? quiz.topics : [];
+  let segs = fromArray.map((t) => String(t ?? "").trim()).filter(Boolean);
+  if (segs.length === 0 && quiz.topic) {
+    segs = String(quiz.topic).split(/[,/;]+/).map((t) => t.trim()).filter(Boolean);
+  }
+  return segs.filter((s) => !isPaperCode(s));
+}
+
+// "Functions", "Functions & Quadratics", "Functions, Quadratics & Series", or
+// "Assorted Topics" when there are more than three subtopics.
+function joinSubtopics(segs: string[]): string {
+  if (segs.length === 0) return "";
+  if (segs.length > 3) return "Assorted Topics";
+  if (segs.length === 1) return segs[0];
+  return `${segs.slice(0, -1).join(", ")} & ${segs[segs.length - 1]}`;
+}
+
+// Display name for an assessment tab/card, e.g.
+// "AS Pure Mathematics - Functions, Quadratics & Series".
+function assessmentDisplayName(quiz: AssessmentNameInput): string {
+  const head = [quiz.level, quiz.subject]
+    .map((x) => (x ? String(x).trim() : ""))
+    .filter(Boolean)
+    .join(" ");
+  const subtopics = joinSubtopics(subtopicSegments(quiz));
+  if (head && subtopics) return `${head} - ${subtopics}`;
+  return head || subtopics || quiz.title || "Assessment";
+}
+
 function scoreColor(score: number, max: number): string {
   if (max === 0) return "text-muted-foreground";
   const pct = (score / max) * 100;
@@ -410,10 +465,8 @@ function BankView({
                     <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-foreground line-clamp-2">{quiz.title}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {[quiz.subject, quiz.level].filter(Boolean).join(" · ") || quiz.topic}
-                    </p>
+                    <h3 className="text-sm font-semibold text-foreground line-clamp-2" data-testid={`bank-name-${quiz.id}`}>{assessmentDisplayName(quiz)}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{quiz.title}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-[10px]">
@@ -426,7 +479,7 @@ function BankView({
                   >
                     {(quiz as any).format === "pdf" ? "PDF Submission" : "Multiple Choice"}
                   </span>
-                  <span className="text-muted-foreground">{formatDate(quiz.createdAt)}</span>
+                  <span className="text-muted-foreground" data-testid={`bank-date-${quiz.id}`}>{formatDateShort(quiz.createdAt)}</span>
                 </div>
                 <div className="flex items-center gap-2 mt-auto pt-1">
                   <button
@@ -478,7 +531,7 @@ export default function TutorAssessments() {
   const [subjectFilter, setSubjectFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
   const [studentFilter, setStudentFilter] = useState("");
-  const [quizSortBy, setQuizSortBy] = useState<"latest_submission" | "newest" | "title" | "subject">("latest_submission");
+  const [quizSortBy, setQuizSortBy] = useState<"latest_submission" | "newest" | "title" | "subject">("newest");
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"all" | "submitted" | "not_submitted">("all");
   const [assignmentStudentFilter, setAssignmentStudentFilter] = useState<string>("all");
   const [allocationDateFilter, setAllocationDateFilter] = useState("");
@@ -1026,8 +1079,8 @@ export default function TutorAssessments() {
                             </span>
                           )}
                         </div>
-                        <h3 className="text-sm font-medium text-foreground truncate">{quiz.title}</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">{quiz.topic} · {quiz.level}</p>
+                        <h3 className="text-sm font-medium text-foreground truncate" data-testid={`quiz-name-${quiz.id}`}>{assessmentDisplayName(quiz)}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5" data-testid={`quiz-date-${quiz.id}`}>{formatDateShort(quiz.createdAt)}</p>
                       </div>
                       <div className="p-2 text-muted-foreground">
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
