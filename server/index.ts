@@ -198,17 +198,20 @@ app.get("/api/health/trace", requireSuperAdminForDiagnostics, async (req, res) =
 // Real DB liveness probe. Runs a `SELECT 1` against the actual pool
 // and reports timing + pool stats so we can see whether Supabase is
 // healthy, slow, or refusing connections.
-app.get("/api/health/db", requireSuperAdminForDiagnostics, async (_req, res) => {
+function poolSnapshot(pool: any) {
+  return pool
+    ? { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }
+    : null;
+}
+
+async function runDbHealthCheck(
+  { diagnostics }: { diagnostics: boolean },
+): Promise<{ statusCode: number; body: any }> {
   const { db, pool } = await import("./db");
   const start = Date.now();
 
   if (!db || !pool) {
-    return sendApiError(_req, res, {
-      status: 503,
-      code: "DB_NOT_INITIALISED",
-      message: "The database is not ready. Please try again shortly.",
-      details: { reason: "db not initialised — connectDb() failed at startup" },
-    });
+    const elapsedMs = Date.now() - start;
     return {
       statusCode: 503,
       body: diagnostics
@@ -225,16 +228,12 @@ app.get("/api/health/db", requireSuperAdminForDiagnostics, async (_req, res) => 
     const result = await db.execute(query);
     const elapsedMs = Date.now() - start;
     const row = (result as any).rows?.[0] ?? (result as any)[0] ?? {};
-
     return {
       statusCode: 200,
       body: diagnostics
         ? {
-          ok: true,
-          elapsedMs,
-          status: "ok",
-          db: row.db,
-          user: row.usr,
+          ok: true, elapsedMs, status: "ok",
+          db: row.db, user: row.usr,
           versionShort: typeof row.ver === "string" ? row.ver.slice(0, 60) : null,
           pool: poolSnapshot(pool),
         }
@@ -242,30 +241,10 @@ app.get("/api/health/db", requireSuperAdminForDiagnostics, async (_req, res) => 
     };
   } catch (e: any) {
     const elapsedMs = Date.now() - start;
-    logInternalError(_req, e, "health.db");
-    res.status(503).json({
-      ok: false,
-      elapsedMs,
-      message: "Database health check failed.",
-      code: "DB_HEALTH_CHECK_FAILED",
-      pool: pool ? {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-      } : null,
-    });
-
     return {
       statusCode: 503,
       body: diagnostics
-        ? {
-          ok: false,
-          elapsedMs,
-          status: "unavailable",
-          error: e?.message ?? String(e),
-          code: e?.code,
-          pool: poolSnapshot(pool),
-        }
+        ? { ok: false, elapsedMs, status: "unavailable", error: e?.message ?? String(e), code: e?.code, pool: poolSnapshot(pool) }
         : { ok: false, elapsedMs, status: "unavailable", message: "Database health check failed" },
     };
   }
