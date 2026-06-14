@@ -201,15 +201,6 @@ function poolSnapshot(pool: any) {
   };
 }
 
-// Real DB liveness probe. Runs a `SELECT 1` against the actual pool
-// and reports timing + pool stats so we can see whether Supabase is
-// healthy, slow, or refusing connections.
-function poolSnapshot(pool: any) {
-  return pool
-    ? { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }
-    : null;
-}
-
 async function runDbHealthCheck(
   { diagnostics }: { diagnostics: boolean },
 ): Promise<{ statusCode: number; body: any }> {
