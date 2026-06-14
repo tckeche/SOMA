@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion } from "@shared/schema";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { z } from "zod";
 import multer from "multer";
@@ -1250,6 +1250,20 @@ function sanitizeSubmittedAnswers(
   }
 
   return sanitized;
+}
+
+/**
+ * Returns only the student-safe fields of a question, deliberately omitting the
+ * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
+ * so it can be served to students before submission.
+ */
+function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
+  return {
+    id: q.id, quizId: q.quizId, stem: q.stem,
+    options: q.options, marks: q.marks,
+    questionType: q.questionType, graphSpec: q.graphSpec,
+    // omit: correctAnswer, explanation, optionRationales, targetMisconceptionIds
+  };
 }
 
 /**
@@ -3397,6 +3411,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               console.error(`[AI Publish] Quiz "${item.topic}" produced 0 usable questions after re-rolls — skipping publish.`);
               continue;
             }
+            const balancedGen = balanceAnswerOptions(generated.questions);
             const quiz = await storage.createSomaQuizBundle({
               quiz: {
                 title: `${item.subject}: ${item.topic} (${item.purpose.replace(/_/g, " ")})`,
@@ -3408,7 +3423,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
                 status: "published",
                 timeLimitMinutes: Math.max(45, Math.ceil(parsed.questionCount * 1.5)),
               },
-              questions: generated.questions.map((q, i) => {
+              questions: balancedGen.map((q, i) => {
                 // Per-question misconception attribution. Phase 4 prefers
                 // the per-option rationales (each distractor carries its
                 // own misconception id), falling back to the blueprint
@@ -5464,7 +5479,7 @@ ${JSON.stringify({
         targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
       }, traceId);
       const insertedQuestions = await storage.createSomaQuestions(
-        result.questions.map((q) => ({
+        balanceAnswerOptions(result.questions).map((q) => ({
           quizId: quiz.id,
           stem: q.stem,
           options: q.options,
@@ -5607,7 +5622,7 @@ ${JSON.stringify({
           status: "published",
           isArchived: false,
         },
-        questions: result.questions.map((q) => ({
+        questions: balanceAnswerOptions(result.questions).map((q) => ({
           stem: q.stem,
           options: q.options,
           correctAnswer: q.correct_answer,
@@ -5784,7 +5799,7 @@ ${JSON.stringify({
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
-      runBackgroundGrading(report.id, allQuestions, answers, totalScore, maxPossibleScore, {
+      runBackgroundGrading(report.id, allQuestions, sanitizedAnswers, totalScore, maxPossibleScore, {
         studentId,
         quizTitle: quiz?.title || "your assessment",
         quizSubject: quiz?.subject ?? null,
@@ -5890,7 +5905,7 @@ ${JSON.stringify({
           id: q.id,
           stem: q.stem,
           options: q.options,
-          correctAnswer: q.correctAnswer,
+          correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
           marks: q.marks,
           explanation: q.explanation,
         })),

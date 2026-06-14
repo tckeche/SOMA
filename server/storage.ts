@@ -319,6 +319,8 @@ class DatabaseStorage implements IStorage {
         : null,
       commandWord: q.commandWord ?? null,
       assessmentObjective: q.assessmentObjective ?? null,
+      reviewStatus: q.reviewStatus ?? "approved",
+      generationMeta: (q.generationMeta ?? null) as any,
     }));
     traceLog("storage.createSomaQuestions.beforeInsert", {
       normalizedCount: normalized.length,
@@ -739,6 +741,8 @@ class DatabaseStorage implements IStorage {
           : null,
         commandWord: q.commandWord ?? null,
         assessmentObjective: q.assessmentObjective ?? null,
+        reviewStatus: q.reviewStatus ?? "approved",
+        generationMeta: (q.generationMeta ?? null) as any,
       }));
       traceLog("storage.publishSomaQuestionsTransactional.beforeInsert", {
         quizId,
