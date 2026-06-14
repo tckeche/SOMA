@@ -2829,7 +2829,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Public (no-auth) subject-name list for the signup autocomplete. Returns
   // catalogue subject names only — nothing sensitive — sourced from the same
   // catalogue tables as the authed /api/catalogue/subjects endpoint.
-  app.get("/api/auth/catalogue/subjects", async (_req, res) => {
+  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (_req, res) => {
     try {
       const names = await listAllSubjectNames();
       res.json(names);
