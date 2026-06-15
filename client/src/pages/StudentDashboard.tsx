@@ -596,7 +596,7 @@ export default function StudentDashboard() {
         }
       />
 
-      <main className="max-w-[1240px] mx-auto px-6 pt-[26px] pb-20 space-y-6">
+      <main className="max-w-[1240px] mx-auto px-6 pt-[26px] pb-20 space-y-8">
         {isLoading ? (
           <DashboardSkeleton />
         ) : isError || !data ? (
