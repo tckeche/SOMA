@@ -626,7 +626,7 @@ export default function StudentDashboard() {
             </div>
 
             {/* view switcher */}
-            <div className="seg" role="group" aria-label="View">
+            <div className="seg" role="group" aria-label="View" style={{ marginBottom: 12 }}>
               <button aria-pressed={view === "dashboard"} onClick={() => setView("dashboard")}>Dashboard</button>
               <button aria-pressed={view === "assignments"} onClick={() => setView("assignments")}>Assignments</button>
               <button aria-pressed={view === "tools"} onClick={() => setView("tools")}>Study tools</button>

@@ -8,7 +8,7 @@
 /* ============================================================
    SOMA — Premium design system v2 (token layer)
    Sharp · high-end · quiet. Crisp surfaces, refined low-spread
-   depth, clean neutral type, violet brand. True dual theme.
+   depth, clean neutral type, dark-green brand. True dual theme.
    Every semantic colour routes through these tokens, so both
    themes stay in lockstep and components never hardcode hues.
    ============================================================ */
@@ -37,23 +37,23 @@
   --sidebar: 250 16% 10%;
   --sidebar-foreground: 255 30% 95%;
   --sidebar-border: 250 16% 17%;
-  --sidebar-primary: 252 100% 74%;
-  --sidebar-primary-foreground: 252 47% 11%;
-  --sidebar-accent: 252 38% 16%;
-  --sidebar-accent-foreground: 252 100% 82%;
-  --sidebar-ring: 252 100% 74%;
+  --sidebar-primary: 150 55% 42%;
+  --sidebar-primary-foreground: 150 40% 12%;
+  --sidebar-accent: 150 36% 15%;
+  --sidebar-accent-foreground: 150 55% 66%;
+  --sidebar-ring: 150 55% 42%;
 
-  --primary: 252 100% 74%;           /* brand */
-  --primary-foreground: 252 47% 11%; /* dark ink on light-violet CTA → AA (~5.7:1) */
+  --primary: 150 55% 42%;           /* brand */
+  --primary-foreground: 150 40% 12%; /* deep-green ink on green CTA */
   --secondary: 250 17% 13%;          /* surface-2 */
   --secondary-foreground: 255 12% 73%;
   --muted: 250 16% 13%;
   --muted-foreground: 255 9% 64%;
-  --accent: 252 38% 16%;             /* brand-soft */
-  --accent-foreground: 252 100% 82%;
+  --accent: 150 36% 15%;             /* brand-soft */
+  --accent-foreground: 150 55% 66%;
   --destructive: 8 79% 64%;
   --destructive-foreground: 0 0% 100%;
-  --ring: 252 100% 74%;
+  --ring: 150 55% 42%;
 
   /* Semantic status vocabulary (text · soft surface · border) */
   --success: 152 52% 52%;   --success-foreground: 152 40% 10%;
@@ -64,7 +64,7 @@
   --info-soft: 213 50% 15%;      --info-line: 210 48% 25%;
   --danger-soft: 6 39% 15%;      --danger-line: 8 37% 25%;
 
-  --chart-1: 252 100% 74%;
+  --chart-1: 150 55% 46%;
   --chart-2: 152 52% 52%;
   --chart-3: 35 70% 59%;
   --chart-4: 210 73% 63%;
@@ -87,15 +87,15 @@
   --shadow-2xl: 0 40px 80px -24px rgba(0,0,0,.75);
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
-  --sidebar-accent-border: hsl(252 32% 24%);
-  --primary-border: hsl(252 100% 68%);
+  --sidebar-accent-border: hsl(150 32% 26%);
+  --primary-border: hsl(150 55% 36%);
   --secondary-border: hsl(250 16% 22%);
   --muted-border: hsl(250 16% 20%);
-  --accent-border: hsl(252 32% 24%);
+  --accent-border: hsl(150 32% 26%);
   --destructive-border: hsl(8 50% 40%);
 
   /* Clean ground: one restrained brand wash up top, no photo. */
-  --app-wash: radial-gradient(120% 60% at 50% -8%, hsl(252 100% 74% / .10), transparent 60%);
+  --app-wash: radial-gradient(120% 60% at 50% -8%, hsl(150 55% 42% / .10), transparent 60%);
   --grid-dot: rgba(255,255,255,.045);
   color-scheme: dark;
 }
@@ -124,23 +124,23 @@
   --sidebar: 0 0% 100%;
   --sidebar-foreground: 257 15% 10%;
   --sidebar-border: 45 17% 91%;
-  --sidebar-primary: 250 86% 59%;
+  --sidebar-primary: 153 60% 28%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 252 80% 96%;
-  --sidebar-accent-foreground: 250 67% 51%;
-  --sidebar-ring: 250 86% 59%;
+  --sidebar-accent: 150 42% 93%;
+  --sidebar-accent-foreground: 153 58% 26%;
+  --sidebar-ring: 153 60% 28%;
 
-  --primary: 250 86% 59%;            /* brand */
+  --primary: 153 60% 28%;            /* brand */
   --primary-foreground: 0 0% 100%;
   --secondary: 45 20% 96%;           /* surface-2 */
   --secondary-foreground: 254 7% 35%;
   --muted: 43 15% 90%;               /* bg-tint */
   --muted-foreground: 252 6% 42%;
-  --accent: 252 80% 96%;             /* brand-soft */
-  --accent-foreground: 250 67% 51%;
+  --accent: 150 42% 93%;             /* brand-soft */
+  --accent-foreground: 153 58% 26%;
   --destructive: 6 63% 46%;
   --destructive-foreground: 0 0% 100%;
-  --ring: 250 86% 59%;
+  --ring: 153 60% 28%;
 
   --success: 156 59% 30%;   --success-foreground: 0 0% 100%;
   --success-soft: 144 33% 93%;   --success-line: 148 34% 84%;
@@ -151,7 +151,7 @@
   --danger-soft: 9 65% 94%;      --danger-line: 12 64% 85%;
 
   /* Chart palette tuned for AA contrast on light surfaces */
-  --chart-1: 250 70% 52%;
+  --chart-1: 153 58% 30%;
   --chart-2: 156 59% 30%;
   --chart-3: 35 78% 38%;
   --chart-4: 214 66% 40%;
@@ -167,14 +167,14 @@
   --shadow-2xl: 0 40px 80px -24px rgba(23,21,28,.30);
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
-  --sidebar-accent-border: hsl(252 60% 88%);
-  --primary-border: hsl(250 70% 50%);
+  --sidebar-accent-border: hsl(150 40% 82%);
+  --primary-border: hsl(153 60% 23%);
   --secondary-border: hsl(45 17% 88%);
   --muted-border: hsl(43 15% 85%);
-  --accent-border: hsl(252 60% 88%);
+  --accent-border: hsl(150 40% 82%);
   --destructive-border: hsl(6 55% 40%);
 
-  --app-wash: radial-gradient(120% 60% at 50% -8%, hsl(250 86% 59% / .06), transparent 60%);
+  --app-wash: radial-gradient(120% 60% at 50% -8%, hsl(153 60% 28% / .06), transparent 60%);
   --grid-dot: rgba(23,21,28,.05);
   color-scheme: light;
 }
@@ -203,23 +203,23 @@
   --sidebar: 250 16% 10%;
   --sidebar-foreground: 255 30% 95%;
   --sidebar-border: 250 16% 17%;
-  --sidebar-primary: 252 100% 74%;
-  --sidebar-primary-foreground: 252 47% 11%;
-  --sidebar-accent: 252 38% 16%;
-  --sidebar-accent-foreground: 252 100% 82%;
-  --sidebar-ring: 252 100% 74%;
+  --sidebar-primary: 150 55% 42%;
+  --sidebar-primary-foreground: 150 40% 12%;
+  --sidebar-accent: 150 36% 15%;
+  --sidebar-accent-foreground: 150 55% 66%;
+  --sidebar-ring: 150 55% 42%;
 
-  --primary: 252 100% 74%;
-  --primary-foreground: 252 47% 11%; /* dark ink on light-violet CTA → AA (~5.7:1) */
+  --primary: 150 55% 42%;
+  --primary-foreground: 150 40% 12%; /* deep-green ink on green CTA */
   --secondary: 250 17% 13%;
   --secondary-foreground: 255 12% 73%;
   --muted: 250 16% 13%;
   --muted-foreground: 255 9% 64%;
-  --accent: 252 38% 16%;
-  --accent-foreground: 252 100% 82%;
+  --accent: 150 36% 15%;
+  --accent-foreground: 150 55% 66%;
   --destructive: 8 79% 64%;
   --destructive-foreground: 0 0% 100%;
-  --ring: 252 100% 74%;
+  --ring: 150 55% 42%;
 
   --success: 152 52% 52%;   --success-foreground: 152 40% 10%;
   --success-soft: 152 36% 12%;   --success-line: 152 40% 23%;
@@ -229,7 +229,7 @@
   --info-soft: 213 50% 15%;      --info-line: 210 48% 25%;
   --danger-soft: 6 39% 15%;      --danger-line: 8 37% 25%;
 
-  --chart-1: 252 100% 74%;
+  --chart-1: 150 55% 46%;
   --chart-2: 152 52% 52%;
   --chart-3: 35 70% 59%;
   --chart-4: 210 73% 63%;
@@ -245,14 +245,14 @@
   --shadow-2xl: 0 40px 80px -24px rgba(0,0,0,.75);
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
-  --sidebar-accent-border: hsl(252 32% 24%);
-  --primary-border: hsl(252 100% 68%);
+  --sidebar-accent-border: hsl(150 32% 26%);
+  --primary-border: hsl(150 55% 36%);
   --secondary-border: hsl(250 16% 22%);
   --muted-border: hsl(250 16% 20%);
-  --accent-border: hsl(252 32% 24%);
+  --accent-border: hsl(150 32% 26%);
   --destructive-border: hsl(8 50% 40%);
 
-  --app-wash: radial-gradient(120% 60% at 50% -8%, hsl(252 100% 74% / .10), transparent 60%);
+  --app-wash: radial-gradient(120% 60% at 50% -8%, hsl(150 55% 42% / .10), transparent 60%);
   --grid-dot: rgba(255,255,255,.045);
 
   --radius: 0.875rem;
