@@ -43,6 +43,7 @@ export interface DashboardAssignmentRow {
   maxScore: number;
   scorePercent: number | null;
   completedAt: string | null;
+  questionCount: number;
 }
 
 export interface DashboardPerformance {

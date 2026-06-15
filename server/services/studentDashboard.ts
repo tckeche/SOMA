@@ -46,6 +46,7 @@ export interface AssignmentRow {
   maxScore: number;
   scorePercent: number | null;
   completedAt: string | null;
+  questionCount: number;
 }
 
 export interface SubjectSummary {
@@ -249,6 +250,7 @@ function buildAssignmentRow(
     maxScore,
     scorePercent,
     completedAt: report?.completedAt ? new Date(report.completedAt).toISOString() : null,
+    questionCount: a.quiz?.questionCount ?? 0,
   };
 }
 

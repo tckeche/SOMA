@@ -29,13 +29,6 @@ interface AIInsight {
   reason: string;
 }
 
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
-
 /* ── status chip → Warm Editorial chip class ──────────────────── */
 function statusChipClass(text: string): string {
   switch (text) {
@@ -408,7 +401,7 @@ export default function TutorDashboard() {
         }
       />
 
-      <main className="max-w-[1240px] mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-[1240px] mx-auto px-6 pt-[26px] pb-20 space-y-6">
         {statsError ? (
           <div className="flex flex-col items-center justify-center py-32 gap-4" data-testid="dashboard-error">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-warning/10 border border-warning/15">
@@ -435,7 +428,7 @@ export default function TutorDashboard() {
             <div className="flex items-center justify-between flex-wrap" style={{ gap: 12 }} data-testid="section-greeting">
               <div>
                 <h1 className="soma-display" style={{ fontSize: 34, marginBottom: 4 }} data-testid="text-greeting">
-                  {getGreeting()}, {displayName.split(" ")[0]}
+                  Hi {displayName.split(" ")[0]}
                 </h1>
                 <div className="text-muted-foreground" style={{ fontSize: 14 }}>
                   {format(new Date(), "EEEE, d MMMM yyyy")} · cohort overview
@@ -754,7 +747,7 @@ export default function TutorDashboard() {
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0" style={{ background: "rgba(20,17,28,.45)", backdropFilter: "blur(2px)" }} onClick={() => setDrawerStudentId(null)} />
           <aside
-            className="absolute top-0 right-0 h-full bg-background border-l border-border overflow-auto animate-in slide-in-from-right duration-200"
+            className="absolute top-0 right-0 h-full bg-card border-l border-card-border overflow-auto animate-in slide-in-from-right duration-200"
             style={{ width: "min(440px, 92vw)", boxShadow: "var(--shadow-lg)", padding: 24 }}
             data-testid="student-drawer"
           >
