@@ -30,8 +30,8 @@ interface Payload {
 }
 
 const FREQUENCY_BADGE: Record<string, string> = {
-  very_common: "bg-rose-500/15 text-rose-300 border-rose-500/30",
-  common: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  very_common: "bg-danger/15 text-danger border-danger/30",
+  common: "bg-warning/15 text-warning border-warning/30",
   occasional: "bg-sky-500/15 text-sky-200 border-sky-500/30",
 };
 
@@ -47,13 +47,13 @@ export function CohortMisconceptionHeatmap() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-violet-400 animate-spin" /></div>
+      <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
     );
   }
   if (isError || !data) {
     return (
       <div className="bg-foreground/[0.02] border border-border/60 rounded-2xl text-center py-12 px-4">
-        <AlertTriangle className="w-10 h-10 mx-auto text-amber-400 mb-3" />
+        <AlertTriangle className="w-10 h-10 mx-auto text-warning mb-3" />
         <p className="text-sm text-muted-foreground">Couldn't load the heatmap.</p>
       </div>
     );

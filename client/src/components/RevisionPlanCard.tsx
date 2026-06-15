@@ -250,7 +250,7 @@ export function RevisionPlanCard() {
               });
             }}
             disabled={generate.isPending}
-            className="text-sm px-4 py-2 rounded-lg bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/30 text-violet-200 flex items-center gap-2 disabled:opacity-50"
+            className="text-sm px-4 py-2 rounded-lg bg-primary/20 border border-primary/30 hover:bg-primary/30 text-primary flex items-center gap-2 disabled:opacity-50"
             data-testid="button-generate-plan"
           >
             <Sparkles className="w-4 h-4" /> Generate my plan
@@ -289,7 +289,7 @@ function PlanView({
               {plan.subject} <span className="text-muted-foreground font-normal">· {plan.syllabusCode} · {plan.level}</span>
             </p>
             {plan.stale && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-200 flex items-center gap-1">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> Out of date
               </span>
             )}
@@ -310,7 +310,7 @@ function PlanView({
         <button
           onClick={() => onRefresh()}
           disabled={refreshing}
-          className="text-xs px-3 py-1.5 rounded-lg bg-violet-500/15 border border-violet-500/30 hover:bg-violet-500/25 text-violet-200 flex items-center gap-1.5 disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 hover:bg-primary/25 text-primary flex items-center gap-1.5 disabled:opacity-50"
           data-testid="button-refresh-plan"
         >
           <RefreshCcw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} /> Refresh
