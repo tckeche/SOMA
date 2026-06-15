@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, json, jsonb, serial, uuid, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, json, jsonb, serial, uuid, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -282,7 +282,12 @@ export const somaQuestions = pgTable("soma_questions", {
     requestedDifficulty?: "easy" | "medium" | "hard";
     blocked?: boolean; blockReason?: string;
   }>(),
-});
+}, (table) => [
+  // Hot path: questions are fetched by quiz on nearly every quiz read
+  // (getSomaQuestionsByQuizId, ~13 call sites). The quiz_id FK was unindexed,
+  // forcing a sequential scan of soma_questions per quiz.
+  index("soma_questions_quiz_id_idx").on(table.quizId),
+]);
 
 
 /**
@@ -340,7 +345,13 @@ export const somaReports = pgTable("soma_reports", {
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Student dashboards and report lists filter reports by student; the FK was
+  // unindexed (sequential scan per student). Also index by quiz for the
+  // tutor-side per-quiz report rollups.
+  index("soma_reports_student_id_idx").on(table.studentId),
+  index("soma_reports_quiz_id_idx").on(table.quizId),
+]);
 
 export const tutorStudents = pgTable("tutor_students", {
   id: serial("id").primaryKey(),
@@ -360,6 +371,10 @@ export const quizAssignments = pgTable("quiz_assignments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("quiz_assignment_unique_idx").on(table.quizId, table.studentId),
+  // The unique index is led by quizId, so a filter by studentId alone (the
+  // student dashboard's "my assignments" query) couldn't use it. Add a
+  // studentId index for that path.
+  index("quiz_assignments_student_id_idx").on(table.studentId),
 ]);
 
 export const passwordResetRequests = pgTable("password_reset_requests", {
@@ -495,7 +510,11 @@ export const studentNotifications = pgTable("student_notifications", {
   payload: jsonb("payload"),
   readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // The notifications panel loads on every dashboard: filter by student_id,
+  // sort by created_at DESC. Composite index serves both the filter and sort.
+  index("student_notifications_student_id_created_at_idx").on(table.studentId, table.createdAt),
+]);
 
 // Question-level flag raised by a student during a quiz. The issuing tutor
 // (quiz author) can see these and analyse them later; the in-progress quiz

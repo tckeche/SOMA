@@ -1,32 +1,46 @@
 import { Switch, Route, useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
+import { Loader2 } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 
-import BuilderPage from "@/pages/builder";
-import SomaQuizEngine from "@/pages/soma-quiz";
-import SomaQuizReview from "@/pages/SomaQuizReview";
-import StudentAuth from "@/pages/StudentAuth";
-import StudentDashboard from "@/pages/StudentDashboard";
-import TutorDashboard from "@/pages/TutorDashboard";
-import TutorStudents from "@/pages/TutorStudents";
-import TutorStudentDetail from "@/pages/TutorStudentDetail";
-import TutorAssessments from "@/pages/TutorAssessments";
-import TutorAssessmentDetails from "@/pages/TutorAssessmentDetails";
-import TutorQuizReview from "@/pages/TutorQuizReview";
-import SuperAdminDashboard from "@/pages/SuperAdminDashboard";
-import SuperAdminTutorDetail from "@/pages/SuperAdminTutorDetail";
-import SuperAdminDiagnostics from "@/pages/SuperAdminDiagnostics";
-import SomaChatPage from "@/pages/soma-chat";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
+// Route-level code splitting: every page below is loaded on demand rather than
+// bundled into the initial download. Landing + NotFound stay eager because they
+// are tiny and on the first-paint path. This keeps the main bundle small so the
+// app shell paints fast; each page's JS (and its heavy deps like the markdown/
+// katex/pdf/chart stacks) only downloads when that route is actually visited.
+const BuilderPage = lazy(() => import("@/pages/builder"));
+const SomaQuizEngine = lazy(() => import("@/pages/soma-quiz"));
+const SomaQuizReview = lazy(() => import("@/pages/SomaQuizReview"));
+const StudentAuth = lazy(() => import("@/pages/StudentAuth"));
+const StudentDashboard = lazy(() => import("@/pages/StudentDashboard"));
+const TutorDashboard = lazy(() => import("@/pages/TutorDashboard"));
+const TutorStudents = lazy(() => import("@/pages/TutorStudents"));
+const TutorStudentDetail = lazy(() => import("@/pages/TutorStudentDetail"));
+const TutorAssessments = lazy(() => import("@/pages/TutorAssessments"));
+const TutorAssessmentDetails = lazy(() => import("@/pages/TutorAssessmentDetails"));
+const TutorQuizReview = lazy(() => import("@/pages/TutorQuizReview"));
+const SuperAdminDashboard = lazy(() => import("@/pages/SuperAdminDashboard"));
+const SuperAdminTutorDetail = lazy(() => import("@/pages/SuperAdminTutorDetail"));
+const SuperAdminDiagnostics = lazy(() => import("@/pages/SuperAdminDiagnostics"));
+const SomaChatPage = lazy(() => import("@/pages/soma-chat"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleRouter from "@/components/RoleRouter";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Redirect } from "wouter";
 import { supabase } from "@/lib/supabase";
+
+function RouteFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+    </div>
+  );
+}
 
 function Router() {
   return (
@@ -135,7 +149,11 @@ function App() {
   return (
     <TooltipProvider>
       <Toaster />
-      <ErrorBoundary title="Application error"><Router /></ErrorBoundary>
+      <ErrorBoundary title="Application error">
+        <Suspense fallback={<RouteFallback />}>
+          <Router />
+        </Suspense>
+      </ErrorBoundary>
     </TooltipProvider>
   );
 }
