@@ -1201,20 +1201,20 @@ export default function BuilderPage() {
   if (supaLoading || sessionLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
       </div>
     );
   }
 
   if (sessionError) {
-    return <div className="min-h-screen bg-background p-4 md:p-6 text-red-400">Failed to verify session.</div>;
+    return <div className="min-h-screen bg-background p-4 md:p-6 text-danger">Failed to verify session.</div>;
   }
 
   if (!authenticated) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="glass-card p-8 text-center">
-          <p className="text-foreground/80">Please <Link href="/login" className="text-violet-400 underline">log in</Link> to access the builder.</p>
+          <p className="text-foreground/80">Please <Link href="/login" className="text-primary underline">log in</Link> to access the builder.</p>
         </div>
       </div>
     );
@@ -1257,11 +1257,11 @@ export default function BuilderPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Badge className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-foreground/5 text-muted-foreground border-border/50"}`}>
+            <Badge className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-warning/10 text-warning border-warning/30" : "bg-foreground/5 text-muted-foreground border-border/50"}`}>
               {totalQuestions} Q{totalQuestions !== 1 ? "s" : ""}
             </Badge>
             <Badge
-              className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-amber-500/10 text-amber-400 border-amber-500/30" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"}`}
+              className={`text-[10px] md:text-xs border ${isDraftDirty ? "bg-warning/10 text-warning border-warning/30" : "bg-success/10 text-success border-success/30"}`}
               data-testid="badge-save-status"
             >
               {isDraftDirty ? "Unsaved changes" : "Draft saved · ready to review"}
@@ -1269,7 +1269,7 @@ export default function BuilderPage() {
             {format !== "pdf" && (
               <>
                 <Button
-                  className="border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50 transition-all"
+                  className="border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
                   size="default"
                   onClick={() => setShowPreview(true)}
                   disabled={totalQuestions === 0}
@@ -1279,7 +1279,7 @@ export default function BuilderPage() {
                   <span className="hidden md:inline">Preview</span>
                 </Button>
                 <Button
-                  className="border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all"
+                  className="border border-info/30 bg-info/10 text-info hover:bg-info/20 hover:border-info/50 transition-all"
                   size="default"
                   onClick={() => setShowReview(true)}
                   disabled={totalQuestions === 0}
@@ -1291,7 +1291,7 @@ export default function BuilderPage() {
               </>
             )}
             <Button
-              className="border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold"
+              className="border border-success/40 bg-success/10 text-success hover:bg-success/20 hover:border-success/60 transition-all font-semibold"
               size="default"
               onClick={handlePublish}
               disabled={isPublishing || !activeQuizId || (format !== "pdf" && !!draftValidationError)}
@@ -1305,7 +1305,7 @@ export default function BuilderPage() {
               <span className="hidden md:inline">{isPublishing ? "Publishing…" : "Save & Publish"}</span>
             </Button>
             <Link href="/tutor/assessments" onClick={handleExit}>
-              <Button className="border border-red-500/30 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/25 hover:border-red-500/50 transition-all" size="default" data-testid="button-exit-builder">
+              <Button className="border border-danger/30 bg-danger/15 text-danger hover:bg-danger/25 hover:border-danger/50 transition-all" size="default" data-testid="button-exit-builder">
                 <X className="w-4 h-4 md:mr-1" />
                 <span>Exit Assessment</span>
               </Button>
@@ -1472,7 +1472,7 @@ export default function BuilderPage() {
                 <TutorWorksheetManager quizId={activeQuizId} />
               ) : (
                 <div className="glass-card p-6 text-center space-y-4" data-testid="panel-pdf-create">
-                  <FileText className="w-10 h-10 mx-auto text-violet-400" />
+                  <FileText className="w-10 h-10 mx-auto text-primary" />
                   <div>
                     <h2 className="font-semibold text-foreground text-sm mb-1">PDF submission assessment</h2>
                     <p className="text-xs text-muted-foreground">
@@ -1506,29 +1506,29 @@ export default function BuilderPage() {
           {/* 2. Co-Pilot — Main Focus */}
           <div className="glass-card flex flex-col overflow-hidden" style={{ minHeight: "400px" }}>
             <div className="px-4 py-3 border-b border-border/30 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-violet-400" />
+              <Sparkles className="w-4 h-4 text-primary" />
               <span className="text-sm font-semibold text-foreground" data-testid="tab-copilot">Co-Pilot</span>
               {pipelineActive && (
-                <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-violet-300" data-testid="text-pipeline-current-stage">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+                <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-primary" data-testid="text-pipeline-current-stage">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
                   <span className="hidden sm:inline">
                     {(PIPELINE_STAGES.find((s) => s.stage === currentStage)?.aiName) || "Working"}…
                   </span>
                 </span>
               )}
               {totalQuestions > 0 && !pipelineActive && (
-                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] ml-auto">
+                <Badge className="bg-success/10 text-success border-success/30 text-[10px] ml-auto">
                   {totalQuestions} saved
                 </Badge>
               )}
             </div>
             <div className="px-4 py-2 border-b border-border/30 text-xs">
-              {generationState === "generation_in_progress" && <span className="text-violet-300">Generation in progress…</span>}
-              {generationState === "generation_failed" && <span className="text-red-400">Generation failed or produced no valid draft. Please refine your prompt.</span>}
-              {generationState === "partial_success" && <span className="text-amber-300">Generation partially succeeded. Review the available questions before publishing.</span>}
-              {generationState === "validation_failed" && <span className="text-amber-300">Generation output failed validation. No trusted draft changes were applied.</span>}
-              {generationState === "persistence_failed" && <span className="text-red-400">Draft persistence failed. Please retry to sync questions.</span>}
-              {generationState === "ready_for_review" && <span className="text-emerald-400">Draft is ready for review and publish.</span>}
+              {generationState === "generation_in_progress" && <span className="text-primary">Generation in progress…</span>}
+              {generationState === "generation_failed" && <span className="text-danger">Generation failed or produced no valid draft. Please refine your prompt.</span>}
+              {generationState === "partial_success" && <span className="text-warning">Generation partially succeeded. Review the available questions before publishing.</span>}
+              {generationState === "validation_failed" && <span className="text-warning">Generation output failed validation. No trusted draft changes were applied.</span>}
+              {generationState === "persistence_failed" && <span className="text-danger">Draft persistence failed. Please retry to sync questions.</span>}
+              {generationState === "ready_for_review" && <span className="text-success">Draft is ready for review and publish.</span>}
               {generationState === "generation_started" && !pipelineActive && <span className="text-muted-foreground">Ready to generate when you send a prompt.</span>}
             </div>
 
@@ -1536,7 +1536,7 @@ export default function BuilderPage() {
             {!pipelineActive && draftQuestions.length > 0 &&
               (generationState === "ready_for_review" || generationState === "partial_success") && (
               <div
-                className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+                className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs text-success"
                 data-testid="banner-generation-complete"
               >
                 <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
@@ -1557,8 +1557,8 @@ export default function BuilderPage() {
                       <div
                         key={s.stage}
                         className={`flex items-center gap-1.5 p-2 rounded-lg border text-xs transition-all ${
-                          isDone ? "bg-emerald-500/10 border-emerald-500/30" :
-                          isActive ? "bg-violet-500/10 border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.1)]" :
+                          isDone ? "bg-success/10 border-success/30" :
+                          isActive ? "bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(139,92,246,0.1)]" :
                           "bg-foreground/[0.03] border-border/30 opacity-40"
                         }`}
                         data-testid={`pipeline-stage-${s.stage}`}
@@ -1569,11 +1569,11 @@ export default function BuilderPage() {
                           {s.icon === "pencil" && <Pencil className="w-3 h-3" />}
                           {s.icon === "search" && <Search className="w-3 h-3" />}
                         </span>
-                        <span className={`flex-1 truncate ${isDone ? "text-emerald-400" : isActive ? "text-violet-300" : "text-muted-foreground"}`}>
+                        <span className={`flex-1 truncate ${isDone ? "text-success" : isActive ? "text-primary" : "text-muted-foreground"}`}>
                           {isActive ? s.label : s.aiName}
                         </span>
-                        {isDone ? <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" /> :
-                         isActive ? <Loader2 className="w-3 h-3 animate-spin text-violet-400 shrink-0" /> :
+                        {isDone ? <CheckCircle2 className="w-3 h-3 text-success shrink-0" /> :
+                         isActive ? <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0" /> :
                          <div className="w-3 h-3 rounded-full border border-border/50 shrink-0" />}
                       </div>
                     );
@@ -1586,7 +1586,7 @@ export default function BuilderPage() {
             <div className="flex-1 p-4 overflow-auto space-y-3 h-[50vh] md:h-auto md:min-h-[300px] md:max-h-[500px]">
               {chat.length === 0 && (
                 <div className="text-center pt-8 space-y-2">
-                  <Sparkles className="w-8 h-8 mx-auto text-violet-400/40" />
+                  <Sparkles className="w-8 h-8 mx-auto text-primary/40" />
                   <p className="text-sm text-muted-foreground">Generate assessment questions using the Co-Pilot.</p>
                   <p className="text-xs text-muted-foreground">Questions are auto-saved to the database.</p>
                   <p className="text-xs text-muted-foreground italic">"Generate 5 IGCSE quadratics MCQs"</p>
@@ -1596,7 +1596,7 @@ export default function BuilderPage() {
                 <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
                   <div className={`inline-block max-w-[90%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
                     m.role === "user"
-                      ? "bg-violet-600/20 text-violet-200 border border-violet-500/20"
+                      ? "bg-primary/20 text-primary border border-primary/20"
                       : "bg-foreground/5 text-foreground/80 border border-border/30"
                   }`}>
                     {m.text}
@@ -1607,18 +1607,18 @@ export default function BuilderPage() {
                       </div>
                     )}
                     {m.warnings && m.warnings.length > 0 && (
-                      <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-left" data-testid={`block-warnings-${i}`}>
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 mb-1.5">
+                      <div className="mt-2 rounded-lg border border-warning/30 bg-warning/[0.06] p-2.5 text-left" data-testid={`block-warnings-${i}`}>
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-warning mb-1.5">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           <span>Quality check flagged {m.warnings.length} issue{m.warnings.length === 1 ? "" : "s"}</span>
                         </div>
-                        <ul className="space-y-1 text-[11px] text-amber-100/90 leading-relaxed">
+                        <ul className="space-y-1 text-[11px] text-warning/90 leading-relaxed">
                           {m.warnings.map((w, wi) => (
                             <li key={wi} className="flex items-start gap-1.5" data-testid={`text-warning-${i}-${wi}`}>
-                              <span className="font-mono text-amber-400/80 shrink-0">{w.questionIndex > 0 ? `Q${w.questionIndex}` : "All"}</span>
-                              <span className="text-amber-300/70 shrink-0">[{w.field}]</span>
+                              <span className="font-mono text-warning/80 shrink-0">{w.questionIndex > 0 ? `Q${w.questionIndex}` : "All"}</span>
+                              <span className="text-warning/70 shrink-0">[{w.field}]</span>
                               <span className="flex-1">{w.issue}</span>
-                              <span className={`shrink-0 px-1 rounded text-[9px] font-mono ${w.autoFixed ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}>
+                              <span className={`shrink-0 px-1 rounded text-[9px] font-mono ${w.autoFixed ? "bg-success/20 text-success" : "bg-danger/20 text-danger"}`}>
                                 {w.autoFixed ? "fixed" : "review"}
                               </span>
                             </li>
@@ -1635,8 +1635,8 @@ export default function BuilderPage() {
             {/* Chat input */}
             <div className="p-3 md:p-4 border-t border-border/30 space-y-2">
               {chatMutation.isPending && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-violet-500/30 bg-violet-500/[0.06] px-3 py-2">
-                  <div className="flex items-center gap-2 text-[11px] text-violet-200">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2">
+                  <div className="flex items-center gap-2 text-[11px] text-primary">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>
                       Generating… {elapsedSecs}s elapsed
@@ -1646,7 +1646,7 @@ export default function BuilderPage() {
                   </div>
                   <button
                     onClick={stopGeneration}
-                    className="flex items-center gap-1 text-[11px] text-rose-300 hover:text-rose-200"
+                    className="flex items-center gap-1 text-[11px] text-danger hover:text-danger/80"
                     data-testid="button-copilot-stop"
                   >
                     <StopCircle className="w-3.5 h-3.5" />
@@ -1655,11 +1655,11 @@ export default function BuilderPage() {
                 </div>
               )}
               {!chatMutation.isPending && generationState === "generation_failed" && lastAttemptMessage && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-500/30 bg-rose-500/[0.06] px-3 py-2">
-                  <span className="text-[11px] text-rose-200">Last generation failed. You can retry the same prompt.</span>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/[0.06] px-3 py-2">
+                  <span className="text-[11px] text-danger">Last generation failed. You can retry the same prompt.</span>
                   <button
                     onClick={handleRetry}
-                    className="flex items-center gap-1 text-[11px] text-violet-200 hover:text-violet-100"
+                    className="flex items-center gap-1 text-[11px] text-primary hover:text-primary/80"
                     data-testid="button-copilot-retry"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
@@ -1692,7 +1692,7 @@ export default function BuilderPage() {
                   type="checkbox"
                   checked={includeGraphQuestions}
                   onChange={(e) => setIncludeGraphQuestions(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-violet-500"
+                  className="w-3.5 h-3.5 accent-primary"
                   data-testid="checkbox-include-graph-questions"
                 />
                 <span className="text-xs text-muted-foreground">Include some questions with graphs</span>
@@ -1711,10 +1711,10 @@ export default function BuilderPage() {
 
             {/* Panel header */}
             <div className="flex items-center gap-2">
-              <FileStack className="w-4 h-4 text-amber-400" />
+              <FileStack className="w-4 h-4 text-warning" />
               <h2 className="font-semibold text-foreground text-sm">Draft Questions</h2>
               {isDraftDirty && (
-                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] flex items-center gap-1">
+                <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   Unsaved
                 </Badge>
@@ -1745,28 +1745,28 @@ export default function BuilderPage() {
                     className="bg-foreground/[0.04] border border-border/30 rounded-lg p-3 flex items-start gap-2"
                     data-testid={`card-draft-q-${idx}`}
                   >
-                    <span className="text-xs font-mono text-amber-400 font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
+                    <span className="text-xs font-mono text-warning font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-foreground/80 line-clamp-2"><MarkdownRenderer content={q.stem} /></div>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.options.length} opts</Badge>
                         <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.marks}m</Badge>
                         {q.questionType === "graph" && (
-                          <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px]">graph</Badge>
+                          <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">graph</Badge>
                         )}
                         {q.difficultyTag && (
                           <Badge className={`text-[10px] border ${
                             q.difficultyTag.toLowerCase().includes("hard")
-                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              ? "bg-danger/10 text-danger border-danger/20"
                               : q.difficultyTag.toLowerCase().includes("easy")
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                ? "bg-success/10 text-success border-success/20"
                                 : "bg-foreground/5 text-muted-foreground border-border/50"
                           }`}>{q.difficultyTag}</Badge>
                         )}
                       </div>
                     </div>
                     <button
-                      className="text-muted-foreground hover:text-red-400 shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg transition-colors"
+                      className="text-muted-foreground hover:text-danger shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg transition-colors"
                       onClick={() => deleteDraftQuestion(q.draftId)}
                       title="Remove from draft"
                       data-testid={`button-delete-draft-${idx}`}
@@ -1782,7 +1782,7 @@ export default function BuilderPage() {
             {draftQuestions.length > 0 && (
               <div className="border-t border-border/30 pt-3">
                 <Button
-                  className="w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all font-semibold min-h-[44px]"
+                  className="w-full border border-success/40 bg-success/10 text-success hover:bg-success/20 hover:border-success/60 transition-all font-semibold min-h-[44px]"
                   onClick={handlePublish}
                   disabled={isPublishing || !activeQuizId}
                   data-testid="button-publish-draft"
@@ -1812,9 +1812,9 @@ export default function BuilderPage() {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" data-testid="modal-success">
-          <div className="glass-card w-full max-w-md p-6 md:p-8 text-center space-y-5 border border-violet-500/20 shadow-[0_0_40px_rgba(139,92,246,0.15)]">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500/20 to-violet-500/20 flex items-center justify-center mx-auto border border-emerald-500/30">
-              <PartyPopper className="w-8 h-8 text-emerald-400" />
+          <div className="glass-card w-full max-w-md p-6 md:p-8 text-center space-y-5 border border-primary/20 shadow-[0_0_40px_rgba(139,92,246,0.15)]">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-success/20 to-primary/20 flex items-center justify-center mx-auto border border-success/30">
+              <PartyPopper className="w-8 h-8 text-success" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-foreground mb-1" data-testid="text-success-title">Assessment Created Successfully!</h2>

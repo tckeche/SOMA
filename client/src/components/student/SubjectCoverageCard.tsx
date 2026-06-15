@@ -8,15 +8,15 @@ interface Props {
 }
 
 const STATUS_LABEL: Record<StudentDashboardSubject["topics"][number]["status"], { label: string; tone: string; Icon: typeof CheckCircle2 }> = {
-  mastered: { label: "Mastered", tone: "text-emerald-300", Icon: CheckCircle2 },
-  in_progress: { label: "In progress", tone: "text-amber-300", Icon: Sparkles },
-  needs_work: { label: "Needs work", tone: "text-rose-300", Icon: AlertCircle },
+  mastered: { label: "Mastered", tone: "text-success", Icon: CheckCircle2 },
+  in_progress: { label: "In progress", tone: "text-warning", Icon: Sparkles },
+  needs_work: { label: "Needs work", tone: "text-danger", Icon: AlertCircle },
   untested: { label: "Untested", tone: "text-muted-foreground", Icon: Circle },
 };
 
 function TrendBadge({ trend }: { trend: StudentDashboardSubject["recentTrend"] }) {
-  if (trend === "up") return <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300"><TrendingUp className="w-3 h-3" /> trending up</span>;
-  if (trend === "down") return <span className="inline-flex items-center gap-1 text-[11px] text-rose-300"><TrendingDown className="w-3 h-3" /> needs attention</span>;
+  if (trend === "up") return <span className="inline-flex items-center gap-1 text-[11px] text-success"><TrendingUp className="w-3 h-3" /> trending up</span>;
+  if (trend === "down") return <span className="inline-flex items-center gap-1 text-[11px] text-danger"><TrendingDown className="w-3 h-3" /> needs attention</span>;
   if (trend === "flat") return <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><Minus className="w-3 h-3" /> steady</span>;
   return <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">just getting started</span>;
 }
@@ -51,7 +51,7 @@ export default function SubjectCoverageCard({ subject }: Props) {
           <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
             <span>{subject.completedCount} done</span>
             {subject.pendingCount > 0 && <span>{subject.pendingCount} pending</span>}
-            {subject.overdueCount > 0 && <span className="text-rose-400">{subject.overdueCount} overdue</span>}
+            {subject.overdueCount > 0 && <span className="text-danger">{subject.overdueCount} overdue</span>}
             <TrendBadge trend={subject.recentTrend} />
           </div>
         </div>
@@ -88,7 +88,7 @@ export default function SubjectCoverageCard({ subject }: Props) {
             <span>{masteredPct}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-500" style={{ width: `${masteredPct}%` }} />
+            <div className="h-full rounded-full bg-gradient-to-r from-success to-success transition-all duration-500" style={{ width: `${masteredPct}%` }} />
           </div>
         </div>
       </div>

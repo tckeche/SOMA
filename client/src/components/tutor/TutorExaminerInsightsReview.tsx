@@ -89,9 +89,9 @@ interface Counts {
 }
 
 const TUTOR_PILL_BUCKET_META: Array<{ key: keyof ConfidenceBreakdown; label: string; dot: string }> = [
-  { key: "high", label: "Pretty sure", dot: "bg-emerald-400" },
-  { key: "medium", label: "Worth a look", dot: "bg-amber-400" },
-  { key: "low", label: "Not sure", dot: "bg-rose-400" },
+  { key: "high", label: "Pretty sure", dot: "bg-success" },
+  { key: "medium", label: "Worth a look", dot: "bg-warning" },
+  { key: "low", label: "Not sure", dot: "bg-danger" },
 ];
 
 function TutorPillConfidenceBreakdown({
@@ -105,9 +105,9 @@ function TutorPillConfidenceBreakdown({
   const total = breakdown.high + breakdown.medium + breakdown.low + breakdown.unknown;
   if (total === 0) return null;
   const segments = [
-    { key: "high" as const, value: breakdown.high, color: "bg-emerald-500/70" },
-    { key: "medium" as const, value: breakdown.medium, color: "bg-amber-500/70" },
-    { key: "low" as const, value: breakdown.low, color: "bg-rose-500/70" },
+    { key: "high" as const, value: breakdown.high, color: "bg-success/70" },
+    { key: "medium" as const, value: breakdown.medium, color: "bg-warning/70" },
+    { key: "low" as const, value: breakdown.low, color: "bg-danger/70" },
     { key: "unknown" as const, value: breakdown.unknown, color: "bg-muted-foreground/40" },
   ];
   const tooltip =
@@ -165,8 +165,8 @@ const FREQUENCY_LABEL: Record<string, string> = {
 };
 
 const FREQUENCY_BADGE: Record<string, string> = {
-  very_common: "bg-rose-500/15 text-rose-300 border-rose-500/30",
-  common: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  very_common: "bg-danger/15 text-danger border-danger/30",
+  common: "bg-warning/15 text-warning border-warning/30",
   occasional: "bg-sky-500/15 text-sky-200 border-sky-500/30",
 };
 
@@ -183,17 +183,17 @@ function bucketForConfidence(pct: number | null): ConfidenceBucket {
 
 const CONFIDENCE_BADGE: Record<ConfidenceBucket, { className: string; label: string; help: string }> = {
   high: {
-    className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    className: "bg-success/15 text-success border-success/30",
     label: "Pretty sure",
     help: "SOMA is pretty sure about this one — quick to approve if it looks right.",
   },
   medium: {
-    className: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+    className: "bg-warning/15 text-warning border-warning/30",
     label: "Worth a look",
     help: "Worth a closer read before approving.",
   },
   low: {
-    className: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+    className: "bg-danger/15 text-danger border-danger/30",
     label: "Not sure",
     help: "SOMA isn't very sure — please scrutinise before approving.",
   },
@@ -386,10 +386,10 @@ export function TutorExaminerInsightsReview() {
   return (
     <section className="space-y-5" data-testid="tutor-insights-review">
       {/* Hero — friendly framing so tutors aren't intimidated */}
-      <div className="bg-gradient-to-br from-violet-500/10 to-amber-500/5 border border-violet-500/20 rounded-2xl p-5">
+      <div className="bg-gradient-to-br from-primary/10 to-warning/5 border border-primary/20 rounded-2xl p-5">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center shrink-0">
-            <Lightbulb className="w-5 h-5 text-violet-300" />
+          <div className="w-9 h-9 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+            <Lightbulb className="w-5 h-5 text-primary" />
           </div>
           <div className="flex-1">
             <h2 className="text-base font-semibold text-foreground">Examiner mistakes — yours to check</h2>
@@ -418,12 +418,12 @@ export function TutorExaminerInsightsReview() {
               onClick={() => setStatus(t.key)}
               className={`rounded-xl px-4 py-3 border text-left transition ${
                 active
-                  ? "bg-violet-500/15 border-violet-500/30 shadow-sm"
+                  ? "bg-primary/15 border-primary/30 shadow-sm"
                   : "bg-foreground/[0.02] border-border/50 hover:bg-foreground/[0.04]"
               }`}
               data-testid={`tutor-status-pill-${t.key}`}
             >
-              <p className={`text-[10px] uppercase tracking-wider ${active ? "text-violet-300" : "text-muted-foreground"}`}>{t.label}</p>
+              <p className={`text-[10px] uppercase tracking-wider ${active ? "text-primary" : "text-muted-foreground"}`}>{t.label}</p>
               <p className="text-2xl font-bold mt-0.5">{counts.data ? n : "—"}</p>
               {t.key === "pending" && (
                 <TutorPillConfidenceBreakdown breakdown={counts.data?.byConfidence?.[t.key]} statusKey={t.key} />
@@ -475,7 +475,7 @@ export function TutorExaminerInsightsReview() {
             aria-pressed={unmatchedOnly}
             className={`mt-[18px] inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition ${
               unmatchedOnly
-                ? "bg-amber-500/20 border-amber-500/40 text-amber-200"
+                ? "bg-warning/20 border-warning/40 text-warning"
                 : "bg-foreground/[0.04] border-border/60 text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground"
             }`}
             title="Only show items where SOMA couldn't pick a subtopic — perfect for an orphan-sweep."
@@ -493,10 +493,10 @@ export function TutorExaminerInsightsReview() {
       </div>
 
       {queue.isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-violet-400 animate-spin" /></div>
+        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
       ) : queue.isError || !queue.data ? (
         <div className="bg-foreground/[0.02] border border-border/60 rounded-2xl text-center py-12 px-4">
-          <AlertTriangle className="w-10 h-10 mx-auto text-amber-400 mb-3" />
+          <AlertTriangle className="w-10 h-10 mx-auto text-warning mb-3" />
           <p className="text-sm text-muted-foreground">Couldn't load the review queue. Try again.</p>
         </div>
       ) : queue.data.rows.length === 0 ? (
@@ -573,7 +573,7 @@ export function TutorExaminerInsightsReview() {
           data-testid="tutor-bulk-action-bar"
         >
           <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
-            <CheckSquare className="w-3.5 h-3.5 text-violet-300" />
+            <CheckSquare className="w-3.5 h-3.5 text-primary" />
             <span data-testid="tutor-text-bulk-selection-count">
               {selectedIds.size} selected
             </span>
@@ -581,7 +581,7 @@ export function TutorExaminerInsightsReview() {
           <button
             onClick={() => bulkAction.mutate({ action: "approve", ids: Array.from(selectedIds) })}
             disabled={bulkAction.isPending}
-            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+            className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
             data-testid="tutor-button-bulk-action-approve"
           >
             <CheckCircle2 className="w-3 h-3" /> Approve {selectedIds.size}
@@ -592,7 +592,7 @@ export function TutorExaminerInsightsReview() {
           <button
             onClick={() => bulkAction.mutate({ action: "reject", ids: Array.from(selectedIds) })}
             disabled={bulkAction.isPending}
-            className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-rose-500/15 hover:border-rose-500/30 hover:text-rose-200 flex items-center gap-1 disabled:opacity-40"
+            className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-danger/15 hover:border-danger/30 hover:text-danger flex items-center gap-1 disabled:opacity-40"
             data-testid="tutor-button-bulk-action-reject"
           >
             <XCircle className="w-3 h-3" /> Reject {selectedIds.size}
@@ -646,7 +646,7 @@ function ReviewCard({
   return (
     <article
       className={`bg-foreground/[0.02] border rounded-2xl p-5 ${
-        isSelected ? "border-violet-500/40 ring-2 ring-violet-500/30" : "border-border/60"
+        isSelected ? "border-primary/40 ring-2 ring-primary/30" : "border-border/60"
       }`}
       data-testid={`tutor-review-card-${row.id}`}
     >
@@ -658,7 +658,7 @@ function ReviewCard({
               checked={isSelected}
               onChange={onToggleSelect}
               disabled={busy}
-              className="w-4 h-4 rounded accent-violet-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-4 h-4 rounded accent-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               data-testid={`tutor-checkbox-select-${row.id}`}
               aria-label={`Select insight ${row.id}`}
             />
@@ -690,7 +690,7 @@ function ReviewCard({
             <button
               onClick={onApprove}
               disabled={busy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
               data-testid="tutor-button-approve"
             >
               <CheckCircle2 className="w-3 h-3" /> Approve
@@ -698,7 +698,7 @@ function ReviewCard({
             <button
               onClick={onReject}
               disabled={busy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-rose-500/15 hover:border-rose-500/30 hover:text-rose-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.04] border border-border/60 hover:bg-danger/15 hover:border-danger/30 hover:text-danger flex items-center gap-1 disabled:opacity-40"
               data-testid="tutor-button-reject"
             >
               <XCircle className="w-3 h-3" /> Reject
@@ -744,7 +744,7 @@ function ReviewCard({
             <button
               onClick={() => onSave({ misconception, studentError, correctApproach })}
               disabled={busy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
               data-testid="tutor-button-save-edit"
             >
               <Save className="w-3 h-3" /> Save changes
@@ -828,7 +828,7 @@ function TutorSubtopicLinkBadge({ row }: { row: QueueRow }) {
   if (row.subtopicId && row.subtopicTitle) {
     return (
       <span
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-200"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-success/10 border border-success/30 text-success"
         data-testid={`tutor-subtopic-link-badge-linked-${row.id}`}
       >
         <Link2 className="w-3 h-3" />
@@ -839,7 +839,7 @@ function TutorSubtopicLinkBadge({ row }: { row: QueueRow }) {
   if ((row.subtopic ?? "").trim()) {
     return (
       <span
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-200"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning"
         title={`SOMA couldn't auto-match "${row.subtopic}" to a syllabus subtopic. Edit this row to pick one.`}
         data-testid={`tutor-subtopic-link-badge-unmatched-${row.id}`}
       >
@@ -888,13 +888,13 @@ function TutorSubtopicPickerInline({
 
   return (
     <div
-      className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2"
+      className="rounded-xl border border-warning/30 bg-warning/5 p-3 space-y-2"
       data-testid={`tutor-subtopic-picker-${row.id}`}
     >
       <div className="flex items-start gap-2">
-        <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+        <HelpCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
         <div className="flex-1 text-xs">
-          <p className="text-amber-100 font-medium">Catalogue subtopic</p>
+          <p className="text-warning font-medium">Catalogue subtopic</p>
           <p className="text-muted-foreground mt-0.5">
             {row.subtopicId
               ? "Already linked. Pick a different subtopic to re-link if needed."
@@ -910,7 +910,7 @@ function TutorSubtopicPickerInline({
           <Loader2 className="w-3 h-3 animate-spin" /> Loading subtopics…
         </div>
       ) : options.isError ? (
-        <p className="text-xs text-rose-300">Couldn't load subtopic options.</p>
+        <p className="text-xs text-danger">Couldn't load subtopic options.</p>
       ) : (options.data?.options.length ?? 0) === 0 ? (
         <p className="text-xs text-muted-foreground">
           No catalogue subtopics found for syllabus <code>{row.syllabusCode}</code>.
@@ -918,13 +918,13 @@ function TutorSubtopicPickerInline({
       ) : (
         <>
           {options.data?.suggestion && (
-            <div className="text-[11px] text-emerald-300 flex items-center gap-2 flex-wrap">
+            <div className="text-[11px] text-success flex items-center gap-2 flex-wrap">
               Best guess: <span className="text-foreground/90 font-medium">{options.data.suggestion.title}</span>
               {options.data.suggestion.id !== selectedId && (
                 <button
                   type="button"
                   onClick={() => setSelectedId(options.data!.suggestion!.id)}
-                  className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200"
+                  className="px-2 py-0.5 rounded bg-success/15 border border-success/30 hover:bg-success/25 text-success"
                   data-testid={`tutor-button-accept-suggestion-${row.id}`}
                 >
                   Use suggestion
@@ -954,7 +954,7 @@ function TutorSubtopicPickerInline({
               type="button"
               onClick={() => onPick(selectedId === "" ? null : Number(selectedId))}
               disabled={busy || selectedId === "" || selectedId === row.subtopicId}
-              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
               data-testid={`tutor-button-save-subtopic-${row.id}`}
             >
               <Link2 className="w-3 h-3" /> Link subtopic

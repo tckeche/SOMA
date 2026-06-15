@@ -41,11 +41,11 @@ export default function RemindersCarousel({ reminders }: Props) {
   if (reminders.length === 0) {
     return (
       <section
-        className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 shadow-lg"
+        className="rounded-2xl border border-warning/20 bg-warning/5 p-5 shadow-lg"
         aria-label="Tips for your studies"
         data-testid="panel-reminders-empty"
       >
-        <div className="flex items-center gap-2 text-amber-300 text-sm">
+        <div className="flex items-center gap-2 text-warning text-sm">
           <Lightbulb className="w-4 h-4" />
           Tips will appear once your subjects are set up.
         </div>
@@ -55,16 +55,16 @@ export default function RemindersCarousel({ reminders }: Props) {
 
   return (
     <section
-      className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-orange-500/5 p-5 shadow-lg"
+      className="rounded-2xl border border-warning/20 bg-gradient-to-br from-warning/10 to-warning/5 p-5 shadow-lg"
       aria-label="Tips for your studies"
       data-testid="panel-reminders"
     >
       <header className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Lightbulb className="w-5 h-5 text-amber-300" />
+          <Lightbulb className="w-5 h-5 text-warning" />
           <div>
-            <h2 className="text-sm font-semibold text-amber-200">Tips for your studies</h2>
-            <p className="text-[11px] text-amber-300/70">
+            <h2 className="text-sm font-semibold text-warning">Tips for your studies</h2>
+            <p className="text-[11px] text-warning/70">
               Examiner-style reminders for the topics you're studying
             </p>
           </div>

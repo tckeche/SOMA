@@ -63,17 +63,17 @@ function formatDate(dateStr: string | Date | null): string {
 function scoreColor(score: number, max: number): string {
   if (max === 0) return "text-muted-foreground";
   const pct = (score / max) * 100;
-  if (pct >= 80) return "text-emerald-400";
-  if (pct >= 50) return "text-amber-400";
-  return "text-red-400";
+  if (pct >= 80) return "text-success";
+  if (pct >= 50) return "text-warning";
+  return "text-danger";
 }
 
 function scoreBg(score: number, max: number): string {
-  if (max === 0) return "bg-slate-500/10";
+  if (max === 0) return "bg-muted/10";
   const pct = (score / max) * 100;
-  if (pct >= 80) return "bg-emerald-500/10 border-emerald-500/30";
-  if (pct >= 50) return "bg-amber-500/10 border-amber-500/30";
-  return "bg-red-500/10 border-red-500/30";
+  if (pct >= 80) return "bg-success/10 border-success/30";
+  if (pct >= 50) return "bg-warning/10 border-warning/30";
+  return "bg-danger/10 border-danger/30";
 }
 
 function StudentReportCard({ report, maxScore, questions, onViewReport }: {
@@ -104,8 +104,8 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="w-9 h-9 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center shrink-0">
-            <span className="text-xs font-bold text-violet-300">
+          <div className="w-9 h-9 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0">
+            <span className="text-xs font-bold text-primary">
               {initials}
             </span>
           </div>
@@ -122,7 +122,7 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
               )}
               {duration !== "—" && (
                 <span className="flex items-center gap-1">
-                  <Timer className="w-3 h-3 text-violet-400" />
+                  <Timer className="w-3 h-3 text-primary" />
                   {duration}
                 </span>
               )}
@@ -141,7 +141,7 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
           </div>
           <button
             onClick={() => onViewReport(report)}
-            className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25 transition-all"
+            className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-medium bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 transition-all"
             data-testid={`button-view-report-${report.id}`}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -196,12 +196,12 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
             )}
             {report.completedAt && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/60 border border-border/50 text-foreground/80">
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <Check className="w-3.5 h-3.5 text-success" />
                 Completed: {formatDate(report.completedAt)}
               </span>
             )}
             {duration !== "—" && (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary">
                 <Timer className="w-3.5 h-3.5" />
                 Duration: {duration}
               </span>
@@ -210,7 +210,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
 
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-violet-400" />
+              <FileText className="w-4 h-4 text-primary" />
               Questions & Answers
             </h4>
             {safeQuestions.length === 0 && (
@@ -227,11 +227,11 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
               return (
                 <div
                   key={q.id}
-                  className={`rounded-xl border p-4 ${isCorrect ? "bg-emerald-500/5 border-emerald-500/20" : "bg-red-500/5 border-red-500/20"}`}
+                  className={`rounded-xl border p-4 ${isCorrect ? "bg-success/5 border-success/20" : "bg-danger/5 border-danger/20"}`}
                   data-testid={`modal-question-${q.id}`}
                 >
                   <div className="flex items-start gap-2 mb-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? "bg-success/20 text-success" : "bg-danger/20 text-danger"}`}>
                       Q{idx + 1}
                     </span>
                     <div className="text-sm text-foreground/80 flex-1 min-w-0">
@@ -245,7 +245,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
                       {studentAnswer === null ? (
                         <span className="text-muted-foreground italic">Not answered</span>
                       ) : (
-                        <span className={`${isCorrect ? "text-emerald-400" : "text-red-400"} inline-block`}>
+                        <span className={`${isCorrect ? "text-success" : "text-danger"} inline-block`}>
                           <MarkdownRenderer content={studentAnswer} />
                         </span>
                       )}
@@ -253,7 +253,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
                     {!isCorrect && correctAnswer && (
                       <div className="text-xs flex flex-wrap items-baseline gap-1">
                         <span className="text-muted-foreground">Correct:</span>
-                        <span className="text-emerald-400 inline-block">
+                        <span className="text-success inline-block">
                           <MarkdownRenderer content={correctAnswer} />
                         </span>
                       </div>
@@ -272,11 +272,11 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
           {report.aiFeedbackHtml && (
             <div className="mt-4">
               <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2 mb-3">
-                <Award className="w-4 h-4 text-violet-400" />
+                <Award className="w-4 h-4 text-primary" />
                 Diagnostic Report
               </h4>
               <div
-                className="prose prose-sm prose-invert max-w-none bg-muted/40 rounded-xl p-4 border border-border/50 text-foreground/80 [&_h3]:text-violet-300 [&_strong]:text-foreground [&_li]:text-foreground/80"
+                className="prose prose-sm prose-invert max-w-none bg-muted/40 rounded-xl p-4 border border-border/50 text-foreground/80 [&_h3]:text-primary [&_strong]:text-foreground [&_li]:text-foreground/80"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMathInHtml(report.aiFeedbackHtml)) }}
                 data-testid="modal-ai-feedback"
               />
@@ -284,7 +284,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
           )}
 
           {report.status === "pending" && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs">
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
               <Loader2 className="w-4 h-4 animate-spin" />
               Diagnostic report is still being generated...
             </div>
@@ -293,7 +293,7 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
           {(report as { reviewRequested?: boolean }).reviewRequested && (
             <a
               href={`/soma/review/${report.id}`}
-              className="flex items-center gap-2 p-3 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs hover:bg-violet-500/15"
+              className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs hover:bg-primary/15"
               data-testid="link-review-requested"
             >
               <PenLine className="w-4 h-4" />
@@ -340,7 +340,7 @@ function BankView({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by title..."
-              className="w-full h-9 pl-9 pr-3 rounded-lg bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
+              className="w-full h-9 pl-9 pr-3 rounded-lg bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/40"
               data-testid="bank-search"
             />
           </div>
@@ -395,7 +395,7 @@ function BankView({
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
         </div>
       ) : totalCount === 0 ? (
         <div className={`${CARD_CLASS} text-center py-12`}>
@@ -428,11 +428,11 @@ function BankView({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-[10px]">
-                  <span className={`px-2 py-0.5 rounded-full font-medium ${quiz.status === "draft" ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                  <span className={`px-2 py-0.5 rounded-full font-medium ${quiz.status === "draft" ? "bg-warning/15 text-warning" : "bg-success/15 text-success"}`}>
                     {quiz.status === "draft" ? "Draft" : "Published"}
                   </span>
                   <span
-                    className={`px-2 py-0.5 rounded-full font-medium ${(quiz as any).format === "pdf" ? "bg-cyan-500/15 text-cyan-300" : "bg-violet-500/15 text-violet-300"}`}
+                    className={`px-2 py-0.5 rounded-full font-medium ${(quiz as any).format === "pdf" ? "bg-info/15 text-info" : "bg-primary/15 text-primary"}`}
                     data-testid={`bank-type-${quiz.id}`}
                   >
                     {(quiz as any).format === "pdf" ? "PDF Submission" : "Multiple Choice"}
@@ -442,7 +442,7 @@ function BankView({
                 <div className="flex items-center gap-2 mt-auto pt-1">
                   <button
                     onClick={() => onReassign(quiz.id)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-success/20 text-success border border-success/30 hover:bg-success/30 transition-all"
                     data-testid={`bank-reassign-${quiz.id}`}
                   >
                     <UserPlus className="w-3.5 h-3.5" />
@@ -450,7 +450,7 @@ function BankView({
                   </button>
                   <button
                     onClick={() => onDuplicate(quiz.id, quiz.title)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25 transition-all"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 transition-all"
                     data-testid={`bank-duplicate-${quiz.id}`}
                   >
                     <Copy className="w-3.5 h-3.5" />
@@ -458,7 +458,7 @@ function BankView({
                   </button>
                   <button
                     onClick={() => onDelete(quiz.id, quiz.title)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20 transition-all"
                     data-testid={`bank-delete-${quiz.id}`}
                     title="Delete assessment"
                   >
@@ -829,7 +829,7 @@ export default function TutorAssessments() {
               </div>
               <div className="hidden sm:block">
                 <p className="text-sm font-medium text-foreground">{displayName}</p>
-                <p className="text-[10px] text-violet-400 font-semibold uppercase tracking-wider">Tutor</p>
+                <p className="text-[10px] text-primary font-semibold uppercase tracking-wider">Tutor</p>
               </div>
             </div>
             <ThemeToggle />
@@ -854,7 +854,7 @@ export default function TutorAssessments() {
               Students
             </span>
           </Link>
-          <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-violet-300 border-b-2 border-violet-500 cursor-default" data-testid="nav-assessments">
+          <span className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-primary border-b-2 border-primary cursor-default" data-testid="nav-assessments">
             <BookOpen className="w-4 h-4" />
             Assessments
           </span>
@@ -883,7 +883,7 @@ export default function TutorAssessments() {
           <button
             type="button"
             onClick={() => setView("list")}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${view === "list" ? "text-violet-300 border-violet-500" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${view === "list" ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
             data-testid="tab-list"
           >
             My Assessments
@@ -891,7 +891,7 @@ export default function TutorAssessments() {
           <button
             type="button"
             onClick={() => setView("bank")}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${view === "bank" ? "text-violet-300 border-violet-500" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${view === "bank" ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
             data-testid="tab-bank"
           >
             <BookOpen className="w-4 h-4" />
@@ -987,7 +987,7 @@ export default function TutorAssessments() {
 
         {authLoading || quizzesLoading ? (
           <div className="flex justify-center py-16">
-            <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
         ) : tutorQuizzes.length === 0 ? (
           <div className={`${CARD_CLASS} text-center py-12`}>
@@ -1041,7 +1041,7 @@ export default function TutorAssessments() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-0.5">
                           {isExpanded && reports.length > 0 && (
-                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300">
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                               {reports.length} submission{reports.length !== 1 ? "s" : ""} · avg {avgPct}%
                             </span>
                           )}
@@ -1057,7 +1057,7 @@ export default function TutorAssessments() {
                     <div className="flex items-center gap-2 ml-14" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() => openAssignModal(quiz.id)}
-                        className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all"
+                        className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-success/20 text-success border border-success/30 hover:bg-success/30 transition-all"
                         data-testid={`button-assign-${quiz.id}`}
                       >
                         <UserPlus className="w-3.5 h-3.5" />
@@ -1066,7 +1066,7 @@ export default function TutorAssessments() {
                       <Link href={`/tutor/assessments/edit/${quiz.id}`} aria-label="Edit assessment">
                         <span
                           onClick={(e) => e.stopPropagation()}
-                          className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-violet-300 hover:bg-violet-500/10 transition-all"
+                          className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
                           title="Edit assessment"
                         >
                           <Pencil className="w-3.5 h-3.5" />
@@ -1074,7 +1074,7 @@ export default function TutorAssessments() {
                       </Link>
                       <button
                         onClick={(e) => { e.stopPropagation(); setConfirmDelete({ quizId: quiz.id, title: quiz.title }); }}
-                        className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        className="flex items-center justify-center p-2 min-h-[40px] min-w-[40px] rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-all"
                         title="Delete assessment"
                         data-testid={`button-delete-quiz-${quiz.id}`}
                       >
@@ -1095,14 +1095,14 @@ export default function TutorAssessments() {
                           <div>
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
-                                <Users className="w-4 h-4 text-violet-400" />
+                                <Users className="w-4 h-4 text-primary" />
                                 Assigned Students
                               </h4>
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => extendDeadlineMutation.mutate(quiz.id)}
                                   disabled={extendDeadlineMutation.isPending}
-                                  className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] rounded-lg text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                                  className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] rounded-lg text-[11px] font-medium bg-warning/10 text-warning border border-warning/20 hover:bg-warning/20 transition-all disabled:opacity-50"
                                   title="Extend all deadlines by 24 hours"
                                   data-testid={`button-extend-deadline-${quiz.id}`}
                                 >
@@ -1136,8 +1136,8 @@ export default function TutorAssessments() {
                                   data-testid={`assignment-row-${assignment.id}`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-8 h-8 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center shrink-0">
-                                      <span className="text-[10px] font-bold text-violet-300">
+                                    <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0">
+                                      <span className="text-[10px] font-bold text-primary">
                                         {formatPersonName(assignment.student)
                                           .split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
                                       </span>
@@ -1157,7 +1157,7 @@ export default function TutorAssessments() {
                                     <button
                                       onClick={() => unassignMutation.mutate({ quizId: quiz.id, studentId: assignment.studentId })}
                                       disabled={unassignMutation.isPending}
-                                      className="flex items-center gap-1 px-2 py-1.5 min-h-[32px] rounded-lg text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-50"
+                                      className="flex items-center gap-1 px-2 py-1.5 min-h-[32px] rounded-lg text-[11px] font-medium bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20 transition-all disabled:opacity-50"
                                       title="Unassign student"
                                       data-testid={`button-unassign-${assignment.studentId}`}
                                     >
@@ -1176,7 +1176,7 @@ export default function TutorAssessments() {
                       {isExpanded && questions.length > 0 && (
                         <div>
                           <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2 mb-3">
-                            <FileText className="w-4 h-4 text-violet-400" />
+                            <FileText className="w-4 h-4 text-primary" />
                             Questions ({questions.length})
                           </h4>
                           <div className="space-y-2">
@@ -1187,7 +1187,7 @@ export default function TutorAssessments() {
                                 data-testid={`question-row-${q.id}`}
                               >
                                 <div className="flex items-start gap-2 min-w-0 flex-1">
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400 shrink-0 mt-0.5">
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0 mt-0.5">
                                     Q{idx + 1}
                                   </span>
                                   <div className="min-w-0">
@@ -1199,7 +1199,7 @@ export default function TutorAssessments() {
                                 </div>
                                 <button
                                   onClick={() => setConfirmDeleteQuestion({ questionId: q.id, stem: q.stem })}
-                                  className="flex items-center justify-center p-1.5 min-h-[28px] min-w-[28px] rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0"
+                                  className="flex items-center justify-center p-1.5 min-h-[28px] min-w-[28px] rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-all shrink-0"
                                   title="Delete question"
                                   data-testid={`button-delete-question-${q.id}`}
                                 >
@@ -1214,12 +1214,12 @@ export default function TutorAssessments() {
                       {/* Student Submissions Section */}
                       <div>
                         <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2 mb-3">
-                          <FileText className="w-4 h-4 text-violet-400" />
+                          <FileText className="w-4 h-4 text-primary" />
                           Student Submissions ({reports.length})
                         </h4>
                         {reportsLoading ? (
                           <div className="flex justify-center py-8">
-                            <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+                            <Loader2 className="w-5 h-5 text-primary animate-spin" />
                           </div>
                         ) : reports.length === 0 ? (
                           <p className="text-xs text-muted-foreground py-2">No submissions yet. Students will appear here once they complete this assessment.</p>
@@ -1281,7 +1281,7 @@ export default function TutorAssessments() {
                     value={assignSearch}
                     onChange={(e) => setAssignSearch(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-muted/60 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-emerald-500/40"
+                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-muted/60 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-success/40"
                     data-testid="input-search-assign"
                     autoFocus
                   />
@@ -1316,7 +1316,7 @@ export default function TutorAssessments() {
                         {filtered.length > 0 && (
                           <button
                             onClick={toggleAll}
-                            className="text-emerald-300 hover:text-emerald-200 font-medium"
+                            className="text-success hover:text-success/80 font-medium"
                             data-testid="button-select-all-assign"
                           >
                             {allVisibleSelected ? "Clear selection" : "Select all visible"}
@@ -1332,14 +1332,14 @@ export default function TutorAssessments() {
                             onClick={() => toggleStudentSelection(student.id)}
                             className={`w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
                               selectedStudentIds.has(student.id)
-                                ? "bg-emerald-500/20 border-2 border-emerald-500/60"
+                                ? "bg-success/20 border-2 border-success/60"
                                 : "bg-muted/40 border-2 border-border/50 hover:bg-muted/60"
                             }`}
                             data-testid={`assign-student-${student.id}`}
                             aria-pressed={selectedStudentIds.has(student.id)}
                           >
                             <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                              selectedStudentIds.has(student.id) ? "bg-emerald-500 border-emerald-500" : "border-slate-500"
+                              selectedStudentIds.has(student.id) ? "bg-success border-success" : "border-muted-foreground"
                             }`}>
                               {selectedStudentIds.has(student.id) && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
                             </div>
@@ -1355,21 +1355,21 @@ export default function TutorAssessments() {
                 })()}
                 <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
-                    <Clock className="w-3.5 h-3.5 text-violet-400" />
+                    <Clock className="w-3.5 h-3.5 text-primary" />
                     Due Date & Time <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-card/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-card/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                     data-testid="input-due-date"
                   />
                 </div>
                 <button
                   onClick={() => assignMutation.mutate({ quizId: showAssignModal, studentIds: selectedStudentList, dueDate: dueDate || undefined })}
                   disabled={selectedStudentList.length === 0 || assignMutation.isPending}
-                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-success text-white hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   data-testid="button-confirm-assign"
                 >
                   {assignMutation.isPending ? (
@@ -1401,17 +1401,17 @@ export default function TutorAssessments() {
               </button>
             </div>
             <div className="grid grid-cols-3 gap-2 mb-4">
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-emerald-300/80">Newly Assigned</p>
-                <p className="text-lg font-bold text-emerald-300">{assignResult.assigned}</p>
+              <div className="rounded-lg border border-success/30 bg-success/[0.06] px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-success/80">Newly Assigned</p>
+                <p className="text-lg font-bold text-success">{assignResult.assigned}</p>
               </div>
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-amber-300/80">Already Had</p>
-                <p className="text-lg font-bold text-amber-300">{assignResult.alreadyAssigned}</p>
+              <div className="rounded-lg border border-warning/30 bg-warning/[0.06] px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-warning/80">Already Had</p>
+                <p className="text-lg font-bold text-warning">{assignResult.alreadyAssigned}</p>
               </div>
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/[0.06] px-3 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-rose-300/80">Failed</p>
-                <p className="text-lg font-bold text-rose-300">{assignResult.failed + assignResult.notAdopted}</p>
+              <div className="rounded-lg border border-danger/30 bg-danger/[0.06] px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-danger/80">Failed</p>
+                <p className="text-lg font-bold text-danger">{assignResult.failed + assignResult.notAdopted}</p>
               </div>
             </div>
             <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
@@ -1425,10 +1425,10 @@ export default function TutorAssessments() {
                       : "Error";
                 const pill =
                   p.status === "assigned"
-                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                    ? "bg-success/15 text-success border-success/30"
                     : p.status === "already_assigned"
-                      ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                      : "bg-rose-500/15 text-rose-300 border-rose-500/30";
+                      ? "bg-warning/15 text-warning border-warning/30"
+                      : "bg-danger/15 text-danger border-danger/30";
                 return (
                   <div
                     key={p.studentId}
@@ -1461,7 +1461,7 @@ export default function TutorAssessments() {
                       dueDate: dueDate || undefined,
                     });
                   }}
-                  className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-rose-200 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20"
+                  className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-danger bg-danger/10 border border-danger/30 hover:bg-danger/20"
                   data-testid="button-retry-failed-assignments"
                 >
                   Retry failed
@@ -1469,7 +1469,7 @@ export default function TutorAssessments() {
               )}
               <button
                 onClick={() => setAssignResult(null)}
-                className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-foreground bg-slate-700 hover:bg-muted-foreground"
+                className="px-4 py-2 min-h-[40px] rounded-lg text-xs font-medium text-foreground bg-muted hover:bg-muted-foreground"
                 data-testid="button-close-assign-result"
               >
                 Done
@@ -1491,10 +1491,10 @@ export default function TutorAssessments() {
       {/* Delete Assessment Confirmation Dialog */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setConfirmDelete(null)}>
-          <div className="bg-card border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-danger/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
+              <div className="w-10 h-10 rounded-full bg-danger/15 border border-danger/30 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-foreground">Delete Assessment</h3>
@@ -1502,19 +1502,19 @@ export default function TutorAssessments() {
               </div>
             </div>
             <p className="text-sm text-foreground/80 mb-1">Are you sure you want to permanently delete:</p>
-            <p className="text-sm font-semibold text-red-300 mb-4">"{confirmDelete.title}"</p>
+            <p className="text-sm font-semibold text-danger mb-4">"{confirmDelete.title}"</p>
             <p className="text-xs text-muted-foreground mb-6">This will remove the quiz, all questions, student submissions, and assignments.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-muted/80 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={() => deleteQuizMutation.mutate(confirmDelete.quizId)}
                 disabled={deleteQuizMutation.isPending}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-danger text-white hover:bg-danger/90 disabled:opacity-50 transition-all"
                 data-testid="button-confirm-delete-quiz"
               >
                 {deleteQuizMutation.isPending ? (
@@ -1531,10 +1531,10 @@ export default function TutorAssessments() {
       {/* Duplicate Assessment Confirmation Dialog */}
       {confirmDuplicate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setConfirmDuplicate(null)}>
-          <div className="bg-card border border-violet-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-primary/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
-                <BookOpen className="w-5 h-5 text-violet-400" />
+              <div className="w-10 h-10 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
+                <BookOpen className="w-5 h-5 text-primary" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-foreground">Duplicate Assessment</h3>
@@ -1542,18 +1542,18 @@ export default function TutorAssessments() {
               </div>
             </div>
             <p className="text-sm text-foreground/80 mb-1">A copy of this assessment (with all questions, no assignments) will be created as a draft:</p>
-            <p className="text-sm font-semibold text-violet-300 mb-6">"{confirmDuplicate.title} (Copy)"</p>
+            <p className="text-sm font-semibold text-primary mb-6">"{confirmDuplicate.title} (Copy)"</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDuplicate(null)}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-muted/80 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={() => cloneMutation.mutate(confirmDuplicate.quizId)}
                 disabled={cloneMutation.isPending}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-all"
                 data-testid="button-confirm-duplicate"
               >
                 {cloneMutation.isPending ? (
@@ -1570,10 +1570,10 @@ export default function TutorAssessments() {
       {/* Delete Question Confirmation Dialog */}
       {confirmDeleteQuestion && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4" onClick={() => setConfirmDeleteQuestion(null)}>
-          <div className="bg-card border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-danger/30 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
-                <Trash2 className="w-5 h-5 text-red-400" />
+              <div className="w-10 h-10 rounded-full bg-danger/15 border border-danger/30 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-danger" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-foreground">Delete Question</h3>
@@ -1586,14 +1586,14 @@ export default function TutorAssessments() {
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDeleteQuestion(null)}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-muted/80 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={() => deleteQuestionMutation.mutate(confirmDeleteQuestion.questionId)}
                 disabled={deleteQuestionMutation.isPending}
-                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-all"
+                className="flex-1 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-danger text-white hover:bg-danger/90 disabled:opacity-50 transition-all"
                 data-testid="button-confirm-delete-question"
               >
                 {deleteQuestionMutation.isPending ? (

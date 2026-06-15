@@ -19,7 +19,7 @@ interface EditBuffer {
 }
 
 const FIELD_CLASS =
-  "w-full px-3 py-2 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30";
+  "w-full px-3 py-2 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30";
 
 export function DraftQuestionReviewEditor({
   questions,
@@ -120,7 +120,7 @@ export function DraftQuestionReviewEditor({
             data-testid={`review-item-${idx}`}
           >
             <div className="flex items-center gap-2 flex-wrap mb-3">
-              <Badge className="bg-violet-500/15 text-violet-300 border border-violet-500/30 font-mono">
+              <Badge className="bg-primary/15 text-primary border border-primary/30 font-mono">
                 Q{idx + 1}
               </Badge>
               {!isEditing && typeof q.marks === "number" && (
@@ -129,7 +129,7 @@ export function DraftQuestionReviewEditor({
                 </span>
               )}
               {q.questionType === "graph" && (
-                <Badge className="bg-violet-500/10 text-violet-400 border border-violet-500/20">graph</Badge>
+                <Badge className="bg-primary/10 text-primary border border-primary/20">graph</Badge>
               )}
               {q.questionType === "structured" && (
                 <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/20">structured</Badge>
@@ -144,7 +144,7 @@ export function DraftQuestionReviewEditor({
                       onClick={() => saveEdit(idx)}
                       disabled={!isValid(buf!)}
                       data-testid={`button-review-save-${idx}`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-success/40 bg-success/10 text-success hover:bg-success/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                       <Check className="w-3.5 h-3.5" /> Save
                     </button>
@@ -163,7 +163,7 @@ export function DraftQuestionReviewEditor({
                       type="button"
                       onClick={() => startEdit(idx)}
                       data-testid={`button-review-edit-${idx}`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition-all"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-all"
                     >
                       <Pencil className="w-3.5 h-3.5" /> Edit
                     </button>
@@ -173,7 +173,7 @@ export function DraftQuestionReviewEditor({
                         onClick={() => onDelete(idx)}
                         title="Remove question"
                         data-testid={`button-review-delete-${idx}`}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-red-400 transition-colors"
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-danger transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -252,7 +252,7 @@ export function DraftQuestionReviewEditor({
                             }
                             title="Remove option"
                             data-testid={`button-review-remove-option-${idx}-${i}`}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-red-400 transition-colors shrink-0"
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-danger transition-colors shrink-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -295,7 +295,7 @@ export function DraftQuestionReviewEditor({
                 </div>
 
                 {!isValid(buf!) && (
-                  <p className="text-xs text-amber-300">
+                  <p className="text-xs text-warning">
                     {buf!.questionType === "structured"
                       ? "A structured question needs a prompt, a mark scheme, and at least 1 mark."
                       : "Every option needs text, a correct answer must be selected, and marks must be at least 1."}
@@ -322,7 +322,7 @@ export function DraftQuestionReviewEditor({
                       <li
                         key={i}
                         className={`text-sm flex items-start gap-2 rounded-lg px-2 py-1 ${
-                          isCorrect ? "bg-emerald-500/10 text-emerald-300 font-medium" : "text-muted-foreground"
+                          isCorrect ? "bg-success/10 text-success font-medium" : "text-muted-foreground"
                         }`}
                         data-testid={`review-option-${idx}-${i}`}
                       >

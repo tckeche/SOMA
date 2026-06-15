@@ -23,7 +23,7 @@ interface StructuredMark {
   confirmed: boolean;
 }
 
-const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-6 py-3 h-12 rounded-xl text-base font-semibold border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all cursor-pointer";
+const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-6 py-3 h-12 rounded-xl text-base font-semibold border border-primary/40 bg-primary/20 text-primary hover:bg-primary/30 transition-all cursor-pointer";
 
 interface ReviewQuestion {
   id: number;
@@ -237,7 +237,7 @@ export default function SomaQuizReview() {
           ))}
           <div className="flex justify-center">
             <div className="flex items-center gap-2">
-              <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
+              <Loader2 className="w-5 h-5 text-primary animate-spin" />
               <span className="text-sm text-muted-foreground">Loading review...</span>
             </div>
           </div>
@@ -250,8 +250,8 @@ export default function SomaQuizReview() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="glass-card w-full max-w-md text-center p-10">
-          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-5 border border-red-500/30">
-            <AlertCircle className="w-8 h-8 text-red-400" />
+          <div className="w-16 h-16 rounded-full bg-danger/10 flex items-center justify-center mx-auto mb-5 border border-danger/30">
+            <AlertCircle className="w-8 h-8 text-danger" />
           </div>
           <h2 className="text-xl font-bold mb-2 text-foreground">Failed to Load Review</h2>
           <p className="text-sm text-muted-foreground mb-6">{(error as Error)?.message || "Review data not available"}</p>
@@ -391,8 +391,8 @@ export default function SomaQuizReview() {
 
         <div className="glass-card p-8 mb-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center border border-violet-500/30">
-              <BookOpen className="w-5 h-5 text-violet-400" />
+            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30">
+              <BookOpen className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1">
               <h2 className="text-xl font-bold gradient-text" data-testid="text-review-title">{report.quiz.title}</h2>
@@ -402,7 +402,7 @@ export default function SomaQuizReview() {
 
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
-              <p className="text-2xl font-bold text-violet-300" data-testid="text-review-percentage">{percentage}%</p>
+              <p className="text-2xl font-bold text-primary" data-testid="text-review-percentage">{percentage}%</p>
               <p className="text-xs text-muted-foreground">Score</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
@@ -410,16 +410,16 @@ export default function SomaQuizReview() {
               <p className="text-xs text-muted-foreground">Marks</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
-              <p className="text-2xl font-bold text-cyan-300" data-testid="text-review-total-q">{questions.length}</p>
+              <p className="text-2xl font-bold text-info" data-testid="text-review-total-q">{questions.length}</p>
               <p className="text-xs text-muted-foreground">Questions</p>
             </div>
           </div>
         </div>
 
         {stillMarking && (
-          <div className="glass-card p-4 mb-6 border-l-4 border-l-amber-500 bg-amber-500/[0.06]" data-testid="banner-still-marking">
+          <div className="glass-card p-4 mb-6 border-l-4 border-l-warning bg-warning/[0.06]" data-testid="banner-still-marking">
             <div className="flex items-center gap-3">
-              <Loader2 className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
+              <Loader2 className="w-5 h-5 text-warning shrink-0 animate-spin" />
               <p className="text-sm text-foreground">Your written answers are still being marked. Refresh in a moment to see your score.</p>
             </div>
           </div>
@@ -427,9 +427,9 @@ export default function SomaQuizReview() {
 
         {/* Tutor view: adjust + confirm the AI marks (e.g. after a request). */}
         {canConfirm && hasStructured && !stillMarking && (
-          <div className={`glass-card p-4 mb-6 border-l-4 ${reviewRequested ? "border-l-violet-500 bg-violet-500/[0.08]" : "border-l-border bg-foreground/[0.03]"}`} data-testid="banner-tutor-marking">
+          <div className={`glass-card p-4 mb-6 border-l-4 ${reviewRequested ? "border-l-primary bg-primary/[0.08]" : "border-l-border bg-foreground/[0.03]"}`} data-testid="banner-tutor-marking">
             <div className="flex items-start gap-3">
-              {reviewRequested ? <PenLine className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" /> : <Brain className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
+              {reviewRequested ? <PenLine className="w-5 h-5 text-primary shrink-0 mt-0.5" /> : <Brain className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
               <div className="flex-1">
                 <p className="text-sm font-semibold text-foreground">
                   {reviewRequested ? `${studentName} requested a marking review` : "AI-marked written answers"}
@@ -457,15 +457,15 @@ export default function SomaQuizReview() {
 
         {/* Student view: request a tutor review of the AI marking. */}
         {isOwner && !canConfirm && hasStructured && !stillMarking && (
-          <div className="glass-card p-4 mb-6 border-l-4 border-l-violet-500 bg-violet-500/[0.06]" data-testid="banner-student-review">
+          <div className="glass-card p-4 mb-6 border-l-4 border-l-primary bg-primary/[0.06]" data-testid="banner-student-review">
             {reviewRequested ? (
               <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-violet-400 shrink-0" />
+                <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
                 <p className="text-sm text-foreground">You've asked your teacher to review this marking. They'll take another look soon.</p>
               </div>
             ) : (
               <div className="flex items-start gap-3">
-                <PenLine className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+                <PenLine className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-foreground">Disagree with the marking?</p>
                   <p className="text-xs text-muted-foreground mt-0.5 mb-2">
@@ -507,23 +507,23 @@ export default function SomaQuizReview() {
             return (
               <div key={q.id} className="glass-card p-6" data-testid={`review-question-${idx + 1}`}>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/20 flex items-center justify-center border border-violet-500/30 text-sm font-bold text-violet-300">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/30 to-info/20 flex items-center justify-center border border-primary/30 text-sm font-bold text-primary">
                     {idx + 1}
                   </div>
                   <div className="flex-1 flex items-center gap-2">
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Q{idx + 1}</p>
                     {isStructured && (
-                      <Badge className="text-[10px] bg-sky-500/10 text-sky-400 border-sky-500/30">
+                      <Badge className="text-[10px] bg-info/10 text-info border-info/30">
                         <PenLine className="w-3 h-3 mr-1" /> Written
                       </Badge>
                     )}
                   </div>
                   {isStructured ? (
-                    <Badge className={`text-xs ${sm?.confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-sky-500/10 text-sky-400 border-sky-500/30"}`}>
+                    <Badge className={`text-xs ${sm?.confirmed ? "bg-success/10 text-success border-success/30" : "bg-info/10 text-info border-info/30"}`}>
                       {sm ? `${effectiveStructuredMark}/${q.marks}` : "—"} · {sm?.confirmed ? "tutor" : "AI"}
                     </Badge>
                   ) : (
-                    <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>
+                    <Badge className={`text-xs ${isCorrect ? "bg-success/10 text-success border-success/30" : studentAnswer ? "bg-danger/10 text-danger border-danger/30" : "bg-muted text-muted-foreground border-border"}`}>
                       {isCorrect ? "Correct" : studentAnswer ? "Incorrect" : "Skipped"} [{q.marks}]
                     </Badge>
                   )}

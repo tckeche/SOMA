@@ -8,10 +8,10 @@ interface Props {
 }
 
 const TREND_META: Record<DashboardPerformance["recentTrend"], { Icon: typeof TrendingUp; tone: string; label: string }> = {
-  up: { Icon: TrendingUp, tone: "text-emerald-300", label: "Trending up" },
-  down: { Icon: TrendingDown, tone: "text-rose-300", label: "Slight dip — easy to bounce back" },
+  up: { Icon: TrendingUp, tone: "text-success", label: "Trending up" },
+  down: { Icon: TrendingDown, tone: "text-danger", label: "Slight dip — easy to bounce back" },
   flat: { Icon: Minus, tone: "text-foreground/80", label: "Steady" },
-  new: { Icon: Heart, tone: "text-violet-300", label: "Just getting started" },
+  new: { Icon: Heart, tone: "text-primary", label: "Just getting started" },
 };
 
 export default function PerformanceCard({ performance, subjects }: Props) {
@@ -32,7 +32,7 @@ export default function PerformanceCard({ performance, subjects }: Props) {
         <div>
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Your performance, today</p>
           <h2 className="text-xl font-semibold text-foreground mt-1 flex items-center gap-2">
-            <Target className="w-5 h-5 text-violet-400" />
+            <Target className="w-5 h-5 text-primary" />
             How you're doing
           </h2>
         </div>

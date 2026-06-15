@@ -168,7 +168,7 @@ export default function TutorStudents() {
                   <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
                 </span>
               </Link>
-              <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-violet-300 border-b-2 border-violet-500 cursor-default" data-testid="nav-students">
+              <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-primary border-b-2 border-primary cursor-default" data-testid="nav-students">
                 <Users className="w-3.5 h-3.5" /> Students
               </span>
               <Link href="/tutor/assessments">
@@ -186,7 +186,7 @@ export default function TutorStudents() {
               </div>
               <div className="hidden sm:block">
                 <p className="text-[13px] font-medium text-foreground leading-none">{displayName}</p>
-                <p className="text-[9px] text-violet-400/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
+                <p className="text-[9px] text-primary/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
               </div>
             </div>
             <ThemeToggle />
@@ -199,7 +199,7 @@ export default function TutorStudents() {
 
       {adoptFeedback && (
         <div className="fixed top-20 right-6 z-40 max-w-sm">
-          <div className="glass-panel-elite px-4 py-3 border border-emerald-500/40 bg-emerald-500/10 text-sm text-emerald-200" role="status">
+          <div className="glass-panel-elite px-4 py-3 border border-success/40 bg-success/10 text-sm text-success" role="status">
             {adoptFeedback}
           </div>
         </div>
@@ -213,7 +213,7 @@ export default function TutorStudents() {
           </div>
           <button
             onClick={() => { setShowAdoptModal(true); setSelectedStudentIds(new Set()); setAdoptSearchQuery(""); }}
-            className="flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-violet-500/20 text-violet-300 border border-violet-500/40 hover:bg-violet-500/30 transition-all"
+            className="flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30 transition-all"
             data-testid="button-adopt-students"
           >
             <UserPlus className="w-4 h-4" />
@@ -229,7 +229,7 @@ export default function TutorStudents() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by name or email..."
-              className="w-full h-12 pl-11 pr-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
+              className="w-full h-12 pl-11 pr-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/40"
               data-testid="input-search-students"
             />
             {searchQuery && (
@@ -247,7 +247,7 @@ export default function TutorStudents() {
 
         {authLoading || studentsLoading ? (
           <div className="flex justify-center py-16">
-            <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
         ) : filteredStudents.length === 0 ? (
           <div className={`${GP} text-center py-14 px-6`}>
@@ -266,7 +266,7 @@ export default function TutorStudents() {
                   className="group flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-4 hover:border-border transition-all"
                   data-testid={`student-card-${student.id}`}
                 >
-                  <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs font-bold text-emerald-300 shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-success/20 border border-success/40 flex items-center justify-center text-xs font-bold text-success shrink-0">
                     {si}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -277,14 +277,14 @@ export default function TutorStudents() {
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
                     <Link href={`/tutor/students/${student.id}`}>
-                      <span className="flex items-center gap-1 px-4 py-2 min-h-[44px] rounded-lg text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20 transition-all cursor-pointer" data-testid={`link-view-${student.id}`}>
+                      <span className="flex items-center gap-1 px-4 py-2 min-h-[44px] rounded-lg text-xs font-medium text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all cursor-pointer" data-testid={`link-view-${student.id}`}>
                         View
                         <ChevronRight className="w-3 h-3" />
                       </span>
                     </Link>
                     <button
                       onClick={(e) => { e.stopPropagation(); setPendingRemoveId(student.id); }}
-                      className="text-red-400/60 hover:text-red-400 transition-colors p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
+                      className="text-danger/60 hover:text-danger transition-colors p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-danger/10 border border-transparent hover:border-danger/20"
                       title="Remove student"
                       aria-label={`Remove ${name}`}
                       data-testid={`button-remove-${student.id}`}
@@ -308,8 +308,8 @@ export default function TutorStudents() {
         >
           <div className="glass-panel-elite max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
+              <div className="w-10 h-10 rounded-xl bg-danger/15 border border-danger/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-foreground">Remove student?</h3>
@@ -333,7 +333,7 @@ export default function TutorStudents() {
               <button
                 onClick={() => removeMutation.mutate(pendingRemoveStudent.id)}
                 disabled={removeMutation.isPending}
-                className="px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 transition-all"
+                className="px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium text-white bg-danger hover:bg-danger/90 disabled:opacity-50 transition-all"
                 data-testid="button-confirm-remove"
               >
                 {removeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Remove"}
@@ -371,7 +371,7 @@ export default function TutorStudents() {
                     value={adoptSearchQuery}
                     onChange={(e) => setAdoptSearchQuery(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 pl-11 pr-10 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-violet-500/40"
+                    className="w-full h-11 pl-11 pr-10 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/40"
                     data-testid="input-search-adopt"
                     autoFocus
                   />
@@ -394,7 +394,7 @@ export default function TutorStudents() {
                   {filteredAvailable.length > 0 && (
                     <button
                       onClick={toggleSelectAllVisible}
-                      className="text-violet-300 hover:text-violet-200 font-medium"
+                      className="text-primary hover:text-primary/80 font-medium"
                       data-testid="button-select-all-adopt"
                     >
                       {allVisibleSelected ? "Clear selection" : "Select all visible"}
@@ -416,18 +416,18 @@ export default function TutorStudents() {
                           onClick={() => toggleStudentSelection(student.id)}
                           className={`w-full min-h-[56px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
                             isSelected
-                              ? "bg-violet-500/20 border-2 border-violet-500/60 ring-1 ring-violet-500/30"
+                              ? "bg-primary/20 border-2 border-primary/60 ring-1 ring-primary/30"
                               : "bg-muted/40 border-2 border-border/50 hover:bg-muted/60 hover:border-border"
                           }`}
                           data-testid={`adopt-student-${student.id}`}
                           aria-pressed={isSelected}
                         >
                           <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                            isSelected ? "bg-violet-500 border-violet-500" : "border-slate-500"
+                            isSelected ? "bg-primary border-primary" : "border-muted-foreground"
                           }`}>
                             {isSelected && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
                           </div>
-                          <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[11px] font-bold text-emerald-300 shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-success/15 border border-success/30 flex items-center justify-center text-[11px] font-bold text-success shrink-0">
                             {si}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -448,7 +448,7 @@ export default function TutorStudents() {
                 <button
                   onClick={() => adoptMutation.mutate(Array.from(selectedStudentIds))}
                   disabled={selectedStudentIds.size === 0 || adoptMutation.isPending}
-                  className="w-full mt-4 py-3 min-h-[48px] rounded-xl text-sm font-semibold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full mt-4 py-3 min-h-[48px] rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   data-testid="button-confirm-adopt"
                 >
                   {adoptMutation.isPending ? (

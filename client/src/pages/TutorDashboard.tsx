@@ -76,9 +76,9 @@ function getGreeting(): string {
 
 function TimeElapsedBadge({ date }: { date: string }) {
   const hours = (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60);
-  if (hours < 1) return <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/15">Just now</span>;
-  if (hours < 24) return <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/15">{Math.floor(hours)}h ago</span>;
-  return <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">{Math.floor(hours / 24)}d ago</span>;
+  if (hours < 1) return <span className="text-[9px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded border border-success/15">Just now</span>;
+  if (hours < 24) return <span className="text-[9px] font-bold text-warning bg-warning/10 px-1.5 py-0.5 rounded border border-warning/15">{Math.floor(hours)}h ago</span>;
+  return <span className="text-[9px] font-bold text-danger bg-danger/10 px-1.5 py-0.5 rounded border border-danger/15">{Math.floor(hours / 24)}d ago</span>;
 }
 
 function FadeInSection({ children, className, delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
@@ -99,8 +99,8 @@ function SectionHeader({ icon: Icon, title, subtitle, action }: { icon: LucideIc
   return (
     <div className="flex items-center justify-between mb-4">
       <div className="flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/15 border border-indigo-500/20">
-          <Icon className="w-3.5 h-3.5 text-indigo-400" />
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/15 border border-primary/20">
+          <Icon className="w-3.5 h-3.5 text-primary" />
         </div>
         <div>
           <h3 className="text-lg font-bold text-foreground" style={{ letterSpacing: "0.3px" }}>{title}</h3>
@@ -124,13 +124,13 @@ function getStatusChip(s: DashboardStats["studentInsights"][0]): { text: string;
   const hasSubmissions = s.completed > 0;
   const allDone = s.assigned > 0 && s.awaiting === 0 && s.completed === s.assigned;
 
-  if (!hasSubmissions && s.assigned > 0) return { text: "Awaiting", color: "bg-amber-500/10 text-amber-300 border-amber-500/20", dot: "bg-amber-400" };
-  if (s.trend === "declining" && s.completed >= 2) return { text: "Trend down", color: "bg-rose-500/10 text-rose-300 border-rose-500/20", dot: "bg-rose-400" };
-  if (s.completed < 3 && s.assigned > 0) return { text: "Low evidence", color: "bg-slate-500/10 text-muted-foreground border-slate-500/20", dot: "bg-slate-400" };
-  if (s.awaiting > 0 && !allDone) return { text: "Needs marking", color: "bg-violet-500/10 text-violet-300 border-violet-500/20", dot: "bg-violet-400" };
-  if (s.trend === "improving") return { text: "Trend up", color: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20", dot: "bg-emerald-400" };
-  if (allDone) return { text: "On track", color: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20", dot: "bg-emerald-400" };
-  return { text: "Stable", color: "bg-slate-500/10 text-muted-foreground border-slate-500/20", dot: "bg-slate-400" };
+  if (!hasSubmissions && s.assigned > 0) return { text: "Awaiting", color: "bg-warning/10 text-warning border-warning/20", dot: "bg-warning" };
+  if (s.trend === "declining" && s.completed >= 2) return { text: "Trend down", color: "bg-danger/10 text-danger border-danger/20", dot: "bg-danger" };
+  if (s.completed < 3 && s.assigned > 0) return { text: "Low evidence", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
+  if (s.awaiting > 0 && !allDone) return { text: "Needs marking", color: "bg-primary/10 text-primary border-primary/20", dot: "bg-primary" };
+  if (s.trend === "improving") return { text: "Trend up", color: "bg-success/10 text-success border-success/20", dot: "bg-success" };
+  if (allDone) return { text: "On track", color: "bg-success/10 text-success border-success/20", dot: "bg-success" };
+  return { text: "Stable", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
 }
 
 function MiniSparkline({ scores }: { scores: number[] }) {
@@ -173,11 +173,11 @@ function WorkloadBar({ assigned, completed, awaiting }: { assigned: number; comp
       <div className="flex-1 h-[7px] rounded-full bg-muted/60 overflow-hidden flex">
         {cPct > 0 && <div className="h-full rounded-l-full" style={{ width: `${cPct}%`, background: "linear-gradient(90deg, #059669, #34d399)" }} />}
         {aPct > 0 && <div className="h-full" style={{ width: `${aPct}%`, background: "linear-gradient(90deg, #d97706, #fbbf24)" }} />}
-        {pPct > 0 && <div className="h-full rounded-r-full bg-slate-700/30" style={{ width: `${pPct}%` }} />}
+        {pPct > 0 && <div className="h-full rounded-r-full bg-muted/30" style={{ width: `${pPct}%` }} />}
       </div>
       <div className="flex items-center gap-3 text-[9px] tabular-nums">
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /><span className="text-muted-foreground font-medium">{completed}</span></span>
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /><span className="text-muted-foreground font-medium">{awaiting}</span></span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-success inline-block" /><span className="text-muted-foreground font-medium">{completed}</span></span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning inline-block" /><span className="text-muted-foreground font-medium">{awaiting}</span></span>
         <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-muted-foreground inline-block" /><span className="text-muted-foreground font-medium">{Math.max(0, assigned - completed - awaiting)}</span></span>
       </div>
     </div>
@@ -432,7 +432,7 @@ export default function TutorDashboard() {
           </Link>
           <div className="flex items-center gap-5">
             <nav className="hidden md:flex items-center gap-0.5 mr-2">
-              <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-violet-300 border-b-2 border-violet-500 cursor-default" data-testid="nav-dashboard">
+              <span className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-primary border-b-2 border-primary cursor-default" data-testid="nav-dashboard">
                 <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
               </span>
               <Link href="/tutor/students">
@@ -455,7 +455,7 @@ export default function TutorDashboard() {
               >
                 <Bell className="w-4.5 h-4.5" />
                 {(notificationsData?.unreadCount ?? 0) > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-[9px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-background">
+                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-danger text-[9px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-background">
                     {notificationsData!.unreadCount > 9 ? "9+" : notificationsData!.unreadCount}
                   </span>
                 )}
@@ -468,7 +468,7 @@ export default function TutorDashboard() {
               </div>
               <div className="hidden sm:block">
                 <p className="text-[13px] font-medium text-foreground leading-none">{displayName}</p>
-                <p className="text-[9px] text-violet-400/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
+                <p className="text-[9px] text-primary/70 font-bold uppercase tracking-[0.2em] mt-0.5">Tutor</p>
               </div>
             </div>
             <ThemeToggle />
@@ -479,7 +479,7 @@ export default function TutorDashboard() {
         </div>
         {/* Mobile nav */}
         <div className="md:hidden border-t border-border/40 flex">
-          <span className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-semibold text-violet-300 border-b-2 border-violet-500" data-testid="nav-dashboard-mobile">
+          <span className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-semibold text-primary border-b-2 border-primary" data-testid="nav-dashboard-mobile">
             <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
           </span>
           <Link href="/tutor/students">
@@ -499,8 +499,8 @@ export default function TutorDashboard() {
       <main className="max-w-[1440px] mx-auto px-6 lg:px-10 py-7">
         {statsError ? (
           <div className="flex flex-col items-center justify-center py-32 gap-4" data-testid="dashboard-error">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-amber-500/10 border border-amber-500/15">
-              <AlertTriangle className="w-6 h-6 text-amber-400/80" />
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-warning/10 border border-warning/15">
+              <AlertTriangle className="w-6 h-6 text-warning/80" />
             </div>
             <p className="text-sm text-foreground/80 font-semibold">Unable to load dashboard data</p>
             <p className="text-xs text-muted-foreground">Check your connection and try refreshing</p>
@@ -562,10 +562,10 @@ export default function TutorDashboard() {
                 <span className="text-[12px] text-muted-foreground font-medium">{format(new Date(), "EEEE, d MMMM yyyy")}</span>
                 {dataUpdatedAt > 0 && (
                   <span
-                    className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20"
+                    className="flex items-center gap-1.5 text-[10px] font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full border border-success/20"
                     title={`Auto-refreshes every 15s · last update ${formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                     Live
                   </span>
                 )}
@@ -590,7 +590,7 @@ export default function TutorDashboard() {
                 onClick={() => setActiveTab("overview")}
                 className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
                   activeTab === "overview"
-                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    ? "bg-primary/15 text-primary border border-primary/25 shadow-sm"
                     : "text-muted-foreground hover:text-foreground/80 border border-transparent"
                 }`}
               >
@@ -600,13 +600,13 @@ export default function TutorDashboard() {
                 onClick={() => setActiveTab("notifications")}
                 className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
                   activeTab === "notifications"
-                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    ? "bg-primary/15 text-primary border border-primary/25 shadow-sm"
                     : "text-muted-foreground hover:text-foreground/80 border border-transparent"
                 }`}
               >
                 <Bell className="w-3.5 h-3.5" /> Notifications
                 {(notificationsData?.unreadCount ?? 0) > 0 && (
-                  <span className="text-[10px] font-bold tabular-nums bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded-full border border-red-500/25 leading-none">
+                  <span className="text-[10px] font-bold tabular-nums bg-danger/20 text-danger px-1.5 py-0.5 rounded-full border border-danger/25 leading-none">
                     {notificationsData!.unreadCount}
                   </span>
                 )}
@@ -615,14 +615,14 @@ export default function TutorDashboard() {
                 onClick={() => setActiveTab("insights")}
                 className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
                   activeTab === "insights"
-                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    ? "bg-primary/15 text-primary border border-primary/25 shadow-sm"
                     : "text-muted-foreground hover:text-foreground/80 border border-transparent"
                 }`}
                 data-testid="tab-tutor-insights"
               >
                 <ClipboardCheck className="w-3.5 h-3.5" /> Insights to check
                 {(insightCounts?.pending ?? 0) > 0 && (
-                  <span className="text-[10px] font-bold tabular-nums bg-amber-500/20 text-amber-200 px-1.5 py-0.5 rounded-full border border-amber-500/25 leading-none">
+                  <span className="text-[10px] font-bold tabular-nums bg-warning/20 text-warning px-1.5 py-0.5 rounded-full border border-warning/25 leading-none">
                     {insightCounts!.pending}
                   </span>
                 )}
@@ -631,7 +631,7 @@ export default function TutorDashboard() {
                 onClick={() => setActiveTab("cohort")}
                 className={`flex items-center gap-2 px-4 py-2 min-h-[38px] rounded-lg text-[13px] font-semibold transition-all ${
                   activeTab === "cohort"
-                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25 shadow-sm"
+                    ? "bg-primary/15 text-primary border border-primary/25 shadow-sm"
                     : "text-muted-foreground hover:text-foreground/80 border border-transparent"
                 }`}
                 data-testid="tab-tutor-cohort"
@@ -655,7 +655,7 @@ export default function TutorDashboard() {
                   {unreadItems.length === 0 ? (
                     <div className={`${GP} px-6 py-16 text-center`}>
                       <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-muted/60 mx-auto mb-4 border border-border/40">
-                        <CheckCircle2 className="w-6 h-6 text-emerald-400/70" />
+                        <CheckCircle2 className="w-6 h-6 text-success/70" />
                       </div>
                       <p className="text-sm text-foreground/80 font-semibold">All caught up</p>
                       <p className="text-xs text-muted-foreground mt-1">New submissions and generation updates will appear here</p>
@@ -674,11 +674,11 @@ export default function TutorDashboard() {
                           >
                             <div className="flex items-start gap-4">
                               <div className="relative shrink-0">
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-violet-500/15 border-violet-500/25">
-                                  <Bell className="w-5 h-5 text-violet-300" />
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-primary/15 border-primary/25">
+                                  <Bell className="w-5 h-5 text-primary" />
                                 </div>
                                 <span
-                                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-background shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                                  className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-danger ring-2 ring-background shadow-[0_0_8px_rgba(244,63,94,0.6)]"
                                   aria-label="Unread"
                                   data-testid={`notification-dot-${item.id}`}
                                 />
@@ -740,16 +740,16 @@ export default function TutorDashboard() {
             {activeTab === "overview" && (
             <Tabs value={overviewSection} onValueChange={(v) => setOverviewSection(v as typeof overviewSection)} className="space-y-6">
               <TabsList className="flex flex-wrap h-auto w-full sm:w-fit gap-1 bg-foreground/[0.04] border border-border/60 rounded-xl p-1">
-                <TabsTrigger value="action" data-testid="dash-tab-action" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                <TabsTrigger value="action" data-testid="dash-tab-action" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:border data-[state=active]:border-primary/25">
                   <AlertTriangle className="w-3.5 h-3.5" /> Action Center
                 </TabsTrigger>
-                <TabsTrigger value="analytics" data-testid="dash-tab-analytics" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                <TabsTrigger value="analytics" data-testid="dash-tab-analytics" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:border data-[state=active]:border-primary/25">
                   <Radar className="w-3.5 h-3.5" /> Cohort Analytics
                 </TabsTrigger>
-                <TabsTrigger value="students" data-testid="dash-tab-students" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                <TabsTrigger value="students" data-testid="dash-tab-students" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:border data-[state=active]:border-primary/25">
                   <Users className="w-3.5 h-3.5" /> Students
                 </TabsTrigger>
-                <TabsTrigger value="activity" data-testid="dash-tab-activity" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:border data-[state=active]:border-violet-500/25">
+                <TabsTrigger value="activity" data-testid="dash-tab-activity" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:border data-[state=active]:border-primary/25">
                   <Activity className="w-3.5 h-3.5" /> Activity &amp; Insights
                 </TabsTrigger>
               </TabsList>
@@ -768,10 +768,10 @@ export default function TutorDashboard() {
                 {/* Intervention Queue */}
                 <div className={`${GP} lg:col-span-3`}>
                   <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-danger/[0.06] to-transparent pointer-events-none" />
                     <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-rose-500/15 border border-rose-500/20">
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-danger/15 border border-danger/20">
+                        <AlertTriangle className="w-3.5 h-3.5 text-danger" />
                       </div>
                       <div>
                         <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Intervention Queue</h3>
@@ -781,7 +781,7 @@ export default function TutorDashboard() {
                     <button
                       type="button"
                       onClick={() => setShowAllInterventions((v) => !v)}
-                      className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold"
+                      className="relative text-[10px] text-primary hover:text-primary/80 cursor-pointer font-semibold"
                     >
                       {showAllInterventions ? "Show Less" : "View All"} &rarr;
                     </button>
@@ -792,7 +792,7 @@ export default function TutorDashboard() {
                     );
                     if (atRisk.length === 0) return (
                       <div className="px-5 py-10 text-center">
-                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                        <CheckCircle2 className="w-8 h-8 mx-auto text-success/20 mb-2" />
                         <p className="text-[11px] text-muted-foreground font-medium">No students flagged — great work!</p>
                       </div>
                     );
@@ -809,11 +809,11 @@ export default function TutorDashboard() {
                                   <Badge className={`text-[8px] font-bold border px-1.5 py-0 leading-[18px] ${s.chip.color}`}>{s.chip.text}</Badge>
                                 </div>
                                 {insight && (
-                                  <p className="text-[10px] text-indigo-300/80 leading-relaxed mb-1">{insight}</p>
+                                  <p className="text-[10px] text-primary/80 leading-relaxed mb-1">{insight}</p>
                                 )}
                                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                                   {s.weakTopics.length > 0 && <span>Weak subjects: {s.weakTopics.slice(0, 2).join(", ")}</span>}
-                                  {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-emerald-400" : s.lastScore >= 50 ? "text-amber-400" : "text-rose-400"}>Last: {s.lastScore}%</span>}
+                                  {s.lastScore !== null && <span className={s.lastScore >= 70 ? "text-success" : s.lastScore >= 50 ? "text-warning" : "text-danger"}>Last: {s.lastScore}%</span>}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 shrink-0 mt-1">
@@ -824,13 +824,13 @@ export default function TutorDashboard() {
                                     setAssignForStudentQuizId(null);
                                     setDueDate("");
                                   }}
-                                  className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                                  className="text-[10px] font-semibold text-success hover:text-success/80 cursor-pointer"
                                   data-testid={`button-assign-intervention-${s.studentId}`}
                                 >
                                   Assign &rarr;
                                 </button>
                                 <Link href={`/tutor/students/${s.studentId}`}>
-                                  <span className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer">View &rarr;</span>
+                                  <span className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">View &rarr;</span>
                                 </Link>
                               </div>
                             </div>
@@ -844,21 +844,21 @@ export default function TutorDashboard() {
                 {/* Pending Submissions — prominent right panel */}
                 <div className={`${GP} lg:col-span-2`}>
                   <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.06] to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-warning/[0.06] to-transparent pointer-events-none" />
                     <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
-                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-warning/15 border border-warning/20">
+                        <Clock className="w-3.5 h-3.5 text-warning" />
                       </div>
                       <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Pending Submissions</h3>
                     </div>
                     <div className="relative flex items-center gap-2">
                       {(stats?.pendingAssignments?.length ?? 0) > 0 && (
-                        <span className="text-[10px] font-bold text-amber-400 tabular-nums bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                        <span className="text-[10px] font-bold text-warning tabular-nums bg-warning/15 px-2.5 py-0.5 rounded-lg border border-warning/20">
                           {stats!.pendingAssignments.length}
                         </span>
                       )}
                       {overdueCount > 0 && (
-                        <span className="text-[10px] font-bold text-rose-400 tabular-nums bg-rose-500/15 px-2.5 py-0.5 rounded-lg border border-rose-500/20 status-pulse" data-testid="stat-assigned">
+                        <span className="text-[10px] font-bold text-danger tabular-nums bg-danger/15 px-2.5 py-0.5 rounded-lg border border-danger/20 status-pulse" data-testid="stat-assigned">
                           {overdueCount} overdue
                         </span>
                       )}
@@ -866,7 +866,7 @@ export default function TutorDashboard() {
                   </div>
                   {(stats?.pendingAssignments?.length ?? 0) === 0 ? (
                     <div className="px-5 py-8 text-center">
-                      <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-500/20 mb-2" />
+                      <CheckCircle2 className="w-7 h-7 mx-auto text-success/20 mb-2" />
                       <p className="text-[11px] text-muted-foreground font-medium">No pending work</p>
                     </div>
                   ) : (
@@ -888,9 +888,9 @@ export default function TutorDashboard() {
                                 <p className="text-[10px] text-muted-foreground truncate">{pa.quizTitle}</p>
                               </div>
                               {isOverdue ? (
-                                <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/15">Overdue</span>
+                                <span className="text-[9px] font-bold text-danger bg-danger/10 px-1.5 py-0.5 rounded border border-danger/15">Overdue</span>
                               ) : pa.dueDate ? (
-                                <span className="text-[10px] text-amber-400/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
+                                <span className="text-[10px] text-warning/70 font-medium shrink-0">Due {format(new Date(pa.dueDate), "MMM d")}</span>
                               ) : (
                                 <span className="text-[9px] font-bold text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded border border-border/50">Pending</span>
                               )}
@@ -917,8 +917,8 @@ export default function TutorDashboard() {
                   data-testid="toggle-student-flags"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-warning/15 border border-warning/20">
+                      <AlertTriangle className="w-3.5 h-3.5 text-warning" />
                     </div>
                     <div>
                       <h3 className="text-[13px] font-bold text-foreground tracking-wide">Student Flags</h3>
@@ -1060,27 +1060,27 @@ export default function TutorDashboard() {
             <FadeInSection delay={0.05}>
               <div className={GP}>
                 <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.06] to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-success/[0.06] to-transparent pointer-events-none" />
                   <div className="flex items-center gap-2.5 relative">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20">
-                      <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-success/15 border border-success/20">
+                      <BookOpen className="w-3.5 h-3.5 text-success" />
                     </div>
                     <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Recent Assessments</h3>
                   </div>
                   <Link href="/tutor/assessments">
-                    <span className="relative text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
+                    <span className="relative text-[10px] text-primary hover:text-primary/80 cursor-pointer font-semibold" data-testid="link-view-all-assessments">View All &rarr;</span>
                   </Link>
                 </div>
                 {quizzesLoading ? (
                   <div className="px-5 py-8 flex justify-center">
-                    <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
+                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
                   </div>
                 ) : tutorQuizzes.length === 0 && (stats?.totalQuizzes ?? 0) === 0 && (stats?.recentSubmissions?.length ?? 0) === 0 ? (
                   <div className="px-5 py-8 text-center">
                     <BookOpen className="w-7 h-7 mx-auto text-muted-foreground mb-2" />
                     <p className="text-[11px] text-muted-foreground font-medium">No assessments yet</p>
                     <Link href="/tutor/assessments/new">
-                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
+                      <span className="text-[10px] text-primary hover:text-primary/80 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
                   </div>
                 ) : tutorQuizzes.length === 0 && (stats?.recentSubmissions?.length ?? 0) > 0 ? (
@@ -1097,7 +1097,7 @@ export default function TutorDashboard() {
                             <p className="text-[11px] font-medium text-foreground truncate">{sub.quizTitle}</p>
                             <p className="text-[10px] text-muted-foreground">{sub.studentName} &middot; {format(new Date(sub.createdAt), "MMM d, yyyy")}</p>
                           </div>
-                          <span className={`text-[11px] font-bold tabular-nums ${sub.score >= 70 ? "text-emerald-400" : sub.score >= 50 ? "text-amber-400" : "text-rose-400"}`}>
+                          <span className={`text-[11px] font-bold tabular-nums ${sub.score >= 70 ? "text-success" : sub.score >= 50 ? "text-warning" : "text-danger"}`}>
                             {sub.score}%
                           </span>
                         </div>
@@ -1109,7 +1109,7 @@ export default function TutorDashboard() {
                     <BookOpen className="w-7 h-7 mx-auto text-muted-foreground mb-2" />
                     <p className="text-[11px] text-muted-foreground font-medium">No assessments to show</p>
                     <Link href="/tutor/assessments/new">
-                      <span className="text-[10px] text-violet-400 hover:text-violet-300 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
+                      <span className="text-[10px] text-primary hover:text-primary/80 cursor-pointer font-medium mt-1 inline-block">Create your first assessment</span>
                     </Link>
                   </div>
                 ) : (
@@ -1128,7 +1128,7 @@ export default function TutorDashboard() {
                           </div>
                           <button
                             onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(defaultDueDateInputValue(quiz.createdAt)); }}
-                            className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="text-[10px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity"
                             data-testid={`button-assign-${quiz.id}`}
                           >
                             Assign
@@ -1148,10 +1148,10 @@ export default function TutorDashboard() {
               <FadeInSection>
                 <div className={GP}>
                   <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border/60 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/[0.04] to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-warning/[0.04] to-transparent pointer-events-none" />
                     <div className="flex items-center gap-2.5 relative">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/15 border border-amber-500/20">
-                        <Target className="w-3.5 h-3.5 text-amber-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-warning/15 border border-warning/20">
+                        <Target className="w-3.5 h-3.5 text-warning" />
                       </div>
                       <div>
                         <h3 className="text-[13px] font-bold text-foreground tracking-wide" style={{ letterSpacing: "0.3px" }}>Cohort Weakness Report</h3>
@@ -1163,7 +1163,7 @@ export default function TutorDashboard() {
                     const struggling = cohortWeaknesses.topics.filter((t) => t.belowThreshold > 0);
                     if (struggling.length === 0) return (
                       <div className="px-5 py-10 text-center">
-                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500/20 mb-2" />
+                        <CheckCircle2 className="w-8 h-8 mx-auto text-success/20 mb-2" />
                         <p className="text-[11px] text-muted-foreground font-medium">No cohort-wide weaknesses detected</p>
                       </div>
                     );
@@ -1171,7 +1171,7 @@ export default function TutorDashboard() {
                       <div className="divide-y divide-white/[0.03] max-h-[400px] overflow-y-auto">
                         {struggling.slice(0, 10).map((t, i) => {
                           const severity = t.struggleRate >= 75 ? "critical" : t.struggleRate >= 50 ? "high" : t.struggleRate >= 25 ? "moderate" : "low";
-                          const severityColor = severity === "critical" ? "text-red-400 bg-red-500/10 border-red-500/20" : severity === "high" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : severity === "moderate" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" : "text-muted-foreground bg-slate-500/10 border-slate-500/20";
+                          const severityColor = severity === "critical" ? "text-danger bg-danger/10 border-danger/20" : severity === "high" ? "text-warning bg-warning/10 border-warning/20" : severity === "moderate" ? "text-warning bg-warning/10 border-warning/20" : "text-muted-foreground bg-muted border-border";
                           const barColor = t.avgPercent >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.avgPercent >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
                           return (
                             <div key={i} className="px-5 py-3.5 hover:bg-foreground/[0.03] transition-colors">
@@ -1189,7 +1189,7 @@ export default function TutorDashboard() {
                                     <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.avgPercent}%`, background: barColor }} />
                                   </div>
                                 </div>
-                                <span className={`text-[11px] font-bold tabular-nums w-10 text-right ${t.avgPercent >= 70 ? "text-emerald-400" : t.avgPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                <span className={`text-[11px] font-bold tabular-nums w-10 text-right ${t.avgPercent >= 70 ? "text-success" : t.avgPercent >= 50 ? "text-warning" : "text-danger"}`}>
                                   {t.avgPercent}%
                                 </span>
                               </div>
@@ -1198,7 +1198,7 @@ export default function TutorDashboard() {
                                 <span className="text-muted-foreground">&middot;</span>
                                 <span>{t.totalQuestions} questions attempted</span>
                                 <span className="text-muted-foreground">&middot;</span>
-                                <span className={t.accuracy >= 70 ? "text-emerald-400" : t.accuracy >= 50 ? "text-amber-400" : "text-red-400"}>{t.accuracy}% accuracy</span>
+                                <span className={t.accuracy >= 70 ? "text-success" : t.accuracy >= 50 ? "text-warning" : "text-danger"}>{t.accuracy}% accuracy</span>
                                 {t.strugglingStudents.length > 0 && (
                                   <>
                                     <span className="text-muted-foreground">&middot;</span>
@@ -1248,13 +1248,13 @@ export default function TutorDashboard() {
                         onClick={() => toggleStudentSelection(student.id)}
                         className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left ${
                           selectedStudentIds.has(student.id)
-                            ? "bg-indigo-500/12 border border-indigo-500/25"
+                            ? "bg-primary/12 border border-primary/25"
                             : "bg-foreground/[0.03] border border-border/50 hover:bg-foreground/[0.05]"
                         }`}
                         data-testid={`assign-student-${student.id}`}
                       >
                         <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                          selectedStudentIds.has(student.id) ? "bg-indigo-500 border-indigo-500" : "border-border"
+                          selectedStudentIds.has(student.id) ? "bg-primary border-primary" : "border-border"
                         }`}>
                           {selectedStudentIds.has(student.id) && <Check className="w-3 h-3 text-white" />}
                         </div>
@@ -1268,21 +1268,21 @@ export default function TutorDashboard() {
                 </div>
                 <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
-                    <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
+                    <CalendarDays className="w-3.5 h-3.5 text-primary" />
                     Due Date <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
                     data-testid="input-due-date"
                   />
                 </div>
                 <button
                   onClick={() => assignMutation.mutate({ quizId: showAssignModal, studentIds: Array.from(selectedStudentIds), dueDate: dueDate || undefined })}
                   disabled={selectedStudentIds.size === 0 || assignMutation.isPending}
-                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-semibold bg-gradient-to-r from-primary to-primary text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   data-testid="button-confirm-assign"
                 >
                   {assignMutation.isPending ? (
@@ -1326,7 +1326,7 @@ export default function TutorDashboard() {
               <div className="text-center py-10">
                 <p className="text-sm text-muted-foreground mb-3">You haven't created any assessments yet.</p>
                 <Link href="/tutor/assessments/new">
-                  <span className="text-[12px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer">
+                  <span className="text-[12px] text-primary hover:text-primary/80 font-semibold cursor-pointer">
                     Create your first assessment &rarr;
                   </span>
                 </Link>
@@ -1344,13 +1344,13 @@ export default function TutorDashboard() {
                         onClick={() => { setAssignForStudentQuizId(quiz.id); setDueDate(defaultDueDateInputValue(quiz.createdAt)); }}
                         className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left ${
                           selected
-                            ? "bg-indigo-500/12 border border-indigo-500/25"
+                            ? "bg-primary/12 border border-primary/25"
                             : "bg-foreground/[0.03] border border-border/50 hover:bg-foreground/[0.05]"
                         }`}
                         data-testid={`assign-quiz-${quiz.id}`}
                       >
                         <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                          selected ? "bg-indigo-500 border-indigo-500" : "border-border"
+                          selected ? "bg-primary border-primary" : "border-border"
                         }`}>
                           {selected && <Check className="w-3 h-3 text-white" />}
                         </div>
@@ -1367,14 +1367,14 @@ export default function TutorDashboard() {
                 </div>
                 <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
-                    <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
+                    <CalendarDays className="w-3.5 h-3.5 text-primary" />
                     Due Date <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-background/80 border border-border/60 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
                     data-testid="input-student-assign-due-date"
                   />
                 </div>
@@ -1391,7 +1391,7 @@ export default function TutorDashboard() {
                     );
                   }}
                   disabled={assignForStudentQuizId === null || assignMutation.isPending}
-                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-semibold bg-gradient-to-r from-primary to-primary text-white hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   data-testid="button-confirm-student-assign"
                 >
                   {assignMutation.isPending ? (
@@ -1439,7 +1439,7 @@ function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: Pl
 
   const si = getInitials(s.studentName);
   const TrendIcon = s.trend === "declining" ? TrendingDown : s.trend === "improving" ? TrendingUpIcon : Minus;
-  const trendColor = s.trend === "declining" ? "text-red-400" : s.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
+  const trendColor = s.trend === "declining" ? "text-danger" : s.trend === "improving" ? "text-success" : "text-muted-foreground";
   const avatarGradient = AVATAR_GRADIENTS[index % AVATAR_GRADIENTS.length];
 
   return (
@@ -1465,7 +1465,7 @@ function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: Pl
               style={{ background: avatarGradient, boxShadow: "0 4px 14px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.15)" }}
             >
               {si}
-              <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${s.chip.dot}`} />
+              <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-border ${s.chip.dot}`} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[13px] font-semibold text-foreground truncate leading-tight">{s.studentName}</p>
@@ -1488,14 +1488,14 @@ function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: Pl
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onAssignRequest(); }}
-                  className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors"
+                  className="text-[10px] text-primary hover:text-primary/80 font-semibold cursor-pointer transition-colors"
                   data-testid={`button-assign-empty-${s.studentId}`}
                 >
                   Assign work &rarr;
                 </button>
               ) : (
                 <Link href="/tutor/assessments">
-                  <span className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold cursor-pointer transition-colors">
+                  <span className="text-[10px] text-primary hover:text-primary/80 font-semibold cursor-pointer transition-colors">
                     Assign work &rarr;
                   </span>
                 </Link>
@@ -1514,7 +1514,7 @@ function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: Pl
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-[0.08em]">Completion</span>
-                  <span className={`text-[10px] font-bold tabular-nums ${s.coveragePct >= 75 ? "glow-green" : s.coveragePct >= 50 ? "glow-amber" : "text-cyan-400"}`}>{s.coveragePct}%</span>
+                  <span className={`text-[10px] font-bold tabular-nums ${s.coveragePct >= 75 ? "glow-green" : s.coveragePct >= 50 ? "glow-amber" : "text-info"}`}>{s.coveragePct}%</span>
                 </div>
                 <div className="h-[6px] rounded-full bg-muted/50 overflow-hidden">
                   <div
@@ -1564,7 +1564,7 @@ function StudentPlaque({ student: s, index = 0, onAssignRequest }: { student: Pl
           {/* Action buttons */}
           <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
             <Link href={`/tutor/students/${s.studentId}`}>
-              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/15 hover:bg-indigo-500/20 transition-all cursor-pointer" data-testid={`link-profile-${s.studentId}`}>
+              <span className="flex items-center gap-1 px-2.5 py-1.5 min-h-[28px] rounded-lg text-[10px] font-semibold text-primary bg-primary/10 border border-primary/15 hover:bg-primary/20 transition-all cursor-pointer" data-testid={`link-profile-${s.studentId}`}>
                 <Eye className="w-3 h-3" /> Profile
               </span>
             </Link>

@@ -39,7 +39,7 @@ const STORAGE_UNCONFIGURED = "STORAGE_UNCONFIGURED";
 
 function StorageNotice() {
   return (
-    <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+    <div className="rounded-xl bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">
       File uploads aren't available right now. Please check back later.
     </div>
   );
@@ -165,7 +165,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
       {hasWorksheets && (
         <div className="text-left bg-foreground/[0.03] border border-border/30 rounded-xl p-4 md:p-5 mb-6">
           <p className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground mb-3">
-            <Paperclip className="w-3.5 h-3.5 text-violet-300" />
+            <Paperclip className="w-3.5 h-3.5 text-primary" />
             Worksheets
           </p>
           <div className="space-y-2">
@@ -176,7 +176,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
                 className="flex items-center justify-between gap-3 rounded-xl bg-foreground/5 border border-border/50 px-4 py-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="w-4 h-4 text-violet-400 shrink-0" />
+                  <FileText className="w-4 h-4 text-primary shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{att.filename}</p>
                     <p className="text-xs text-muted-foreground">{formatBytes(att.sizeBytes)}</p>
@@ -185,7 +185,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
                 <button
                   data-testid={`student-worksheet-download-${att.id}`}
                   onClick={() => downloadAttachment(att.id)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-sm font-medium border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-all shrink-0"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-sm font-medium border border-info/40 bg-info/10 text-info hover:bg-info/20 transition-all shrink-0"
                 >
                   <Download className="w-4 h-4" />
                   <span className="hidden sm:inline">Download</span>
@@ -199,7 +199,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
       {showResponseCard && (
       <div className="text-left bg-foreground/[0.03] border border-border/30 rounded-xl p-4 md:p-5 mb-6">
         <p className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground mb-3">
-          <FileCheck className="w-3.5 h-3.5 text-violet-300" />
+          <FileCheck className="w-3.5 h-3.5 text-primary" />
           Your response
         </p>
 
@@ -209,14 +209,14 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
             className="rounded-xl bg-foreground/5 border border-border/50 px-4 py-3 mb-4"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <FileText className="w-4 h-4 text-violet-400 shrink-0" />
+              <FileText className="w-4 h-4 text-primary shrink-0" />
               <p className="text-sm font-medium text-foreground truncate flex-1">{submission.filename}</p>
               {isMarked ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 shrink-0">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/30 shrink-0">
                   <CheckCircle2 className="w-3 h-3" /> Marked
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 shrink-0">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-warning/10 text-warning border border-warning/30 shrink-0">
                   <Clock className="w-3 h-3" /> Awaiting marking
                 </span>
               )}
@@ -226,7 +226,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
               <div className="mt-3 pt-3 border-t border-border/40">
                 <p
                   data-testid="student-response-score"
-                  className="text-2xl font-bold text-emerald-300"
+                  className="text-2xl font-bold text-success"
                 >
                   {submission.score ?? 0}{submission.maxScore != null ? <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span> : null}
                 </p>
@@ -249,7 +249,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
         {showUpload && (
           <>
         {isMarked && (
-          <div className="flex items-start gap-2 mb-3 text-xs text-amber-300/90">
+          <div className="flex items-start gap-2 mb-3 text-xs text-warning/90">
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <span>Re-uploading will replace your submission and clear the existing mark.</span>
           </div>
@@ -261,7 +261,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
             accept="application/pdf"
             data-testid="student-response-input"
             onChange={(e) => handleSelectFile(e.target.files?.[0] ?? null)}
-            className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-violet-300 hover:file:bg-violet-500/30"
+            className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-primary/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/30"
           />
           <button
             data-testid="student-response-upload"

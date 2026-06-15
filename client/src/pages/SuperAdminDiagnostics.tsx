@@ -41,11 +41,11 @@ type DiagnosticsSummary = {
 };
 
 const severityClass: Record<string, string> = {
-  debug: "bg-slate-500/10 text-slate-300 border-slate-500/30",
-  info: "bg-blue-500/10 text-blue-300 border-blue-500/30",
-  warn: "bg-amber-500/10 text-amber-300 border-amber-500/30",
-  error: "bg-red-500/10 text-red-300 border-red-500/30",
-  critical: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30",
+  debug: "chip",
+  info: "chip chip-info",
+  warn: "chip chip-warning",
+  error: "chip chip-danger",
+  critical: "chip chip-brand",
 };
 
 export default function SuperAdminDiagnostics() {
@@ -102,7 +102,7 @@ export default function SuperAdminDiagnostics() {
   };
 
   if (!roleVerified) {
-    return <div className="min-h-screen flex items-center justify-center"><RefreshCw className="w-8 h-8 text-red-500 animate-spin" /></div>;
+    return <div className="min-h-screen flex items-center justify-center"><RefreshCw className="w-8 h-8 text-danger animate-spin" /></div>;
   }
 
   const summary = summaryQuery.data;
@@ -110,14 +110,14 @@ export default function SuperAdminDiagnostics() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-red-900/40 bg-background/95 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-danger/30 bg-background/95 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/super-admin">
             <div className="flex items-center gap-3 cursor-pointer text-muted-foreground hover:text-foreground">
               <ArrowLeft className="w-4 h-4" />
               <div>
-                <h1 className="text-lg font-bold text-foreground">Internal Diagnostics</h1>
-                <p className="text-[10px] text-red-400 tracking-widest uppercase font-semibold">Super Admin Only</p>
+                <h1 className="text-lg soma-display text-foreground">Internal Diagnostics</h1>
+                <p className="eyebrow text-danger">Super Admin Only</p>
               </div>
             </div>
           </Link>
@@ -132,10 +132,10 @@ export default function SuperAdminDiagnostics() {
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-foreground flex items-center gap-2"><Shield className="w-6 h-6 text-red-400" /> Diagnostics Console</h2>
+            <h2 className="text-2xl soma-display text-foreground flex items-center gap-2"><Shield className="w-6 h-6 text-danger" /> Diagnostics Console</h2>
             <p className="text-sm text-muted-foreground mt-1">Recent structured server events from the in-memory ring buffer. User data is limited to safe id/role fields.</p>
           </div>
-          <button onClick={refresh} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25">
+          <button onClick={refresh} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-danger/15 text-danger border border-danger/30 hover:bg-danger/25">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
         </div>
@@ -143,11 +143,11 @@ export default function SuperAdminDiagnostics() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <MetricCard icon={Activity} label="Events in buffer" value={`${summary?.bufferSize ?? 0}/${summary?.capacity ?? 0}`} />
           <MetricCard icon={Server} label="Last hour" value={summary?.lastHour.total ?? 0} />
-          <MetricCard icon={AlertTriangle} label="Warnings" value={summary?.lastHour.warningCount ?? 0} tone="amber" />
-          <MetricCard icon={Database} label="Errors" value={summary?.lastHour.errorCount ?? 0} tone="red" />
+          <MetricCard icon={AlertTriangle} label="Warnings" value={summary?.lastHour.warningCount ?? 0} tone="warning" />
+          <MetricCard icon={Database} label="Errors" value={summary?.lastHour.errorCount ?? 0} tone="danger" />
         </div>
 
-        <section className="bg-card/70 border border-card-border rounded-2xl p-5 shadow-xl">
+        <section className="glass-card p-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
               <h3 className="font-semibold text-foreground mb-3">Categories in the last hour</h3>
@@ -158,19 +158,19 @@ export default function SuperAdminDiagnostics() {
             <div>
               <h3 className="font-semibold text-foreground mb-3">Severity in the last hour</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {severities.map((sev) => <Badge key={sev} className={`justify-between border ${severityClass[sev]}`}><span>{sev}</span><span>{summary?.lastHour.bySeverity?.[sev] ?? 0}</span></Badge>)}
+                {severities.map((sev) => <Badge key={sev} className={`justify-between ${severityClass[sev]}`}><span>{sev}</span><span>{summary?.lastHour.bySeverity?.[sev] ?? 0}</span></Badge>)}
               </div>
             </div>
           </div>
           {summary?.lastHour.slowestRequest && (
             <div className="mt-5 rounded-xl bg-muted/40 border border-border p-4 text-sm text-muted-foreground">
-              <Gauge className="inline w-4 h-4 mr-2 text-amber-300" />
+              <Gauge className="inline w-4 h-4 mr-2 text-warning" />
               Slowest recent request: <span className="text-foreground">{summary.lastHour.slowestRequest.method} {summary.lastHour.slowestRequest.route}</span> in {summary.lastHour.slowestRequest.durationMs}ms
             </div>
           )}
         </section>
 
-        <section className="bg-card/70 border border-card-border rounded-2xl shadow-xl overflow-hidden">
+        <section className="glass-card overflow-hidden">
           <div className="p-5 border-b border-card-border flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
             <h3 className="font-semibold text-foreground">Recent events</h3>
             <div className="flex gap-2">
@@ -202,11 +202,11 @@ export default function SuperAdminDiagnostics() {
                 ) : events.map((event) => (
                   <tr key={event.id} className="border-t border-card-border/70 hover:bg-muted/30 align-top">
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</td>
-                    <td className="px-4 py-3"><Badge className={`border ${severityClass[event.severity]}`}>{event.severity}</Badge></td>
+                    <td className="px-4 py-3"><Badge className={severityClass[event.severity]}>{event.severity}</Badge></td>
                     <td className="px-4 py-3 text-foreground">{event.category}</td>
                     <td className="px-4 py-3 min-w-[260px]"><p className="text-foreground font-medium">{event.method} {event.route}</p><p className="text-xs text-muted-foreground">{event.statusCode ?? "—"} · {event.durationMs ?? 0}ms · {event.requestId || "no request id"}</p></td>
                     <td className="px-4 py-3 text-muted-foreground">{event.user?.role || "—"}{event.user?.id ? <span className="block text-xs font-mono">{event.user.id}</span> : null}</td>
-                    <td className="px-4 py-3 max-w-[420px]"><p className="text-foreground">{event.error?.name ? `${event.error.name}: ` : ""}{event.error?.message || "—"}</p>{event.likelyRootCause && <p className="text-xs text-amber-200 mt-1">{event.likelyRootCause}</p>}</td>
+                    <td className="px-4 py-3 max-w-[420px]"><p className="text-foreground">{event.error?.name ? `${event.error.name}: ` : ""}{event.error?.message || "—"}</p>{event.likelyRootCause && <p className="text-xs text-warning mt-1">{event.likelyRootCause}</p>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -218,7 +218,7 @@ export default function SuperAdminDiagnostics() {
   );
 }
 
-function MetricCard({ icon: Icon, label, value, tone = "red" }: { icon: any; label: string; value: string | number; tone?: "red" | "amber" }) {
-  const color = tone === "amber" ? "text-amber-300 bg-amber-500/10 border-amber-500/30" : "text-red-300 bg-red-500/10 border-red-500/30";
-  return <div className="bg-card/70 border border-card-border rounded-2xl p-5 shadow-xl"><div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${color}`}><Icon className="w-5 h-5" /></div><p className="mt-4 text-2xl font-bold text-foreground">{value}</p><p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p></div>;
+function MetricCard({ icon: Icon, label, value, tone = "danger" }: { icon: any; label: string; value: string | number; tone?: "danger" | "warning" }) {
+  const color = tone === "warning" ? "text-warning bg-warning/10 border-warning/30" : "text-danger bg-danger/10 border-danger/30";
+  return <div className="stat-card p-5"><div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${color}`}><Icon className="w-5 h-5" /></div><p className="mt-4 text-2xl font-bold text-foreground">{value}</p><p className="eyebrow mt-1">{label}</p></div>;
 }

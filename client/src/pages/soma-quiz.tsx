@@ -49,7 +49,7 @@ function LoadingSkeleton() {
       <div className="w-full max-w-3xl">
         <div className="glass-card p-8 mb-6">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/20 animate-pulse" />
+            <div className="w-10 h-10 rounded-xl bg-primary/20 animate-pulse" />
             <div className="flex-1">
               <Skeleton className="h-6 w-48 mb-2 bg-foreground/10" />
               <Skeleton className="h-4 w-32 bg-foreground/10" />
@@ -69,7 +69,7 @@ function LoadingSkeleton() {
         </div>
         <div className="mt-8 flex justify-center">
           <div className="flex items-center gap-2">
-            <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
             <span className="text-sm text-muted-foreground">Loading assessment...</span>
           </div>
         </div>
@@ -82,8 +82,8 @@ function ErrorView({ message }: { message: string }) {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="glass-card w-full max-w-md text-center p-10">
-        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-5 border border-red-500/30">
-          <AlertCircle className="w-8 h-8 text-red-400" />
+        <div className="w-16 h-16 rounded-full bg-danger/10 flex items-center justify-center mx-auto mb-5 border border-danger/30">
+          <AlertCircle className="w-8 h-8 text-danger" />
         </div>
         <h2 className="text-xl font-bold mb-2 text-foreground">Failed to Load</h2>
         <p className="text-sm text-muted-foreground mb-6">{message}</p>
@@ -107,8 +107,8 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="glass-card w-full max-w-md text-center p-10">
-          <div className="w-20 h-20 rounded-full bg-violet-500/10 flex items-center justify-center mx-auto mb-5 border border-violet-500/30">
-            <Award className="w-10 h-10 text-violet-400" />
+          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5 border border-primary/30">
+            <Award className="w-10 h-10 text-primary" />
           </div>
           <h2 className="text-2xl font-bold mb-1 gradient-text">Assessment Submitted</h2>
           <p className="text-sm text-muted-foreground mb-6">{quizTitle}</p>
@@ -133,7 +133,7 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
 
   const tier = percentage >= 80
     ? {
-        label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", glow: "rgba(16,185,129,0.4)",
+        label: "Excellent", color: "text-success", bg: "bg-success/10", border: "border-success/30", glow: "rgba(16,185,129,0.4)",
         messages: [
           "Outstanding work! You've demonstrated a strong grasp of the material.",
           "Brilliant! This is exactly the kind of mastery examiners love to see.",
@@ -143,7 +143,7 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
       }
     : percentage >= 65
       ? {
-          label: "Good", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30", glow: "rgba(6,182,212,0.4)",
+          label: "Good", color: "text-info", bg: "bg-info/10", border: "border-info/30", glow: "rgba(6,182,212,0.4)",
           messages: [
             "Well done! You're on the right track. Review any areas you found tricky.",
             "Nice work — a confident result with a little room to push higher.",
@@ -153,7 +153,7 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
         }
       : percentage >= 50
         ? {
-            label: "Satisfactory", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", glow: "rgba(245,158,11,0.4)",
+            label: "Satisfactory", color: "text-warning", bg: "bg-warning/10", border: "border-warning/30", glow: "rgba(245,158,11,0.4)",
             messages: [
               "A solid effort! Focus on the areas you found challenging to keep improving.",
               "You're getting there — revisit the feedback and the gaps will close fast.",
@@ -162,7 +162,7 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
             ],
           }
         : {
-            label: "Needs Practice", color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30", glow: "rgba(244,63,94,0.4)",
+            label: "Needs Practice", color: "text-danger", bg: "bg-danger/10", border: "border-danger/30", glow: "rgba(244,63,94,0.4)",
             messages: [
               "Don't worry — every expert was once a beginner. Review the feedback and try again!",
               "This is a starting point, not the finish line. Work through the feedback and go again.",
@@ -242,8 +242,8 @@ function SummaryView({
       <div className="max-w-3xl mx-auto">
         <div className="glass-card p-8 mb-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center border border-violet-500/30">
-              <BookOpen className="w-5 h-5 text-violet-400" />
+            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30">
+              <BookOpen className="w-5 h-5 text-primary" />
             </div>
             <div>
               <h2 className="text-xl font-bold gradient-text" data-testid="text-summary-title">Assessment Summary</h2>
@@ -253,30 +253,30 @@ function SummaryView({
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
-              <p className="text-2xl font-bold text-violet-300" data-testid="text-summary-answered">{answeredCount}</p>
+              <p className="text-2xl font-bold text-primary" data-testid="text-summary-answered">{answeredCount}</p>
               <p className="text-xs text-muted-foreground">Answered</p>
             </div>
             <div
               className={`rounded-xl p-4 border text-center ${
                 unansweredCount > 0
-                  ? "bg-yellow-500/15 border-yellow-500/50 ring-1 ring-yellow-500/40"
+                  ? "bg-warning/15 border-warning/50 ring-1 ring-warning/40"
                   : "bg-foreground/5 border-border/50"
               }`}
             >
               <p
-                className={`text-2xl font-bold ${unansweredCount > 0 ? "text-yellow-300" : "text-foreground/80"}`}
+                className={`text-2xl font-bold ${unansweredCount > 0 ? "text-warning" : "text-foreground/80"}`}
                 data-testid="text-summary-unanswered"
               >
                 {unansweredCount}
               </p>
-              <p className={`text-xs ${unansweredCount > 0 ? "text-yellow-200/80" : "text-muted-foreground"}`}>Unanswered</p>
+              <p className={`text-xs ${unansweredCount > 0 ? "text-warning/80" : "text-muted-foreground"}`}>Unanswered</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
               <p className="text-2xl font-bold text-foreground/80" data-testid="text-summary-total">{questions.length}</p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50 text-center">
-              <p className="text-2xl font-bold text-cyan-300" data-testid="text-summary-marks">{totalMarks}</p>
+              <p className="text-2xl font-bold text-info" data-testid="text-summary-marks">{totalMarks}</p>
               <p className="text-xs text-muted-foreground">Marks</p>
             </div>
           </div>
@@ -289,20 +289,20 @@ function SummaryView({
                   key={q.id}
                   className={`flex items-center gap-3 rounded-lg p-3 border transition-all ${
                     isAnswered
-                      ? "bg-blue-500/10 border-blue-500/40 ring-2 ring-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                      : "bg-yellow-500/15 border-yellow-500/50 ring-1 ring-yellow-500/40"
+                      ? "bg-info/10 border-info/40 ring-2 ring-info shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                      : "bg-warning/15 border-warning/50 ring-1 ring-warning/40"
                   }`}
                 >
-                  <span className={`text-xs font-mono w-6 text-right ${isAnswered ? "text-cyan-400" : "text-yellow-300"}`}>{idx + 1}</span>
+                  <span className={`text-xs font-mono w-6 text-right ${isAnswered ? "text-info" : "text-warning"}`}>{idx + 1}</span>
                   {isAnswered ? (
-                    <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-info shrink-0" />
                   ) : (
-                    <Circle className="w-4 h-4 text-yellow-400 shrink-0" />
+                    <Circle className="w-4 h-4 text-warning shrink-0" />
                   )}
-                  <span className={`text-sm truncate flex-1 ${isAnswered ? "text-foreground" : "text-yellow-100"}`}>
+                  <span className={`text-sm truncate flex-1 ${isAnswered ? "text-foreground" : "text-warning"}`}>
                     {q.stem.slice(0, 60)}{q.stem.length > 60 ? "..." : ""}
                   </span>
-                  <Badge className={`text-xs ${isAnswered ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/30" : "bg-yellow-500/15 text-yellow-300 border-yellow-500/40"}`}>
+                  <Badge className={`text-xs ${isAnswered ? "bg-info/10 text-info border-info/30" : "bg-warning/15 text-warning border-warning/40"}`}>
                     [{q.marks}]
                   </Badge>
                 </div>
@@ -638,8 +638,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           <span className="hidden sm:inline">Exit Preview</span>
         </Button>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <span className="text-xs sm:text-sm font-semibold text-amber-300 tracking-wide">Admin Preview — Scores will not be saved</span>
+          <div className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+          <span className="text-xs sm:text-sm font-semibold text-warning tracking-wide">Admin Preview — Scores will not be saved</span>
         </div>
         <Button
           size="default"
@@ -707,8 +707,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="glass-card w-full max-w-md text-center p-10">
-          <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-5 border border-amber-500/30">
-            <AlertCircle className="w-8 h-8 text-amber-400" />
+          <div className="w-16 h-16 rounded-full bg-warning/10 flex items-center justify-center mx-auto mb-5 border border-warning/30">
+            <AlertCircle className="w-8 h-8 text-warning" />
           </div>
           <h2 className="text-xl font-bold mb-2 text-foreground">Already Submitted</h2>
           <p className="text-sm text-muted-foreground mb-6">You have already submitted this assessment. Check your dashboard for results.</p>
@@ -809,8 +809,8 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
               <Badge
                 className={`flex items-center gap-1.5 ${
                   timeRemainingSeconds <= 300
-                    ? "bg-red-500/15 text-red-400 border-red-500/30 animate-pulse"
-                    : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                    ? "bg-danger/15 text-danger border-danger/30 animate-pulse"
+                    : "bg-warning/10 text-warning border-warning/30"
                 }`}
                 title="Time remaining"
                 data-testid="badge-timer"
@@ -820,7 +820,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 {Math.floor(timeRemainingSeconds / 60)}:{String(timeRemainingSeconds % 60).padStart(2, "0")}
               </Badge>
             )}
-            <Badge className="bg-violet-500/10 text-violet-300 border-violet-500/30" data-testid="badge-progress">
+            <Badge className="bg-primary/10 text-primary border-primary/30" data-testid="badge-progress">
               {currentIndex + 1} / {questions.length}
             </Badge>
             <Badge className="bg-foreground/5 text-muted-foreground border-border/50 hidden sm:inline-flex" data-testid="badge-marks">
@@ -841,7 +841,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             data-testid="progress-answered"
           >
             <div
-              className="h-full bg-gradient-to-r from-violet-500 via-cyan-400 to-emerald-400 transition-all duration-300"
+              className="h-full bg-gradient-to-r from-primary via-info to-success transition-all duration-300"
               style={{ width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%` }}
             />
           </div>
@@ -850,12 +850,12 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         <div className="glass-card p-4 sm:p-6 md:p-8 mb-4 sm:mb-6" style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}>
           <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-violet-500/30 to-cyan-500/20 flex items-center justify-center border border-violet-500/30 text-base sm:text-lg font-bold text-violet-300 shrink-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary/30 to-info/20 flex items-center justify-center border border-primary/30 text-base sm:text-lg font-bold text-primary shrink-0">
                 {currentIndex + 1}
               </div>
               <div className="min-w-0">
                 <p className="text-[11px] sm:text-xs text-muted-foreground uppercase tracking-wider truncate">Question {currentIndex + 1} of {questions.length}</p>
-                <p className="text-[11px] sm:text-xs text-violet-400/70">{currentQuestion.marks} mark{currentQuestion.marks > 1 ? "s" : ""}</p>
+                <p className="text-[11px] sm:text-xs text-primary/70">{currentQuestion.marks} mark{currentQuestion.marks > 1 ? "s" : ""}</p>
               </div>
             </div>
             <FlagQuestionButton questionId={currentQuestion.id} quizId={currentQuestion.quizId} />
@@ -899,7 +899,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 onClick={() => handleSelectAnswer(currentQuestion.id, option)}
                 className={`w-full text-left p-4 sm:p-5 min-h-[60px] rounded-2xl border transition-all duration-200 active:scale-[0.99] ${
                   isSelected
-                    ? "bg-violet-500/15 border-violet-500/40 shadow-[0_0_20px_rgba(139,92,246,0.15)]"
+                    ? "bg-primary/15 border-primary/40 shadow-[0_0_20px_rgba(139,92,246,0.15)]"
                     : "bg-foreground/[0.04] border-border/50 hover:bg-foreground/[0.06] hover:border-white/20"
                 }`}
                 data-testid={`button-option-${idx}`}
@@ -907,7 +907,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
                 <div className="flex items-start gap-3 sm:gap-4">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-semibold ${
                     isSelected
-                      ? "bg-violet-500/30 text-violet-200 border border-violet-500/50"
+                      ? "bg-primary/30 text-primary border border-primary/50"
                       : "bg-foreground/5 text-muted-foreground border border-border/50"
                   }`}>
                     {letter}
@@ -987,10 +987,10 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
               onClick={() => handleDotClick(idx)}
               className={`w-3 h-3 rounded-full transition-all duration-200 ${
                 idx === currentIndex
-                  ? "bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.6)] scale-125"
+                  ? "bg-primary shadow-[0_0_8px_rgba(139,92,246,0.6)] scale-125"
                   : answers[q.id]
-                    ? "bg-emerald-500/60"
-                    : "bg-yellow-500/60 hover:bg-yellow-500/80 ring-1 ring-yellow-500/40"
+                    ? "bg-success/60"
+                    : "bg-warning/60 hover:bg-warning/80 ring-1 ring-warning/40"
               }`}
               aria-label={`Go to question ${idx + 1}`}
               data-testid={`dot-question-${idx}`}

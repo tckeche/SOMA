@@ -106,8 +106,8 @@ function SubjectInsightCard({ subj }: { subj: SubjectInsight }) {
     <div className={GP}>
       <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
-            <RadarIcon className="w-3.5 h-3.5 text-violet-400" />
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/12">
+            <RadarIcon className="w-3.5 h-3.5 text-primary" />
           </div>
           <div>
             <h3 className="text-[13px] font-semibold text-foreground">{subj.subject}</h3>
@@ -220,7 +220,7 @@ function SubjectInsightCard({ subj }: { subj: SubjectInsight }) {
       {subj.papers.length > 0 && (
         <div className="px-6 pb-5 border-t border-border/40 pt-4">
           <div className="flex items-center gap-2 mb-3">
-            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <Layers className="w-3.5 h-3.5 text-info" />
             <div className="text-[11px] font-semibold text-foreground/80 uppercase tracking-wide">
               End-of-year paper readiness
             </div>

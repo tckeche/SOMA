@@ -96,11 +96,11 @@ interface SuggestedAssessment {
 }
 
 function getStatusLabel(a: AssignmentRow): { text: string; color: string } {
-  if (a.reportStatus === "completed") return { text: "Submitted", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };
-  if (a.reportStatus === "pending") return { text: "Grading", color: "bg-amber-500/10 text-amber-400 border-amber-500/15" };
-  if (a.reportStatus === "failed") return { text: "Failed", color: "bg-red-500/10 text-red-400 border-red-500/15" };
-  if (a.assignmentStatus === "completed") return { text: "Done", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };
-  return { text: "Pending", color: "bg-slate-500/10 text-muted-foreground border-slate-500/15" };
+  if (a.reportStatus === "completed") return { text: "Submitted", color: "bg-success/10 text-success border-success/15" };
+  if (a.reportStatus === "pending") return { text: "Grading", color: "bg-warning/10 text-warning border-warning/15" };
+  if (a.reportStatus === "failed") return { text: "Failed", color: "bg-danger/10 text-danger border-danger/15" };
+  if (a.assignmentStatus === "completed") return { text: "Done", color: "bg-success/10 text-success border-success/15" };
+  return { text: "Pending", color: "bg-muted/10 text-muted-foreground border-muted/15" };
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -422,15 +422,15 @@ export default function TutorStudentDetail() {
   const subjectChartColors = chartPalette.series;
 
   const TrendIcon = overallTrend === "declining" ? TrendingDown : overallTrend === "improving" ? TrendingUp : Minus;
-  const trendColor = overallTrend === "declining" ? "text-red-400" : overallTrend === "improving" ? "text-emerald-400" : "text-muted-foreground";
-  const trendBg = overallTrend === "declining" ? "bg-red-500/8" : overallTrend === "improving" ? "bg-emerald-500/8" : "bg-slate-500/8";
+  const trendColor = overallTrend === "declining" ? "text-danger" : overallTrend === "improving" ? "text-success" : "text-muted-foreground";
+  const trendBg = overallTrend === "declining" ? "bg-danger/8" : overallTrend === "improving" ? "bg-success/8" : "bg-muted/8";
 
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-border/60 backdrop-blur-2xl bg-background/95">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-3.5 flex items-center justify-between">
           <Link href="/tutor/students">
-            <span className="flex items-center gap-2 text-[13px] text-muted-foreground hover:text-violet-500 dark:hover:text-violet-400 transition-colors cursor-pointer font-medium" data-testid="link-back-students">
+            <span className="flex items-center gap-2 text-[13px] text-muted-foreground hover:text-primary transition-colors cursor-pointer font-medium" data-testid="link-back-students">
               <ArrowLeft className="w-3.5 h-3.5" />
               Students
             </span>
@@ -449,7 +449,7 @@ export default function TutorStudentDetail() {
       <main className="max-w-[1440px] mx-auto px-6 lg:px-10 py-7 space-y-6">
         {reportError ? (
           <div className="flex flex-col items-center justify-center py-32 gap-4" data-testid="profile-error">
-            <AlertTriangle className="w-10 h-10 text-amber-400/70" />
+            <AlertTriangle className="w-10 h-10 text-warning/70" />
             <p className="text-sm text-muted-foreground font-medium">Unable to load student data</p>
             <p className="text-xs text-muted-foreground">Check your connection and try refreshing</p>
           </div>
@@ -497,9 +497,9 @@ export default function TutorStudentDetail() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                  <HeaderStat label="Avg Score" value={formatPercent(stats?.avgScore)} color="text-violet-400" icon={<Award className="w-3.5 h-3.5 text-violet-500/50" />} />
-                  <HeaderStat label="Reliability" value={completionRate !== null ? `${completionRate}%` : null} color="text-emerald-400" icon={<Target className="w-3.5 h-3.5 text-emerald-500/50" />} />
-                  <HeaderStat label="Assessed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-cyan-400" icon={<BookOpen className="w-3.5 h-3.5 text-cyan-500/50" />} />
+                  <HeaderStat label="Avg Score" value={formatPercent(stats?.avgScore)} color="text-primary" icon={<Award className="w-3.5 h-3.5 text-primary/50" />} />
+                  <HeaderStat label="Reliability" value={completionRate !== null ? `${completionRate}%` : null} color="text-success" icon={<Target className="w-3.5 h-3.5 text-success/50" />} />
+                  <HeaderStat label="Assessed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-info" icon={<BookOpen className="w-3.5 h-3.5 text-info/50" />} />
                   <HeaderStat label="Trend" value={overallTrend} color={trendColor} icon={<TrendIcon className="w-3.5 h-3.5 opacity-50" />} />
                 </div>
               </div>
@@ -510,8 +510,8 @@ export default function TutorStudentDetail() {
               <div className={GP}>
                 <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
-                      <Activity className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/12">
+                      <Activity className="w-3.5 h-3.5 text-primary" />
                     </div>
                     <div>
                       <h3 className="text-[13px] font-semibold text-foreground">Learning Curve</h3>
@@ -526,7 +526,7 @@ export default function TutorStudentDetail() {
                       </div>
                     ))}
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-0.5 rounded-full bg-slate-400" />
+                      <span className="w-2.5 h-0.5 rounded-full bg-muted-foreground" />
                       <span className="text-[10px] text-muted-foreground font-medium">Moving Avg</span>
                     </div>
                   </div>
@@ -600,8 +600,8 @@ export default function TutorStudentDetail() {
               <div className={GP}>
                 <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
-                      <Calendar className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/12">
+                      <Calendar className="w-3.5 h-3.5 text-primary" />
                     </div>
                     <div>
                       <h3 className="text-[13px] font-semibold text-foreground">Spaced Repetition Schedule</h3>
@@ -609,7 +609,7 @@ export default function TutorStudentDetail() {
                     </div>
                   </div>
                   {reviewSchedule.dueForReview.length > 0 && (
-                    <Badge className="text-[9px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/20">
+                    <Badge className="text-[9px] font-bold border text-warning bg-warning/10 border-warning/20">
                       {reviewSchedule.dueForReview.length} due now
                     </Badge>
                   )}
@@ -617,20 +617,20 @@ export default function TutorStudentDetail() {
                 <div className="px-6 py-4">
                   {reviewSchedule.dueForReview.length > 0 && (
                     <div className="mb-4">
-                      <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-2">Overdue Reviews</p>
+                      <p className="text-[10px] text-warning font-bold uppercase tracking-wider mb-2">Overdue Reviews</p>
                       <div className="space-y-1.5">
                         {reviewSchedule.dueForReview.map((r, i) => (
-                          <div key={i} className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
+                          <div key={i} className="flex items-center justify-between rounded-lg border border-warning/15 bg-warning/[0.04] px-3 py-2">
                             <div className="flex items-center gap-2">
-                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              <Clock className="w-3.5 h-3.5 text-warning" />
                               <span className="text-[12px] text-foreground font-medium">{r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}</span>
                               <span className="text-[10px] text-muted-foreground">{r.subject}</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className={`text-[11px] font-bold tabular-nums ${r.understandingPercent >= 75 ? "text-emerald-400" : "text-amber-400"}`}>
+                              <span className={`text-[11px] font-bold tabular-nums ${r.understandingPercent >= 75 ? "text-success" : "text-warning"}`}>
                                 {r.understandingPercent}%
                               </span>
-                              <span className="text-[10px] text-amber-400 font-medium">
+                              <span className="text-[10px] text-warning font-medium">
                                 {r.daysOverdue > 0 ? `${r.daysOverdue}d overdue` : "Due today"}
                               </span>
                             </div>
@@ -644,7 +644,7 @@ export default function TutorStudentDetail() {
                       <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-2">Upcoming Reviews</p>
                       <div className="flex flex-wrap gap-2">
                         {reviewSchedule.upcoming.map((r, i) => (
-                          <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-slate-500/8 text-muted-foreground border border-slate-500/15">
+                          <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-muted/8 text-muted-foreground border border-muted/15">
                             {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""} — in {r.daysUntilDue}d
                           </span>
                         ))}
@@ -660,13 +660,13 @@ export default function TutorStudentDetail() {
               <div className="flex items-center border-b border-border/60">
                 <button
                   onClick={() => setProfileTab("curriculum")}
-                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "curriculum" ? "text-violet-300 border-violet-400" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
+                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "curriculum" ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
                 >
                   Curriculum Profile
                 </button>
                 <button
                   onClick={() => setProfileTab("assessments")}
-                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "assessments" ? "text-emerald-300 border-emerald-400" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
+                  className={`px-5 py-3.5 text-[12px] font-semibold transition-colors border-b-2 ${profileTab === "assessments" ? "text-success border-success" : "text-muted-foreground border-transparent hover:text-foreground/80"}`}
                 >
                   Suggested Assessments
                 </button>
@@ -687,14 +687,14 @@ export default function TutorStudentDetail() {
                           </span>
                           <button
                             onClick={() => deleteSubjectMutation.mutate(s.id)}
-                            className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors"
+                            className="p-1 rounded hover:bg-danger/15 text-muted-foreground hover:text-danger transition-colors"
                             title="Remove subject"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       ))}
-                      {subjects.length === 0 && <p className="text-[12px] text-amber-300">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using suggestions.</p>}
+                      {subjects.length === 0 && <p className="text-[12px] text-warning">No subjects configured. Add at least one subject with exam body, syllabus code, and level before using suggestions.</p>}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                       <select className="bg-card/60 border border-border/70 rounded-md px-2 py-2 text-[12px] text-foreground" value={newSubject.subject} onChange={(e) => setNewSubject((p) => ({ ...p, subject: e.target.value }))}>
@@ -717,7 +717,7 @@ export default function TutorStudentDetail() {
                         ))}
                       </select>
                     </div>
-                    <button onClick={() => addSubjectMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                    <button onClick={() => addSubjectMutation.mutate()} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md text-[12px] bg-primary/15 text-primary border border-primary/30">
                       <PlusCircle className="w-4 h-4" /> Add Subject
                     </button>
                   </>
@@ -728,8 +728,8 @@ export default function TutorStudentDetail() {
 
                     {subjects.length === 0 ? (
                       <div className="text-center py-8">
-                        <AlertTriangle className="w-8 h-8 mx-auto text-amber-400/60 mb-2" />
-                        <p className="text-[12px] text-amber-300 font-medium">Curriculum profile required</p>
+                        <AlertTriangle className="w-8 h-8 mx-auto text-warning/60 mb-2" />
+                        <p className="text-[12px] text-warning font-medium">Curriculum profile required</p>
                         <p className="text-[11px] text-muted-foreground mt-1">Switch to the Curriculum Profile tab and add at least one subject.</p>
                       </div>
                     ) : (
@@ -738,7 +738,7 @@ export default function TutorStudentDetail() {
                           <button
                             onClick={() => { refetchSuggestions(); setSelectedSuggestionIds([]); }}
                             disabled={suggestionsLoading}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-semibold bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-all disabled:opacity-50"
                           >
                             <Wand2 className="w-4 h-4" />
                             {suggestionsLoading ? "Analyzing student data..." : "Generate Suggested Assessments"}
@@ -762,7 +762,7 @@ export default function TutorStudentDetail() {
                                   const allIds = suggestionsData.suggestions.map((s) => s.id);
                                   setSelectedSuggestionIds(selectedSuggestionIds.length === allIds.length ? [] : allIds);
                                 }}
-                                className="text-[11px] text-violet-400 hover:text-violet-300 font-medium"
+                                className="text-[11px] text-primary hover:text-primary/80 font-medium"
                               >
                                 {selectedSuggestionIds.length === suggestionsData.suggestions.length ? "Deselect All" : "Select All"}
                               </button>
@@ -770,12 +770,12 @@ export default function TutorStudentDetail() {
 
                             {suggestionsData.suggestions.map((s) => {
                               const purposeLabels: Record<string, { label: string; color: string; icon: typeof Target }> = {
-                                struggling_areas: { label: "Remediation", color: "text-red-400 bg-red-500/10 border-red-500/20", icon: TrendingDown },
-                                uncovered_content: { label: "New Content", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", icon: BookOpen },
-                                stretch_strengths: { label: "Challenge", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: TrendingUp },
-                                spaced_review: { label: "Spaced Review", color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Clock },
+                                struggling_areas: { label: "Remediation", color: "text-danger bg-danger/10 border-danger/20", icon: TrendingDown },
+                                uncovered_content: { label: "New Content", color: "text-info bg-info/10 border-info/20", icon: BookOpen },
+                                stretch_strengths: { label: "Challenge", color: "text-success bg-success/10 border-success/20", icon: TrendingUp },
+                                spaced_review: { label: "Spaced Review", color: "text-primary bg-primary/10 border-primary/20", icon: Clock },
                               };
-                              const purpose = purposeLabels[s.purpose] || { label: s.purpose, color: "text-muted-foreground bg-slate-500/10 border-slate-500/20", icon: Target };
+                              const purpose = purposeLabels[s.purpose] || { label: s.purpose, color: "text-muted-foreground bg-muted/10 border-muted/20", icon: Target };
                               const PurposeIcon = purpose.icon;
                               const isSelected = selectedSuggestionIds.includes(s.id);
 
@@ -787,12 +787,12 @@ export default function TutorStudentDetail() {
                               return (
                                 <label
                                   key={s.id}
-                                  className={`block rounded-xl border p-4 cursor-pointer transition-all ${isSelected ? "border-violet-500/40 bg-violet-500/[0.06]" : "border-border/60 bg-foreground/[0.03] hover:border-border/60"}`}
+                                  className={`block rounded-xl border p-4 cursor-pointer transition-all ${isSelected ? "border-primary/40 bg-primary/[0.06]" : "border-border/60 bg-foreground/[0.03] hover:border-border/60"}`}
                                 >
                                   <div className="flex items-start gap-3">
                                     <input
                                       type="checkbox"
-                                      className="mt-1 accent-violet-500"
+                                      className="mt-1 accent-primary"
                                       checked={isSelected}
                                       onChange={(e) => setSelectedSuggestionIds((prev) => e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id))}
                                     />
@@ -810,7 +810,7 @@ export default function TutorStudentDetail() {
                                       {/* Assessment history for this topic */}
                                       {topicMastery && (
                                         <div className="flex items-center gap-3 text-[10px]">
-                                          <span className={`font-bold tabular-nums ${topicMastery.understandingPercent >= 75 ? "text-emerald-400" : topicMastery.understandingPercent >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                          <span className={`font-bold tabular-nums ${topicMastery.understandingPercent >= 75 ? "text-success" : topicMastery.understandingPercent >= 50 ? "text-warning" : "text-danger"}`}>
                                             {topicMastery.understandingPercent}% mastery
                                           </span>
                                           <span className="text-muted-foreground">|</span>
@@ -818,7 +818,7 @@ export default function TutorStudentDetail() {
                                           <span className="text-muted-foreground">|</span>
                                           <span className="text-muted-foreground">{topicMastery.attempts} assessment{topicMastery.attempts !== 1 ? "s" : ""}</span>
                                           <span className="text-muted-foreground">|</span>
-                                          <Badge className={`text-[8px] border ${topicMastery.confidenceLevel === "high" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/15" : topicMastery.confidenceLevel === "medium" ? "text-amber-400 bg-amber-500/8 border-amber-500/15" : "text-muted-foreground bg-slate-500/8 border-slate-500/15"}`}>
+                                          <Badge className={`text-[8px] border ${topicMastery.confidenceLevel === "high" ? "text-success bg-success/8 border-success/15" : topicMastery.confidenceLevel === "medium" ? "text-warning bg-warning/8 border-warning/15" : "text-muted-foreground bg-muted/8 border-muted/15"}`}>
                                             {topicMastery.confidenceLevel} confidence
                                           </Badge>
                                         </div>
@@ -839,7 +839,7 @@ export default function TutorStudentDetail() {
                           <button
                             disabled={selectedSuggestionIds.length === 0 || publishSuggestionsMutation.isPending}
                             onClick={() => publishSuggestionsMutation.mutate()}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-all disabled:opacity-40"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-semibold bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 transition-all disabled:opacity-40"
                           >
                             {publishSuggestionsMutation.isPending ? (
                               <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
@@ -855,7 +855,7 @@ export default function TutorStudentDetail() {
                             <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-2">Remediation Targets (below 75%)</p>
                             <div className="flex flex-wrap gap-2">
                               {suggestionsData.basis.remediationTargets.map((r: any, i: number) => (
-                                <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-red-500/8 text-red-400 border border-red-500/15">
+                                <span key={i} className="text-[10px] px-2 py-1 rounded-md bg-danger/8 text-danger border border-danger/15">
                                   {r.topic}{r.subtopic ? ` > ${r.subtopic}` : ""}: {r.understanding}% ({r.attempts} {r.attempts === 1 ? "attempt" : "attempts"})
                                 </span>
                               ))}
@@ -881,8 +881,8 @@ export default function TutorStudentDetail() {
               <div className={GP}>
                 <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
-                      <RadarIcon className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/12">
+                      <RadarIcon className="w-3.5 h-3.5 text-primary" />
                     </div>
                     <div>
                       <h3 className="text-[13px] font-semibold text-foreground">Syllabus Coverage</h3>
@@ -934,7 +934,7 @@ export default function TutorStudentDetail() {
                         const barColor = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
                         const covColor = coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
                         const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
-                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
+                        const tc = t.trend === "declining" ? "text-danger" : t.trend === "improving" ? "text-success" : "text-muted-foreground";
                         return (
                           <div key={t.topic} className="bg-foreground/[0.03] border border-border/40 rounded-xl p-3.5">
                             <div className="flex items-center justify-between mb-2">
@@ -942,7 +942,7 @@ export default function TutorStudentDetail() {
                                 <span className="text-[12px] font-semibold text-foreground">{t.topic}</span>
                                 <TIcon className={`w-3 h-3 ${tc}`} />
                               </div>
-                              <span className={`text-[11px] font-bold tabular-nums ${t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400"}`}>{t.average}%</span>
+                              <span className={`text-[11px] font-bold tabular-nums ${t.average >= 70 ? "text-success" : t.average >= 50 ? "text-warning" : "text-danger"}`}>{t.average}%</span>
                             </div>
                             <div className="space-y-1.5">
                               <div>
@@ -956,7 +956,7 @@ export default function TutorStudentDetail() {
                               <div>
                                 <div className="flex items-center justify-between mb-0.5">
                                   <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Coverage</span>
-                                  <span className="text-[9px] text-cyan-400 font-bold tabular-nums">{coveragePct}%</span>
+                                  <span className="text-[9px] text-info font-bold tabular-nums">{coveragePct}%</span>
                                 </div>
                                 <div className="h-[5px] rounded-full bg-muted/60 overflow-hidden">
                                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${coveragePct}%`, background: covColor }} />
@@ -977,8 +977,8 @@ export default function TutorStudentDetail() {
             <div className={GP}>
               <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-500/10 border border-blue-500/12">
-                    <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-info/10 border border-info/12">
+                    <BarChart3 className="w-3.5 h-3.5 text-info" />
                   </div>
                   <div>
                     <h3 className="text-[13px] font-semibold text-foreground">Subject Performance</h3>
@@ -1007,10 +1007,10 @@ export default function TutorStudentDetail() {
                     <tbody className="divide-y divide-white/[0.025]">
                       {topicPerformance.map((t) => {
                         const barGradient = t.average >= 70 ? "linear-gradient(90deg, #10b981, #34d399)" : t.average >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #ef4444, #f87171)";
-                        const scoreColor = t.average >= 70 ? "text-emerald-400" : t.average >= 50 ? "text-amber-400" : "text-red-400";
+                        const scoreColor = t.average >= 70 ? "text-success" : t.average >= 50 ? "text-warning" : "text-danger";
                         const TIcon = t.trend === "declining" ? TrendingDown : t.trend === "improving" ? TrendingUp : Minus;
-                        const tc = t.trend === "declining" ? "text-red-400" : t.trend === "improving" ? "text-emerald-400" : "text-muted-foreground";
-                        const evColor = t.evidence === "Strong" ? "text-emerald-400 bg-emerald-500/8 border-emerald-500/10" : t.evidence === "Moderate" ? "text-amber-400 bg-amber-500/8 border-amber-500/10" : "text-muted-foreground bg-slate-500/8 border-slate-500/10";
+                        const tc = t.trend === "declining" ? "text-danger" : t.trend === "improving" ? "text-success" : "text-muted-foreground";
+                        const evColor = t.evidence === "Strong" ? "text-success bg-success/8 border-success/10" : t.evidence === "Moderate" ? "text-warning bg-warning/8 border-warning/10" : "text-muted-foreground bg-muted/8 border-muted/10";
                         return (
                           <tr key={t.topic} className="hover:bg-foreground/[0.02] transition-colors">
                             <td className="px-6 py-3.5">
@@ -1046,8 +1046,8 @@ export default function TutorStudentDetail() {
                 <div className={GP}>
                   <div className="px-6 pt-5 pb-3 border-b border-border/40">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-cyan-500/10 border border-cyan-500/12">
-                        <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-info/10 border border-info/12">
+                        <Layers className="w-3.5 h-3.5 text-info" />
                       </div>
                       <div>
                         <h3 className="text-[13px] font-semibold text-foreground">Coverage Matrix</h3>
@@ -1076,7 +1076,7 @@ export default function TutorStudentDetail() {
                         <tbody className="divide-y divide-white/[0.025]">
                           {coverageData.map((c) => {
                             const barColor = c.coveragePct >= 60 ? "linear-gradient(90deg, #06b6d4, #22d3ee)" : c.coveragePct >= 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #94a3b8, #cbd5e1)";
-                            const perfColor = c.performance >= 70 ? "text-emerald-400" : c.performance >= 50 ? "text-amber-400" : "text-red-400";
+                            const perfColor = c.performance >= 70 ? "text-success" : c.performance >= 50 ? "text-warning" : "text-danger";
                             return (
                               <tr key={c.topic} className="hover:bg-foreground/[0.02] transition-colors">
                                 <td className="px-6 py-3">
@@ -1087,7 +1087,7 @@ export default function TutorStudentDetail() {
                                     <div className="flex-1 h-[5px] rounded-full bg-muted/60 overflow-hidden">
                                       <div className="h-full rounded-full" style={{ width: `${c.coveragePct}%`, background: barColor }} />
                                     </div>
-                                    <span className="text-[10px] text-cyan-400 font-bold tabular-nums w-7 text-right">{c.coveragePct}%</span>
+                                    <span className="text-[10px] text-info font-bold tabular-nums w-7 text-right">{c.coveragePct}%</span>
                                   </div>
                                 </td>
                                 <td className="text-center text-[12px] tabular-nums text-muted-foreground font-medium px-3 py-3">{c.assessments}</td>
@@ -1112,8 +1112,8 @@ export default function TutorStudentDetail() {
                 <div className={GP}>
                   <div className="px-6 pt-5 pb-3 border-b border-border/40">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 border border-violet-500/12">
-                        <MessageSquare className="w-3.5 h-3.5 text-violet-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/12">
+                        <MessageSquare className="w-3.5 h-3.5 text-primary" />
                       </div>
                       <h3 className="text-[13px] font-semibold text-foreground">Private Notes</h3>
                     </div>
@@ -1121,7 +1121,7 @@ export default function TutorStudentDetail() {
                   <div className="px-6 py-4">
                     <div className="space-y-2 max-h-[250px] overflow-y-auto mb-4">
                       {commentsLoading ? (
-                        <Loader2 className="w-5 h-5 text-violet-400 animate-spin mx-auto" />
+                        <Loader2 className="w-5 h-5 text-primary animate-spin mx-auto" />
                       ) : comments.length === 0 ? (
                         <p className="text-xs text-muted-foreground text-center py-4 font-medium">No notes yet</p>
                       ) : (
@@ -1138,14 +1138,14 @@ export default function TutorStudentDetail() {
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
                         placeholder="Add a note..."
-                        className="flex-1 bg-background/80 border border-border/60 rounded-lg p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-[44px] focus:outline-none focus:border-violet-500/30 focus:ring-1 focus:ring-violet-500/15"
+                        className="flex-1 bg-background/80 border border-border/60 rounded-lg p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-[44px] focus:outline-none focus:border-primary/30 focus:ring-1 focus:ring-primary/15"
                         rows={2}
                         data-testid="input-note"
                       />
                       <button
                         onClick={() => { if (newComment.trim()) addCommentMutation.mutate(newComment); }}
                         disabled={!newComment.trim() || addCommentMutation.isPending}
-                        className="self-end p-3 rounded-lg bg-violet-500/15 text-violet-300 border border-violet-500/20 hover:bg-violet-500/25 disabled:opacity-40 transition-all min-h-[44px] min-w-[44px]"
+                        className="self-end p-3 rounded-lg bg-primary/15 text-primary border border-primary/20 hover:bg-primary/25 disabled:opacity-40 transition-all min-h-[44px] min-w-[44px]"
                         data-testid="button-save-note"
                       >
                         {addCommentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -1158,8 +1158,8 @@ export default function TutorStudentDetail() {
                 <div className={GP}>
                   <div className="px-6 pt-5 pb-3 border-b border-border/40">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/12">
-                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-success/10 border border-success/12">
+                        <FileText className="w-3.5 h-3.5 text-success" />
                       </div>
                       <h3 className="text-[13px] font-semibold text-foreground">Academic Summary</h3>
                     </div>
@@ -1168,14 +1168,14 @@ export default function TutorStudentDetail() {
                     {!showSummary ? (
                       <button
                         onClick={() => setShowSummary(true)}
-                        className="w-full py-3 min-h-[44px] rounded-xl text-sm font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/15 hover:bg-emerald-500/20 transition-all"
+                        className="w-full py-3 min-h-[44px] rounded-xl text-sm font-semibold text-success bg-success/10 border border-success/15 hover:bg-success/20 transition-all"
                         data-testid="button-generate-summary"
                       >
                         Generate Summary
                       </button>
                     ) : aiLoading ? (
                       <div className="py-8 text-center">
-                        <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mx-auto mb-2" />
+                        <Loader2 className="w-6 h-6 text-success animate-spin mx-auto mb-2" />
                         <p className="text-xs text-muted-foreground font-medium">Analysing student data...</p>
                       </div>
                     ) : aiSummaryData?.summary ? (
@@ -1220,8 +1220,8 @@ export default function TutorStudentDetail() {
             <div className={GP}>
               <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/10 border border-indigo-500/12">
-                    <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/12">
+                    <Activity className="w-3.5 h-3.5 text-primary" />
                   </div>
                   <div>
                     <h3 className="text-[13px] font-semibold text-foreground">Evidence History</h3>
@@ -1243,7 +1243,7 @@ export default function TutorStudentDetail() {
                     const SubIcon = getSubjectIcon(a.quizSubject);
                     const pct = a.score !== null && a.maxScore > 0 ? Math.round((a.score / a.maxScore) * 100) : null;
                     const duration = formatDuration(a.startedAt, a.completedAt);
-                    const scoreColor = pct !== null ? (pct >= 70 ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/15" : pct >= 40 ? "text-amber-400 bg-amber-500/10 border-amber-500/15" : "text-red-400 bg-red-500/10 border-red-500/15") : "";
+                    const scoreColor = pct !== null ? (pct >= 70 ? "text-success bg-success/10 border-success/15" : pct >= 40 ? "text-warning bg-warning/10 border-warning/15" : "text-danger bg-danger/10 border-danger/15") : "";
                     return (
                       <div key={a.assignmentId} className="px-6 py-4 flex items-center gap-4 hover:bg-foreground/[0.02] transition-colors group" data-testid={`assignment-${a.assignmentId}`}>
                         <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
@@ -1254,7 +1254,7 @@ export default function TutorStudentDetail() {
                           <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground font-medium flex-wrap">
                             {a.quizSubject && <span>{a.quizSubject}</span>}
                             <span>{format(new Date(a.assignedAt), "MMM d, yyyy")}</span>
-                            {duration && <span className="text-violet-400/60">{duration}</span>}
+                            {duration && <span className="text-primary/60">{duration}</span>}
                           </div>
                         </div>
                         <Badge className={`text-[10px] font-bold border ${status.color}`}>{status.text}</Badge>
@@ -1263,14 +1263,14 @@ export default function TutorStudentDetail() {
                         )}
                         {a.reportId ? (
                           <Link href={`/soma/review/${a.reportId}`}>
-                            <span className="text-muted-foreground hover:text-violet-400 transition-colors cursor-pointer">
+                            <span className="text-muted-foreground hover:text-primary transition-colors cursor-pointer">
                               <Eye className="w-4 h-4" />
                             </span>
                           </Link>
                         ) : (
                           <button
                             onClick={() => setRevokeQuizId(a.quizId)}
-                            className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                            className="text-muted-foreground hover:text-danger transition-colors opacity-0 group-hover:opacity-100"
                             aria-label="Revoke assignment"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1296,10 +1296,10 @@ export default function TutorStudentDetail() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-muted text-foreground/80 border-border/50 hover:bg-slate-700">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="bg-muted text-foreground/80 border-border/50 hover:bg-muted/80">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => revokeQuizId && revokeMutation.mutate(revokeQuizId)}
-              className="bg-red-600 text-white hover:bg-red-500"
+              className="bg-danger text-white hover:bg-danger/90"
             >
               {revokeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Revoke"}
             </AlertDialogAction>

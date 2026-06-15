@@ -43,7 +43,7 @@ export function QuestionReviewList({
           data-testid={`review-item-${idx}`}
         >
           <div className="flex items-center gap-2 flex-wrap mb-3">
-            <Badge className="bg-violet-500/15 text-violet-300 border border-violet-500/30 font-mono">
+            <Badge className="bg-primary/15 text-primary border border-primary/30 font-mono">
               Q{idx + 1}
             </Badge>
             {typeof q.marks === "number" && (
@@ -52,7 +52,7 @@ export function QuestionReviewList({
               </span>
             )}
             {q.questionType === "graph" && (
-              <Badge className="bg-violet-500/10 text-violet-400 border border-violet-500/20">graph</Badge>
+              <Badge className="bg-primary/10 text-primary border border-primary/20">graph</Badge>
             )}
             {q.difficultyTag && <Badge variant="outline">{q.difficultyTag}</Badge>}
             {q.topicTag && <Badge variant="outline">{q.topicTag}</Badge>}
@@ -70,7 +70,7 @@ export function QuestionReviewList({
                   key={i}
                   className={`text-sm flex items-start gap-2 rounded-lg px-2 py-1 ${
                     isCorrect
-                      ? "bg-emerald-500/10 text-emerald-300 font-medium"
+                      ? "bg-success/10 text-success font-medium"
                       : "text-muted-foreground"
                   }`}
                   data-testid={`review-option-${idx}-${i}`}

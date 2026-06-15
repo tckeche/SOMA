@@ -54,8 +54,8 @@ export function AssessmentStartScreen({
         </div>
 
         <div className="glass-card p-6 md:p-10 text-center">
-          <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center mx-auto mb-5">
-            <BookOpen className="w-8 h-8 md:w-10 md:h-10 text-violet-300" aria-hidden="true" />
+          <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto mb-5">
+            <BookOpen className="w-8 h-8 md:w-10 md:h-10 text-primary" aria-hidden="true" />
           </div>
 
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Ready to begin?</p>
@@ -119,7 +119,7 @@ export function AssessmentStartScreen({
 function Expect({ icon: Icon, text }: { icon: typeof Clock; text: string }) {
   return (
     <div className="flex items-start gap-2.5">
-      <Icon className="w-4 h-4 text-violet-300 mt-0.5 shrink-0" aria-hidden="true" />
+      <Icon className="w-4 h-4 text-primary mt-0.5 shrink-0" aria-hidden="true" />
       <p className="text-sm text-foreground/80 leading-relaxed">{text}</p>
     </div>
   );

@@ -7,12 +7,12 @@ interface Props {
 }
 
 const KIND_META: Record<DashboardNextAction["kind"], { Icon: typeof Compass; tone: string; bg: string }> = {
-  overdue: { Icon: AlertTriangle, tone: "text-rose-300", bg: "border-rose-500/30 bg-rose-500/5" },
-  due_today: { Icon: Clock, tone: "text-amber-300", bg: "border-amber-500/30 bg-amber-500/5" },
-  due_tomorrow: { Icon: Clock, tone: "text-amber-200", bg: "border-amber-400/20 bg-amber-400/5" },
-  review_low_score: { Icon: RefreshCw, tone: "text-cyan-300", bg: "border-cyan-500/30 bg-cyan-500/5" },
-  untested_topic: { Icon: Eye, tone: "text-violet-300", bg: "border-violet-500/30 bg-violet-500/5" },
-  fresh_start: { Icon: Flag, tone: "text-emerald-300", bg: "border-emerald-500/20 bg-emerald-500/5" },
+  overdue: { Icon: AlertTriangle, tone: "text-danger", bg: "border-danger/30 bg-danger/5" },
+  due_today: { Icon: Clock, tone: "text-warning", bg: "border-warning/30 bg-warning/5" },
+  due_tomorrow: { Icon: Clock, tone: "text-warning", bg: "border-warning/20 bg-warning/5" },
+  review_low_score: { Icon: RefreshCw, tone: "text-info", bg: "border-info/30 bg-info/5" },
+  untested_topic: { Icon: Eye, tone: "text-primary", bg: "border-primary/30 bg-primary/5" },
+  fresh_start: { Icon: Flag, tone: "text-success", bg: "border-success/20 bg-success/5" },
 };
 
 export default function NextActionsList({ actions }: Props) {
@@ -23,7 +23,7 @@ export default function NextActionsList({ actions }: Props) {
       data-testid="panel-next-actions"
     >
       <header className="flex items-center gap-2 mb-3">
-        <Compass className="w-5 h-5 text-violet-400" />
+        <Compass className="w-5 h-5 text-primary" />
         <div>
           <h2 className="text-sm font-semibold text-foreground">What to do now</h2>
           <p className="text-[11px] text-muted-foreground">Bite-sized, in priority order</p>
