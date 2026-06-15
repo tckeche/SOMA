@@ -38,13 +38,13 @@
   --sidebar-foreground: 255 30% 95%;
   --sidebar-border: 250 16% 17%;
   --sidebar-primary: 252 100% 74%;
-  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-primary-foreground: 252 47% 11%;
   --sidebar-accent: 252 38% 16%;
   --sidebar-accent-foreground: 252 100% 82%;
   --sidebar-ring: 252 100% 74%;
 
   --primary: 252 100% 74%;           /* brand */
-  --primary-foreground: 0 0% 100%;
+  --primary-foreground: 252 47% 11%; /* dark ink on light-violet CTA → AA (~5.7:1) */
   --secondary: 250 17% 13%;          /* surface-2 */
   --secondary-foreground: 255 12% 73%;
   --muted: 250 16% 13%;
@@ -204,13 +204,13 @@
   --sidebar-foreground: 255 30% 95%;
   --sidebar-border: 250 16% 17%;
   --sidebar-primary: 252 100% 74%;
-  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-primary-foreground: 252 47% 11%;
   --sidebar-accent: 252 38% 16%;
   --sidebar-accent-foreground: 252 100% 82%;
   --sidebar-ring: 252 100% 74%;
 
   --primary: 252 100% 74%;
-  --primary-foreground: 0 0% 100%;
+  --primary-foreground: 252 47% 11%; /* dark ink on light-violet CTA → AA (~5.7:1) */
   --secondary: 250 17% 13%;
   --secondary-foreground: 255 12% 73%;
   --muted: 250 16% 13%;
