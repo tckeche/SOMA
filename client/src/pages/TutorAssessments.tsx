@@ -652,6 +652,15 @@ export default function TutorAssessments() {
     },
   });
 
+  // Open the assign modal with the due date prefilled to 5 days after the
+  // assessment was created (floored to the hour). The tutor can still change it.
+  const openAssignModal = (quizId: number) => {
+    const quiz = tutorQuizzes.find((q) => q.id === quizId);
+    setShowAssignModal(quizId);
+    setSelectedStudentIds(new Set());
+    setDueDate(defaultDueDateInputValue(quiz?.createdAt));
+  };
+
   const cloneMutation = useMutation({
     mutationFn: async (quizId: number) => {
       const res = await authFetch(`/api/tutor/quizzes/${quizId}/clone`, { method: "POST" });
@@ -905,7 +914,7 @@ export default function TutorAssessments() {
             setSort={setBankSort}
             subjectOptions={subjectOptions}
             levelOptions={levelOptions}
-            onReassign={(quizId) => { setShowAssignModal(quizId); setSelectedStudentIds(new Set()); setDueDate(""); }}
+            onReassign={(quizId) => openAssignModal(quizId)}
             onDuplicate={(quizId, title) => setConfirmDuplicate({ quizId, title })}
             onDelete={(quizId, title) => setConfirmDelete({ quizId, title })}
           />
@@ -1047,7 +1056,7 @@ export default function TutorAssessments() {
 
                     <div className="flex items-center gap-2 ml-14" onClick={e => e.stopPropagation()}>
                       <button
-                        onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
+                        onClick={() => openAssignModal(quiz.id)}
                         className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all"
                         data-testid={`button-assign-${quiz.id}`}
                       >
@@ -1347,7 +1356,7 @@ export default function TutorAssessments() {
                 <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
                     <Clock className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date & Time <span className="text-muted-foreground">(optional)</span>
+                    Due Date & Time <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
