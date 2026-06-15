@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import { Bold, Italic, Underline, List } from "lucide-react";
 
 // ── Structured / written-answer editor ──────────────────────────────────────
@@ -107,7 +108,12 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
   useEffect(() => {
     const el = editorRef.current;
     if (el && el.innerHTML !== value) {
-      el.innerHTML = value || "";
+      // Sanitise the seeded answer — it's the student's own saved HTML, but we
+      // never assign untrusted markup straight into innerHTML.
+      el.innerHTML = DOMPurify.sanitize(value || "", {
+        ALLOWED_TAGS: ["b", "strong", "i", "em", "u", "ul", "li", "br", "div", "p", "span"],
+        ALLOWED_ATTR: [],
+      });
     }
     // Intentionally run only on mount — see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps

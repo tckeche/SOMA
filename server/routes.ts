@@ -1740,11 +1740,17 @@ Provide:
 
 /** Collapse a structured-answer HTML blob to readable plain text for marking. */
 function htmlToPlainText(html: string): string {
-  return String(html || "")
-    .replace(/<li[^>]*>/gi, "\n• ")
-    .replace(/<\/(p|div|li|ul|ol|h[1-6])>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+  let s = String(html || "")
+    .replace(/<\s*li[^<>]*>/gi, "\n• ")
+    .replace(/<\s*\/\s*(p|div|li|ul|ol|h[1-6])\s*>/gi, "\n")
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n");
+  // Strip any remaining tags. Loop until the string is stable so split angle
+  // brackets (e.g. "<<b>>") can't smuggle a tag past a single pass — this also
+  // satisfies CodeQL's incomplete-multi-character-sanitization query.
+  let prev: string;
+  do { prev = s; s = s.replace(/<[^<>]*>/g, ""); } while (s !== prev);
+  return s
+    .replace(/[<>]/g, "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
