@@ -883,7 +883,6 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
               key={currentQuestion.id}
               value={selectedAnswer ?? ""}
               onChange={(html) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: html }))}
-              placeholder="Write your answer here. Use the toolbar for bullets, bold, italic or underline."
             />
             <p className="mt-2 text-[11px] text-muted-foreground">
               Your answer is marked on understanding, not exact wording. Spelling slips are underlined as a hint only.

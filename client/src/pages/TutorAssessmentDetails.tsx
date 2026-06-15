@@ -344,24 +344,6 @@ export default function TutorAssessmentDetails() {
     },
   });
 
-  const pdfResponsesToggleMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      const res = await authFetch(`/api/tutor/quizzes/${quizId}/pdf-responses`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      });
-      if (!res.ok) throw new Error("Failed to update setting");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/tutor/quizzes/${quizId}/details`, userId] });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Update failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   function handleSelectFile(file: File | null) {
     if (!file) {
       setSelectedFile(null);
@@ -378,13 +360,15 @@ export default function TutorAssessmentDetails() {
     setSelectedFile(file);
   }
 
-  // Open the tab synchronously inside the click gesture, then fill it after the
-  // async sign call — opening after an await is silently blocked by popup
-  // blockers. (Can't pass noopener or window.open returns null.)
+  // Open a signed-download URL in a new tab. The tab is opened synchronously
+  // (before any await) so popup blockers don't swallow it; the opener is nulled
+  // manually since passing "noopener" to window.open() returns null.
   async function openSigned(fetchUrl: string) {
     const win = window.open("about:blank", "_blank");
     if (win) {
-      try { (win as unknown as { opener: unknown }).opener = null; } catch { /* noop */ }
+      try {
+        (win as unknown as { opener: unknown }).opener = null;
+      } catch {}
     }
     try {
       const res = await authFetch(fetchUrl);
@@ -398,12 +382,12 @@ export default function TutorAssessmentDetails() {
     }
   }
 
-  function downloadAttachment(attachmentId: number) {
-    return openSigned(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
+  async function downloadAttachment(attachmentId: number) {
+    await openSigned(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
   }
 
-  function downloadResponse(id: number) {
-    return openSigned(`/api/tutor/submission-uploads/${id}/download`);
+  async function downloadResponse(id: number) {
+    await openSigned(`/api/tutor/submission-uploads/${id}/download`);
   }
 
   function openMarkDialog(upload: SubmissionUpload) {
@@ -783,22 +767,11 @@ export default function TutorAssessmentDetails() {
 
         {/* Student PDF Responses */}
         <div className={CARD_CLASS}>
-          <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+          <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <FileCheck className="w-5 h-5" />
               PDF Responses
             </h2>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                data-testid="toggle-pdf-responses"
-                checked={Boolean(details?.quiz?.acceptsPdfResponse)}
-                disabled={pdfResponsesToggleMutation.isPending}
-                onChange={(e) => pdfResponsesToggleMutation.mutate(e.target.checked)}
-                className="h-4 w-4 rounded border-border/60 accent-violet-500"
-              />
-              Accept student PDF responses
-            </label>
           </div>
 
           {storageUnconfigured ? (

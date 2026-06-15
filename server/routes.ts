@@ -967,6 +967,26 @@ function pdfUploadField(field: string) {
   };
 }
 
+/**
+ * Server-side PDF magic-byte check. The client-supplied Content-Type is
+ * spoofable, so verify the first 5 bytes are the "%PDF-" signature.
+ */
+function looksLikePdf(buf: Buffer | undefined): boolean {
+  return Boolean(buf && buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-");
+}
+
+/** Strip the internal storage key from an attachment row before returning it. */
+function publicAttachment<T extends { storagePath?: string }>(row: T) {
+  const { storagePath, ...rest } = row;
+  return rest;
+}
+
+/** Strip the internal storage key from a submission row before returning it. */
+function publicSubmission<T extends { storagePath?: string }>(row: T) {
+  const { storagePath, ...rest } = row;
+  return rest;
+}
+
 
 const ADMIN_COOKIE_NAME = "admin_session";
 
@@ -2893,41 +2913,36 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return true;
   }
 
-  // Defense against MIME spoofing: multer's fileFilter only trusts the
-  // client-supplied Content-Type, so verify the actual bytes start with the
-  // PDF magic header before we store anything.
-  function looksLikePdf(buf: Buffer | undefined): boolean {
-    return Boolean(buf && buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-");
-  }
-
-  // Best-effort removal of a quiz's storage objects. The DB rows cascade on
-  // quiz delete, but the bucket objects would otherwise be orphaned forever, so
-  // collect their paths BEFORE the rows disappear and delete them.
-  async function purgeQuizStorageObjects(quizId: number): Promise<void> {
-    if (!isStorageConfigured()) return;
+  // Remove a quiz's Supabase Storage objects so deleting the quiz (which
+  // cascades the DB rows) does not leave orphaned bucket files behind.
+  // Collect a quiz's storage object paths BEFORE the rows are deleted. Must run
+  // before deleteSomaQuiz (the rows cascade away), but the actual object
+  // deletion must run AFTER the DB delete succeeds — otherwise a failed
+  // deleteSomaQuiz would leave quiz rows pointing at already-deleted files.
+  async function collectQuizStoragePaths(quizId: number): Promise<string[]> {
+    if (!isStorageConfigured()) return [];
     try {
       const [attachments, submissions] = await Promise.all([
         storage.getAssessmentAttachmentsByQuiz(quizId),
         storage.getSubmissionUploadsByQuiz(quizId),
       ]);
-      const paths = [
-        ...attachments.map((a) => a.storagePath),
-        ...submissions.map((s) => s.storagePath),
-      ];
-      await Promise.all(paths.map((p) => deleteObject(p).catch(() => {})));
+      return [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)];
     } catch (err) {
-      logWarn("quiz_storage_purge_failed", { quizId, error: (err as Error)?.message });
+      logWarn("quiz_storage_collect_failed", { quizId, error: (err as Error)?.message });
+      return [];
     }
   }
 
-  // Never expose internal storage keys to clients.
-  function publicAttachment<T extends { storagePath?: string }>(row: T) {
-    const { storagePath, ...rest } = row;
-    return rest;
-  }
-  function publicSubmission<T extends { storagePath?: string }>(row: T) {
-    const { storagePath, ...rest } = row;
-    return rest;
+  // Best-effort deletion of already-collected storage objects. Safe to call
+  // after the quiz rows are gone; failures only leave orphaned files (logged),
+  // never dangling DB records.
+  async function purgeStorageObjects(paths: string[]): Promise<void> {
+    if (paths.length === 0 || !isStorageConfigured()) return;
+    try {
+      await Promise.all(paths.map((p) => deleteObject(p).catch(() => {})));
+    } catch (err) {
+      logWarn("quiz_storage_purge_failed", { error: (err as Error)?.message });
+    }
   }
 
   // (1) Tutor uploads a worksheet attachment to one of their quizzes.
@@ -2944,9 +2959,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "PDF required" });
-        if (!looksLikePdf(file.buffer)) {
-          return res.status(400).json({ message: "File is not a valid PDF" });
-        }
+        if (!looksLikePdf(file.buffer)) return res.status(400).json({ message: "File is not a valid PDF" });
 
         const quiz = await storage.getSomaQuiz(quizId);
         if (!quiz || quiz.authorId !== tutorId) {
@@ -3099,9 +3112,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "PDF required" });
-        if (!looksLikePdf(file.buffer)) {
-          return res.status(400).json({ message: "File is not a valid PDF" });
-        }
+        if (!looksLikePdf(file.buffer)) return res.status(400).json({ message: "File is not a valid PDF" });
 
         const [assignment, quiz] = await Promise.all([
           storage.getQuizAssignment(quizId, studentId),
@@ -3244,32 +3255,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     },
   );
 
-  // (11) Tutor toggles whether this assessment accepts student PDF responses.
-  app.patch(
-    "/api/tutor/quizzes/:quizId/pdf-responses",
-    tutorApiLimiter,
-    requireTutor,
-    async (req, res) => {
-      try {
-        const tutorId = (req as any).tutorId;
-        const quizId = parseInt(req.params.quizId as string);
-        if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
-        const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
-        if (!parsed.success) {
-          return res.status(400).json({ message: "Invalid request" });
-        }
-        const quiz = await storage.getSomaQuiz(quizId);
-        if (!quiz || quiz.authorId !== tutorId) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-        const updated = await storage.updateSomaQuiz(quizId, { acceptsPdfResponse: parsed.data.enabled });
-        return res.json({ acceptsPdfResponse: updated?.acceptsPdfResponse ?? parsed.data.enabled });
-      } catch (err: any) {
-        return sendInternalError(req, res, err, "tutor.quizzes.pdfResponses", "Failed to update setting.");
-      }
-    },
-  );
-
   // Revoke a student's quiz assignment
   app.delete("/api/tutor/quizzes/:quizId/assignments/:studentId", requireTutor, async (req, res) => {
     try {
@@ -3302,8 +3287,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (quiz.authorId !== tutorId) {
         return res.status(403).json({ message: "You can only delete your own quizzes" });
       }
-      await purgeQuizStorageObjects(quizId);
+      const storagePaths = await collectQuizStoragePaths(quizId);
       await storage.deleteSomaQuiz(quizId);
+      await purgeStorageObjects(storagePaths);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to delete quiz" });
@@ -5632,8 +5618,9 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     try {
       const quizId = parseInt(String(req.params.quizId));
       if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
-      await purgeQuizStorageObjects(quizId);
+      const storagePaths = await collectQuizStoragePaths(quizId);
       await storage.deleteSomaQuiz(quizId);
+      await purgeStorageObjects(storagePaths);
       res.json({ message: "Quiz deleted" });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to delete quiz" });
