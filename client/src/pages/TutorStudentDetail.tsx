@@ -97,6 +97,7 @@ interface SuggestedAssessment {
 
 function getStatusLabel(a: AssignmentRow): { text: string; color: string } {
   if (a.reportStatus === "completed") return { text: "Submitted", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };
+  if (a.reportStatus === "awaiting_review") return { text: "Needs marking", color: "bg-violet-500/10 text-violet-300 border-violet-500/20" };
   if (a.reportStatus === "pending") return { text: "Grading", color: "bg-amber-500/10 text-amber-400 border-amber-500/15" };
   if (a.reportStatus === "failed") return { text: "Failed", color: "bg-red-500/10 text-red-400 border-red-500/15" };
   if (a.assignmentStatus === "completed") return { text: "Done", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" };

@@ -98,8 +98,38 @@ function ErrorView({ message }: { message: string }) {
   );
 }
 
-function ResultsView({ quizTitle, totalScore, maxPossibleScore }: { quizTitle: string; totalScore: number; maxPossibleScore: number }) {
+function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }: { quizTitle: string; totalScore: number; maxPossibleScore: number; awaitingReview?: boolean }) {
   const percentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
+
+  // Hybrid / structured assessments aren't fully scored until the tutor
+  // confirms the AI's marks, so we don't show a (misleading) percentage yet.
+  if (awaitingReview) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="glass-card w-full max-w-md text-center p-10">
+          <div className="w-20 h-20 rounded-full bg-violet-500/10 flex items-center justify-center mx-auto mb-5 border border-violet-500/30">
+            <Award className="w-10 h-10 text-violet-400" />
+          </div>
+          <h2 className="text-2xl font-bold mb-1 gradient-text">Assessment Submitted</h2>
+          <p className="text-sm text-muted-foreground mb-6">{quizTitle}</p>
+          <p className="text-sm text-foreground/80 mb-2">
+            Your written answers have been marked by AI and sent to your teacher to confirm.
+          </p>
+          <p className="text-xs text-muted-foreground italic mb-8">
+            Your final score and feedback will appear on your dashboard once your teacher has reviewed it.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Link href="/dashboard?tab=completed">
+              <Button className="glow-button w-full" data-testid="button-back-home">
+                <Home className="w-4 h-4 mr-1.5" />
+                View Completed Assessments
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const tier = percentage >= 80
     ? {
@@ -340,7 +370,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [showSummary, setShowSummary] = useState(false);
-  const [submissionResult, setSubmissionResult] = useState<{ score: number; maxScore: number } | null>(null);
+  const [submissionResult, setSubmissionResult] = useState<{ score: number; maxScore: number; awaitingReview?: boolean } | null>(null);
   const [quizStartedAt, setQuizStartedAt] = useState<string>(() => new Date().toISOString());
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -465,7 +495,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     },
     onSuccess: (data: any) => {
       const totalMarks = questions ? questions.reduce((s, q) => s + q.marks, 0) : 0;
-      setSubmissionResult({ score: data.score, maxScore: totalMarks });
+      setSubmissionResult({ score: data.score, maxScore: totalMarks, awaitingReview: data.status === "awaiting_review" });
       clearAutosave(autosaveKey);
       queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/soma/quizzes", quizId, "check-submission"] });
@@ -692,7 +722,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
   }
 
   if (submissionResult) {
-    return <ResultsView quizTitle={effectiveQuiz.title} totalScore={submissionResult.score} maxPossibleScore={submissionResult.maxScore} />;
+    return <ResultsView quizTitle={effectiveQuiz.title} totalScore={submissionResult.score} maxPossibleScore={submissionResult.maxScore} awaitingReview={submissionResult.awaitingReview} />;
   }
 
   // Pre-quiz start screen — only on a fresh attempt. Resumes set hasStarted
