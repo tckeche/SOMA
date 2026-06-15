@@ -167,7 +167,7 @@ const FREQUENCY_LABEL: Record<string, string> = {
 const FREQUENCY_BADGE: Record<string, string> = {
   very_common: "bg-danger/15 text-danger border-danger/30",
   common: "bg-warning/15 text-warning border-warning/30",
-  occasional: "bg-sky-500/15 text-sky-200 border-sky-500/30",
+  occasional: "bg-info/15 text-info border-info/30",
 };
 
 type ConfidenceBucket = "high" | "medium" | "low" | "unknown";

@@ -215,7 +215,7 @@ export function SuperAdminAIUsage() {
       <div className="grid md:grid-cols-2 gap-4">
         <PeopleCard
           title="Spend by tutor / super-admin"
-          icon={<Users className="w-4 h-4 text-sky-400" />}
+          icon={<Users className="w-4 h-4 text-info" />}
           rows={hist.byTutor}
           emptyHint="No tutor spend in this window."
         />

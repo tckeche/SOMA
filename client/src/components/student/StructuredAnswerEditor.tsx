@@ -207,7 +207,7 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
   );
 
   return (
-    <div className="rounded-xl overflow-hidden border border-border bg-white shadow-sm" data-testid="structured-answer-editor">
+    <div className="rounded-xl overflow-hidden border border-border bg-card shadow-sm" data-testid="structured-answer-editor">
       {/* Minimal formatting toolbar */}
       <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border bg-muted">
         <ToolbarButton icon={Bold} command="bold" label="Bold" />
@@ -230,7 +230,7 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
         onInput={handleInput}
         onBlur={emitChange}
         spellCheck={false}
-        className="soma-structured-surface px-4 py-3 min-h-[180px] text-muted-foreground text-[15px] focus:outline-none"
+        className="soma-structured-surface px-4 py-3 min-h-[180px] text-foreground text-[15px] focus:outline-none"
         style={{
           lineHeight: `${LINE_HEIGHT}px`,
           backgroundImage:

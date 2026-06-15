@@ -32,7 +32,7 @@ interface Payload {
 const FREQUENCY_BADGE: Record<string, string> = {
   very_common: "bg-danger/15 text-danger border-danger/30",
   common: "bg-warning/15 text-warning border-warning/30",
-  occasional: "bg-sky-500/15 text-sky-200 border-sky-500/30",
+  occasional: "bg-info/15 text-info border-info/30",
 };
 
 export function CohortMisconceptionHeatmap() {
@@ -61,7 +61,7 @@ export function CohortMisconceptionHeatmap() {
 
   return (
     <section className="space-y-5" data-testid="cohort-misconception-heatmap">
-      <div className="bg-gradient-to-br from-primary/10 to-sky-500/5 border border-primary/20 rounded-2xl p-5">
+      <div className="bg-gradient-to-br from-primary/10 to-info/5 border border-primary/20 rounded-2xl p-5">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
             <Users className="w-5 h-5 text-primary" />

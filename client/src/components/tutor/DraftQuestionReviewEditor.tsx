@@ -132,7 +132,7 @@ export function DraftQuestionReviewEditor({
                 <Badge className="bg-primary/10 text-primary border border-primary/20">graph</Badge>
               )}
               {q.questionType === "structured" && (
-                <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/20">structured</Badge>
+                <Badge className="bg-info/10 text-info border border-info/20">structured</Badge>
               )}
               {!isEditing && q.difficultyTag && <Badge variant="outline">{q.difficultyTag}</Badge>}
 
@@ -224,7 +224,7 @@ export function DraftQuestionReviewEditor({
                           checked={i === buf!.correctIndex}
                           onChange={() => patchBuffer(idx, { correctIndex: i })}
                           data-testid={`radio-review-correct-${idx}-${i}`}
-                          className="h-4 w-4 accent-emerald-500 shrink-0"
+                          className="h-4 w-4 accent-success shrink-0"
                         />
                         <input
                           value={opt}
@@ -308,8 +308,8 @@ export function DraftQuestionReviewEditor({
                   <MarkdownRenderer content={q.stem} />
                 </div>
                 {q.questionType === "structured" ? (
-                  <div className="text-sm rounded-lg bg-sky-500/[0.06] border border-sky-500/20 px-3 py-2 mb-3" data-testid={`review-markscheme-${idx}`}>
-                    <span className="text-xs font-medium text-sky-300 block mb-1">Mark scheme</span>
+                  <div className="text-sm rounded-lg bg-info/[0.06] border border-info/20 px-3 py-2 mb-3" data-testid={`review-markscheme-${idx}`}>
+                    <span className="text-xs font-medium text-info block mb-1">Mark scheme</span>
                     {q.markScheme
                       ? <MarkdownRenderer content={q.markScheme} />
                       : <span className="text-muted-foreground">No mark scheme yet.</span>}

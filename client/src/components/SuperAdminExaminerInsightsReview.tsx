@@ -161,7 +161,7 @@ const CARD = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl 
 const FREQUENCY_BADGE: Record<string, string> = {
   very_common: "bg-danger/20 text-danger border-danger/40",
   common: "bg-warning/20 text-warning border-warning/40",
-  occasional: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+  occasional: "bg-info/20 text-info border-info/40",
 };
 
 const STATUS_TABS: Array<{ key: ReviewStatus; label: string }> = [

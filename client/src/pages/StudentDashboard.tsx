@@ -55,13 +55,13 @@ function DashboardSkeleton() {
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-8 text-center" data-testid="dashboard-error">
-      <AlertCircle className="w-10 h-10 text-rose-500 dark:text-rose-400 mx-auto mb-3" />
-      <h2 className="text-lg font-semibold text-rose-800 dark:text-rose-200">We couldn't load your dashboard</h2>
-      <p className="text-sm text-rose-700/90 dark:text-rose-300/80 mt-1">Check your connection and try again — your data is safe.</p>
+    <div className="rounded-2xl border border-danger/40 bg-danger/10 p-8 text-center" data-testid="dashboard-error">
+      <AlertCircle className="w-10 h-10 text-danger mx-auto mb-3" />
+      <h2 className="text-lg font-semibold text-danger">We couldn't load your dashboard</h2>
+      <p className="text-sm text-danger/90 mt-1">Check your connection and try again — your data is safe.</p>
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/50 bg-rose-500/15 text-rose-800 dark:text-rose-200 hover:bg-rose-500/25 transition-colors"
+        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-danger/50 bg-danger/15 text-danger hover:bg-danger/25 transition-colors"
         data-testid="button-retry-dashboard"
       >
         <RefreshCw className="w-4 h-4" /> Retry
