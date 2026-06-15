@@ -3,6 +3,7 @@ import {
   type SomaQuestion, type InsertSomaQuestion,
   type SomaUser, type InsertSomaUser,
   type SomaReport, type InsertSomaReport,
+  type StructuredAnswerMark,
   type TutorStudent, type InsertTutorStudent,
   type QuizAssignment, type InsertQuizAssignment,
   type TutorComment, type InsertTutorComment,
@@ -72,6 +73,7 @@ function cloneSomaQuestionInput(q: SomaQuestion): InsertSomaQuestion {
     marks: q.marks,
     questionType: q.questionType,
     graphSpec: q.graphSpec ?? null,
+    markScheme: q.markScheme ?? null,
     topicTag: q.topicTag ?? null,
     subtopicTag: q.subtopicTag ?? null,
     difficultyTag: q.difficultyTag ?? null,
@@ -155,7 +157,7 @@ export interface IStorage {
   publishSomaQuestionsTransactional(quizId: number, questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]>;
   getSomaReportsByStudentId(studentId: string): Promise<(SomaReport & { quiz: SomaQuiz })[]>;
   createSomaReport(report: InsertSomaReport): Promise<SomaReport>;
-  updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number }>): Promise<SomaReport | undefined>;
+  updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null; reviewRequested: boolean; reviewRequestNote: string | null; reviewRequestedAt: Date | null }>): Promise<SomaReport | undefined>;
   checkSomaSubmission(quizId: number, studentId: string): Promise<boolean>;
   getSomaReportById(reportId: number): Promise<(SomaReport & { quiz: SomaQuiz }) | undefined>;
   getSomaReportsByQuizId(quizId: number): Promise<(SomaReport & { quiz: SomaQuiz })[]>;
@@ -379,6 +381,7 @@ class DatabaseStorage implements IStorage {
       marks: q.marks ?? 1,
       questionType: q.questionType ?? "multiple_choice",
       graphSpec: (q.graphSpec ?? null) as any,
+      markScheme: (q as { markScheme?: string | null }).markScheme ?? null,
       topicTag: q.topicTag ?? null,
       subtopicTag: q.subtopicTag ?? null,
       difficultyTag: q.difficultyTag ?? null,
@@ -826,6 +829,7 @@ class DatabaseStorage implements IStorage {
         marks: q.marks ?? 1,
         questionType: q.questionType ?? "multiple_choice",
         graphSpec: (q.graphSpec ?? null) as any,
+        markScheme: (q as { markScheme?: string | null }).markScheme ?? null,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
@@ -894,7 +898,7 @@ class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number }>): Promise<SomaReport | undefined> {
+  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null; reviewRequested: boolean; reviewRequestNote: string | null; reviewRequestedAt: Date | null }>): Promise<SomaReport | undefined> {
     const [result] = await this.database.update(somaReports).set(data).where(eq(somaReports.id, reportId)).returning();
     return result;
   }
@@ -1646,6 +1650,9 @@ export class MemoryStorage implements IStorage {
       authorId: quiz.authorId ?? null,
       timeLimitMinutes: quiz.timeLimitMinutes ?? 60,
       format: quiz.format ?? "mcq",
+      quizMode: quiz.quizMode ?? "mcq",
+      questionCount: quiz.questionCount ?? 5,
+      structuredCount: quiz.structuredCount ?? 0,
       status: quiz.status ?? "published",
       isArchived: quiz.isArchived ?? false,
       acceptsPdfResponse: quiz.acceptsPdfResponse ?? false,
@@ -1697,6 +1704,7 @@ export class MemoryStorage implements IStorage {
       marks: q.marks ?? 1,
       questionType: q.questionType ?? "multiple_choice",
       graphSpec: (q.graphSpec ?? null) as any,
+      markScheme: (q as { markScheme?: string | null }).markScheme ?? null,
       topicTag: q.topicTag ?? null,
       subtopicTag: q.subtopicTag ?? null,
       difficultyTag: q.difficultyTag ?? null,
@@ -1772,12 +1780,12 @@ export class MemoryStorage implements IStorage {
   }
 
   async createSomaReport(report: InsertSomaReport): Promise<SomaReport> {
-    const created: SomaReport = { id: this.somaReportId++, createdAt: new Date(), aiFeedbackHtml: null, answersJson: null, status: "pending", studentId: report.studentId ?? null, startedAt: null, completedAt: null, ...report };
+    const created: SomaReport = { id: this.somaReportId++, createdAt: new Date(), aiFeedbackHtml: null, answersJson: null, status: "pending", studentId: report.studentId ?? null, startedAt: null, completedAt: null, structuredMarking: null, reviewRequested: false, reviewRequestNote: null, reviewRequestedAt: null, ...report };
     this.somaReportsList.push(created);
     return created;
   }
 
-  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number }>): Promise<SomaReport | undefined> {
+  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null; reviewRequested: boolean; reviewRequestNote: string | null; reviewRequestedAt: Date | null }>): Promise<SomaReport | undefined> {
     const report = this.somaReportsList.find((r) => r.id === reportId);
     if (!report) return undefined;
     Object.assign(report, data);

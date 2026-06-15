@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { z } from "zod";
 import multer from "multer";
@@ -329,6 +329,36 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   };
 }
 
+/**
+ * Normalise the quiz sub-type + parametric counts coming off the wizard.
+ * Clamps the total to 1–15 (≥2 for hybrid), forces the structured/MCQ split to
+ * be internally consistent with the chosen mode, and collapses everything to a
+ * pure-MCQ shape for PDF assessments (which don't use the quiz engine).
+ */
+function normalizeQuizModeFields(
+  format: "mcq" | "pdf",
+  rawMode: unknown,
+  rawCount: unknown,
+  rawStructured: unknown,
+): { mode: "mcq" | "structured" | "hybrid"; count: number; structured: number } {
+  if (format === "pdf") return { mode: "mcq", count: 0, structured: 0 };
+  const mode = rawMode === "structured" || rawMode === "hybrid" ? rawMode : "mcq";
+  const minCount = mode === "hybrid" ? 2 : 1;
+  let count = Number(rawCount);
+  if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 5;
+  count = Math.max(minCount, Math.min(15, Math.round(count)));
+  let structured: number;
+  if (mode === "mcq") structured = 0;
+  else if (mode === "structured") structured = count;
+  else {
+    // Hybrid: keep at least one of each type.
+    let s = Number(rawStructured);
+    if (!Number.isFinite(s)) s = Math.round(count / 2);
+    structured = Math.max(1, Math.min(count - 1, Math.round(s)));
+  }
+  return { mode, count, structured };
+}
+
 const adminRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 admin requests per windowMs
@@ -514,6 +544,40 @@ function shuffleOptions<T>(arr: T[]): T[] {
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
+  const rawType = String(raw.question_type || raw.questionType || "").toLowerCase();
+
+  // Structured / written answers have no options or single correct answer —
+  // they're marked by the AI against a mark scheme. Validate them separately
+  // so the 4-option gate below doesn't reject them.
+  if (rawType === "structured") {
+    const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
+    if (!stem) return null;
+    const markScheme = String(
+      raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || "",
+    );
+    if (!markScheme.trim()) return null;
+    const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
+    return {
+      draftId: `draft-${crypto.randomUUID()}`,
+      stem,
+      options: [],
+      correctAnswer: "",
+      explanation: String(raw.explanation || ""),
+      marks,
+      questionType: "structured",
+      markScheme,
+      graphSpec: null,
+      topicTag: raw.topic_tag ? String(raw.topic_tag) : (raw.topicTag ? String(raw.topicTag) : null),
+      subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : (raw.subtopicTag ? String(raw.subtopicTag) : null),
+      difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : (raw.difficultyTag ? String(raw.difficultyTag) : null),
+      subtopicId: Number.isFinite(Number(raw.subtopic_id ?? raw.subtopicId)) ? Number(raw.subtopic_id ?? raw.subtopicId) : null,
+      learningRequirementId: Number.isFinite(Number(raw.learning_requirement_id ?? raw.learningRequirementId)) ? Number(raw.learning_requirement_id ?? raw.learningRequirementId) : null,
+      targetMisconceptionIds: null,
+      commandWord: raw.command_word ? String(raw.command_word) : (raw.commandWord ? String(raw.commandWord) : null),
+      assessmentObjective: raw.assessment_objective ? String(raw.assessment_objective) : (raw.assessmentObjective ? String(raw.assessmentObjective) : null),
+    };
+  }
+
   let opts = raw.options;
   if (opts && !Array.isArray(opts) && typeof opts === "object") {
     const keys = Object.keys(opts);
@@ -1671,6 +1735,183 @@ Provide:
     } catch (dbErr: any) {
       console.error(JSON.stringify({ level: "error", event: "soma_grading_status_update_failed", reportId, error: { message: dbErr?.message ?? String(dbErr), name: dbErr?.name, stack: dbErr?.stack, code: dbErr?.code } }));
     }
+  }
+}
+
+/** Collapse a structured-answer HTML blob to readable plain text for marking. */
+function htmlToPlainText(html: string): string {
+  let s = String(html || "")
+    .replace(/<\s*li[^<>]*>/gi, "\n• ")
+    .replace(/<\s*\/\s*(p|div|li|ul|ol|h[1-6])\s*>/gi, "\n")
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n");
+  // Strip any remaining tags. Loop until the string is stable so split angle
+  // brackets (e.g. "<<b>>") can't smuggle a tag past a single pass — this also
+  // satisfies CodeQL's incomplete-multi-character-sanitization query.
+  let prev: string;
+  do { prev = s; s = s.replace(/<[^<>]*>/g, ""); } while (s !== prev);
+  return s
+    .replace(/[<>]/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Best-effort parse of a JSON object out of a model response (handles fences). */
+function parseJsonLoose(raw: unknown): any {
+  if (raw && typeof raw === "object") return raw;
+  let s = String(raw ?? "").trim();
+  s = s.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+/**
+ * AI marking for structured/written answers. Grades each answer on
+ * UNDERSTANDING (sentiment) against its mark scheme, folds the marks into the
+ * report score, and completes the report immediately — the AI mark is final.
+ * A student who disagrees can later request a tutor review (which re-marks via
+ * the tutor structured-marking endpoint).
+ *
+ * `mcqScore` is the auto-marked (MCQ/graph) portion computed at submit time;
+ * the structured marks are added on top of it.
+ */
+async function runStructuredMarking(
+  reportId: number,
+  structuredQuestions: { id: number; stem: string; marks: number; markScheme: string | null }[],
+  studentAnswers: Record<string, string>,
+  mcqScore: number,
+  studentMeta?: { studentId: string; quizTitle: string; quizSubject?: string | null },
+) {
+  const STRUCTURED_TIMEOUT_MS = 180_000;
+  const items = structuredQuestions.map((q, idx) => ({
+    n: idx + 1,
+    id: q.id,
+    stem: q.stem,
+    maxMarks: q.marks,
+    markScheme: q.markScheme || "",
+    answer: htmlToPlainText(studentAnswers[String(q.id)] || ""),
+  }));
+
+  // Seed the record so the tutor always has something to confirm, even if the
+  // AI call fails — they can then mark manually.
+  const structuredMarking: Record<string, StructuredAnswerMark> = {};
+  for (const item of items) {
+    structuredMarking[String(item.id)] = {
+      maxMarks: item.maxMarks,
+      aiMarks: 0,
+      aiFeedback: "",
+      aiUnderstanding: "",
+      tutorMarks: null,
+      confirmed: false,
+    };
+  }
+
+  let markingSucceeded = true;
+  try {
+    const systemPrompt = `You are an experienced examiner marking short written exam answers.
+For each question you are given the prompt, a mark scheme (the points a full answer should convey), the maximum marks, and the student's typed answer.
+
+MARKING PRINCIPLES:
+- Mark on UNDERSTANDING and meaning, NOT on exact wording. If the student conveys the right idea in their own words, award the mark.
+- Genuinely interpret what the student is trying to say; be fair to partial understanding and award partial marks.
+- Ignore spelling and minor grammar — they do not lose marks.
+- "awarded" MUST be an integer between 0 and the question's maxMarks.
+- "feedback": one or two short sentences addressed to the student ("you…") on how to improve.
+- "understanding": one or two sentences analysing what the student appears to understand and what is missing, so they can see where their thinking landed.
+
+Return ONLY a JSON object of this exact shape (no prose, no markdown):
+{"marks":[{"n":<question number>,"awarded":<int>,"feedback":"...","understanding":"..."}]}`;
+
+    const userPrompt = `Mark each of these answers. Questions and answers:\n${JSON.stringify(items, null, 2)}`;
+
+    const gradePromise = generateWithFallback(systemPrompt, userPrompt, undefined, {
+      taskType: "grading",
+      route: "report.structured_grade",
+      promptVersion: "structured.grader:v1",
+      userId: studentMeta?.studentId,
+      idempotencyKey: `report.structured:${reportId}`,
+    });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Structured marking timed out")), STRUCTURED_TIMEOUT_MS),
+    );
+    const { data } = await Promise.race([gradePromise, timeoutPromise]);
+
+    const parsed = parseJsonLoose(data);
+    const marksArr = Array.isArray(parsed?.marks) ? parsed.marks : [];
+    const byN = new Map<number, any>();
+    for (const m of marksArr) byN.set(Number(m?.n), m);
+    for (const item of items) {
+      const m = byN.get(item.n) || {};
+      const awarded = Math.max(0, Math.min(item.maxMarks, Math.round(Number(m.awarded) || 0)));
+      structuredMarking[String(item.id)] = {
+        maxMarks: item.maxMarks,
+        aiMarks: awarded,
+        aiFeedback: String(m.feedback || "").slice(0, 1200),
+        aiUnderstanding: String(m.understanding || "").slice(0, 1200),
+        tutorMarks: null,
+        confirmed: false,
+      };
+    }
+  } catch (err: any) {
+    markingSucceeded = false;
+    logWarn("structured_marking.failed", { severity: "medium", module: "routes", component: "runStructuredMarking", reportId, errorMessage: err?.message ?? String(err) });
+  }
+
+  // If the AI marking failed/timed out, do NOT finalise the seeded zero marks
+  // as the student's result — that would award 0 for every written answer on a
+  // transient provider hiccup. Route the report for manual tutor marking
+  // instead and leave the structured marks unscored.
+  if (!markingSucceeded) {
+    await storage.updateSomaReport(reportId, {
+      structuredMarking,
+      score: mcqScore,
+      status: "awaiting_review",
+      reviewRequested: true,
+      reviewRequestNote: "Automatic marking was unavailable — please mark these written answers.",
+      reviewRequestedAt: new Date(),
+    }).catch((dbErr: any) => logError("structured_marking.persist_failed", dbErr, { severity: "high", module: "routes", component: "runStructuredMarking", reportId }));
+    try {
+      const rpt = await storage.getSomaReportById(reportId);
+      const quiz = rpt ? await storage.getSomaQuiz(rpt.quizId) : null;
+      if (quiz?.authorId) {
+        await storage.createTutorNotification({
+          tutorId: quiz.authorId,
+          studentId: rpt?.studentId ?? null,
+          type: "review_requested",
+          title: `Manual marking needed: ${quiz.title}`,
+          message: `Automatic marking was unavailable for "${quiz.title}" — please mark the written answers.`,
+          payload: { reportId, quizId: rpt!.quizId },
+        });
+      }
+    } catch { /* notification is best-effort */ }
+    return;
+  }
+
+  // Fold the AI marks into the score and release the report. The AI mark is
+  // final unless the student later requests a tutor review.
+  let structuredTotal = 0;
+  for (const m of Object.values(structuredMarking)) {
+    structuredTotal += m.tutorMarks ?? m.aiMarks;
+  }
+  await storage.updateSomaReport(reportId, {
+    structuredMarking,
+    score: mcqScore + structuredTotal,
+    status: "completed",
+  }).catch((dbErr: any) => logError("structured_marking.persist_failed", dbErr, { severity: "high", module: "routes", component: "runStructuredMarking", reportId }));
+
+  if (studentMeta?.studentId) {
+    await storage.createStudentNotification({
+      studentId: studentMeta.studentId,
+      type: "feedback_ready",
+      title: "Feedback ready",
+      message: `Your marked results for "${studentMeta.quizTitle}" are ready.`,
+      payload: { reportId, quizTitle: studentMeta.quizTitle, quizSubject: studentMeta.quizSubject ?? null },
+    }).catch((err) => logWarn("structured_marking.notify_failed", { severity: "low", module: "routes", component: "runStructuredMarking", reportId, errorMessage: err?.message ?? String(err) }));
   }
 }
 
@@ -4154,12 +4395,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
-      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format } = req.body;
+      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
       if (!title) return res.status(400).json({ message: "title is required" });
       if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
         return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
       }
       const normalizedFormat = format === "pdf" ? "pdf" : "mcq";
+      const { mode: normMode, count: normCount, structured: normStructured } =
+        normalizeQuizModeFields(normalizedFormat, quizMode, questionCount, structuredCount);
       const cleanTopics = Array.isArray(topics)
         ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
         : [];
@@ -4173,6 +4416,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         timeLimitMinutes: Number(timeLimitMinutes),
         authorId: tutorId,
         format: normalizedFormat,
+        quizMode: normMode,
+        questionCount: normCount,
+        structuredCount: normStructured,
         status: "published",
       });
       res.json(quiz);
@@ -4288,7 +4534,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       // Validate each draft question before write
       for (const q of draft) {
-        if (!q.stem || !Array.isArray(q.options) || q.options.length !== 4) {
+        if (!q.stem) {
+          return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
+        }
+        if (q.questionType === "structured") {
+          // Structured answers carry no options; they need a mark scheme so the
+          // AI marker has something to grade understanding against.
+          if (!q.markScheme || !String(q.markScheme).trim()) {
+            return res.status(400).json({ message: `Structured question "${String(q.stem).slice(0, 40)}" is missing a mark scheme` });
+          }
+          continue;
+        }
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
           return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
         }
         if (q.questionType === "graph" && q.graphSpec) {
@@ -4326,6 +4583,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         marks: q.marks,
         questionType: q.questionType,
         graphSpec: (q.graphSpec ?? null) as import("@shared/schema").GraphQuestionSpec | null,
+        markScheme: q.markScheme ?? null,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
@@ -4373,7 +4631,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
 
-      const { title, syllabus, level, subject, topics, timeLimitMinutes, format } = req.body;
+      const { title, syllabus, level, subject, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
       const updates: Record<string, string | number | string[] | null> = {};
       if (title !== undefined) updates.title = title;
       if (syllabus !== undefined) updates.syllabus = syllabus || null;
@@ -4382,12 +4640,32 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       // Format is chosen up front and locked once the quiz row exists — questions
       // / worksheets are tied to one delivery model. Accept the field only when it
       // matches the existing value (idempotent no-op); reject any actual change.
+      const currentFormat = (existing as any).format === "pdf" ? "pdf" : "mcq";
       if (format !== undefined) {
         const requested = format === "pdf" ? "pdf" : "mcq";
-        const current = (existing as any).format === "pdf" ? "pdf" : "mcq";
-        if (requested !== current) {
+        if (requested !== currentFormat) {
           return res.status(409).json({ message: "Assessment type cannot be changed after creation." });
         }
+      }
+      // Quiz sub-type is likewise locked once the quiz exists (questions are
+      // tied to it). Question count / structured split stay adjustable so the
+      // tutor can re-balance before generating. Reject a mode change outright.
+      const currentMode = (existing as any).quizMode ?? "mcq";
+      if (quizMode !== undefined && currentFormat !== "pdf") {
+        const requestedMode = ["mcq", "structured", "hybrid"].includes(quizMode) ? quizMode : "mcq";
+        if (requestedMode !== currentMode) {
+          return res.status(409).json({ message: "Question style cannot be changed after creation." });
+        }
+      }
+      if (currentFormat !== "pdf" && (questionCount !== undefined || structuredCount !== undefined)) {
+        const norm = normalizeQuizModeFields(
+          currentFormat,
+          currentMode,
+          questionCount ?? (existing as any).questionCount,
+          structuredCount ?? (existing as any).structuredCount,
+        );
+        updates.questionCount = norm.count;
+        updates.structuredCount = norm.structured;
       }
       if (topics !== undefined) {
         const clean = Array.isArray(topics)
@@ -4835,6 +5113,32 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         assessmentSnapshot = lines.join("\n");
       }
 
+      // ── Parametric requirements — hard caps on count + question-type mix ──
+      // The tutor sets these on the wizard dial; the copilot must honour them
+      // exactly on a fresh/REPLACE_ALL generation rather than inferring counts
+      // from the free-text prompt.
+      let parametricBlock = "";
+      {
+        const m = (assessmentContext as any)?.assessmentMeta || {};
+        const mode = m.quizMode === "structured" || m.quizMode === "hybrid" ? m.quizMode : "mcq";
+        const total = Number.isFinite(Number(m.totalQuestions)) ? Number(m.totalQuestions) : null;
+        const structuredN = Number.isFinite(Number(m.structuredCount)) ? Number(m.structuredCount) : 0;
+        const mcqN = total != null ? Math.max(0, total - structuredN) : null;
+        if (total != null && total > 0) {
+          const parts = ["=== PARAMETRIC REQUIREMENTS (HARD CONSTRAINTS) ==="];
+          if (mode === "mcq") {
+            parts.push(`Target size: EXACTLY ${total} multiple-choice question(s). Do NOT produce structured questions.`);
+          } else if (mode === "structured") {
+            parts.push(`Target size: EXACTLY ${total} structured (written-answer) question(s). Do NOT produce multiple-choice questions.`);
+          } else {
+            parts.push(`This is a HYBRID quiz. Target size: EXACTLY ${structuredN} structured (written-answer) question(s) AND EXACTLY ${mcqN} multiple-choice question(s) — ${total} in total.`);
+          }
+          parts.push(`These counts are fixed by the tutor. On a fresh build or REPLACE_ALL, the "questions" array MUST match these counts and the type split exactly — never exceed or fall short. When the tutor explicitly asks to ADD a specific number, or to fix/replace named questions, follow that instruction instead.`);
+          parts.push("================================================");
+          parametricBlock = parts.join("\n");
+        }
+      }
+
       const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
 
 CRITICAL OUTPUT RULE: Your ENTIRE response must be a single valid JSON object. Do NOT write any prose, markdown, or explanation outside the JSON. All explanations go inside the "reply" field within the JSON. Do NOT start with text like "Here are your questions:" — start immediately with the opening "{".
@@ -4957,6 +5261,25 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 11. DO NOT REVEAL THE ANSWER IN THE LABEL — if the question asks the student to read a value (radius, gradient, θ, etc.) from the graph, write the label with SYMBOLIC notation. Example: question asks "find the radius" → label "s = rθ", NOT "s = 4θ" (which gives away r = 4).`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
+## STRUCTURED (WRITTEN-ANSWER) QUESTION FORMAT:
+Produce structured questions ONLY when the PARAMETRIC REQUIREMENTS ask for them. A structured question is a written/extended answer the student types — it is NOT multiple choice. Each structured question MUST have:
+- question_type: "structured"
+- prompt_text: the question or task (non-empty). Open with a clear command word (e.g. State, Explain, Describe, Compare, Evaluate, Justify) appropriate to the marks.
+- marks_worth: integer 1–15 reflecting the depth/number of points expected
+- mark_scheme: the marking points / model answer the AI marker grades UNDERSTANDING against. Write it as concise points (one idea per line) covering what a full-mark answer must convey. Non-empty.
+- explanation: a brief note on what a strong answer demonstrates (optional)
+- topic_tag, subtopic_tag, difficulty_tag
+- DO NOT include "options" or "correct_answer" for a structured question — omit both entirely.
+Example:
+{
+  "question_type": "structured",
+  "prompt_text": "Explain how an increase in temperature affects the rate of a reversible reaction at equilibrium.",
+  "marks_worth": 4,
+  "mark_scheme": "Increasing temperature favours the endothermic direction\\nPosition of equilibrium shifts to oppose the change (Le Chatelier)\\nForward/back rate both increase but unequally\\nValue of Kc changes with temperature",
+  "explanation": "A strong answer links the temperature change to the endothermic direction and uses Le Chatelier's principle.",
+  "topic_tag": "Equilibria", "subtopic_tag": "Le Chatelier", "difficulty_tag": "medium"
+}
+
 ## MATH FORMATTING — MANDATORY:
 ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX delimiters.
 - Inline math: $x^2 + 3x - 5$ (single dollar signs, within a sentence)
@@ -4979,6 +5302,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const userPrompt = [
         draftContextBlock || "(Draft is currently empty — no questions yet)",
         assessmentSnapshot,
+        parametricBlock,
         catalogueBlock,
         `Current request from tutor:\n${text}`,
         `Conversation memory:\n${memoryTranscript || "No previous turns."}`,
@@ -6510,8 +6834,15 @@ ${JSON.stringify({
 
       const sanitizedAnswers = sanitizeSubmittedAnswers(allQuestions, answers);
 
+      // Structured/written answers are NOT auto-scored here — they're marked by
+      // the AI in the background and held for tutor confirmation. Only the
+      // auto-markable (MCQ/graph) questions contribute to the submit-time score.
+      const structuredQuestions = allQuestions.filter((q) => q.questionType === "structured");
+      const hasStructured = structuredQuestions.length > 0;
+
       let totalScore = 0;
       for (const q of allQuestions) {
+        if (q.questionType === "structured") continue;
         const correct = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
         if (answersMatch(sanitizedAnswers[String(q.id)], correct)) {
           totalScore += q.marks;
@@ -6528,6 +6859,9 @@ ${JSON.stringify({
           studentId,
           studentName: resolvedName,
           score: totalScore,
+          // Both paths start "pending" (being marked). Structured/hybrid reports
+          // are completed by runStructuredMarking once the AI has marked the
+          // written answers; pure-MCQ reports by runBackgroundGrading.
           status: "pending",
           answersJson: sanitizedAnswers,
           startedAt: parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? parsedStartedAt : null,
@@ -6541,7 +6875,9 @@ ${JSON.stringify({
         throw dbErr;
       }
 
-      res.json(report);
+      // `hasStructured` tells the client to show a "being marked" screen rather
+      // than a (still-incomplete) score, since structured marking runs async.
+      res.json({ ...report, hasStructured });
 
       // Mark quiz assignment as completed
       const requestId = getRequestId(req);
@@ -6571,16 +6907,37 @@ ${JSON.stringify({
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
-      runBackgroundGrading(report.id, allQuestions, sanitizedAnswers, totalScore, maxPossibleScore, {
-        studentId,
-        quizTitle: quiz?.title || "your assessment",
-        quizSubject: quiz?.subject ?? null,
-      }).catch((err) => logBackgroundTaskFailure("soma-report.background-grading.unhandled", "critical", err, {
-        requestId,
-        reportId: report.id,
-        quizId,
-        studentId,
-      }));
+      if (hasStructured) {
+        // AI marks the written answers and releases the score automatically;
+        // the student can request a tutor review afterwards.
+        runStructuredMarking(
+          report.id,
+          structuredQuestions.map((q) => ({ id: q.id, stem: q.stem, marks: q.marks, markScheme: q.markScheme })),
+          sanitizedAnswers,
+          totalScore,
+          {
+            studentId,
+            quizTitle: quiz?.title || "your assessment",
+            quizSubject: quiz?.subject ?? null,
+          },
+        ).catch((err) => logBackgroundTaskFailure("soma-report.structured-marking.unhandled", "critical", err, {
+          requestId,
+          reportId: report.id,
+          quizId,
+          studentId,
+        }));
+      } else {
+        runBackgroundGrading(report.id, allQuestions, sanitizedAnswers, totalScore, maxPossibleScore, {
+          studentId,
+          quizTitle: quiz?.title || "your assessment",
+          quizSubject: quiz?.subject ?? null,
+        }).catch((err) => logBackgroundTaskFailure("soma-report.background-grading.unhandled", "critical", err, {
+          requestId,
+          reportId: report.id,
+          quizId,
+          studentId,
+        }));
+      }
 
       // Phase 3.3 — mark any existing revision plans stale so the
       // student is prompted to refresh after each new submission.
@@ -6603,21 +6960,28 @@ ${JSON.stringify({
       // mastery rolls up at sub-subtopic grain when the question is
       // linked to a learning requirement, plus the command word so the
       // Command-Word Coach (Phase 4.2) can update its counters.
+      // Structured/written answers are marked asynchronously by the AI and
+      // carry no `correctAnswer`, so they must NOT flow through the synchronous
+      // answersMatch-based mastery update here — they'd be graded as wrong and
+      // record a false 0% for those topics. Mastery for them would need to be
+      // driven off the AI marks once available; for now they're excluded.
       updateMasteryFromSubmission(
         studentId,
         quiz?.subject || null,
-        allQuestions.map((q) => ({
-          id: q.id,
-          stem: q.stem,
-          options: q.options as string[],
-          correctAnswer: q.correctAnswer,
-          marks: q.marks,
-          topicTag: q.topicTag,
-          subtopicTag: q.subtopicTag,
-          subtopicId: q.subtopicId ?? null,
-          learningRequirementId: q.learningRequirementId ?? null,
-          commandWord: q.commandWord ?? null,
-        })),
+        allQuestions
+          .filter((q) => q.questionType !== "structured")
+          .map((q) => ({
+            id: q.id,
+            stem: q.stem,
+            options: q.options as string[],
+            correctAnswer: q.correctAnswer,
+            marks: q.marks,
+            topicTag: q.topicTag,
+            subtopicTag: q.subtopicTag,
+            subtopicId: q.subtopicId ?? null,
+            learningRequirementId: q.learningRequirementId ?? null,
+            commandWord: q.commandWord ?? null,
+          })),
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
@@ -6666,13 +7030,20 @@ ${JSON.stringify({
         }
       }
 
-      const [questions, diagnoses] = await Promise.all([
+      const [questions, diagnoses, quiz] = await Promise.all([
         storage.getSomaQuestionsByQuizId(report.quizId),
         (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
+        storage.getSomaQuiz(report.quizId),
       ]);
+
+      // The tutor who authored the quiz (or a super admin) may confirm the
+      // AI-suggested marks on structured answers.
+      const canConfirm = isSuperAdmin || (!!quiz?.authorId && quiz.authorId === authUserId);
 
       res.json({
         report,
+        canConfirm,
+        isOwner,
         questions: questions.map((q) => ({
           id: q.id,
           stem: q.stem,
@@ -6680,6 +7051,9 @@ ${JSON.stringify({
           correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
           marks: q.marks,
           explanation: q.explanation,
+          questionType: q.questionType,
+          // Safe to reveal post-submission — the assessment is already marked.
+          markScheme: q.markScheme ?? null,
         })),
         // Phase 2C — per-question diagnoses, keyed by question id. The
         // SomaQuizReview page renders an "Examiner-flagged" panel
@@ -6688,6 +7062,173 @@ ${JSON.stringify({
       });
     } catch (err: any) {
       return sendInternalError(req, res, err, "soma.reports.review", "Something went wrong while loading this review. Please try again.");
+    }
+  });
+
+  // Light UK-English spelling scan for the structured-answer editor. Returns
+  // the list of likely-misspelt words (flag only — no suggestions, no
+  // auto-correct). Deliberately minimal so it stays fast on every idle scan.
+  app.post("/api/soma/spellcheck", requireSupabaseAuth, async (req, res) => {
+    try {
+      const text = String((req.body?.text ?? "")).slice(0, 4000);
+      if (text.trim().length < 2) return res.json({ misspelled: [] });
+      const systemPrompt = `You are a fast British English (en-GB) spelling checker.
+Return ONLY a JSON object: {"misspelled": ["word1", "word2"]}.
+List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
+- Use UK spelling as correct (colour, organise, analyse, behaviour, metre, programme). Do NOT flag UK spellings.
+- Do NOT flag proper nouns, abbreviations, numbers, units, or correctly-spelled words.
+- Do NOT correct grammar. Spelling only.
+- If nothing is misspelt, return {"misspelled": []}.`;
+      const { data } = await generateWithFallback(systemPrompt, `Text:\n${text}`, undefined, {
+        taskType: "chat",
+        route: "soma.spellcheck",
+        promptVersion: "spellcheck.engb:v1",
+        userId: String((req as any).authUser?.id ?? ""),
+      });
+      const parsed = parseJsonLoose(data);
+      const list = Array.isArray(parsed?.misspelled)
+        ? Array.from(new Set(parsed.misspelled
+            .map((w: unknown) => String(w).toLowerCase().trim())
+            .filter((w: string) => w.length > 0 && /^[\p{L}']+$/u.test(w))))
+            .slice(0, 100)
+        : [];
+      res.json({ misspelled: list });
+    } catch (err: any) {
+      // Never block the student on a spell-check failure.
+      res.json({ misspelled: [] });
+    }
+  });
+
+  // Student asks their tutor to review the AI marking of their structured
+  // answers, after the assessment has already been marked and released.
+  app.post("/api/soma/reports/:reportId/request-review", requireSupabaseAuth, async (req, res) => {
+    try {
+      const reportId = parseInt(String(req.params.reportId));
+      if (isNaN(reportId)) return res.status(400).json({ message: "Invalid report ID" });
+
+      const report = await storage.getSomaReportById(reportId);
+      if (!report) return res.status(404).json({ message: "Report not found" });
+
+      const authUser = (req as any).authUser as { id: string | string[] };
+      const authUserId = String(authUser.id);
+      if (report.studentId !== authUserId) {
+        return res.status(403).json({ message: "You can only request a review of your own assessment." });
+      }
+
+      const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;
+      if (Object.keys(marking).length === 0) {
+        return res.status(400).json({ message: "This assessment has no written answers to review." });
+      }
+      if (report.reviewRequested) {
+        return res.status(409).json({ message: "You've already requested a review for this assessment." });
+      }
+
+      const note = String(req.body?.note ?? "").slice(0, 1000).trim() || null;
+      const updated = await storage.updateSomaReport(reportId, {
+        reviewRequested: true,
+        reviewRequestNote: note,
+        reviewRequestedAt: new Date(),
+      });
+
+      // Notify the tutor who authored the quiz.
+      const quiz = await storage.getSomaQuiz(report.quizId);
+      if (quiz?.authorId) {
+        await storage.createTutorNotification({
+          tutorId: quiz.authorId,
+          studentId: report.studentId,
+          type: "review_requested",
+          title: `${report.studentName} requested a marking review`,
+          message: `${report.studentName} asked you to review the marking of "${quiz.title}".${note ? ` Note: "${note}"` : ""}`,
+          payload: { reportId, quizId: report.quizId, studentId: report.studentId },
+        }).catch(() => { /* notification is best-effort */ });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "soma.reports.request-review", "Could not send your review request. Please try again.");
+    }
+  });
+
+  // Tutor confirms / overrides the AI marks for a structured report (e.g. after
+  // a student review request). Recomputes the score and resolves the request.
+  app.put("/api/tutor/reports/:reportId/structured-marking", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId as string;
+      const reportId = parseInt(String(req.params.reportId));
+      if (isNaN(reportId)) return res.status(400).json({ message: "Invalid report ID" });
+
+      const report = await storage.getSomaReportById(reportId);
+      if (!report) return res.status(404).json({ message: "Report not found" });
+
+      // Authorise: tutor must own the quiz this report belongs to.
+      const quiz = await storage.getSomaQuiz(report.quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Forbidden: you do not own this assessment." });
+      }
+
+      const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;
+      if (Object.keys(marking).length === 0) {
+        return res.status(400).json({ message: "This report has no structured answers to confirm yet." });
+      }
+
+      // Optional per-question overrides: [{ questionId, marks }].
+      const overrides = new Map<string, number>();
+      if (Array.isArray(req.body?.marks)) {
+        for (const entry of req.body.marks) {
+          const qid = String(entry?.questionId ?? "");
+          const val = Number(entry?.marks);
+          if (qid && Number.isFinite(val)) overrides.set(qid, val);
+        }
+      }
+
+      // Recompute the MCQ base idempotently. The AI structured marks are folded
+      // into the score at marking time, so the current score already includes
+      // every structured mark (effective = tutorMarks ?? aiMarks). Subtract all
+      // of them to recover the auto-marked (MCQ/graph) portion.
+      let structuredInScore = 0;
+      for (const m of Object.values(marking)) {
+        structuredInScore += m.tutorMarks ?? m.aiMarks;
+      }
+      const mcqBase = (report.score ?? 0) - structuredInScore;
+
+      let structuredTotal = 0;
+      const next: Record<string, StructuredAnswerMark> = {};
+      for (const [qid, m] of Object.entries(marking)) {
+        const max = m.maxMarks ?? 0;
+        let tutorMarks: number;
+        if (overrides.has(qid)) {
+          tutorMarks = Math.max(0, Math.min(max, Math.round(overrides.get(qid)!)));
+        } else {
+          tutorMarks = m.tutorMarks ?? m.aiMarks;
+        }
+        structuredTotal += tutorMarks;
+        next[qid] = { ...m, tutorMarks, confirmed: true };
+      }
+
+      const newScore = Math.max(0, mcqBase + structuredTotal);
+      const updated = await storage.updateSomaReport(reportId, {
+        structuredMarking: next,
+        score: newScore,
+        status: "completed",
+        // Re-marking resolves any pending student review request.
+        reviewRequested: false,
+        reviewRequestNote: null,
+        reviewRequestedAt: null,
+      });
+
+      // Let the student know their requested review is done.
+      if (report.studentId) {
+        await storage.createStudentNotification({
+          studentId: report.studentId,
+          type: "feedback_ready",
+          title: "Your review is complete",
+          message: `Your teacher has reviewed your written answers for "${quiz.title}".`,
+          payload: { reportId, quizTitle: quiz.title },
+        }).catch(() => { /* notification is best-effort */ });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.reports.structured-marking", "Could not save these marks. Please try again.");
     }
   });
 

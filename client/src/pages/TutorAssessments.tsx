@@ -9,7 +9,7 @@ import {
   LogOut, Users, BookOpen, Plus, X, ChevronDown, ChevronUp,
   Loader2, Check, LayoutDashboard, Clock, Award, Timer,
   FileText, Eye, UserPlus, UserMinus, Trash2, AlertTriangle,
-  ClockArrowUp, Pencil, Search, Copy,
+  ClockArrowUp, Pencil, Search, Copy, PenLine,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { renderMathInHtml } from "@/lib/renderMathInHtml";
@@ -341,6 +341,17 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
               <Loader2 className="w-4 h-4 animate-spin" />
               Diagnostic report is still being generated...
             </div>
+          )}
+
+          {(report as { reviewRequested?: boolean }).reviewRequested && (
+            <a
+              href={`/soma/review/${report.id}`}
+              className="flex items-center gap-2 p-3 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs hover:bg-violet-500/15"
+              data-testid="link-review-requested"
+            >
+              <PenLine className="w-4 h-4" />
+              This student requested a review of the AI marking — open to re-mark.
+            </a>
           )}
         </div>
       </div>

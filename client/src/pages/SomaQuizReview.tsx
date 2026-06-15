@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
+import DOMPurify from "dompurify";
 import { authFetch } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
-  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check, Quote,
+  ArrowLeft, Home, AlertCircle, Loader2, CheckCircle2, XCircle, BookOpen, Award, Lightbulb, ClipboardCopy, Check, Quote, PenLine, Brain,
 } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ReportPdfView, { type ReportPdfData } from "@/components/student/ReportPdfView";
+
+interface StructuredMark {
+  maxMarks: number;
+  aiMarks: number;
+  aiFeedback: string;
+  aiUnderstanding: string;
+  tutorMarks: number | null;
+  confirmed: boolean;
+}
 
 const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-6 py-3 h-12 rounded-xl text-base font-semibold border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all cursor-pointer";
 
@@ -21,6 +32,8 @@ interface ReviewQuestion {
   correctAnswer: string;
   marks: number;
   explanation: string | null;
+  questionType?: string;
+  markScheme?: string | null;
 }
 
 interface ReviewReport {
@@ -30,6 +43,9 @@ interface ReviewReport {
   score: number;
   status: string;
   answersJson: Record<string, string> | null;
+  structuredMarking: Record<string, StructuredMark> | null;
+  reviewRequested?: boolean;
+  reviewRequestNote?: string | null;
   aiFeedbackHtml: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -62,6 +78,11 @@ interface QuestionDiagnosis {
 interface ReviewData {
   report: ReviewReport;
   questions: ReviewQuestion[];
+  /** True when the viewer (quiz-author tutor / super-admin) may confirm the
+   *  AI-suggested marks on structured answers. */
+  canConfirm?: boolean;
+  /** True when the viewer is the student who owns this report. */
+  isOwner?: boolean;
   /** Phase 2C — per-question diagnoses keyed by question id. Optional so
    *  reports created before Phase 2 still render. */
   diagnoses?: Record<string, QuestionDiagnosis>;
@@ -75,6 +96,12 @@ export default function SomaQuizReview() {
   const reportId = parseInt(params.reportId || "0");
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  // Tutor mark overrides for structured answers, keyed by question id.
+  const [markOverrides, setMarkOverrides] = useState<Record<string, number>>({});
+  // Student's optional note when requesting a marking review.
+  const [reviewNote, setReviewNote] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<ReviewData>({
     queryKey: ["/api/soma/reports", reportId, "review"],
@@ -113,6 +140,66 @@ export default function SomaQuizReview() {
     if (!data?.questions) return 0;
     return data.questions.reduce((s, q) => s + q.marks, 0);
   }, [data]);
+
+  const structuredMarking = data?.report?.structuredMarking ?? null;
+
+  const confirmMarksMutation = useMutation({
+    mutationFn: async () => {
+      const marks = Object.entries(markOverrides).map(([questionId, m]) => ({ questionId, marks: m }));
+      const res = await authFetch(`/api/tutor/reports/${reportId}/structured-marking`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marks }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Could not save marks");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Marks confirmed", description: "The score has been released to the student." });
+      queryClient.invalidateQueries({ queryKey: ["/api/soma/reports", reportId, "review"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not confirm marks", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const requestReviewMutation = useMutation({
+    mutationFn: async (note: string) => {
+      const res = await authFetch(`/api/soma/reports/${reportId}/request-review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Could not send request");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Review requested", description: "Your teacher has been notified and will take another look." });
+      queryClient.invalidateQueries({ queryKey: ["/api/soma/reports", reportId, "review"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not request review", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Seed the tutor's editable marks from the AI suggestion (or prior override).
+  useEffect(() => {
+    if (!structuredMarking) return;
+    setMarkOverrides((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      const seed: Record<string, number> = {};
+      for (const [qid, m] of Object.entries(structuredMarking)) {
+        seed[qid] = m.tutorMarks ?? m.aiMarks;
+      }
+      return seed;
+    });
+  }, [structuredMarking]);
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -191,8 +278,15 @@ export default function SomaQuizReview() {
     correctAnswer: q.correctAnswer ?? "",
     marks: typeof q.marks === "number" ? q.marks : 0,
     explanation: q.explanation ?? null,
+    questionType: q.questionType,
+    markScheme: q.markScheme ?? null,
   }));
   const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
+  const canConfirm = data.canConfirm === true;
+  const isOwner = data.isOwner === true;
+  const hasStructured = questions.some((q) => q.questionType === "structured");
+  const reviewRequested = report.reviewRequested === true;
+  const stillMarking = report.status === "pending" && hasStructured;
 
   const pdfData: ReportPdfData = {
     title: quizTitle,
@@ -322,10 +416,93 @@ export default function SomaQuizReview() {
           </div>
         </div>
 
+        {stillMarking && (
+          <div className="glass-card p-4 mb-6 border-l-4 border-l-amber-500 bg-amber-500/[0.06]" data-testid="banner-still-marking">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
+              <p className="text-sm text-foreground">Your written answers are still being marked. Refresh in a moment to see your score.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tutor view: adjust + confirm the AI marks (e.g. after a request). */}
+        {canConfirm && hasStructured && !stillMarking && (
+          <div className={`glass-card p-4 mb-6 border-l-4 ${reviewRequested ? "border-l-violet-500 bg-violet-500/[0.08]" : "border-l-border bg-foreground/[0.03]"}`} data-testid="banner-tutor-marking">
+            <div className="flex items-start gap-3">
+              {reviewRequested ? <PenLine className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" /> : <Brain className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">
+                  {reviewRequested ? `${studentName} requested a marking review` : "AI-marked written answers"}
+                </p>
+                {reviewRequested && report.reviewRequestNote && (
+                  <p className="text-xs text-muted-foreground mt-1 italic">“{report.reviewRequestNote}”</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Adjust any marks below, then save to update the student's score.
+                </p>
+                <Button
+                  className="glow-button mt-3 min-h-[40px]"
+                  onClick={() => confirmMarksMutation.mutate()}
+                  disabled={confirmMarksMutation.isPending}
+                  data-testid="button-confirm-structured-marks"
+                >
+                  {confirmMarksMutation.isPending
+                    ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Saving…</>
+                    : <><Check className="w-4 h-4 mr-1.5" />Save marks &amp; update score</>}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Student view: request a tutor review of the AI marking. */}
+        {isOwner && !canConfirm && hasStructured && !stillMarking && (
+          <div className="glass-card p-4 mb-6 border-l-4 border-l-violet-500 bg-violet-500/[0.06]" data-testid="banner-student-review">
+            {reviewRequested ? (
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-violet-400 shrink-0" />
+                <p className="text-sm text-foreground">You've asked your teacher to review this marking. They'll take another look soon.</p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3">
+                <PenLine className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Disagree with the marking?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                    Your written answers were marked by AI. You can ask your teacher to review the marks.
+                  </p>
+                  <textarea
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                    placeholder="Optional: tell your teacher which answer and why (e.g. 'Q2 covers the point in different words')."
+                    rows={2}
+                    maxLength={1000}
+                    className="w-full text-sm rounded-lg bg-background border border-border/60 px-3 py-2 text-foreground resize-y"
+                    data-testid="input-review-note"
+                  />
+                  <Button
+                    className="glow-button mt-2 min-h-[40px]"
+                    onClick={() => requestReviewMutation.mutate(reviewNote.trim())}
+                    disabled={requestReviewMutation.isPending}
+                    data-testid="button-request-review"
+                  >
+                    {requestReviewMutation.isPending
+                      ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Sending…</>
+                      : <><PenLine className="w-4 h-4 mr-1.5" />Request a teacher review</>}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="space-y-6">
           {questions.map((q, idx) => {
             const studentAnswer = studentAnswers[String(q.id)] || null;
-            const isCorrect = studentAnswer === q.correctAnswer;
+            const isStructured = q.questionType === "structured";
+            const sm = isStructured && structuredMarking ? structuredMarking[String(q.id)] : null;
+            const effectiveStructuredMark = sm ? (sm.tutorMarks ?? sm.aiMarks) : 0;
+            const isCorrect = !isStructured && studentAnswer === q.correctAnswer;
 
             return (
               <div key={q.id} className="glass-card p-6" data-testid={`review-question-${idx + 1}`}>
@@ -333,18 +510,101 @@ export default function SomaQuizReview() {
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/30 to-cyan-500/20 flex items-center justify-center border border-violet-500/30 text-sm font-bold text-violet-300">
                     {idx + 1}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 flex items-center gap-2">
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Q{idx + 1}</p>
+                    {isStructured && (
+                      <Badge className="text-[10px] bg-sky-500/10 text-sky-400 border-sky-500/30">
+                        <PenLine className="w-3 h-3 mr-1" /> Written
+                      </Badge>
+                    )}
                   </div>
-                  <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>
-                    {isCorrect ? "Correct" : studentAnswer ? "Incorrect" : "Skipped"} [{q.marks}]
-                  </Badge>
+                  {isStructured ? (
+                    <Badge className={`text-xs ${sm?.confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-sky-500/10 text-sky-400 border-sky-500/30"}`}>
+                      {sm ? `${effectiveStructuredMark}/${q.marks}` : "—"} · {sm?.confirmed ? "tutor" : "AI"}
+                    </Badge>
+                  ) : (
+                    <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>
+                      {isCorrect ? "Correct" : studentAnswer ? "Incorrect" : "Skipped"} [{q.marks}]
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="text-base text-foreground leading-relaxed mb-4" data-testid={`text-review-stem-${idx + 1}`}>
                   <MarkdownRenderer content={q.stem} />
                 </div>
 
+                {isStructured ? (
+                  <div className="space-y-4" data-testid={`review-structured-${idx + 1}`}>
+                    {/* Student's written answer */}
+                    <div className="rounded-xl border border-border/50 bg-foreground/[0.03] p-4">
+                      <p className="text-xs font-semibold mb-2 uppercase tracking-wider text-muted-foreground">Your answer</p>
+                      {studentAnswer ? (
+                        <div
+                          className="text-sm text-foreground/90 leading-relaxed prose-sm [&_ul]:list-disc [&_ul]:pl-5"
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(studentAnswer) }}
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">No answer submitted.</p>
+                      )}
+                    </div>
+
+                    {/* AI understanding analysis */}
+                    {sm?.aiUnderstanding && (
+                      <div className="p-4 rounded-xl border-l-4 bg-violet-500/10 border-l-violet-500">
+                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-violet-300">
+                          <Brain className="w-4 h-4" /> Understanding
+                        </p>
+                        <p className="text-sm text-foreground leading-relaxed">{sm.aiUnderstanding}</p>
+                      </div>
+                    )}
+
+                    {/* Feedback */}
+                    {sm?.aiFeedback && (
+                      <div className="p-4 rounded-xl border-l-4 bg-amber-500/10 border-l-amber-500">
+                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-amber-400">
+                          <Lightbulb className="w-4 h-4" /> Feedback
+                        </p>
+                        <p className="text-sm text-foreground leading-relaxed">{sm.aiFeedback}</p>
+                      </div>
+                    )}
+
+                    {/* Tutor confirmation controls */}
+                    {canConfirm && sm && (
+                      <div className="p-4 rounded-xl border border-violet-500/30 bg-violet-500/[0.06]">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs uppercase tracking-wider text-muted-foreground">Award marks</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={q.marks}
+                              value={markOverrides[String(q.id)] ?? effectiveStructuredMark}
+                              onChange={(e) => {
+                                const v = Math.max(0, Math.min(q.marks, Number(e.target.value) || 0));
+                                setMarkOverrides((prev) => ({ ...prev, [String(q.id)]: v }));
+                              }}
+                              className="w-20 px-2 py-1 rounded-md bg-background border border-border/60 text-sm text-foreground"
+                              data-testid={`structured-mark-input-${idx + 1}`}
+                            />
+                            <span className="text-xs text-muted-foreground">/ {q.marks}</span>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">AI suggested {sm.aiMarks}/{q.marks}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mark scheme (shown post-submission) */}
+                    {q.markScheme && (
+                      <details className="rounded-xl border border-border/50 bg-foreground/[0.02] p-4">
+                        <summary className="text-xs font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer">Mark scheme</summary>
+                        <div className="text-sm text-foreground/80 leading-relaxed mt-2 whitespace-pre-line">
+                          <MarkdownRenderer content={q.markScheme} />
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ) : (
+                <>
                 <div className="grid gap-2.5">
                   {q.options.map((option, optIdx) => {
                     const letter = String.fromCharCode(65 + optIdx);
@@ -431,6 +691,8 @@ export default function SomaQuizReview() {
                       <MarkdownRenderer content={q.explanation} />
                     </div>
                   </div>
+                )}
+                </>
                 )}
               </div>
             );
