@@ -45,13 +45,7 @@ function StorageNotice() {
   );
 }
 
-export default function StudentAssessmentPdfSection({
-  quizId,
-  acceptsPdfResponse = false,
-}: {
-  quizId: number;
-  acceptsPdfResponse?: boolean;
-}) {
+export default function StudentAssessmentPdfSection({ quizId }: { quizId: number }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -130,12 +124,13 @@ export default function StudentAssessmentPdfSection({
   }
 
   async function downloadAttachment(attachmentId: number) {
-    // Open the tab synchronously inside the click gesture, THEN fill it after
-    // the async sign call — opening after an await is silently blocked by most
-    // popup blockers. (Can't use noopener here or window.open returns null.)
+    // Open the tab synchronously (before any await) so popup blockers don't
+    // swallow it; null the opener manually since "noopener" makes open() null.
     const win = window.open("about:blank", "_blank");
     if (win) {
-      try { (win as unknown as { opener: unknown }).opener = null; } catch { /* noop */ }
+      try {
+        (win as unknown as { opener: unknown }).opener = null;
+      } catch {}
     }
     try {
       const res = await authFetch(`/api/quizzes/${quizId}/attachments/${attachmentId}/download`);
@@ -151,14 +146,12 @@ export default function StudentAssessmentPdfSection({
 
   const isMarked = submission?.status === "marked";
   const hasWorksheets = attachments.length > 0;
-  // Upload controls only when the tutor has opted this assessment in. A response
-  // card still renders for an existing submission even if the flag was later
-  // turned off, so the student keeps seeing their mark/feedback.
-  const showUpload = Boolean(acceptsPdfResponse);
-  const showResponseCard = Boolean(acceptsPdfResponse || submission);
+  // This section is only mounted for PDF-format assessments (the parent gates on
+  // quiz.format === "pdf"), so the worksheet list + response upload always apply.
+  const showUpload = true;
+  const showResponseCard = true;
 
   if (storageUnconfigured) {
-    if (!acceptsPdfResponse) return null;
     return (
       <div className="text-left bg-foreground/[0.03] border border-border/30 rounded-xl p-4 md:p-5 mb-6">
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Worksheets &amp; your response</p>
@@ -166,9 +159,6 @@ export default function StudentAssessmentPdfSection({
       </div>
     );
   }
-
-  // Don't render anything if there's nothing relevant to show.
-  if (!hasWorksheets && !showResponseCard) return null;
 
   return (
     <>
@@ -238,7 +228,7 @@ export default function StudentAssessmentPdfSection({
                   data-testid="student-response-score"
                   className="text-2xl font-bold text-emerald-300"
                 >
-                  {submission.score ?? 0}{submission.maxScore != null && <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span>}
+                  {submission.score ?? 0}{submission.maxScore != null ? <span className="text-base text-muted-foreground font-normal"> / {submission.maxScore}</span> : null}
                 </p>
                 {submission.feedback && (
                   <div className="mt-3">
