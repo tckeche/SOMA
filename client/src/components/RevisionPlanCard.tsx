@@ -148,7 +148,7 @@ export function RevisionPlanCard() {
     return (
       <section className="space-y-3" data-testid="section-revision-plan">
         <Header />
-        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-violet-400 animate-spin" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-primary animate-spin" /></div>
       </section>
     );
   }
@@ -167,13 +167,13 @@ export function RevisionPlanCard() {
                 onClick={() => setSelectedSubject(p.subject)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                   active
-                    ? "bg-violet-500/15 text-violet-200 border border-violet-500/25"
+                    ? "bg-primary/15 text-primary border border-primary/25"
                     : "text-muted-foreground hover:text-foreground border border-transparent"
                 }`}
                 data-testid={`plan-tab-${p.id}`}
               >
                 {p.subject}
-                {p.stale && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Plan is out of date" />}
+                {p.stale && <span className="w-1.5 h-1.5 rounded-full bg-warning" title="Plan is out of date" />}
               </button>
             );
           })}

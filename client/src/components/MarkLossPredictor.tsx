@@ -59,7 +59,7 @@ export function MarkLossPredictor({ endpoint = "/api/student/mark-loss-predictio
       <section className="space-y-3" data-testid="section-mark-loss">
         <Header />
         <div className="flex justify-center py-10">
-          <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
         </div>
       </section>
     );
@@ -70,7 +70,7 @@ export function MarkLossPredictor({ endpoint = "/api/student/mark-loss-predictio
       <section className="space-y-3" data-testid="section-mark-loss">
         <Header />
         <div className="rounded-2xl border border-card-border bg-card/70 p-6 text-center">
-          <AlertTriangle className="w-7 h-7 mx-auto text-amber-400 mb-2" />
+          <AlertTriangle className="w-7 h-7 mx-auto text-warning mb-2" />
           <p className="text-xs text-muted-foreground">Couldn't compute a prediction right now.</p>
         </div>
       </section>
@@ -162,7 +162,7 @@ function PaperRow({ paper }: { paper: PaperPrediction }) {
           <p className="text-lg font-bold tabular-nums">
             {paper.predictedScore}<span className="text-xs text-muted-foreground">/{paper.rawMarks}</span>
           </p>
-          <p className="text-[11px] text-rose-300 flex items-center gap-1 justify-end">
+          <p className="text-[11px] text-danger flex items-center gap-1 justify-end">
             <TrendingDown className="w-3 h-3" /> losing ~{paper.predictedLoss}
           </p>
         </div>
@@ -171,7 +171,7 @@ function PaperRow({ paper }: { paper: PaperPrediction }) {
       <div className="mt-3 h-2 bg-foreground/[0.04] rounded-full relative overflow-visible">
         {/* confidence band */}
         <div
-          className="absolute top-0 h-full rounded-full bg-violet-500/15"
+          className="absolute top-0 h-full rounded-full bg-primary/15"
           style={{
             left: `${(lo / paper.rawMarks) * 100}%`,
             width: `${((hi - lo) / paper.rawMarks) * 100}%`,
@@ -179,7 +179,7 @@ function PaperRow({ paper }: { paper: PaperPrediction }) {
         />
         {/* point estimate */}
         <div
-          className="absolute top-0 h-full bg-violet-400 rounded-full"
+          className="absolute top-0 h-full bg-primary rounded-full"
           style={{ left: `${(paper.predictedScore / paper.rawMarks) * 100 - 0.5}%`, width: "1.5%" }}
         />
       </div>

@@ -56,7 +56,7 @@ export function CommandWordCoach({ endpoint = "/api/student/command-words" }: { 
     return (
       <section className="space-y-3" data-testid="section-command-word-coach">
         <Header />
-        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-violet-400 animate-spin" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-primary animate-spin" /></div>
       </section>
     );
   }
@@ -66,7 +66,7 @@ export function CommandWordCoach({ endpoint = "/api/student/command-words" }: { 
       <section className="space-y-3" data-testid="section-command-word-coach">
         <Header />
         <div className="rounded-2xl border border-card-border bg-card/70 p-6 text-center">
-          <AlertTriangle className="w-7 h-7 mx-auto text-amber-400 mb-2" />
+          <AlertTriangle className="w-7 h-7 mx-auto text-warning mb-2" />
           <p className="text-xs text-muted-foreground">Couldn't load your command-word stats.</p>
         </div>
       </section>
@@ -118,7 +118,7 @@ function SubjectBlock({ group }: { group: SubjectGroup }) {
         <p className="text-[11px] text-muted-foreground">{group.totalAttempts} answer{group.totalAttempts !== 1 ? "s" : ""} so far</p>
       </div>
       {group.weakestCommandWord && (
-        <p className="text-xs text-rose-300 flex items-center gap-1">
+        <p className="text-xs text-danger flex items-center gap-1">
           <TrendingUp className="w-3 h-3 rotate-180" /> Watch out for "{group.weakestCommandWord}" — that's where you're losing the most marks.
         </p>
       )}
@@ -135,17 +135,17 @@ function RowItem({ row }: { row: Row }) {
   const colour = row.attempts < 3
     ? "bg-foreground/[0.06]"
     : row.accuracyPct >= 80
-      ? "bg-emerald-400"
+      ? "bg-success"
       : row.accuracyPct >= 50
-        ? "bg-amber-400"
-        : "bg-rose-400";
+        ? "bg-warning"
+        : "bg-danger";
   const tone = row.attempts < 3
     ? "text-muted-foreground"
     : row.accuracyPct >= 80
-      ? "text-emerald-300"
+      ? "text-success"
       : row.accuracyPct >= 50
-        ? "text-amber-200"
-        : "text-rose-300";
+        ? "text-warning"
+        : "text-danger";
   const hint = COMMAND_WORD_HINT[row.commandWord];
   return (
     <div className="rounded-xl bg-foreground/[0.02] border border-border/50 p-3" data-testid={`coach-row-${row.commandWord}`}>

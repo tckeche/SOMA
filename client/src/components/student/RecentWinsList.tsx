@@ -40,7 +40,7 @@ export default function RecentWinsList({ wins }: Props) {
       data-testid="panel-recent-wins"
     >
       <header className="flex items-center gap-2 mb-3">
-        <Trophy className="w-5 h-5 text-amber-300" />
+        <Trophy className="w-5 h-5 text-warning" />
         <div>
           <h2 className="text-sm font-semibold text-foreground">Recent wins</h2>
           <p className="text-[11px] text-muted-foreground">Worth pausing on</p>

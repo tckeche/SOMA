@@ -267,7 +267,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
             data-testid="student-response-upload"
             onClick={() => selectedFile && uploadMutation.mutate(selectedFile)}
             disabled={!selectedFile || uploadMutation.isPending}
-            className="inline-flex items-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-primary/40 bg-primary/20 text-primary hover:bg-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {uploadMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />

@@ -199,7 +199,7 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="h-8 w-8 flex items-center justify-center rounded-md text-slate-600 hover:bg-slate-200/70 disabled:opacity-40"
+      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted/70 disabled:opacity-40"
       data-testid={`structured-format-${command}`}
     >
       <Icon className="w-4 h-4" />
@@ -207,15 +207,15 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
   );
 
   return (
-    <div className="rounded-xl overflow-hidden border border-slate-300 bg-white shadow-sm" data-testid="structured-answer-editor">
+    <div className="rounded-xl overflow-hidden border border-border bg-white shadow-sm" data-testid="structured-answer-editor">
       {/* Minimal formatting toolbar */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-slate-200 bg-slate-50">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border bg-muted">
         <ToolbarButton icon={Bold} command="bold" label="Bold" />
         <ToolbarButton icon={Italic} command="italic" label="Italic" />
         <ToolbarButton icon={Underline} command="underline" label="Underline" />
-        <span className="w-px h-5 bg-slate-200 mx-1" />
+        <span className="w-px h-5 bg-muted mx-1" />
         <ToolbarButton icon={List} command="insertUnorderedList" label="Bullet list" />
-        <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">UK English</span>
+        <span className="ml-auto text-[10px] uppercase tracking-wider text-muted-foreground">UK English</span>
       </div>
 
       {/* Lined "paper" editing surface */}
@@ -230,7 +230,7 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
         onInput={handleInput}
         onBlur={emitChange}
         spellCheck={false}
-        className="soma-structured-surface px-4 py-3 min-h-[180px] text-slate-800 text-[15px] focus:outline-none"
+        className="soma-structured-surface px-4 py-3 min-h-[180px] text-muted-foreground text-[15px] focus:outline-none"
         style={{
           lineHeight: `${LINE_HEIGHT}px`,
           backgroundImage:

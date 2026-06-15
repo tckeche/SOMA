@@ -550,8 +550,8 @@ export default function SomaQuizReview() {
 
                     {/* AI understanding analysis */}
                     {sm?.aiUnderstanding && (
-                      <div className="p-4 rounded-xl border-l-4 bg-violet-500/10 border-l-violet-500">
-                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-violet-300">
+                      <div className="p-4 rounded-xl border-l-4 bg-primary/10 border-l-primary">
+                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-primary">
                           <Brain className="w-4 h-4" /> Understanding
                         </p>
                         <p className="text-sm text-foreground leading-relaxed">{sm.aiUnderstanding}</p>
@@ -560,8 +560,8 @@ export default function SomaQuizReview() {
 
                     {/* Feedback */}
                     {sm?.aiFeedback && (
-                      <div className="p-4 rounded-xl border-l-4 bg-amber-500/10 border-l-amber-500">
-                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-amber-400">
+                      <div className="p-4 rounded-xl border-l-4 bg-warning/10 border-l-warning">
+                        <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-warning">
                           <Lightbulb className="w-4 h-4" /> Feedback
                         </p>
                         <p className="text-sm text-foreground leading-relaxed">{sm.aiFeedback}</p>
@@ -570,7 +570,7 @@ export default function SomaQuizReview() {
 
                     {/* Tutor confirmation controls */}
                     {canConfirm && sm && (
-                      <div className="p-4 rounded-xl border border-violet-500/30 bg-violet-500/[0.06]">
+                      <div className="p-4 rounded-xl border border-primary/30 bg-primary/[0.06]">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                           <div className="flex items-center gap-2">
                             <label className="text-xs uppercase tracking-wider text-muted-foreground">Award marks</label>
@@ -616,13 +616,13 @@ export default function SomaQuizReview() {
                     let iconEl = null;
 
                     if (isCorrectOption) {
-                      optionClasses = "bg-green-500/20 border-green-500/40";
-                      ringClasses = "ring-2 ring-green-500";
-                      iconEl = <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />;
+                      optionClasses = "bg-success/20 border-success/40";
+                      ringClasses = "ring-2 ring-success";
+                      iconEl = <CheckCircle2 className="w-4 h-4 text-success shrink-0" />;
                     } else if (isStudentWrongPick) {
-                      optionClasses = "bg-red-500/20 border-red-500/40";
-                      ringClasses = "ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]";
-                      iconEl = <XCircle className="w-4 h-4 text-red-400 shrink-0" />;
+                      optionClasses = "bg-danger/20 border-danger/40";
+                      ringClasses = "ring-2 ring-danger shadow-[0_0_15px_rgba(239,68,68,0.5)]";
+                      iconEl = <XCircle className="w-4 h-4 text-danger shrink-0" />;
                     }
 
                     return (
@@ -634,15 +634,15 @@ export default function SomaQuizReview() {
                         <div className="flex items-start gap-3">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-semibold ${
                             isCorrectOption
-                              ? "bg-green-500/30 text-green-200 border border-green-500/50"
+                              ? "bg-success/30 text-success border border-success/50"
                               : isStudentWrongPick
-                                ? "bg-red-500/30 text-red-200 border border-red-500/50"
+                                ? "bg-danger/30 text-danger border border-danger/50"
                                 : "bg-foreground/5 text-muted-foreground border border-border/50"
                           }`}>
                             {letter}
                           </div>
                           <div className={`text-sm pt-0.5 flex-1 ${
-                            isCorrectOption ? "text-green-200" : isStudentWrongPick ? "text-red-200" : "text-foreground/80"
+                            isCorrectOption ? "text-success" : isStudentWrongPick ? "text-danger" : "text-foreground/80"
                           }`}>
                             <MarkdownRenderer content={option} />
                           </div>
@@ -660,10 +660,10 @@ export default function SomaQuizReview() {
                   const yearLabel = m.examYear ? `in ${m.examYear}` : "before";
                   return (
                     <div
-                      className="mt-5 p-4 rounded-xl border-l-4 bg-rose-500/10 border-l-rose-500"
+                      className="mt-5 p-4 rounded-xl border-l-4 bg-danger/10 border-l-danger"
                       data-testid={`review-examiner-citation-${idx + 1}`}
                     >
-                      <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-rose-400">
+                      <p className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 text-danger">
                         <Quote className="w-4 h-4" />
                         Cambridge examiners flagged this {yearLabel}
                       </p>
@@ -676,13 +676,13 @@ export default function SomaQuizReview() {
                   <div
                     className={`mt-5 p-4 rounded-xl border-l-4 ${
                       isCorrect
-                        ? "bg-blue-500/10 border-l-blue-500"
-                        : "bg-amber-500/10 border-l-amber-500"
+                        ? "bg-info/10 border-l-info"
+                        : "bg-warning/10 border-l-warning"
                     }`}
                     data-testid={`review-explanation-${idx + 1}`}
                   >
                     <p className={`text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2 ${
-                      isCorrect ? "text-blue-400" : "text-amber-400"
+                      isCorrect ? "text-info" : "text-warning"
                     }`}>
                       <Lightbulb className="w-4 h-4" />
                       soma explanation
