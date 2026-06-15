@@ -62,6 +62,15 @@ function scoreColor(pct: number): string {
   return "hsl(var(--danger))";
 }
 
+// Categorical per-subject palette (matches the mockup's brand → info → warning →
+// success cycle): the by-subject bar colour encodes subject identity, not score.
+const SUBJECT_COLORS = [
+  "hsl(var(--primary))",
+  "hsl(var(--info))",
+  "hsl(var(--warning))",
+  "hsl(var(--success))",
+];
+
 /** Source PageIntro condenses "Good afternoon, Calvin" → "Hi Calvin". */
 function friendlyGreeting(greeting: string): string {
   const m = greeting.match(/^Good (?:morning|afternoon|evening),\s*(.+)$/i);
@@ -344,10 +353,10 @@ function PerformanceBlock({
           {bySubject.length === 0 ? (
             <p className="text-muted-foreground" style={{ fontSize: 12 }}>No scored subjects yet.</p>
           ) : (
-            bySubject.map((s) => (
+            bySubject.map((s, i) => (
               <div key={s.subject} className="row" style={{ gap: 12 }}>
                 <span style={{ width: 92, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.subject}</span>
-                <span className="meter" style={{ flex: 1 }}><span style={{ width: s.pct + "%", background: scoreColor(s.pct) }} /></span>
+                <span className="meter" style={{ flex: 1 }}><span style={{ width: s.pct + "%", background: SUBJECT_COLORS[i % SUBJECT_COLORS.length] }} /></span>
                 <span className="num" style={{ fontSize: 13, width: 34, textAlign: "right" }}>{s.pct}%</span>
               </div>
             ))
@@ -391,7 +400,7 @@ function FocusBlock({
           <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4, whiteSpace: "nowrap" }}>Mastery &amp; readiness</h3>
         </div>
         <span className="text-muted-foreground" style={{ fontSize: 12, maxWidth: 240, textAlign: "right" }}>
-          How exam-ready each subject is, and the topics moving the needle.
+          One view: how exam-ready each subject is, and the topics moving the needle.
         </span>
       </div>
 
@@ -403,7 +412,7 @@ function FocusBlock({
               <Ring pct={r.pct} size={64} stroke={6} color={scoreColor(r.pct)}>
                 <span className="num" style={{ fontSize: 15 }}>{r.pct}%</span>
               </Ring>
-              <span style={{ fontSize: 11, fontWeight: 600 }}>{r.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "hsl(var(--secondary-foreground))" }}>{r.label}</span>
             </div>
           ))}
         </div>
