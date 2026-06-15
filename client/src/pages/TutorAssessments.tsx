@@ -6,6 +6,7 @@ import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import { formatDateShort, assessmentDisplayName } from "@/lib/assessmentNaming";
 import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment, SomaUser } from "@shared/schema";
+import { defaultDueDateInputValue } from "@shared/dueDate";
 import {
   LogOut, Users, BookOpen, Plus, X, ChevronDown, ChevronUp,
   Loader2, Check, LayoutDashboard, Clock, Award, Timer,
