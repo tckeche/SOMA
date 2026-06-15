@@ -62,6 +62,28 @@ function scoreColor(pct: number): string {
   return "hsl(var(--danger))";
 }
 
+/** Source PageIntro condenses "Good afternoon, Calvin" → "Hi Calvin". */
+function friendlyGreeting(greeting: string): string {
+  const m = greeting.match(/^Good (?:morning|afternoon|evening),\s*(.+)$/i);
+  return m ? `Hi ${m[1]}` : greeting;
+}
+
+/** Compact due status for the hero chip (e.g. "2 due · 1 overdue") — the full
+ *  `dueSummary` sentence belongs in the PageIntro subtitle, not a chip. */
+function shortDueStatus(assignments: DashboardAssignmentRow[]): string {
+  let due = 0;
+  let overdue = 0;
+  for (const a of assignments) {
+    if (a.status === "completed") continue;
+    if (a.status === "overdue") overdue++;
+    else due++;
+  }
+  const parts: string[] = [];
+  if (due > 0) parts.push(`${due} due`);
+  if (overdue > 0) parts.push(`${overdue} overdue`);
+  return parts.join(" · ") || "All caught up";
+}
+
 const MASTERY_META: Record<
   string,
   { label: string; cls: string }
@@ -126,11 +148,9 @@ interface ExaminerTip {
 /** 1. Next actions (hero + up next). */
 function NextActions({
   assignments,
-  dueSummary,
   onStart,
 }: {
   assignments: DashboardAssignmentRow[];
-  dueSummary: string;
   onStart: (quizId: number) => void;
 }) {
   const overdue = assignments.find((a) => a.status === "overdue");
@@ -153,6 +173,14 @@ function NextActions({
     heroTone === "danger" ? "hsl(var(--danger))" : heroTone === "warning" ? "hsl(var(--warning))" : "hsl(var(--primary))";
   const heroDue = hero.status === "overdue" ? "Overdue" : humanize(hero.dueDate);
 
+  // Hero meta line: "{q} questions · {marks} marks · ~{minutes} min", dropping
+  // any part we don't have data for (graceful zero-states).
+  const heroMetaParts: string[] = [];
+  if (hero.questionCount > 0) heroMetaParts.push(`${hero.questionCount} questions`);
+  if (hero.maxScore > 0) heroMetaParts.push(`${hero.maxScore} marks`);
+  if (hero.estimatedMinutes > 0) heroMetaParts.push(`~${hero.estimatedMinutes} min`);
+  const heroMeta = heroMetaParts.join(" · ") || "Ready when you are";
+
   // "Up next" = next 2-3 assignments after the hero.
   const upNext = assignments.filter((a) => a !== hero).slice(0, 3);
 
@@ -160,7 +188,7 @@ function NextActions({
     <section className="soma-card" style={{ padding: 0, overflow: "hidden" }}>
       <div className="row between" style={{ padding: "18px 22px 0" }}>
         <div className="eyebrow">Pick up where you left off</div>
-        <span className={`chip ${heroTone === "brand" ? "chip-info" : `chip-${heroTone}`}`}>{dueSummary}</span>
+        <span className={`chip ${heroTone === "brand" ? "chip-info" : `chip-${heroTone}`}`}>{shortDueStatus(assignments)}</span>
       </div>
 
       <div style={{ padding: "14px 22px 20px" }}>
@@ -181,7 +209,7 @@ function NextActions({
                   </span>
                 </div>
                 <h2 className="soma-display" style={{ fontSize: 26, marginBottom: 8, lineHeight: 1.12 }}>{hero.quizTitle}</h2>
-                <div className="text-muted-foreground" style={{ fontSize: 13 }}>{hero.maxScore} marks</div>
+                <div className="text-muted-foreground" style={{ fontSize: 13 }}>{heroMeta}</div>
               </div>
               <button className="btn btn-primary" onClick={() => onStart(hero.quizId)} style={{ flex: "none" }}>
                 Start now <ArrowRight className="w-4 h-4" />
@@ -218,7 +246,11 @@ function NextActions({
                     </span>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.quizTitle}</span>
-                      <span className="text-muted-foreground" style={{ fontSize: 12 }}>{a.quizSubject || "General"} · {a.maxScore} marks</span>
+                      <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                        {a.quizSubject || "General"}
+                        {a.questionCount > 0 ? ` · ${a.questionCount} questions` : ""}
+                        {a.maxScore > 0 ? ` · ${a.maxScore} marks` : ""}
+                      </span>
                     </span>
                   </span>
                   <span className="row" style={{ gap: 10, flex: "none" }}>
@@ -563,7 +595,7 @@ export default function StudentDashboard() {
         }
       />
 
-      <main className="max-w-[1240px] mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-[1240px] mx-auto px-6 pt-[26px] pb-20 space-y-6">
         {isLoading ? (
           <DashboardSkeleton />
         ) : isError || !data ? (
@@ -573,7 +605,7 @@ export default function StudentDashboard() {
             {/* PageIntro */}
             <div className="row between wrap" style={{ gap: 12 }} data-testid="section-greeting">
               <div>
-                <h1 className="soma-display" style={{ fontSize: 34, marginBottom: 4 }} data-testid="text-greeting">{data.greeting}</h1>
+                <h1 className="soma-display" style={{ fontSize: 34, marginBottom: 4 }} data-testid="text-greeting">{friendlyGreeting(data.greeting)}</h1>
                 <div className="text-muted-foreground" style={{ fontSize: 14 }} data-testid="text-due-summary">{data.dueSummary}</div>
               </div>
               {streakWin && (
@@ -592,7 +624,7 @@ export default function StudentDashboard() {
 
             {view === "dashboard" && (
               <div style={{ display: "grid", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
-                <NextActions assignments={data.assignments} dueSummary={data.dueSummary} onStart={launchQuiz} />
+                <NextActions assignments={data.assignments} onStart={launchQuiz} />
                 <PerformanceBlock data={data} />
                 <FocusBlock data={data} tip={examinerTip} />
                 <WinsBlock wins={data.recentWins} />

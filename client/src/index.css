@@ -444,6 +444,22 @@
   /* ── Recessed well ────────────────────────────────────────── */
   .well { background: hsl(var(--muted)); border: 1px solid hsl(var(--border)); border-radius: 12px; }
 
+  /* ── Flex row primitives (faithful to the design pack) ─────────
+     Workhorse layout helpers the dashboard JSX leans on heavily.
+     Without these, .row blocks fall back to normal flow and their
+     children jam together (labels/values with no gap), meter bars
+     (flex:1) collapse to zero width, and trailing chips/chevrons
+     wrap onto their own line. Inline `style` gaps still override. */
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row.between { justify-content: space-between; }
+  .row.wrap { flex-wrap: wrap; }
+
+  /* Two-column blocks (e.g. "Your progress") collapse to a single
+     column on narrow screens so the rings + meters don't crush. */
+  @media (max-width: 720px) {
+    .grid-collapse { grid-template-columns: 1fr !important; }
+  }
+
   /* ── Avatar ───────────────────────────────────────────────── */
   .avatar {
     display: inline-flex; align-items: center; justify-content: center;
