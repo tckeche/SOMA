@@ -3,6 +3,7 @@ import { type Server } from "http";
 import { storage } from "./storage";
 import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
+import { computeDefaultDueDate } from "@shared/dueDate";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -2580,7 +2581,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const quizId = parseInt(String(req.params.quizId));
       const studentIds = sanitizeStudentIds(req.body?.studentIds);
       const rawDueDate = req.body?.dueDate;
-      const dueDate = rawDueDate ? new Date(rawDueDate) : null;
+      let dueDate = rawDueDate ? new Date(rawDueDate) : null;
       if (dueDate && isNaN(dueDate.getTime())) {
         return res.status(400).json({ message: "Invalid dueDate format" });
       }
@@ -2590,6 +2591,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz || quiz.isArchived) {
         return res.status(404).json({ message: "Quiz not found" });
+      }
+
+      // When the tutor didn't pick a due date, default it to 5 days after the
+      // assessment was created, floored to the hour (e.g. created 15:23 -> due
+      // in 5 days at 15:00). Tutors override this via the prefilled picker.
+      if (!dueDate) {
+        dueDate = computeDefaultDueDate(quiz.createdAt);
       }
 
       // Force-publish quiz on every assign — guarantees it's visible to students

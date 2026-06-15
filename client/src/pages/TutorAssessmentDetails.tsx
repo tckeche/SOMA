@@ -218,10 +218,12 @@ export default function TutorAssessmentDetails() {
   // Assign students mutation
   const assignMutation = useMutation({
     mutationFn: async ({ studentIds, dueDate }: { studentIds: string[]; dueDate?: string }) => {
+      const payload: { studentIds: string[]; dueDate?: string } = { studentIds };
+      if (dueDate) payload.dueDate = new Date(dueDate).toISOString();
       const res = await authFetch(`/api/tutor/quizzes/${quizId}/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentIds, dueDate }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Failed to assign");
       return res.json();
