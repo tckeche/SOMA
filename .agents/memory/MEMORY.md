@@ -1,3 +1,4 @@
-- [Bootstrap vs migrations](bootstrap-vs-migrations.md) — live DB schema comes ONLY from BOOTSTRAP_QUERIES in server/bootstrap.ts; migrations/*.sql are not auto-applied, so new schema cols must be added there too or SELECTs 500.
-- [E2E testing notes](e2e-testing-soma.md) — run heavy Playwright suites sequentially (parallel load → 502 false positives); provision via VITE_SUPABASE_URL+service key; seed super_admin directly; verify grading via submit API.
-- [Assignment due dates](assignment-due-dates.md) — default due = createdAt+5d floored to hour (shared/dueDate.ts); every assign UI must convert datetime-local → ISO before POST or hours drift across UIs.
+# SOMA — Memory Index
+
+- [Dev DB is Supabase](supabase-is-the-dev-db.md) — real data lives in Supabase; built-in execute_sql/Replit Postgres is empty and misleading.
+- [Self-driven Playwright QA](self-driven-playwright-qa.md) — mint sessions via Supabase admin magiclink+verifyOtp; dashboards need ~14s to populate before screenshots.

@@ -252,11 +252,11 @@ export default function SuperAdminDashboard() {
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard label="Total Users" value={stats?.totalUsers ?? 0} color="#EF4444" icon={Users} />
-          <StatCard label="Students" value={stats?.totalStudents ?? 0} color="#10B981" icon={GraduationCap} />
-          <StatCard label="Tutors" value={stats?.totalTutors ?? 0} color="#8B5CF6" icon={UserCog} />
-          <StatCard label="Assessments" value={stats?.totalQuizzes ?? 0} color="#3B82F6" icon={BookOpen} />
-          <StatCard label="Published" value={stats?.publishedQuizzes ?? 0} color="#F59E0B" icon={ShieldCheck} />
+          <StatCard label="Total Users" value={stats?.totalUsers ?? 0} tone="primary" icon={Users} />
+          <StatCard label="Students" value={stats?.totalStudents ?? 0} tone="success" icon={GraduationCap} />
+          <StatCard label="Tutors" value={stats?.totalTutors ?? 0} tone="info" icon={UserCog} />
+          <StatCard label="Assessments" value={stats?.totalQuizzes ?? 0} tone="primary" icon={BookOpen} />
+          <StatCard label="Published" value={stats?.publishedQuizzes ?? 0} tone="warning" icon={ShieldCheck} />
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -553,16 +553,25 @@ export default function SuperAdminDashboard() {
   );
 }
 
-function StatCard({ label, value, color, icon: Icon }: { label: string; value: number; color: string; icon: any }) {
+const STAT_TONES: Record<string, string> = {
+  primary: "var(--primary)",
+  success: "var(--success)",
+  info: "var(--info)",
+  warning: "var(--warning)",
+  danger: "var(--destructive)",
+};
+
+function StatCard({ label, value, tone, icon: Icon }: { label: string; value: number; tone: keyof typeof STAT_TONES; icon: any }) {
+  const v = STAT_TONES[tone] ?? STAT_TONES.primary;
   return (
     <div
       className={CARD_CLASS}
-      style={{ borderColor: `${color}20` }}
+      style={{ borderColor: `hsl(${v} / 0.2)` }}
       data-testid={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}
     >
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${color}15`, border: `1px solid ${color}30` }}>
-          <Icon className="w-5 h-5" style={{ color }} />
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `hsl(${v} / 0.12)`, border: `1px solid hsl(${v} / 0.3)` }}>
+          <Icon className="w-5 h-5" style={{ color: `hsl(${v})` }} />
         </div>
         <div>
           <p className="text-xl font-bold text-foreground">{value}</p>

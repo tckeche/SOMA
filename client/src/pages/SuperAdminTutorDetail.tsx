@@ -53,7 +53,7 @@ export default function SuperAdminTutorDetail({ params }: { params: { tutorId: s
     enabled: !!userId,
   });
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-danger" /></div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
   if (!data) return <div className="p-8 text-foreground/80">Tutor not found.</div>;
 
   return (

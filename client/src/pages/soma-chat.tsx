@@ -134,7 +134,7 @@ export default function SomaChatPage() {
         }),
       };
 
-      const res = await fetch("/api/student/ai-analysis", {
+      const res = await authFetch("/api/soma/global-tutor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
