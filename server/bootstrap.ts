@@ -123,6 +123,27 @@ const BOOTSTRAP_QUERIES = [
   `CREATE TABLE IF NOT EXISTS assessment_attachments (id SERIAL PRIMARY KEY, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, filename TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, uploaded_by UUID REFERENCES soma_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS submission_uploads (id SERIAL PRIMARY KEY, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, filename TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, score INTEGER, max_score INTEGER, feedback TEXT, status TEXT NOT NULL DEFAULT 'submitted', created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL, marked_at TIMESTAMPTZ)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS submission_upload_quiz_student_idx ON submission_uploads(quiz_id, student_id)`,
+  // Structured / written-answer assessments: quiz sub-type + parametric counts,
+  // per-question mark scheme, and per-report AI marking. These columns are
+  // declared in shared/schema.ts, so they MUST be created here or
+  // verifySchemaMatchesDb() refuses to boot in production.
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS quiz_mode TEXT NOT NULL DEFAULT 'mcq'`,
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS question_count INTEGER NOT NULL DEFAULT 5`,
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS structured_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS mark_scheme TEXT`,
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS structured_marking JSONB`,
+  // Student-requested review of the AI structured marking.
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS review_requested BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS review_request_note TEXT`,
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS review_requested_at TIMESTAMP`,
+  // Performance indexes on hot foreign-key columns (student/tutor dashboards,
+  // quiz reads, notifications). verifySchemaMatchesDb only checks tables and
+  // columns, so without these the running app would keep doing sequential scans.
+  `CREATE INDEX IF NOT EXISTS soma_questions_quiz_id_idx ON soma_questions (quiz_id)`,
+  `CREATE INDEX IF NOT EXISTS soma_reports_student_id_idx ON soma_reports (student_id)`,
+  `CREATE INDEX IF NOT EXISTS soma_reports_quiz_id_idx ON soma_reports (quiz_id)`,
+  `CREATE INDEX IF NOT EXISTS quiz_assignments_student_id_idx ON quiz_assignments (student_id)`,
+  `CREATE INDEX IF NOT EXISTS student_notifications_student_id_created_at_idx ON student_notifications (student_id, created_at)`,
 ] as const;
 
 export async function applyBootstrapMigrations() {

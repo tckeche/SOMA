@@ -32,12 +32,17 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        // Isolate heavy third-party libs into their own chunks. Combined with
-        // route-level React.lazy, these only download when a page that uses
-        // them is opened (e.g. katex/markdown on a quiz, recharts on a
-        // dashboard tab, the pdf stack on "Download report") rather than
-        // bloating the initial app shell. They also cache independently of app
-        // code, so app deploys don't force a re-download.
+        // Isolate the heaviest third-party libs into their own chunks so they
+        // only download with the lazy route that uses them (katex/markdown on a
+        // quiz, recharts on a dashboard tab, the pdf stack on "Download
+        // report") and cache independently of app code.
+        //
+        // IMPORTANT: only return a name for these specific heavy libs and let
+        // everything else fall through to `undefined` (Rollup's default
+        // splitting). A catch-all `return "vendor"` would fuse route-only deps
+        // (date-fns, DOMPurify, Radix/Embla, etc.) into a chunk the entry path
+        // already pulls in, dragging them into the initial download and
+        // defeating the route-level code splitting.
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("recharts") || id.includes("d3-")) return "charts";
@@ -55,8 +60,7 @@ export default defineConfig({
             id.includes("html2canvas")
           ) return "pdf";
           if (id.includes("framer-motion")) return "motion";
-          if (id.includes("@supabase")) return "supabase";
-          return "vendor";
+          return undefined;
         },
       },
     },

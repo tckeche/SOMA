@@ -41,8 +41,14 @@ Indexes added: `soma_questions(quiz_id)`, `soma_reports(student_id)`,
 (`student_topic_mastery` is already covered by its existing composite unique
 index, which is led by `student_id`.)
 
-> Apply with `npm run db:push` (or run `migrations/0013_perf_indexes.sql`). The
-> index DDL is `IF NOT EXISTS`, so it's safe to re-run.
+> **How they get created:** this repo's runtime schema authority is
+> `BOOTSTRAP_QUERIES` in `server/bootstrap.ts` (replayed on every boot), **not**
+> the `migrations/*.sql` files — those are only the PGlite test fixture (see
+> `migrations/README.md`). So the indexes (and the structured-answer columns)
+> are added to `BOOTSTRAP_QUERIES` as idempotent `CREATE INDEX IF NOT EXISTS` /
+> `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements; they apply automatically
+> on the next deploy/restart. The matching `migrations/*.sql` + journal entries
+> exist only so the PGlite integration tests see the same schema.
 
 ---
 
