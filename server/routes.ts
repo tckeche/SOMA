@@ -2674,17 +2674,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // Remove a quiz's Supabase Storage objects so deleting the quiz (which
   // cascades the DB rows) does not leave orphaned bucket files behind.
-  async function purgeQuizStorageObjects(quizId: number): Promise<void> {
-    if (!isStorageConfigured()) return;
+  // Collect a quiz's storage object paths BEFORE the rows are deleted. Must run
+  // before deleteSomaQuiz (the rows cascade away), but the actual object
+  // deletion must run AFTER the DB delete succeeds — otherwise a failed
+  // deleteSomaQuiz would leave quiz rows pointing at already-deleted files.
+  async function collectQuizStoragePaths(quizId: number): Promise<string[]> {
+    if (!isStorageConfigured()) return [];
     try {
       const [attachments, submissions] = await Promise.all([
         storage.getAssessmentAttachmentsByQuiz(quizId),
         storage.getSubmissionUploadsByQuiz(quizId),
       ]);
-      const paths = [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)];
+      return [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)];
+    } catch (err) {
+      logWarn("quiz_storage_collect_failed", { quizId, error: (err as Error)?.message });
+      return [];
+    }
+  }
+
+  // Best-effort deletion of already-collected storage objects. Safe to call
+  // after the quiz rows are gone; failures only leave orphaned files (logged),
+  // never dangling DB records.
+  async function purgeStorageObjects(paths: string[]): Promise<void> {
+    if (paths.length === 0 || !isStorageConfigured()) return;
+    try {
       await Promise.all(paths.map((p) => deleteObject(p).catch(() => {})));
     } catch (err) {
-      logWarn("quiz_storage_purge_failed", { quizId, error: (err as Error)?.message });
+      logWarn("quiz_storage_purge_failed", { error: (err as Error)?.message });
     }
   }
 
@@ -3056,8 +3072,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (quiz.authorId !== tutorId) {
         return res.status(403).json({ message: "You can only delete your own quizzes" });
       }
-      await purgeQuizStorageObjects(quizId);
+      const storagePaths = await collectQuizStoragePaths(quizId);
       await storage.deleteSomaQuiz(quizId);
+      await purgeStorageObjects(storagePaths);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to delete quiz" });
@@ -5303,8 +5320,9 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     try {
       const quizId = parseInt(String(req.params.quizId));
       if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
-      await purgeQuizStorageObjects(quizId);
+      const storagePaths = await collectQuizStoragePaths(quizId);
       await storage.deleteSomaQuiz(quizId);
+      await purgeStorageObjects(storagePaths);
       res.json({ message: "Quiz deleted" });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to delete quiz" });
