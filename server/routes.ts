@@ -1811,6 +1811,7 @@ async function runStructuredMarking(
     };
   }
 
+  let markingSucceeded = true;
   try {
     const systemPrompt = `You are an experienced examiner marking short written exam answers.
 For each question you are given the prompt, a mark scheme (the points a full answer should convey), the maximum marks, and the student's typed answer.
@@ -1857,7 +1858,38 @@ Return ONLY a JSON object of this exact shape (no prose, no markdown):
       };
     }
   } catch (err: any) {
+    markingSucceeded = false;
     logWarn("structured_marking.failed", { severity: "medium", module: "routes", component: "runStructuredMarking", reportId, errorMessage: err?.message ?? String(err) });
+  }
+
+  // If the AI marking failed/timed out, do NOT finalise the seeded zero marks
+  // as the student's result — that would award 0 for every written answer on a
+  // transient provider hiccup. Route the report for manual tutor marking
+  // instead and leave the structured marks unscored.
+  if (!markingSucceeded) {
+    await storage.updateSomaReport(reportId, {
+      structuredMarking,
+      score: mcqScore,
+      status: "awaiting_review",
+      reviewRequested: true,
+      reviewRequestNote: "Automatic marking was unavailable — please mark these written answers.",
+      reviewRequestedAt: new Date(),
+    }).catch((dbErr: any) => logError("structured_marking.persist_failed", dbErr, { severity: "high", module: "routes", component: "runStructuredMarking", reportId }));
+    try {
+      const rpt = await storage.getSomaReportById(reportId);
+      const quiz = rpt ? await storage.getSomaQuiz(rpt.quizId) : null;
+      if (quiz?.authorId) {
+        await storage.createTutorNotification({
+          tutorId: quiz.authorId,
+          studentId: rpt?.studentId ?? null,
+          type: "review_requested",
+          title: `Manual marking needed: ${quiz.title}`,
+          message: `Automatic marking was unavailable for "${quiz.title}" — please mark the written answers.`,
+          payload: { reportId, quizId: rpt!.quizId },
+        });
+      }
+    } catch { /* notification is best-effort */ }
+    return;
   }
 
   // Fold the AI marks into the score and release the report. The AI mark is
@@ -6928,21 +6960,28 @@ ${JSON.stringify({
       // mastery rolls up at sub-subtopic grain when the question is
       // linked to a learning requirement, plus the command word so the
       // Command-Word Coach (Phase 4.2) can update its counters.
+      // Structured/written answers are marked asynchronously by the AI and
+      // carry no `correctAnswer`, so they must NOT flow through the synchronous
+      // answersMatch-based mastery update here — they'd be graded as wrong and
+      // record a false 0% for those topics. Mastery for them would need to be
+      // driven off the AI marks once available; for now they're excluded.
       updateMasteryFromSubmission(
         studentId,
         quiz?.subject || null,
-        allQuestions.map((q) => ({
-          id: q.id,
-          stem: q.stem,
-          options: q.options as string[],
-          correctAnswer: q.correctAnswer,
-          marks: q.marks,
-          topicTag: q.topicTag,
-          subtopicTag: q.subtopicTag,
-          subtopicId: q.subtopicId ?? null,
-          learningRequirementId: q.learningRequirementId ?? null,
-          commandWord: q.commandWord ?? null,
-        })),
+        allQuestions
+          .filter((q) => q.questionType !== "structured")
+          .map((q) => ({
+            id: q.id,
+            stem: q.stem,
+            options: q.options as string[],
+            correctAnswer: q.correctAnswer,
+            marks: q.marks,
+            topicTag: q.topicTag,
+            subtopicTag: q.subtopicTag,
+            subtopicId: q.subtopicId ?? null,
+            learningRequirementId: q.learningRequirementId ?? null,
+            commandWord: q.commandWord ?? null,
+          })),
         sanitizedAnswers,
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import DOMPurify from "dompurify";
+import { getAuthHeaders } from "@/lib/supabase";
 import { Bold, Italic, Underline, List } from "lucide-react";
 
 // ── Structured / written-answer editor ──────────────────────────────────────
@@ -140,9 +141,14 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
     const controller = new AbortController();
     spellAbortRef.current = controller;
     try {
+      // /api/soma/spellcheck is behind requireSupabaseAuth, which needs the
+      // Bearer token — bare fetch + credentials:"include" would 401. We keep a
+      // raw fetch (rather than authFetch) so the AbortController still cancels
+      // stale in-flight scans while the student keeps typing.
+      const authHeaders = await getAuthHeaders();
       const res = await fetch("/api/soma/spellcheck", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
         signal: controller.signal,
         credentials: "include",
