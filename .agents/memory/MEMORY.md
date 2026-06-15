@@ -1,1 +1,1 @@
-- [SOMA grading & dashboard gates](grading-and-dashboard-gates.md) — grade with `answersMatch` (trim both sides, never `===`); link to quizzes only via `isPlayableQuiz` (published && !archived), same gate the quiz endpoints enforce.
+- [Bootstrap vs migrations](bootstrap-vs-migrations.md) — live DB schema comes ONLY from BOOTSTRAP_QUERIES in server/bootstrap.ts; migrations/*.sql are not auto-applied, so new schema cols must be added there too or SELECTs 500.

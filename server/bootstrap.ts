@@ -122,6 +122,20 @@ const BOOTSTRAP_QUERIES = [
   `CREATE TABLE IF NOT EXISTS assessment_attachments (id SERIAL PRIMARY KEY, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, filename TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, uploaded_by UUID REFERENCES soma_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS submission_uploads (id SERIAL PRIMARY KEY, quiz_id INTEGER NOT NULL REFERENCES soma_quizzes(id) ON DELETE CASCADE, student_id UUID NOT NULL REFERENCES soma_users(id) ON DELETE CASCADE, filename TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, score INTEGER, max_score INTEGER, feedback TEXT, status TEXT NOT NULL DEFAULT 'submitted', created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL, marked_at TIMESTAMPTZ)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS submission_upload_quiz_student_idx ON submission_uploads(quiz_id, student_id)`,
+  // Structured / written-answer assessments (migrations 0011 + 0012). These
+  // columns were only declared in migrations/*.sql and shared/schema.ts, but
+  // the bootstrap — which is what actually runs against the live DB on every
+  // start — never got them, so SELECTs touching soma_quizzes/soma_reports
+  // (e.g. /api/student/dashboard) 500ed on a drifted DB. All additive.
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS quiz_mode TEXT NOT NULL DEFAULT 'mcq'`,
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS question_count INTEGER NOT NULL DEFAULT 5`,
+  `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS structured_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE soma_questions ADD COLUMN IF NOT EXISTS mark_scheme TEXT`,
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS structured_marking JSONB`,
+  // Student-requested review of AI structured marking (migration 0012).
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS review_requested BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS review_request_note TEXT`,
+  `ALTER TABLE soma_reports ADD COLUMN IF NOT EXISTS review_requested_at TIMESTAMP`,
 ] as const;
 
 export async function applyBootstrapMigrations() {
