@@ -6959,13 +6959,19 @@ ${JSON.stringify({
         }
       }
 
-      const [questions, diagnoses] = await Promise.all([
+      const [questions, diagnoses, quiz] = await Promise.all([
         storage.getSomaQuestionsByQuizId(report.quizId),
         (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
+        storage.getSomaQuiz(report.quizId),
       ]);
+
+      // The tutor who authored the quiz (or a super admin) may confirm the
+      // AI-suggested marks on structured answers.
+      const canConfirm = isSuperAdmin || (!!quiz?.authorId && quiz.authorId === authUserId);
 
       res.json({
         report,
+        canConfirm,
         questions: questions.map((q) => ({
           id: q.id,
           stem: q.stem,
