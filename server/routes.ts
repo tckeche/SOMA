@@ -1766,14 +1766,19 @@ function parseJsonLoose(raw: unknown): any {
 
 /**
  * AI marking for structured/written answers. Grades each answer on
- * UNDERSTANDING (sentiment) against its mark scheme, then stores per-question
- * suggested marks + feedback and leaves the report "awaiting_review" so the
- * tutor confirms or overrides before the score is released.
+ * UNDERSTANDING (sentiment) against its mark scheme, folds the marks into the
+ * report score, and completes the report immediately — the AI mark is final.
+ * A student who disagrees can later request a tutor review (which re-marks via
+ * the tutor structured-marking endpoint).
+ *
+ * `mcqScore` is the auto-marked (MCQ/graph) portion computed at submit time;
+ * the structured marks are added on top of it.
  */
 async function runStructuredMarking(
   reportId: number,
   structuredQuestions: { id: number; stem: string; marks: number; markScheme: string | null }[],
   studentAnswers: Record<string, string>,
+  mcqScore: number,
   studentMeta?: { studentId: string; quizTitle: string; quizSubject?: string | null },
 ) {
   const STRUCTURED_TIMEOUT_MS = 180_000;
@@ -1849,9 +1854,27 @@ Return ONLY a JSON object of this exact shape (no prose, no markdown):
     logWarn("structured_marking.failed", { severity: "medium", module: "routes", component: "runStructuredMarking", reportId, errorMessage: err?.message ?? String(err) });
   }
 
-  // Always persist (seeded or AI-filled) and hold for tutor confirmation.
-  await storage.updateSomaReport(reportId, { structuredMarking, status: "awaiting_review" })
-    .catch((dbErr: any) => logError("structured_marking.persist_failed", dbErr, { severity: "high", module: "routes", component: "runStructuredMarking", reportId }));
+  // Fold the AI marks into the score and release the report. The AI mark is
+  // final unless the student later requests a tutor review.
+  let structuredTotal = 0;
+  for (const m of Object.values(structuredMarking)) {
+    structuredTotal += m.tutorMarks ?? m.aiMarks;
+  }
+  await storage.updateSomaReport(reportId, {
+    structuredMarking,
+    score: mcqScore + structuredTotal,
+    status: "completed",
+  }).catch((dbErr: any) => logError("structured_marking.persist_failed", dbErr, { severity: "high", module: "routes", component: "runStructuredMarking", reportId }));
+
+  if (studentMeta?.studentId) {
+    await storage.createStudentNotification({
+      studentId: studentMeta.studentId,
+      type: "feedback_ready",
+      title: "Feedback ready",
+      message: `Your marked results for "${studentMeta.quizTitle}" are ready.`,
+      payload: { reportId, quizTitle: studentMeta.quizTitle, quizSubject: studentMeta.quizSubject ?? null },
+    }).catch((err) => logWarn("structured_marking.notify_failed", { severity: "low", module: "routes", component: "runStructuredMarking", reportId, errorMessage: err?.message ?? String(err) }));
+  }
 }
 
 function normalizeLabel(input: string | null | undefined, fallback: string): string {
@@ -6798,9 +6821,10 @@ ${JSON.stringify({
           studentId,
           studentName: resolvedName,
           score: totalScore,
-          // Hold structured/hybrid reports for tutor sign-off; pure-MCQ reports
-          // follow the existing auto-feedback path.
-          status: hasStructured ? "awaiting_review" : "pending",
+          // Both paths start "pending" (being marked). Structured/hybrid reports
+          // are completed by runStructuredMarking once the AI has marked the
+          // written answers; pure-MCQ reports by runBackgroundGrading.
+          status: "pending",
           answersJson: sanitizedAnswers,
           startedAt: parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? parsedStartedAt : null,
           completedAt: now,
@@ -6813,7 +6837,9 @@ ${JSON.stringify({
         throw dbErr;
       }
 
-      res.json(report);
+      // `hasStructured` tells the client to show a "being marked" screen rather
+      // than a (still-incomplete) score, since structured marking runs async.
+      res.json({ ...report, hasStructured });
 
       // Mark quiz assignment as completed
       const requestId = getRequestId(req);
@@ -6844,13 +6870,13 @@ ${JSON.stringify({
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
       if (hasStructured) {
-        // AI suggests marks for written answers; report stays "awaiting_review"
-        // until the tutor confirms. MCQ feedback for hybrid quizzes is folded
-        // into the tutor-confirmation step rather than auto-released here.
+        // AI marks the written answers and releases the score automatically;
+        // the student can request a tutor review afterwards.
         runStructuredMarking(
           report.id,
           structuredQuestions.map((q) => ({ id: q.id, stem: q.stem, marks: q.marks, markScheme: q.markScheme })),
           sanitizedAnswers,
+          totalScore,
           {
             studentId,
             quizTitle: quiz?.title || "your assessment",
@@ -6972,6 +6998,7 @@ ${JSON.stringify({
       res.json({
         report,
         canConfirm,
+        isOwner,
         questions: questions.map((q) => ({
           id: q.id,
           stem: q.stem,
@@ -7027,8 +7054,58 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
     }
   });
 
-  // Tutor confirms / overrides the AI-suggested marks for a structured report.
-  // Folds the confirmed structured marks into the report score and releases it.
+  // Student asks their tutor to review the AI marking of their structured
+  // answers, after the assessment has already been marked and released.
+  app.post("/api/soma/reports/:reportId/request-review", requireSupabaseAuth, async (req, res) => {
+    try {
+      const reportId = parseInt(String(req.params.reportId));
+      if (isNaN(reportId)) return res.status(400).json({ message: "Invalid report ID" });
+
+      const report = await storage.getSomaReportById(reportId);
+      if (!report) return res.status(404).json({ message: "Report not found" });
+
+      const authUser = (req as any).authUser as { id: string | string[] };
+      const authUserId = String(authUser.id);
+      if (report.studentId !== authUserId) {
+        return res.status(403).json({ message: "You can only request a review of your own assessment." });
+      }
+
+      const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;
+      if (Object.keys(marking).length === 0) {
+        return res.status(400).json({ message: "This assessment has no written answers to review." });
+      }
+      if (report.reviewRequested) {
+        return res.status(409).json({ message: "You've already requested a review for this assessment." });
+      }
+
+      const note = String(req.body?.note ?? "").slice(0, 1000).trim() || null;
+      const updated = await storage.updateSomaReport(reportId, {
+        reviewRequested: true,
+        reviewRequestNote: note,
+        reviewRequestedAt: new Date(),
+      });
+
+      // Notify the tutor who authored the quiz.
+      const quiz = await storage.getSomaQuiz(report.quizId);
+      if (quiz?.authorId) {
+        await storage.createTutorNotification({
+          tutorId: quiz.authorId,
+          studentId: report.studentId,
+          type: "review_requested",
+          title: `${report.studentName} requested a marking review`,
+          message: `${report.studentName} asked you to review the marking of "${quiz.title}".${note ? ` Note: "${note}"` : ""}`,
+          payload: { reportId, quizId: report.quizId, studentId: report.studentId },
+        }).catch(() => { /* notification is best-effort */ });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "soma.reports.request-review", "Could not send your review request. Please try again.");
+    }
+  });
+
+  // Tutor confirms / overrides the AI marks for a structured report (e.g. after
+  // a student review request). Recomputes the score and resolves the request.
   app.put("/api/tutor/reports/:reportId/structured-marking", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId as string;
@@ -7059,13 +7136,15 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
         }
       }
 
-      // Recompute the MCQ base idempotently: subtract whatever structured marks
-      // were already folded into the score on a previous confirmation.
-      let confirmedBefore = 0;
+      // Recompute the MCQ base idempotently. The AI structured marks are folded
+      // into the score at marking time, so the current score already includes
+      // every structured mark (effective = tutorMarks ?? aiMarks). Subtract all
+      // of them to recover the auto-marked (MCQ/graph) portion.
+      let structuredInScore = 0;
       for (const m of Object.values(marking)) {
-        if (m.confirmed) confirmedBefore += m.tutorMarks ?? m.aiMarks;
+        structuredInScore += m.tutorMarks ?? m.aiMarks;
       }
-      const mcqBase = (report.score ?? 0) - confirmedBefore;
+      const mcqBase = (report.score ?? 0) - structuredInScore;
 
       let structuredTotal = 0;
       const next: Record<string, StructuredAnswerMark> = {};
@@ -7086,7 +7165,22 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
         structuredMarking: next,
         score: newScore,
         status: "completed",
+        // Re-marking resolves any pending student review request.
+        reviewRequested: false,
+        reviewRequestNote: null,
+        reviewRequestedAt: null,
       });
+
+      // Let the student know their requested review is done.
+      if (report.studentId) {
+        await storage.createStudentNotification({
+          studentId: report.studentId,
+          type: "feedback_ready",
+          title: "Your review is complete",
+          message: `Your teacher has reviewed your written answers for "${quiz.title}".`,
+          payload: { reportId, quizTitle: quiz.title },
+        }).catch(() => { /* notification is best-effort */ });
+      }
       res.json(updated);
     } catch (err: any) {
       return sendInternalError(req, res, err, "tutor.reports.structured-marking", "Could not save these marks. Please try again.");

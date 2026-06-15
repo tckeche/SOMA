@@ -44,6 +44,8 @@ interface ReviewReport {
   status: string;
   answersJson: Record<string, string> | null;
   structuredMarking: Record<string, StructuredMark> | null;
+  reviewRequested?: boolean;
+  reviewRequestNote?: string | null;
   aiFeedbackHtml: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -79,6 +81,8 @@ interface ReviewData {
   /** True when the viewer (quiz-author tutor / super-admin) may confirm the
    *  AI-suggested marks on structured answers. */
   canConfirm?: boolean;
+  /** True when the viewer is the student who owns this report. */
+  isOwner?: boolean;
   /** Phase 2C — per-question diagnoses keyed by question id. Optional so
    *  reports created before Phase 2 still render. */
   diagnoses?: Record<string, QuestionDiagnosis>;
@@ -94,6 +98,8 @@ export default function SomaQuizReview() {
   const [downloading, setDownloading] = useState(false);
   // Tutor mark overrides for structured answers, keyed by question id.
   const [markOverrides, setMarkOverrides] = useState<Record<string, number>>({});
+  // Student's optional note when requesting a marking review.
+  const [reviewNote, setReviewNote] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -157,6 +163,28 @@ export default function SomaQuizReview() {
     },
     onError: (err: Error) => {
       toast({ title: "Could not confirm marks", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const requestReviewMutation = useMutation({
+    mutationFn: async (note: string) => {
+      const res = await authFetch(`/api/soma/reports/${reportId}/request-review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Could not send request");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Review requested", description: "Your teacher has been notified and will take another look." });
+      queryClient.invalidateQueries({ queryKey: ["/api/soma/reports", reportId, "review"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not request review", description: err.message, variant: "destructive" });
     },
   });
 
@@ -254,8 +282,11 @@ export default function SomaQuizReview() {
     markScheme: q.markScheme ?? null,
   }));
   const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
-  const awaitingReview = report.status === "awaiting_review";
   const canConfirm = data.canConfirm === true;
+  const isOwner = data.isOwner === true;
+  const hasStructured = questions.some((q) => q.questionType === "structured");
+  const reviewRequested = report.reviewRequested === true;
+  const stillMarking = report.status === "pending" && hasStructured;
 
   const pdfData: ReportPdfData = {
     title: quizTitle,
@@ -385,33 +416,83 @@ export default function SomaQuizReview() {
           </div>
         </div>
 
-        {awaitingReview && (
-          <div className="glass-card p-4 mb-6 border-l-4 border-l-amber-500 bg-amber-500/[0.06]" data-testid="banner-awaiting-review">
+        {stillMarking && (
+          <div className="glass-card p-4 mb-6 border-l-4 border-l-amber-500 bg-amber-500/[0.06]" data-testid="banner-still-marking">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
+              <p className="text-sm text-foreground">Your written answers are still being marked. Refresh in a moment to see your score.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tutor view: adjust + confirm the AI marks (e.g. after a request). */}
+        {canConfirm && hasStructured && !stillMarking && (
+          <div className={`glass-card p-4 mb-6 border-l-4 ${reviewRequested ? "border-l-violet-500 bg-violet-500/[0.08]" : "border-l-border bg-foreground/[0.03]"}`} data-testid="banner-tutor-marking">
             <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              {reviewRequested ? <PenLine className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" /> : <Brain className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
               <div className="flex-1">
                 <p className="text-sm font-semibold text-foreground">
-                  {canConfirm ? "Awaiting your confirmation" : "Awaiting tutor review"}
+                  {reviewRequested ? `${studentName} requested a marking review` : "AI-marked written answers"}
                 </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {canConfirm
-                    ? "The AI has suggested marks for the written answers below. Adjust any marks, then confirm to release the final score to the student."
-                    : "Your written answers have been marked by the AI and are awaiting your tutor's confirmation. The score shown is provisional."}
-                </p>
-                {canConfirm && (
-                  <Button
-                    className="glow-button mt-3 min-h-[40px]"
-                    onClick={() => confirmMarksMutation.mutate()}
-                    disabled={confirmMarksMutation.isPending}
-                    data-testid="button-confirm-structured-marks"
-                  >
-                    {confirmMarksMutation.isPending
-                      ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Releasing…</>
-                      : <><Check className="w-4 h-4 mr-1.5" />Confirm &amp; release score</>}
-                  </Button>
+                {reviewRequested && report.reviewRequestNote && (
+                  <p className="text-xs text-muted-foreground mt-1 italic">“{report.reviewRequestNote}”</p>
                 )}
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Adjust any marks below, then save to update the student's score.
+                </p>
+                <Button
+                  className="glow-button mt-3 min-h-[40px]"
+                  onClick={() => confirmMarksMutation.mutate()}
+                  disabled={confirmMarksMutation.isPending}
+                  data-testid="button-confirm-structured-marks"
+                >
+                  {confirmMarksMutation.isPending
+                    ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Saving…</>
+                    : <><Check className="w-4 h-4 mr-1.5" />Save marks &amp; update score</>}
+                </Button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Student view: request a tutor review of the AI marking. */}
+        {isOwner && !canConfirm && hasStructured && !stillMarking && (
+          <div className="glass-card p-4 mb-6 border-l-4 border-l-violet-500 bg-violet-500/[0.06]" data-testid="banner-student-review">
+            {reviewRequested ? (
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-violet-400 shrink-0" />
+                <p className="text-sm text-foreground">You've asked your teacher to review this marking. They'll take another look soon.</p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3">
+                <PenLine className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Disagree with the marking?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                    Your written answers were marked by AI. You can ask your teacher to review the marks.
+                  </p>
+                  <textarea
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                    placeholder="Optional: tell your teacher which answer and why (e.g. 'Q2 covers the point in different words')."
+                    rows={2}
+                    maxLength={1000}
+                    className="w-full text-sm rounded-lg bg-background border border-border/60 px-3 py-2 text-foreground resize-y"
+                    data-testid="input-review-note"
+                  />
+                  <Button
+                    className="glow-button mt-2 min-h-[40px]"
+                    onClick={() => requestReviewMutation.mutate(reviewNote.trim())}
+                    disabled={requestReviewMutation.isPending}
+                    data-testid="button-request-review"
+                  >
+                    {requestReviewMutation.isPending
+                      ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Sending…</>
+                      : <><PenLine className="w-4 h-4 mr-1.5" />Request a teacher review</>}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -438,8 +519,8 @@ export default function SomaQuizReview() {
                     )}
                   </div>
                   {isStructured ? (
-                    <Badge className={`text-xs ${sm?.confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
-                      {sm ? `${effectiveStructuredMark}/${q.marks}` : "—"} {sm?.confirmed ? "" : "· provisional"}
+                    <Badge className={`text-xs ${sm?.confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-sky-500/10 text-sky-400 border-sky-500/30"}`}>
+                      {sm ? `${effectiveStructuredMark}/${q.marks}` : "—"} · {sm?.confirmed ? "tutor" : "AI"}
                     </Badge>
                   ) : (
                     <Badge className={`text-xs ${isCorrect ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : studentAnswer ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-slate-500/10 text-muted-foreground border-slate-500/30"}`}>

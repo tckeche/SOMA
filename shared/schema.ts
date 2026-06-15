@@ -120,8 +120,10 @@ export type QuestionType = "multiple_choice" | "graph" | "structured";
 
 /**
  * AI marking record for a single structured/written answer, stored on
- * `somaReports.structuredMarking` keyed by question id. The AI fills the `ai*`
- * fields; the tutor confirmation flow fills `tutorMarks` and flips `confirmed`.
+ * `somaReports.structuredMarking` keyed by question id. The AI marks the answer
+ * and the score is released immediately (the `ai*` fields). If the student
+ * requests a review, the tutor can override via `tutorMarks` / `confirmed`.
+ * The effective mark is always `tutorMarks ?? aiMarks`.
  */
 export interface StructuredAnswerMark {
   maxMarks: number;
@@ -131,9 +133,9 @@ export interface StructuredAnswerMark {
   // One-to-two sentence analysis of what the student understands / is missing,
   // surfaced in the review so they can see where their thinking landed.
   aiUnderstanding: string;
-  // Tutor override; null until the tutor confirms. When confirmed the
-  // effective mark is `tutorMarks ?? aiMarks`.
+  // Tutor override after a requested review; null until the tutor re-marks.
   tutorMarks: number | null;
+  // True once a tutor has manually reviewed/confirmed this mark.
   confirmed: boolean;
 }
 
@@ -325,10 +327,16 @@ export const somaReports = pgTable("soma_reports", {
   aiFeedbackHtml: text("ai_feedback_html"),
   answersJson: jsonb("answers_json"),
   // Per-question AI marking for structured/written answers, keyed by question
-  // id (as a string). The AI *suggests* marks + feedback; the report stays in
-  // "awaiting_review" status until the tutor confirms or overrides, at which
-  // point `confirmed` flips true and the confirmed marks fold into `score`.
+  // id (as a string). The AI marks each answer and the score is released
+  // automatically; if the student requests a review the tutor can override,
+  // flipping `confirmed` true and refolding the marks into `score`.
   structuredMarking: jsonb("structured_marking").$type<Record<string, StructuredAnswerMark>>(),
+  // The AI marks structured answers automatically and releases the score. A
+  // student who disagrees can request a tutor review of that marking; these
+  // fields track that request until the tutor re-marks/confirms.
+  reviewRequested: boolean("review_requested").notNull().default(false),
+  reviewRequestNote: text("review_request_note"),
+  reviewRequestedAt: timestamp("review_requested_at"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -78,6 +78,13 @@
       "when": 1781438641383,
       "tag": "0011_structured_answers",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781440000000,
+      "tag": "0012_structured_review_request",
+      "breakpoints": true
     }
   ]
 }

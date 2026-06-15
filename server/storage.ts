@@ -157,7 +157,7 @@ export interface IStorage {
   publishSomaQuestionsTransactional(quizId: number, questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]>;
   getSomaReportsByStudentId(studentId: string): Promise<(SomaReport & { quiz: SomaQuiz })[]>;
   createSomaReport(report: InsertSomaReport): Promise<SomaReport>;
-  updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null }>): Promise<SomaReport | undefined>;
+  updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null; reviewRequested: boolean; reviewRequestNote: string | null; reviewRequestedAt: Date | null }>): Promise<SomaReport | undefined>;
   checkSomaSubmission(quizId: number, studentId: string): Promise<boolean>;
   getSomaReportById(reportId: number): Promise<(SomaReport & { quiz: SomaQuiz }) | undefined>;
   getSomaReportsByQuizId(quizId: number): Promise<(SomaReport & { quiz: SomaQuiz })[]>;
@@ -898,7 +898,7 @@ class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null }>): Promise<SomaReport | undefined> {
+  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null; reviewRequested: boolean; reviewRequestNote: string | null; reviewRequestedAt: Date | null }>): Promise<SomaReport | undefined> {
     const [result] = await this.database.update(somaReports).set(data).where(eq(somaReports.id, reportId)).returning();
     return result;
   }
@@ -1780,12 +1780,12 @@ export class MemoryStorage implements IStorage {
   }
 
   async createSomaReport(report: InsertSomaReport): Promise<SomaReport> {
-    const created: SomaReport = { id: this.somaReportId++, createdAt: new Date(), aiFeedbackHtml: null, answersJson: null, status: "pending", studentId: report.studentId ?? null, startedAt: null, completedAt: null, ...report };
+    const created: SomaReport = { id: this.somaReportId++, createdAt: new Date(), aiFeedbackHtml: null, answersJson: null, status: "pending", studentId: report.studentId ?? null, startedAt: null, completedAt: null, structuredMarking: null, reviewRequested: false, reviewRequestNote: null, reviewRequestedAt: null, ...report };
     this.somaReportsList.push(created);
     return created;
   }
 
-  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null }>): Promise<SomaReport | undefined> {
+  async updateSomaReport(reportId: number, data: Partial<{ status: string; aiFeedbackHtml: string | null; score: number; structuredMarking: Record<string, StructuredAnswerMark> | null; reviewRequested: boolean; reviewRequestNote: string | null; reviewRequestedAt: Date | null }>): Promise<SomaReport | undefined> {
     const report = this.somaReportsList.find((r) => r.id === reportId);
     if (!report) return undefined;
     Object.assign(report, data);

@@ -343,14 +343,14 @@ function ReportDetailModal({ report, questions, maxScore, onClose }: {
             </div>
           )}
 
-          {report.status === "awaiting_review" && (
+          {(report as { reviewRequested?: boolean }).reviewRequested && (
             <a
               href={`/soma/review/${report.id}`}
               className="flex items-center gap-2 p-3 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs hover:bg-violet-500/15"
-              data-testid="link-needs-marking"
+              data-testid="link-review-requested"
             >
               <PenLine className="w-4 h-4" />
-              Written answers need your marking — open the review to confirm marks.
+              This student requested a review of the AI marking — open to re-mark.
             </a>
           )}
         </div>

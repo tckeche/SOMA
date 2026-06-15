@@ -113,10 +113,10 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
           <h2 className="text-2xl font-bold mb-1 gradient-text">Assessment Submitted</h2>
           <p className="text-sm text-muted-foreground mb-6">{quizTitle}</p>
           <p className="text-sm text-foreground/80 mb-2">
-            Your written answers have been marked by AI and sent to your teacher to confirm.
+            Your written answers are being marked by AI right now.
           </p>
           <p className="text-xs text-muted-foreground italic mb-8">
-            Your final score and feedback will appear on your dashboard once your teacher has reviewed it.
+            Your score and feedback will appear on your dashboard shortly. If you disagree with the marking, you can ask your teacher to review it from the report.
           </p>
           <div className="flex flex-col gap-3">
             <Link href="/dashboard?tab=completed">
@@ -495,7 +495,9 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
     },
     onSuccess: (data: any) => {
       const totalMarks = questions ? questions.reduce((s, q) => s + q.marks, 0) : 0;
-      setSubmissionResult({ score: data.score, maxScore: totalMarks, awaitingReview: data.status === "awaiting_review" });
+      // Structured/hybrid assessments are marked asynchronously by the AI, so
+      // the score isn't final at this instant — show a "being marked" screen.
+      setSubmissionResult({ score: data.score, maxScore: totalMarks, awaitingReview: data.hasStructured === true });
       clearAutosave(autosaveKey);
       queryClient.invalidateQueries({ queryKey: ["/api/student/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/soma/quizzes", quizId, "check-submission"] });
