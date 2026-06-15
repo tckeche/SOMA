@@ -170,7 +170,7 @@ export default function Landing() {
                 src="/MCEC - White Logo.png"
                 alt="MCEC Logo"
                 loading="lazy"
-                className="h-8 w-auto object-contain brightness-0 dark:brightness-100"
+                className="h-12 w-auto object-contain brightness-0 dark:brightness-100"
               />
               <span className="soma-display text-xl text-foreground">SOMA</span>
             </span>
@@ -291,6 +291,38 @@ export default function Landing() {
             </div>
           ))}
         </div>
+
+        {/* ── Footer ──────────────────────────────────────── */}
+        <footer className="mt-12 flex flex-col items-center justify-between gap-6 border-t border-border pt-8 sm:flex-row">
+          <Link href="/login">
+            <span
+              className="flex cursor-pointer items-center gap-2.5"
+              data-testid="link-footer-home"
+            >
+              <img
+                src="/MCEC - White Logo.png"
+                alt="MCEC Logo"
+                loading="lazy"
+                className="h-12 w-auto object-contain brightness-0 dark:brightness-100"
+              />
+              <span className="soma-display text-xl text-foreground">SOMA</span>
+            </span>
+          </Link>
+          <nav className="flex flex-wrap items-center justify-center gap-x-7 gap-y-2">
+            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Product
+            </span>
+            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              For tutors
+            </span>
+            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              For students
+            </span>
+            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              by MCEC
+            </span>
+          </nav>
+        </footer>
       </div>
     </div>
   );
