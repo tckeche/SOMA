@@ -1648,7 +1648,6 @@ export class MemoryStorage implements IStorage {
       format: quiz.format ?? "mcq",
       status: quiz.status ?? "published",
       isArchived: quiz.isArchived ?? false,
-      acceptsPdfResponse: quiz.acceptsPdfResponse ?? false,
     };
     this.somaQuizzesList.push(created);
     return created;

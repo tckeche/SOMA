@@ -45,13 +45,7 @@ function StorageNotice() {
   );
 }
 
-export default function StudentAssessmentPdfSection({
-  quizId,
-  acceptsPdfResponse = false,
-}: {
-  quizId: number;
-  acceptsPdfResponse?: boolean;
-}) {
+export default function StudentAssessmentPdfSection({ quizId }: { quizId: number }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -152,14 +146,12 @@ export default function StudentAssessmentPdfSection({
 
   const isMarked = submission?.status === "marked";
   const hasWorksheets = attachments.length > 0;
-  // Upload controls only when the tutor has opted this assessment in. A response
-  // card still renders for an existing submission even if the flag was later
-  // turned off, so the student keeps seeing their mark/feedback.
-  const showUpload = Boolean(acceptsPdfResponse);
-  const showResponseCard = Boolean(acceptsPdfResponse || submission);
+  // This section is only mounted for PDF-format assessments (the parent gates on
+  // quiz.format === "pdf"), so the worksheet list + response upload always apply.
+  const showUpload = true;
+  const showResponseCard = true;
 
   if (storageUnconfigured) {
-    if (!acceptsPdfResponse) return null;
     return (
       <div className="text-left bg-foreground/[0.03] border border-border/30 rounded-xl p-4 md:p-5 mb-6">
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Worksheets &amp; your response</p>
@@ -167,9 +159,6 @@ export default function StudentAssessmentPdfSection({
       </div>
     );
   }
-
-  // Don't render anything if there's nothing relevant to show.
-  if (!hasWorksheets && !showResponseCard) return null;
 
   return (
     <>
