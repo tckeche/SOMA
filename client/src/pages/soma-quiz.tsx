@@ -878,6 +878,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
         {currentQuestion.questionType === "structured" ? (
           <div className="mb-6 sm:mb-8" data-testid="structured-answer-block">
             <StructuredAnswerEditor
+              key={currentQuestion.id}
               value={selectedAnswer ?? ""}
               onChange={(html) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: html }))}
               placeholder="Write your answer here. Use the toolbar for bullets, bold, italic or underline."
