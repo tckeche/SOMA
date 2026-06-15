@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { z } from "zod";
 import multer from "multer";
@@ -1736,6 +1736,122 @@ Provide:
       console.error(JSON.stringify({ level: "error", event: "soma_grading_status_update_failed", reportId, error: { message: dbErr?.message ?? String(dbErr), name: dbErr?.name, stack: dbErr?.stack, code: dbErr?.code } }));
     }
   }
+}
+
+/** Collapse a structured-answer HTML blob to readable plain text for marking. */
+function htmlToPlainText(html: string): string {
+  return String(html || "")
+    .replace(/<li[^>]*>/gi, "\n• ")
+    .replace(/<\/(p|div|li|ul|ol|h[1-6])>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Best-effort parse of a JSON object out of a model response (handles fences). */
+function parseJsonLoose(raw: unknown): any {
+  if (raw && typeof raw === "object") return raw;
+  let s = String(raw ?? "").trim();
+  s = s.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+/**
+ * AI marking for structured/written answers. Grades each answer on
+ * UNDERSTANDING (sentiment) against its mark scheme, then stores per-question
+ * suggested marks + feedback and leaves the report "awaiting_review" so the
+ * tutor confirms or overrides before the score is released.
+ */
+async function runStructuredMarking(
+  reportId: number,
+  structuredQuestions: { id: number; stem: string; marks: number; markScheme: string | null }[],
+  studentAnswers: Record<string, string>,
+  studentMeta?: { studentId: string; quizTitle: string; quizSubject?: string | null },
+) {
+  const STRUCTURED_TIMEOUT_MS = 180_000;
+  const items = structuredQuestions.map((q, idx) => ({
+    n: idx + 1,
+    id: q.id,
+    stem: q.stem,
+    maxMarks: q.marks,
+    markScheme: q.markScheme || "",
+    answer: htmlToPlainText(studentAnswers[String(q.id)] || ""),
+  }));
+
+  // Seed the record so the tutor always has something to confirm, even if the
+  // AI call fails — they can then mark manually.
+  const structuredMarking: Record<string, StructuredAnswerMark> = {};
+  for (const item of items) {
+    structuredMarking[String(item.id)] = {
+      maxMarks: item.maxMarks,
+      aiMarks: 0,
+      aiFeedback: "",
+      aiUnderstanding: "",
+      tutorMarks: null,
+      confirmed: false,
+    };
+  }
+
+  try {
+    const systemPrompt = `You are an experienced examiner marking short written exam answers.
+For each question you are given the prompt, a mark scheme (the points a full answer should convey), the maximum marks, and the student's typed answer.
+
+MARKING PRINCIPLES:
+- Mark on UNDERSTANDING and meaning, NOT on exact wording. If the student conveys the right idea in their own words, award the mark.
+- Genuinely interpret what the student is trying to say; be fair to partial understanding and award partial marks.
+- Ignore spelling and minor grammar — they do not lose marks.
+- "awarded" MUST be an integer between 0 and the question's maxMarks.
+- "feedback": one or two short sentences addressed to the student ("you…") on how to improve.
+- "understanding": one or two sentences analysing what the student appears to understand and what is missing, so they can see where their thinking landed.
+
+Return ONLY a JSON object of this exact shape (no prose, no markdown):
+{"marks":[{"n":<question number>,"awarded":<int>,"feedback":"...","understanding":"..."}]}`;
+
+    const userPrompt = `Mark each of these answers. Questions and answers:\n${JSON.stringify(items, null, 2)}`;
+
+    const gradePromise = generateWithFallback(systemPrompt, userPrompt, undefined, {
+      taskType: "grading",
+      route: "report.structured_grade",
+      promptVersion: "structured.grader:v1",
+      userId: studentMeta?.studentId,
+      idempotencyKey: `report.structured:${reportId}`,
+    });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Structured marking timed out")), STRUCTURED_TIMEOUT_MS),
+    );
+    const { data } = await Promise.race([gradePromise, timeoutPromise]);
+
+    const parsed = parseJsonLoose(data);
+    const marksArr = Array.isArray(parsed?.marks) ? parsed.marks : [];
+    const byN = new Map<number, any>();
+    for (const m of marksArr) byN.set(Number(m?.n), m);
+    for (const item of items) {
+      const m = byN.get(item.n) || {};
+      const awarded = Math.max(0, Math.min(item.maxMarks, Math.round(Number(m.awarded) || 0)));
+      structuredMarking[String(item.id)] = {
+        maxMarks: item.maxMarks,
+        aiMarks: awarded,
+        aiFeedback: String(m.feedback || "").slice(0, 1200),
+        aiUnderstanding: String(m.understanding || "").slice(0, 1200),
+        tutorMarks: null,
+        confirmed: false,
+      };
+    }
+  } catch (err: any) {
+    logWarn("structured_marking.failed", { severity: "medium", module: "routes", component: "runStructuredMarking", reportId, errorMessage: err?.message ?? String(err) });
+  }
+
+  // Always persist (seeded or AI-filled) and hold for tutor confirmation.
+  await storage.updateSomaReport(reportId, { structuredMarking, status: "awaiting_review" })
+    .catch((dbErr: any) => logError("structured_marking.persist_failed", dbErr, { severity: "high", module: "routes", component: "runStructuredMarking", reportId }));
 }
 
 function normalizeLabel(input: string | null | undefined, fallback: string): string {
@@ -6657,8 +6773,15 @@ ${JSON.stringify({
 
       const sanitizedAnswers = sanitizeSubmittedAnswers(allQuestions, answers);
 
+      // Structured/written answers are NOT auto-scored here — they're marked by
+      // the AI in the background and held for tutor confirmation. Only the
+      // auto-markable (MCQ/graph) questions contribute to the submit-time score.
+      const structuredQuestions = allQuestions.filter((q) => q.questionType === "structured");
+      const hasStructured = structuredQuestions.length > 0;
+
       let totalScore = 0;
       for (const q of allQuestions) {
+        if (q.questionType === "structured") continue;
         const correct = effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer);
         if (answersMatch(sanitizedAnswers[String(q.id)], correct)) {
           totalScore += q.marks;
@@ -6675,7 +6798,9 @@ ${JSON.stringify({
           studentId,
           studentName: resolvedName,
           score: totalScore,
-          status: "pending",
+          // Hold structured/hybrid reports for tutor sign-off; pure-MCQ reports
+          // follow the existing auto-feedback path.
+          status: hasStructured ? "awaiting_review" : "pending",
           answersJson: sanitizedAnswers,
           startedAt: parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? parsedStartedAt : null,
           completedAt: now,
@@ -6718,16 +6843,37 @@ ${JSON.stringify({
       }
 
       const maxPossibleScore = allQuestions.reduce((s, q) => s + q.marks, 0);
-      runBackgroundGrading(report.id, allQuestions, sanitizedAnswers, totalScore, maxPossibleScore, {
-        studentId,
-        quizTitle: quiz?.title || "your assessment",
-        quizSubject: quiz?.subject ?? null,
-      }).catch((err) => logBackgroundTaskFailure("soma-report.background-grading.unhandled", "critical", err, {
-        requestId,
-        reportId: report.id,
-        quizId,
-        studentId,
-      }));
+      if (hasStructured) {
+        // AI suggests marks for written answers; report stays "awaiting_review"
+        // until the tutor confirms. MCQ feedback for hybrid quizzes is folded
+        // into the tutor-confirmation step rather than auto-released here.
+        runStructuredMarking(
+          report.id,
+          structuredQuestions.map((q) => ({ id: q.id, stem: q.stem, marks: q.marks, markScheme: q.markScheme })),
+          sanitizedAnswers,
+          {
+            studentId,
+            quizTitle: quiz?.title || "your assessment",
+            quizSubject: quiz?.subject ?? null,
+          },
+        ).catch((err) => logBackgroundTaskFailure("soma-report.structured-marking.unhandled", "critical", err, {
+          requestId,
+          reportId: report.id,
+          quizId,
+          studentId,
+        }));
+      } else {
+        runBackgroundGrading(report.id, allQuestions, sanitizedAnswers, totalScore, maxPossibleScore, {
+          studentId,
+          quizTitle: quiz?.title || "your assessment",
+          quizSubject: quiz?.subject ?? null,
+        }).catch((err) => logBackgroundTaskFailure("soma-report.background-grading.unhandled", "critical", err, {
+          requestId,
+          reportId: report.id,
+          quizId,
+          studentId,
+        }));
+      }
 
       // Phase 3.3 — mark any existing revision plans stale so the
       // student is prompted to refresh after each new submission.
@@ -6827,6 +6973,9 @@ ${JSON.stringify({
           correctAnswer: effectiveCorrectAnswer(q.stem, q.options as string[], q.correctAnswer),
           marks: q.marks,
           explanation: q.explanation,
+          questionType: q.questionType,
+          // Safe to reveal post-submission — the assessment is already marked.
+          markScheme: q.markScheme ?? null,
         })),
         // Phase 2C — per-question diagnoses, keyed by question id. The
         // SomaQuizReview page renders an "Examiner-flagged" panel
@@ -6835,6 +6984,106 @@ ${JSON.stringify({
       });
     } catch (err: any) {
       return sendInternalError(req, res, err, "soma.reports.review", "Something went wrong while loading this review. Please try again.");
+    }
+  });
+
+  // Light UK-English spelling scan for the structured-answer editor. Returns
+  // the list of likely-misspelt words (flag only — no suggestions, no
+  // auto-correct). Deliberately minimal so it stays fast on every idle scan.
+  app.post("/api/soma/spellcheck", requireSupabaseAuth, async (req, res) => {
+    try {
+      const text = String((req.body?.text ?? "")).slice(0, 4000);
+      if (text.trim().length < 2) return res.json({ misspelled: [] });
+      const systemPrompt = `You are a fast British English (en-GB) spelling checker.
+Return ONLY a JSON object: {"misspelled": ["word1", "word2"]}.
+List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
+- Use UK spelling as correct (colour, organise, analyse, behaviour, metre, programme). Do NOT flag UK spellings.
+- Do NOT flag proper nouns, abbreviations, numbers, units, or correctly-spelled words.
+- Do NOT correct grammar. Spelling only.
+- If nothing is misspelt, return {"misspelled": []}.`;
+      const { data } = await generateWithFallback(systemPrompt, `Text:\n${text}`, undefined, {
+        taskType: "chat",
+        route: "soma.spellcheck",
+        promptVersion: "spellcheck.engb:v1",
+        userId: String((req as any).authUser?.id ?? ""),
+      });
+      const parsed = parseJsonLoose(data);
+      const list = Array.isArray(parsed?.misspelled)
+        ? Array.from(new Set(parsed.misspelled
+            .map((w: unknown) => String(w).toLowerCase().trim())
+            .filter((w: string) => w.length > 0 && /^[\p{L}']+$/u.test(w))))
+            .slice(0, 100)
+        : [];
+      res.json({ misspelled: list });
+    } catch (err: any) {
+      // Never block the student on a spell-check failure.
+      res.json({ misspelled: [] });
+    }
+  });
+
+  // Tutor confirms / overrides the AI-suggested marks for a structured report.
+  // Folds the confirmed structured marks into the report score and releases it.
+  app.put("/api/tutor/reports/:reportId/structured-marking", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId as string;
+      const reportId = parseInt(String(req.params.reportId));
+      if (isNaN(reportId)) return res.status(400).json({ message: "Invalid report ID" });
+
+      const report = await storage.getSomaReportById(reportId);
+      if (!report) return res.status(404).json({ message: "Report not found" });
+
+      // Authorise: tutor must own the quiz this report belongs to.
+      const quiz = await storage.getSomaQuiz(report.quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Forbidden: you do not own this assessment." });
+      }
+
+      const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;
+      if (Object.keys(marking).length === 0) {
+        return res.status(400).json({ message: "This report has no structured answers to confirm yet." });
+      }
+
+      // Optional per-question overrides: [{ questionId, marks }].
+      const overrides = new Map<string, number>();
+      if (Array.isArray(req.body?.marks)) {
+        for (const entry of req.body.marks) {
+          const qid = String(entry?.questionId ?? "");
+          const val = Number(entry?.marks);
+          if (qid && Number.isFinite(val)) overrides.set(qid, val);
+        }
+      }
+
+      // Recompute the MCQ base idempotently: subtract whatever structured marks
+      // were already folded into the score on a previous confirmation.
+      let confirmedBefore = 0;
+      for (const m of Object.values(marking)) {
+        if (m.confirmed) confirmedBefore += m.tutorMarks ?? m.aiMarks;
+      }
+      const mcqBase = (report.score ?? 0) - confirmedBefore;
+
+      let structuredTotal = 0;
+      const next: Record<string, StructuredAnswerMark> = {};
+      for (const [qid, m] of Object.entries(marking)) {
+        const max = m.maxMarks ?? 0;
+        let tutorMarks: number;
+        if (overrides.has(qid)) {
+          tutorMarks = Math.max(0, Math.min(max, Math.round(overrides.get(qid)!)));
+        } else {
+          tutorMarks = m.tutorMarks ?? m.aiMarks;
+        }
+        structuredTotal += tutorMarks;
+        next[qid] = { ...m, tutorMarks, confirmed: true };
+      }
+
+      const newScore = Math.max(0, mcqBase + structuredTotal);
+      const updated = await storage.updateSomaReport(reportId, {
+        structuredMarking: next,
+        score: newScore,
+        status: "completed",
+      });
+      res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.reports.structured-marking", "Could not save these marks. Please try again.");
     }
   });
 

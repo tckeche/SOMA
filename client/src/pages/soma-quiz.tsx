@@ -16,6 +16,7 @@ import {
 import 'katex/dist/katex.min.css';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import GraphPlot from "@/components/GraphPlot";
+import StructuredAnswerEditor from "@/components/student/StructuredAnswerEditor";
 import { authFetch } from "@/lib/supabase";
 import { emitSomaMutation } from "@/lib/realtimeEvents";
 import FlagQuestionButton from "@/components/student/FlagQuestionButton";
@@ -844,6 +845,18 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           ) : null}
         </div>
 
+        {currentQuestion.questionType === "structured" ? (
+          <div className="mb-6 sm:mb-8" data-testid="structured-answer-block">
+            <StructuredAnswerEditor
+              value={selectedAnswer ?? ""}
+              onChange={(html) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: html }))}
+              placeholder="Write your answer here. Use the toolbar for bullets, bold, italic or underline."
+            />
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Your answer is marked on understanding, not exact wording. Spelling slips are underlined as a hint only.
+            </p>
+          </div>
+        ) : (
         <div className="grid gap-2.5 sm:gap-3 mb-6 sm:mb-8">
           {currentQuestion.options.map((option, idx) => {
             const letter = String.fromCharCode(65 + idx);
@@ -875,6 +888,7 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
             );
           })}
         </div>
+        )}
 
         {/* Action bar — sticky to the viewport bottom on mobile so Next/Prev
             stay reachable after scrolling through a long question; inline on

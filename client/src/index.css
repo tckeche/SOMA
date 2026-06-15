@@ -797,3 +797,25 @@
     padding-left: env(safe-area-inset-left);
   }
 }
+
+/* ── Structured / written-answer editor ─────────────────────────────────── */
+/* The lined "paper" surface. Bullets only (no numbering), faint misspelling
+   underlines (flag-only — no popover, no auto-correct), and a placeholder. */
+.soma-structured-surface:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+.soma-structured-surface ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0;
+}
+.soma-structured-surface li {
+  margin: 0;
+}
+.soma-structured-surface .soma-misspell {
+  text-decoration: underline wavy rgba(239, 68, 68, 0.55);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+}
