@@ -36,3 +36,14 @@ archived-quiz pending links that 404.
 data-drift case (assignment still `pending` but report `completed` on an archived
 quiz) the row renders as a *pending* link and 404s again. Fix status drift at the
 source instead.
+
+## Pending assignments with no due date are hidden from the student dashboard
+`AssignmentsList` (client) intentionally keeps only `status === "overdue"` or
+`status === "pending" && !!dueDate`. A **pending assignment with a null due date is
+returned by the API but never rendered** on the student Home — it is invisible to the
+student even though `GET /api/student/dashboard` includes it in `data.assignments`.
+**Why:** the filter treats "no due date" as "not actually due yet". This is by design,
+not a bug — confirmed by the inline comment in `AssignmentsList.tsx`.
+**How to apply:** when seeding/testing student-visible assignments, always set a due
+date or the work won't surface. If a tutor reports "I assigned a quiz but the student
+can't see it", check the assignment's `due_date` first.

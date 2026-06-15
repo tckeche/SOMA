@@ -1,1 +1,2 @@
 - [Bootstrap vs migrations](bootstrap-vs-migrations.md) — live DB schema comes ONLY from BOOTSTRAP_QUERIES in server/bootstrap.ts; migrations/*.sql are not auto-applied, so new schema cols must be added there too or SELECTs 500.
+- [E2E testing notes](e2e-testing-soma.md) — run heavy Playwright suites sequentially (parallel load → 502 false positives); provision via VITE_SUPABASE_URL+service key; seed super_admin directly; verify grading via submit API.
