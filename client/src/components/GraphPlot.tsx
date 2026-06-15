@@ -570,7 +570,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
   if (pythonSvg) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 md:p-4" data-testid="graph-plot-python">
+      <div className="rounded-2xl border border-border bg-white p-3 md:p-4" data-testid="graph-plot-python">
         <div className="w-full max-w-[620px] mx-auto">
           <img
             src={`data:image/svg+xml;utf8,${encodeURIComponent(pythonSvg)}`}
@@ -644,7 +644,7 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
 
   return (
     <div
-      className="rounded-2xl border border-cyan-500/20 bg-background/70 p-3 md:p-4"
+      className="rounded-2xl border border-info/20 bg-background/70 p-3 md:p-4"
       data-testid="graph-plot"
     >
       {pythonUnavailable && (

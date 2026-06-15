@@ -64,7 +64,7 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
           const sc = getSubjectColor(row.quizSubject || "General");
           const Icon = getSubjectIcon(row.quizSubject || "General");
           const pct = row.scorePercent ?? 0;
-          const tone = pct >= 70 ? "text-emerald-300" : pct >= 50 ? "text-amber-300" : "text-rose-300";
+          const tone = pct >= 70 ? "text-success" : pct >= 50 ? "text-warning" : "text-danger";
           const TrendIcon = pct >= 70 ? TrendingUp : TrendingDown;
           return (
             <li
@@ -101,13 +101,13 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
                   {row.reportId ? (
                     <>
                       <Link href={`/soma/review/${row.reportId}`}>
-                        <button className="inline-flex items-center gap-1 text-[11px] text-cyan-300 hover:text-cyan-200" data-testid={`button-review-${row.quizId}`}>
+                        <button className="inline-flex items-center gap-1 text-[11px] text-info hover:text-info/80" data-testid={`button-review-${row.quizId}`}>
                           <Eye className="w-3.5 h-3.5" /> Review
                         </button>
                       </Link>
                       <Link href={`/soma/review/${row.reportId}?view=report`}>
                         <button
-                          className="inline-flex items-center gap-1 text-[11px] text-violet-300 hover:text-violet-200"
+                          className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80"
                           title="Open a printable report of this assessment"
                           data-testid={`button-report-${row.quizId}`}
                         >

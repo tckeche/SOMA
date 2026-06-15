@@ -105,7 +105,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
   return (
     <div className="glass-card p-4 md:p-5 space-y-4" data-testid="panel-worksheet-manager">
       <div className="flex items-center gap-2">
-        <Paperclip className="w-4 h-4 text-violet-400" />
+        <Paperclip className="w-4 h-4 text-primary" />
         <h2 className="font-semibold text-foreground text-sm">Worksheets</h2>
         <span className="text-[10px] text-muted-foreground ml-auto">{attachments.length} file{attachments.length === 1 ? "" : "s"}</span>
       </div>
@@ -115,7 +115,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
       </p>
 
       {storageUnconfigured ? (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+        <div className="rounded-xl bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">
           File uploads aren't available right now. Please check back later.
         </div>
       ) : (
@@ -129,7 +129,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
                   className="flex items-center justify-between gap-3 rounded-xl bg-foreground/5 border border-border/50 px-4 py-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <FileText className="w-4 h-4 text-violet-400 shrink-0" />
+                    <FileText className="w-4 h-4 text-primary shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{att.filename}</p>
                       <p className="text-xs text-muted-foreground">{formatBytes(att.sizeBytes)}</p>
@@ -139,7 +139,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
                     data-testid={`worksheet-delete-${att.id}`}
                     onClick={() => deleteMutation.mutate(att.id)}
                     disabled={deleteMutation.isPending}
-                    className="text-muted-foreground hover:text-red-400 shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
+                    className="text-muted-foreground hover:text-danger shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
                     title="Remove worksheet"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -155,13 +155,13 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
               accept="application/pdf"
               data-testid="worksheet-file-input"
               onChange={(e) => handleSelectFile(e.target.files?.[0] ?? null)}
-              className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-violet-300 hover:file:bg-violet-500/30"
+              className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-primary/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/30"
             />
             <Button
               data-testid="worksheet-upload-button"
               onClick={() => selectedFile && uploadMutation.mutate(selectedFile)}
               disabled={!selectedFile || uploadMutation.isPending}
-              className="border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all min-h-[44px]"
+              className="border border-primary/40 bg-primary/20 text-primary hover:bg-primary/30 transition-all min-h-[44px]"
             >
               {uploadMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

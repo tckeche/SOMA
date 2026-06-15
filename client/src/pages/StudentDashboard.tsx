@@ -55,13 +55,13 @@ function DashboardSkeleton() {
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-8 text-center" data-testid="dashboard-error">
-      <AlertCircle className="w-10 h-10 text-rose-500 dark:text-rose-400 mx-auto mb-3" />
-      <h2 className="text-lg font-semibold text-rose-800 dark:text-rose-200">We couldn't load your dashboard</h2>
-      <p className="text-sm text-rose-700/90 dark:text-rose-300/80 mt-1">Check your connection and try again — your data is safe.</p>
+    <div className="rounded-2xl border border-danger/40 bg-danger/10 p-8 text-center" data-testid="dashboard-error">
+      <AlertCircle className="w-10 h-10 text-danger mx-auto mb-3" />
+      <h2 className="text-lg font-semibold text-danger">We couldn't load your dashboard</h2>
+      <p className="text-sm text-danger/90 mt-1">Check your connection and try again — your data is safe.</p>
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/50 bg-rose-500/15 text-rose-800 dark:text-rose-200 hover:bg-rose-500/25 transition-colors"
+        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-danger/50 bg-danger/15 text-danger hover:bg-danger/25 transition-colors"
         data-testid="button-retry-dashboard"
       >
         <RefreshCw className="w-4 h-4" /> Retry
@@ -207,7 +207,7 @@ export default function StudentDashboard() {
             </button>
             <div className="flex items-center gap-3">
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-violet-500/60 bg-violet-600/80 shadow-[0_0_16px_rgba(139,92,246,0.35)]"
+                className="avatar w-10 h-10 text-sm"
                 data-testid="avatar-user"
               >
                 {initials}
@@ -245,9 +245,13 @@ export default function StudentDashboard() {
             />
 
             {/* 2. Greeting + due summary */}
-            <section className="rounded-2xl border border-card-border bg-gradient-to-br from-violet-500/15 via-card/80 to-card/70 p-6 shadow-xl" data-testid="section-greeting">
-              <h2 className="text-2xl font-bold text-foreground" data-testid="text-greeting">{data.greeting}</h2>
-              <p className="text-sm text-foreground/80 mt-2" data-testid="text-due-summary">{data.dueSummary}</p>
+            <section className="glass-card relative overflow-hidden p-6" data-testid="section-greeting">
+              <div aria-hidden className="pointer-events-none absolute -top-16 -right-12 h-44 w-44 rounded-full bg-primary/10 blur-3xl" />
+              <div className="relative">
+                <div className="eyebrow mb-2">Welcome back</div>
+                <h2 className="soma-display text-3xl text-foreground" data-testid="text-greeting">{data.greeting}</h2>
+                <p className="text-sm text-muted-foreground mt-2" data-testid="text-due-summary">{data.dueSummary}</p>
+              </div>
             </section>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "home" | "completed")}>
@@ -338,11 +342,12 @@ export default function StudentDashboard() {
             {/* SOMA Tutor CTA */}
             <section className="flex justify-center pt-2 pb-6">
               <button
-                className="group relative inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl font-semibold text-sm text-emerald-300 bg-emerald-500/5 border border-emerald-500/20 ring-2 ring-emerald-500/20 hover:bg-emerald-500/10 hover:ring-emerald-500/40 hover:border-emerald-500/40 transition-all duration-300 shadow-[0_0_30px_rgba(16,185,129,0.08)]"
+                style={{ background: "hsl(var(--success-soft))", borderColor: "hsl(var(--success-line))", color: "hsl(var(--success))" }}
+                className="group inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl border font-semibold text-sm hover:shadow-md transition-all duration-300"
                 data-testid="button-consult-ai-tutor"
                 onClick={() => setLocation("/soma/chat")}
               >
-                <Sparkles className="w-4 h-4 text-emerald-400 group-hover:animate-pulse" />
+                <Sparkles className="w-4 h-4 group-hover:animate-pulse" />
                 Consult SOMA Tutor
                 <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
               </button>

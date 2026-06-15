@@ -17,7 +17,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { SuperAdminAIUsage } from "@/components/SuperAdminAIUsage";
 import { SuperAdminExaminerInsightsReview } from "@/components/SuperAdminExaminerInsightsReview";
 
-const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
+const CARD_CLASS = "glass-card backdrop-blur-md p-6";
 
 interface SomaUser {
   id: string;
@@ -198,47 +198,47 @@ export default function SuperAdminDashboard() {
   };
 
   const roleBadgeClass = (role: string) => {
-    if (role === "super_admin") return "bg-red-500/10 text-red-400 border-red-500/30";
-    if (role === "tutor") return "bg-violet-500/10 text-violet-400 border-violet-500/30";
-    return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+    if (role === "super_admin") return "chip chip-danger";
+    if (role === "tutor") return "chip chip-brand";
+    return "chip chip-success";
   };
 
   if (!roleVerified) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+        <Loader2 className="w-8 h-8 text-danger animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-red-900/40 bg-background/95 backdrop-blur-xl sticky top-0 z-20">
+      <header className="border-b border-danger/30 bg-background/95 backdrop-blur-xl sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer">
               <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain brightness-0 dark:brightness-100" />
               <div>
-                <h1 className="text-lg font-bold gradient-text">SOMA</h1>
-                <p className="text-[10px] text-red-400 tracking-widest uppercase font-semibold">Super Admin</p>
+                <h1 className="text-lg soma-display gradient-text">SOMA</h1>
+                <p className="eyebrow text-danger">Super Admin</p>
               </div>
             </div>
           </Link>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: "rgba(239,68,68,0.2)", boxShadow: "0 0 20px rgba(239,68,68,0.3)", border: "2px solid #EF4444" }}
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-danger/20 border-2 border-danger"
+                style={{ boxShadow: "0 0 20px hsl(var(--destructive) / 0.3)" }}
               >
-                <Shield className="w-5 h-5 text-red-400" />
+                <Shield className="w-5 h-5 text-danger" />
               </div>
               <div className="hidden sm:block">
                 <p className="text-sm font-medium text-foreground">{session?.user?.email?.split("@")[0]}</p>
-                <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Super Admin</p>
+                <p className="eyebrow text-danger">Super Admin</p>
               </div>
             </div>
             <Link href="/super-admin/diagnostics">
-              <button className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-200 hover:bg-red-500/20" data-testid="link-diagnostics">
+              <button className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-danger/30 bg-danger/10 text-xs text-danger hover:bg-danger/20" data-testid="link-diagnostics">
                 <Bug className="w-4 h-4" /> Diagnostics
               </button>
             </Link>
@@ -265,7 +265,7 @@ export default function SuperAdminDashboard() {
               onClick={() => { setActiveTab("tutors"); setSearchQuery(""); }}
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "tutors"
-                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-tutors"
@@ -277,7 +277,7 @@ export default function SuperAdminDashboard() {
               onClick={() => { setActiveTab("users"); setSearchQuery(""); }}
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "users"
-                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-users"
@@ -289,7 +289,7 @@ export default function SuperAdminDashboard() {
               onClick={() => { setActiveTab("quizzes"); setSearchQuery(""); }}
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "quizzes"
-                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-quizzes"
@@ -301,7 +301,7 @@ export default function SuperAdminDashboard() {
               onClick={() => { setActiveTab("ai"); setSearchQuery(""); }}
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "ai"
-                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-ai-usage"
@@ -313,7 +313,7 @@ export default function SuperAdminDashboard() {
               onClick={() => { setActiveTab("insights"); setSearchQuery(""); }}
               className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
                 activeTab === "insights"
-                  ? "bg-red-500/20 text-red-300 border border-red-500/40"
+                  ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
               }`}
               data-testid="tab-insights"
@@ -329,7 +329,7 @@ export default function SuperAdminDashboard() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={`Search ${activeTab}...`}
-              className="w-full h-12 pl-11 pr-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-red-500/40"
+              className="w-full h-12 pl-11 pr-4 rounded-xl bg-card/60 border border-card-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-danger/40"
               data-testid="input-search"
             />
           </div>
@@ -338,7 +338,7 @@ export default function SuperAdminDashboard() {
         {activeTab === "tutors" && (
           <section>
             {tutorsLoading ? (
-              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
+              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-danger animate-spin" /></div>
             ) : filteredTutors.length === 0 ? (
               <div className={`${CARD_CLASS} text-center py-12`}>
                 <UserCog className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -380,7 +380,7 @@ export default function SuperAdminDashboard() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <Link href={`/super-admin/tutors/${tutor.tutorId}`}>
-                            <button className="inline-flex items-center gap-1 text-red-300 hover:text-red-200">
+                            <button className="inline-flex items-center gap-1 text-danger hover:text-danger/80">
                               View <ChevronRight className="w-4 h-4" />
                             </button>
                           </Link>
@@ -397,7 +397,7 @@ export default function SuperAdminDashboard() {
         {activeTab === "users" && (
           <section>
             {usersLoading ? (
-              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
+              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-danger animate-spin" /></div>
             ) : filteredUsers.length === 0 ? (
               <div className={`${CARD_CLASS} text-center py-12`}>
                 <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -408,14 +408,14 @@ export default function SuperAdminDashboard() {
                 {filteredUsers.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-3.5"
+                    className="flex items-center gap-4 glass-card px-5 py-3.5"
                     data-testid={`user-row-${user.id}`}
                   >
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
                       style={{
-                        backgroundColor: user.role === "super_admin" ? "rgba(239,68,68,0.2)" : user.role === "tutor" ? "rgba(139,92,246,0.2)" : "rgba(16,185,129,0.2)",
-                        border: `1.5px solid ${user.role === "super_admin" ? "#EF4444" : user.role === "tutor" ? "#8B5CF6" : "#10B981"}`,
-                        color: user.role === "super_admin" ? "#EF4444" : user.role === "tutor" ? "#8B5CF6" : "#10B981",
+                        backgroundColor: user.role === "super_admin" ? "hsl(var(--destructive) / 0.2)" : user.role === "tutor" ? "hsl(var(--primary) / 0.2)" : "hsl(var(--success) / 0.2)",
+                        border: `1.5px solid ${user.role === "super_admin" ? "hsl(var(--destructive))" : user.role === "tutor" ? "hsl(var(--primary))" : "hsl(var(--success))"}`,
+                        color: user.role === "super_admin" ? "hsl(var(--destructive))" : user.role === "tutor" ? "hsl(var(--primary))" : "hsl(var(--success))",
                       }}
                     >
                       {(user.displayName || user.email)[0]?.toUpperCase()}
@@ -424,7 +424,7 @@ export default function SuperAdminDashboard() {
                       <p className="text-sm font-medium text-foreground truncate">{user.displayName || user.email.split("@")[0]}</p>
                       <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
-                    <Badge className={`text-[10px] font-semibold border ${roleBadgeClass(user.role)} flex items-center gap-1`} data-testid={`badge-role-${user.id}`}>
+                    <Badge className={`${roleBadgeClass(user.role)}`} data-testid={`badge-role-${user.id}`}>
                       {roleIcon(user.role)}
                       {user.role}
                     </Badge>
@@ -434,7 +434,7 @@ export default function SuperAdminDashboard() {
                     {user.role !== "super_admin" && (
                       <button
                         onClick={() => setDeleteConfirm({ type: "user", id: user.id, name: user.displayName || user.email })}
-                        className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all shrink-0"
+                        className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-danger/40 hover:text-danger hover:bg-danger/10 rounded-lg transition-all shrink-0"
                         data-testid={`button-delete-user-${user.id}`}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -450,7 +450,7 @@ export default function SuperAdminDashboard() {
         {activeTab === "quizzes" && (
           <section>
             {quizzesLoading ? (
-              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>
+              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-danger animate-spin" /></div>
             ) : filteredQuizzes.length === 0 ? (
               <div className={`${CARD_CLASS} text-center py-12`}>
                 <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -464,7 +464,7 @@ export default function SuperAdminDashboard() {
                   return (
                     <div
                       key={quiz.id}
-                      className="flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-3.5"
+                      className="flex items-center gap-4 glass-card px-5 py-3.5"
                       data-testid={`quiz-row-${quiz.id}`}
                     >
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center border ${sc.border} shrink-0`} style={{ backgroundColor: `${sc.hex}15` }}>
@@ -474,8 +474,8 @@ export default function SuperAdminDashboard() {
                         <p className="text-sm font-medium text-foreground truncate">{quiz.title}</p>
                         <p className="text-xs text-muted-foreground">{quiz.topic} | {quiz.level}</p>
                       </div>
-                      <Badge className={`text-[10px] font-semibold border ${
-                        quiz.status === "published" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                      <Badge className={`chip ${
+                        quiz.status === "published" ? "chip-success" : "chip-warning"
                       }`}>
                         {quiz.status}
                       </Badge>
@@ -484,7 +484,7 @@ export default function SuperAdminDashboard() {
                       </p>
                       <button
                         onClick={() => setDeleteConfirm({ type: "quiz", id: quiz.id, name: quiz.title })}
-                        className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all shrink-0"
+                        className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-danger/40 hover:text-danger hover:bg-danger/10 rounded-lg transition-all shrink-0"
                         data-testid={`button-delete-quiz-${quiz.id}`}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -503,10 +503,10 @@ export default function SuperAdminDashboard() {
 
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-card border border-red-900/50 rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()} data-testid="modal-delete-confirm">
+          <div className="glass-panel-elite border-danger/40 max-w-md w-full p-6" onClick={(e) => e.stopPropagation()} data-testid="modal-delete-confirm">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
+              <div className="w-10 h-10 rounded-full bg-danger/20 border border-danger/40 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-foreground">Confirm Deletion</h3>
@@ -515,14 +515,14 @@ export default function SuperAdminDashboard() {
             </div>
             <p className="text-sm text-foreground/80 mb-6">
               Are you sure you want to permanently delete{" "}
-              <span className="font-semibold text-red-300">{deleteConfirm.name}</span>?
+              <span className="font-semibold text-danger">{deleteConfirm.name}</span>?
               {deleteConfirm.type === "user" && " All their data, reports, and comments will also be removed."}
               {deleteConfirm.type === "quiz" && " All questions, reports, and assignments for this assessment will also be removed."}
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
+                className="flex-1 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-muted/70 transition-all"
                 data-testid="button-cancel-delete"
               >
                 Cancel
@@ -533,7 +533,7 @@ export default function SuperAdminDashboard() {
                   else deleteQuizMutation.mutate(deleteConfirm.id as number);
                 }}
                 disabled={deleteUserMutation.isPending || deleteQuizMutation.isPending}
-                className="flex-1 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                className="flex-1 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-danger text-white hover:bg-danger/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                 data-testid="button-confirm-delete"
               >
                 {(deleteUserMutation.isPending || deleteQuizMutation.isPending) ? (

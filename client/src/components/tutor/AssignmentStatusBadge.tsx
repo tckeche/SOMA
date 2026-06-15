@@ -14,13 +14,13 @@ import {
 } from "@shared/assignmentStatus";
 
 const TONE_CLASSES: Record<string, string> = {
-  neutral: "bg-slate-500/10 text-foreground/80 border-slate-500/30",
-  info:    "bg-sky-500/10 text-sky-300 border-sky-500/30",
-  active:  "bg-blue-500/10 text-blue-300 border-blue-500/30",
-  success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
-  ready:   "bg-teal-500/10 text-teal-300 border-teal-500/30",
-  warning: "bg-amber-500/10 text-amber-300 border-amber-500/30",
-  danger:  "bg-rose-500/10 text-rose-300 border-rose-500/30",
+  neutral: "bg-muted/10 text-foreground/80 border-border/30",
+  info:    "bg-info/10 text-info border-info/30",
+  active:  "bg-info/10 text-info border-info/30",
+  success: "bg-success/10 text-success border-success/30",
+  ready:   "bg-success/10 text-success border-success/30",
+  warning: "bg-warning/10 text-warning border-warning/30",
+  danger:  "bg-danger/10 text-danger border-danger/30",
 };
 
 const ICONS: Record<AssignmentStatus, React.ComponentType<{ className?: string }>> = {

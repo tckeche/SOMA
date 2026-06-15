@@ -223,7 +223,7 @@ export default function SomaChatPage() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-8 text-center max-w-md">
-          <Sparkles className="w-12 h-12 mx-auto text-emerald-400 mb-4" />
+          <Sparkles className="w-12 h-12 mx-auto text-success mb-4" />
           <h2 className="text-xl font-bold text-foreground mb-2">SOMA Tutor</h2>
           <p className="text-sm text-muted-foreground mb-6">Please log in to access your personalized analysis.</p>
           <Link href="/login">
@@ -246,8 +246,8 @@ export default function SomaChatPage() {
               </Button>
             </Link>
             <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-400" />
-              <h1 className="text-lg font-bold text-emerald-300">SOMA Tutor</h1>
+              <Sparkles className="w-5 h-5 text-success" />
+              <h1 className="text-lg font-bold text-success">SOMA Tutor</h1>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -262,12 +262,12 @@ export default function SomaChatPage() {
         {!isDataLoading && hasData && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
-              <BookOpen className="w-5 h-5 mx-auto text-violet-400 mb-2" />
+              <BookOpen className="w-5 h-5 mx-auto text-primary mb-2" />
               <p className="text-2xl font-bold text-foreground">{reports.length + submissions.length}</p>
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Assessments</p>
             </div>
             <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
-              <TrendingUp className="w-5 h-5 mx-auto text-emerald-400 mb-2" />
+              <TrendingUp className="w-5 h-5 mx-auto text-success mb-2" />
               <p className="text-2xl font-bold text-foreground">
                 {(() => {
                   const scores = [
@@ -280,14 +280,14 @@ export default function SomaChatPage() {
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Average</p>
             </div>
             <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
-              <CheckCircle2 className="w-5 h-5 mx-auto text-cyan-400 mb-2" />
+              <CheckCircle2 className="w-5 h-5 mx-auto text-info mb-2" />
               <p className="text-2xl font-bold text-foreground">
                 {reports.filter(r => r.aiFeedbackHtml && r.status !== "pending").length}
               </p>
               <p className="text-xs text-muted-foreground uppercase tracking-wider">SOMA Reports</p>
             </div>
             <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-5 text-center">
-              <Target className="w-5 h-5 mx-auto text-amber-400 mb-2" />
+              <Target className="w-5 h-5 mx-auto text-warning mb-2" />
               <p className="text-2xl font-bold text-foreground">
                 {new Set([
                   ...submissions.map(s => s.quiz.subject).filter(Boolean),
@@ -302,8 +302,8 @@ export default function SomaChatPage() {
         {/* Generate button */}
         <div className="bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30 shrink-0">
-              <Sparkles className="w-6 h-6 text-emerald-400" />
+            <div className="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center border border-success/30 shrink-0">
+              <Sparkles className="w-6 h-6 text-success" />
             </div>
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-foreground mb-1">Comprehensive Standing Analysis</h2>
@@ -311,18 +311,18 @@ export default function SomaChatPage() {
                 Analyzing all your quiz results and individual feedback reports to build a comprehensive picture of your academic standing, strengths, and weak areas.
               </p>
               {!hasData && !isDataLoading ? (
-                <div className="flex items-center gap-2 text-amber-400 text-sm">
+                <div className="flex items-center gap-2 text-warning text-sm">
                   <AlertTriangle className="w-4 h-4" />
                   Complete some quizzes first to get your analysis.
                 </div>
               ) : loading ? (
-                <div className="flex items-center gap-3 text-emerald-400 text-sm">
+                <div className="flex items-center gap-3 text-success text-sm">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Analyzing your performance across all subjects...
                 </div>
               ) : analysis ? (
                 <Button
-                  className="group relative inline-flex items-center gap-2.5 px-6 py-2.5 rounded-xl font-medium text-sm text-emerald-300 bg-emerald-500/5 border border-emerald-500/20 hover:bg-emerald-500/10 transition-all duration-300"
+                  className="group relative inline-flex items-center gap-2.5 px-6 py-2.5 rounded-xl font-medium text-sm text-success bg-success/5 border border-success/20 hover:bg-success/10 transition-all duration-300"
                   onClick={() => { autoGeneratedRef.current = true; generateAnalysis(); }}
                   disabled={loading || isDataLoading}
                 >
@@ -331,7 +331,7 @@ export default function SomaChatPage() {
                 </Button>
               ) : null}
               {error && (
-                <p className="text-sm text-red-400 mt-3">{error}</p>
+                <p className="text-sm text-danger mt-3">{error}</p>
               )}
             </div>
           </div>

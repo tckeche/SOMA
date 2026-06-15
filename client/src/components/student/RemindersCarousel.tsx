@@ -41,11 +41,11 @@ export default function RemindersCarousel({ reminders }: Props) {
   if (reminders.length === 0) {
     return (
       <section
-        className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 shadow-lg"
+        className="rounded-2xl border border-warning/20 bg-warning/5 p-5 shadow-lg"
         aria-label="Tips for your studies"
         data-testid="panel-reminders-empty"
       >
-        <div className="flex items-center gap-2 text-amber-300 text-sm">
+        <div className="flex items-center gap-2 text-warning text-sm">
           <Lightbulb className="w-4 h-4" />
           Tips will appear once your subjects are set up.
         </div>
@@ -55,16 +55,16 @@ export default function RemindersCarousel({ reminders }: Props) {
 
   return (
     <section
-      className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-orange-500/5 p-5 shadow-lg"
+      className="rounded-2xl border border-warning/20 bg-gradient-to-br from-warning/10 to-warning/5 p-5 shadow-lg"
       aria-label="Tips for your studies"
       data-testid="panel-reminders"
     >
       <header className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Lightbulb className="w-5 h-5 text-amber-300" />
+          <Lightbulb className="w-5 h-5 text-warning" />
           <div>
-            <h2 className="text-sm font-semibold text-amber-200">Tips for your studies</h2>
-            <p className="text-[11px] text-amber-300/70">
+            <h2 className="text-sm font-semibold text-warning">Tips for your studies</h2>
+            <p className="text-[11px] text-warning/70">
               Examiner-style reminders for the topics you're studying
             </p>
           </div>
@@ -72,7 +72,7 @@ export default function RemindersCarousel({ reminders }: Props) {
         <div className="flex items-center gap-1">
           <button
             onClick={() => emblaApi?.scrollPrev()}
-            className="p-1.5 rounded-lg border border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+            className="p-1.5 rounded-lg border border-warning/30 text-warning hover:bg-warning/10"
             aria-label="Previous tip"
             data-testid="button-reminders-prev"
           >
@@ -80,7 +80,7 @@ export default function RemindersCarousel({ reminders }: Props) {
           </button>
           <button
             onClick={() => emblaApi?.scrollNext()}
-            className="p-1.5 rounded-lg border border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+            className="p-1.5 rounded-lg border border-warning/30 text-warning hover:bg-warning/10"
             aria-label="Next tip"
             data-testid="button-reminders-next"
           >
@@ -96,16 +96,16 @@ export default function RemindersCarousel({ reminders }: Props) {
             return (
               <div
                 key={r.id}
-                className="flex-[0_0_100%] min-w-0 rounded-xl bg-card/60 border border-amber-500/15 p-4"
+                className="flex-[0_0_100%] min-w-0 rounded-xl bg-card/60 border border-warning/15 p-4"
                 data-testid={`reminder-${r.id}`}
               >
                 <div className="flex items-center gap-2 mb-1.5">
-                  <p className="text-[10px] uppercase tracking-wider text-amber-400/80">
+                  <p className="text-[10px] uppercase tracking-wider text-warning/80">
                     {r.subject ? `${r.subject} · ${r.topic}` : r.topic}
                   </p>
                   {badgeLabel && (
                     <span
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide bg-rose-500/15 border border-rose-500/40 text-rose-300"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide bg-danger/15 border border-danger/40 text-danger"
                       data-testid={`badge-frequency-${r.id}`}
                     >
                       <AlertTriangle className="w-2.5 h-2.5" />
@@ -118,7 +118,7 @@ export default function RemindersCarousel({ reminders }: Props) {
                 </p>
                 {r.whyItMatters && (
                   <p
-                    className="text-xs leading-relaxed text-amber-300/80 mt-1.5"
+                    className="text-xs leading-relaxed text-warning/80 mt-1.5"
                     data-testid={`text-why-${r.id}`}
                   >
                     {r.whyItMatters}
@@ -136,7 +136,7 @@ export default function RemindersCarousel({ reminders }: Props) {
             <button
               key={i}
               onClick={() => emblaApi?.scrollTo(i)}
-              className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? "w-6 bg-amber-300" : "w-1.5 bg-amber-500/30"}`}
+              className={`h-1.5 rounded-full transition-all ${i === selectedIndex ? "w-6 bg-warning" : "w-1.5 bg-warning/30"}`}
               aria-label={`Go to tip ${i + 1}`}
               data-testid={`dot-reminder-${i}`}
             />

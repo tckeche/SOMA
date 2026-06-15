@@ -141,12 +141,12 @@ export function SuperAdminAIUsage() {
   });
 
   if (isLoading) {
-    return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-red-500 animate-spin" /></div>;
+    return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-danger animate-spin" /></div>;
   }
   if (isError || !data) {
     return (
       <div className={`${CARD} text-center py-12`}>
-        <AlertTriangle className="w-12 h-12 mx-auto text-amber-400 mb-4" />
+        <AlertTriangle className="w-12 h-12 mx-auto text-warning mb-4" />
         <p className="text-sm text-muted-foreground">Failed to load AI usage metrics.</p>
       </div>
     );
@@ -159,7 +159,7 @@ export function SuperAdminAIUsage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <Activity className="w-4 h-4 text-red-400" /> AI Usage & Cost
+            <Activity className="w-4 h-4 text-danger" /> AI Usage & Cost
           </h2>
           <p className="text-xs text-muted-foreground">
             Live counters (current process) plus historical spend from <code className="text-foreground/80">ai_usage_logs</code>. Health backend: <code className="text-foreground/80">{data.health.backend}</code>
@@ -171,7 +171,7 @@ export function SuperAdminAIUsage() {
               <button
                 key={opt.days}
                 onClick={() => setDays(opt.days)}
-                className={`text-xs px-2.5 py-1 rounded-md transition ${days === opt.days ? "bg-red-500/20 text-red-300 font-semibold" : "text-muted-foreground hover:text-foreground"}`}
+                className={`text-xs px-2.5 py-1 rounded-md transition ${days === opt.days ? "bg-danger/20 text-danger font-semibold" : "text-muted-foreground hover:text-foreground"}`}
                 data-testid={`button-range-${opt.days}`}
               >
                 {opt.label}
@@ -202,7 +202,7 @@ export function SuperAdminAIUsage() {
       {/* Daily spend */}
       <div className={CARD}>
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
-          <TrendingUp className="w-4 h-4 text-emerald-400" /> Daily spend
+          <TrendingUp className="w-4 h-4 text-success" /> Daily spend
         </h3>
         {hist.byDay.length === 0 ? (
           <p className="text-xs text-muted-foreground">No spend recorded in this window.</p>
@@ -215,13 +215,13 @@ export function SuperAdminAIUsage() {
       <div className="grid md:grid-cols-2 gap-4">
         <PeopleCard
           title="Spend by tutor / super-admin"
-          icon={<Users className="w-4 h-4 text-sky-400" />}
+          icon={<Users className="w-4 h-4 text-info" />}
           rows={hist.byTutor}
           emptyHint="No tutor spend in this window."
         />
         <PeopleCard
           title="Spend by student"
-          icon={<Users className="w-4 h-4 text-violet-400" />}
+          icon={<Users className="w-4 h-4 text-primary" />}
           rows={hist.byStudent}
           emptyHint="No student-attributed spend in this window."
         />
@@ -230,7 +230,7 @@ export function SuperAdminAIUsage() {
       {/* Recent calls */}
       <div className={CARD}>
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
-          <History className="w-4 h-4 text-amber-400" /> Recent AI calls (latest 50)
+          <History className="w-4 h-4 text-warning" /> Recent AI calls (latest 50)
         </h3>
         {hist.recent.length === 0 ? (
           <p className="text-xs text-muted-foreground">No persisted AI calls yet — once any AI call runs, rows will appear here.</p>
@@ -262,8 +262,8 @@ export function SuperAdminAIUsage() {
                     <td className="px-2 py-1.5 text-right">{r.costUsd === null ? "—" : formatUsd(r.costUsd)}</td>
                     <td className="px-2 py-1.5 text-right">{r.latencyMs}ms</td>
                     <td className="px-2 py-1.5 text-right">
-                      {r.success ? <span className="text-emerald-400">ok</span> : <span className="text-red-300">fail</span>}
-                      {r.cached && <span className="ml-1 text-amber-300">cached</span>}
+                      {r.success ? <span className="text-success">ok</span> : <span className="text-danger">fail</span>}
+                      {r.cached && <span className="ml-1 text-warning">cached</span>}
                     </td>
                   </tr>
                 ))}
@@ -282,7 +282,7 @@ export function SuperAdminAIUsage() {
 
       <div className={CARD}>
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
-          <Zap className="w-4 h-4 text-amber-400" /> Provider health (live)
+          <Zap className="w-4 h-4 text-warning" /> Provider health (live)
         </h3>
         {data.health.providers.length === 0 ? (
           <p className="text-xs text-muted-foreground">No provider activity recorded yet.</p>
@@ -305,15 +305,15 @@ export function SuperAdminAIUsage() {
                   <tr key={`${p.provider}/${p.model}`} className="border-b border-card-border/60">
                     <td className="px-3 py-2 text-foreground"><code>{p.provider}/{p.model}</code></td>
                     <td className="px-3 py-2 text-right">{p.successes}</td>
-                    <td className="px-3 py-2 text-right text-red-300">{p.failures}</td>
+                    <td className="px-3 py-2 text-right text-danger">{p.failures}</td>
                     <td className="px-3 py-2 text-right">{p.timeouts}</td>
                     <td className="px-3 py-2 text-right">{Math.round(p.avgLatencyMs)}ms</td>
                     <td className="px-3 py-2 text-right">{Math.round(p.p95LatencyMs)}ms</td>
                     <td className="px-3 py-2 text-right">
                       {p.inCooldown ? (
-                        <span className="text-amber-300">cooldown</span>
+                        <span className="text-warning">cooldown</span>
                       ) : (
-                        <span className="text-emerald-400">healthy</span>
+                        <span className="text-success">healthy</span>
                       )}
                     </td>
                   </tr>
@@ -376,7 +376,7 @@ function PeopleCard({
                   </td>
                   <td className="px-2 py-1.5 text-right">{r.calls}</td>
                   <td className="px-2 py-1.5 text-right">{formatNum(r.inputTokens + r.outputTokens)}</td>
-                  <td className="px-2 py-1.5 text-right text-amber-300">{formatUsd(r.costUsd)}</td>
+                  <td className="px-2 py-1.5 text-right text-warning">{formatUsd(r.costUsd)}</td>
                 </tr>
               ))}
             </tbody>

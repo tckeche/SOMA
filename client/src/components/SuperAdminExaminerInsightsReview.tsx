@@ -93,9 +93,9 @@ interface Counts {
 }
 
 const PILL_BUCKET_META: Array<{ key: keyof ConfidenceBreakdown; label: string; dot: string }> = [
-  { key: "high", label: "High", dot: "bg-emerald-400" },
-  { key: "medium", label: "Medium", dot: "bg-amber-400" },
-  { key: "low", label: "Low", dot: "bg-rose-400" },
+  { key: "high", label: "High", dot: "bg-success" },
+  { key: "medium", label: "Medium", dot: "bg-warning" },
+  { key: "low", label: "Low", dot: "bg-danger" },
 ];
 
 function PillConfidenceBreakdown({
@@ -109,9 +109,9 @@ function PillConfidenceBreakdown({
   const total = breakdown.high + breakdown.medium + breakdown.low + breakdown.unknown;
   if (total === 0) return null;
   const segments = [
-    { key: "high" as const, value: breakdown.high, color: "bg-emerald-500/70" },
-    { key: "medium" as const, value: breakdown.medium, color: "bg-amber-500/70" },
-    { key: "low" as const, value: breakdown.low, color: "bg-rose-500/70" },
+    { key: "high" as const, value: breakdown.high, color: "bg-success/70" },
+    { key: "medium" as const, value: breakdown.medium, color: "bg-warning/70" },
+    { key: "low" as const, value: breakdown.low, color: "bg-danger/70" },
     { key: "unknown" as const, value: breakdown.unknown, color: "bg-muted-foreground/40" },
   ];
   const tooltip =
@@ -159,9 +159,9 @@ function PillConfidenceBreakdown({
 const CARD = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
 
 const FREQUENCY_BADGE: Record<string, string> = {
-  very_common: "bg-red-500/20 text-red-300 border-red-500/40",
-  common: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-  occasional: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+  very_common: "bg-danger/20 text-danger border-danger/40",
+  common: "bg-warning/20 text-warning border-warning/40",
+  occasional: "bg-info/20 text-info border-info/40",
 };
 
 const STATUS_TABS: Array<{ key: ReviewStatus; label: string }> = [
@@ -183,15 +183,15 @@ function bucketForConfidence(pct: number | null): ConfidenceBucket {
 
 const CONFIDENCE_BADGE: Record<ConfidenceBucket, { className: string; label: string }> = {
   high: {
-    className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    className: "bg-success/15 text-success border-success/40",
     label: "High",
   },
   medium: {
-    className: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+    className: "bg-warning/15 text-warning border-warning/40",
     label: "Medium",
   },
   low: {
-    className: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+    className: "bg-danger/15 text-danger border-danger/40",
     label: "Low",
   },
   unknown: {
@@ -447,7 +447,7 @@ export function SuperAdminExaminerInsightsReview() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <ClipboardCheck className="w-4 h-4 text-amber-400" /> Examiner Insight Review Queue
+            <ClipboardCheck className="w-4 h-4 text-warning" /> Examiner Insight Review Queue
           </h2>
           <p className="text-xs text-muted-foreground">
             AI-extracted misconceptions land here as <code className="text-foreground/80">pending</code>. Approve to make
@@ -458,7 +458,7 @@ export function SuperAdminExaminerInsightsReview() {
           <button
             onClick={() => bulkApprove.mutate()}
             disabled={bulkApprove.isPending || (counts.data?.pending ?? 0) === 0}
-            className="text-xs px-3 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-2 disabled:opacity-40"
+            className="text-xs px-3 py-2 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-2 disabled:opacity-40"
             data-testid="button-bulk-approve"
           >
             <Zap className="w-3.5 h-3.5" /> Bulk approve ≥ 90% confidence
@@ -475,7 +475,7 @@ export function SuperAdminExaminerInsightsReview() {
       </div>
 
       {bulkApprove.data && (
-        <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
+        <div className="text-xs text-success bg-success/10 border border-success/30 rounded-lg px-3 py-2">
           Approved {bulkApprove.data.approved} insight(s).
         </div>
       )}
@@ -485,7 +485,7 @@ export function SuperAdminExaminerInsightsReview() {
           <button
             key={t.key}
             onClick={() => setStatus(t.key)}
-            className={`${CARD} text-left transition ${status === t.key ? "border-red-500/40 bg-red-500/10" : "hover:border-border/80"}`}
+            className={`${CARD} text-left transition ${status === t.key ? "border-danger/40 bg-danger/10" : "hover:border-border/80"}`}
             data-testid={`status-pill-${t.key}`}
           >
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.label}</p>
@@ -539,7 +539,7 @@ export function SuperAdminExaminerInsightsReview() {
             aria-pressed={unmatchedOnly}
             className={`mt-[18px] inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition ${
               unmatchedOnly
-                ? "bg-amber-500/20 border-amber-500/40 text-amber-200"
+                ? "bg-warning/20 border-warning/40 text-warning"
                 : "bg-card/60 border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
             }`}
             title="Only show rows whose subtopic text couldn't be auto-mapped to a canonical subtopic."
@@ -557,10 +557,10 @@ export function SuperAdminExaminerInsightsReview() {
       </div>
 
       {queue.isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-amber-400 animate-spin" /></div>
+        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-warning animate-spin" /></div>
       ) : queue.isError || !queue.data ? (
         <div className={`${CARD} text-center py-12`}>
-          <AlertTriangle className="w-12 h-12 mx-auto text-amber-400 mb-4" />
+          <AlertTriangle className="w-12 h-12 mx-auto text-warning mb-4" />
           <p className="text-sm text-muted-foreground">Failed to load review queue.</p>
         </div>
       ) : queue.data.rows.length === 0 ? (
@@ -626,7 +626,7 @@ export function SuperAdminExaminerInsightsReview() {
           data-testid="bulk-action-bar"
         >
           <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
-            <CheckSquare className="w-3.5 h-3.5 text-emerald-300" />
+            <CheckSquare className="w-3.5 h-3.5 text-success" />
             <span data-testid="text-bulk-selection-count">
               {selectedIds.size} selected
             </span>
@@ -634,7 +634,7 @@ export function SuperAdminExaminerInsightsReview() {
           <button
             onClick={() => bulkAction.mutate({ action: "approve", ids: Array.from(selectedIds) })}
             disabled={bulkAction.isPending}
-            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+            className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
             data-testid="button-bulk-action-approve"
           >
             <CheckCircle2 className="w-3 h-3" /> Approve {selectedIds.size}
@@ -645,7 +645,7 @@ export function SuperAdminExaminerInsightsReview() {
           <button
             onClick={() => bulkAction.mutate({ action: "reject", ids: Array.from(selectedIds) })}
             disabled={bulkAction.isPending}
-            className="text-xs px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 hover:bg-red-500/25 text-red-200 flex items-center gap-1 disabled:opacity-40"
+            className="text-xs px-3 py-1.5 rounded-lg bg-danger/15 border border-danger/30 hover:bg-danger/25 text-danger flex items-center gap-1 disabled:opacity-40"
             data-testid="button-bulk-action-reject"
           >
             <XCircle className="w-3 h-3" /> Reject {selectedIds.size}
@@ -700,7 +700,7 @@ function ReviewRow({
 
   return (
     <article
-      className={`${CARD} ${isSelected ? "ring-2 ring-emerald-500/40 border-emerald-500/40" : ""}`}
+      className={`${CARD} ${isSelected ? "ring-2 ring-success/40 border-success/40" : ""}`}
       data-testid={`review-row-${row.id}`}
     >
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -711,7 +711,7 @@ function ReviewRow({
               checked={isSelected}
               onChange={onToggleSelect}
               disabled={busy}
-              className="w-4 h-4 rounded accent-emerald-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-4 h-4 rounded accent-success cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               data-testid={`checkbox-select-${row.id}`}
               aria-label={`Select insight ${row.id}`}
             />
@@ -755,7 +755,7 @@ function ReviewRow({
             <button
               onClick={onApprove}
               disabled={busy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
               data-testid="button-approve"
             >
               <CheckCircle2 className="w-3 h-3" /> Approve
@@ -763,7 +763,7 @@ function ReviewRow({
             <button
               onClick={onReject}
               disabled={busy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 hover:bg-red-500/25 text-red-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-danger/15 border border-danger/30 hover:bg-danger/25 text-danger flex items-center gap-1 disabled:opacity-40"
               data-testid="button-reject"
             >
               <XCircle className="w-3 h-3" /> Reject
@@ -809,7 +809,7 @@ function ReviewRow({
                 })
               }
               disabled={busy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
               data-testid="button-save-edit"
             >
               <Save className="w-3 h-3" /> Save edits
@@ -891,7 +891,7 @@ function SubtopicLinkBadge({ row }: { row: QueueRow }) {
   if (row.subtopicId && row.subtopicTitle) {
     return (
       <span className="inline-flex items-center gap-1" data-testid={`subtopic-link-badge-linked-${row.id}`}>
-        <Link2 className="w-3 h-3 text-emerald-400" />
+        <Link2 className="w-3 h-3 text-success" />
         Linked to: <span className="text-foreground/80">{row.subtopicTitle}</span>
       </span>
     );
@@ -899,7 +899,7 @@ function SubtopicLinkBadge({ row }: { row: QueueRow }) {
   if ((row.subtopic ?? "").trim()) {
     return (
       <span
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/15 text-amber-200"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-warning/40 bg-warning/15 text-warning"
         title={`Free-text subtopic "${row.subtopic}" couldn't be auto-mapped to the catalogue. Edit this row to pick the right one.`}
         data-testid={`subtopic-link-badge-unmatched-${row.id}`}
       >
@@ -955,13 +955,13 @@ function SubtopicPickerInline({
 
   return (
     <div
-      className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2"
+      className="rounded-lg border border-warning/30 bg-warning/5 p-3 space-y-2"
       data-testid={tid(`subtopic-picker-${row.id}`)}
     >
       <div className="flex items-start gap-2">
-        <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+        <HelpCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
         <div className="flex-1 text-xs">
-          <p className="text-amber-100 font-medium">Catalogue subtopic</p>
+          <p className="text-warning font-medium">Catalogue subtopic</p>
           <p className="text-muted-foreground mt-0.5">
             {row.subtopicId
               ? "This row is currently linked to a catalogue subtopic. Pick a different one to re-link."
@@ -977,7 +977,7 @@ function SubtopicPickerInline({
           <Loader2 className="w-3 h-3 animate-spin" /> Loading catalogue…
         </div>
       ) : options.isError ? (
-        <p className="text-xs text-rose-300">Couldn't load subtopic options.</p>
+        <p className="text-xs text-danger">Couldn't load subtopic options.</p>
       ) : (options.data?.options.length ?? 0) === 0 ? (
         <p className="text-xs text-muted-foreground">
           No catalogue subtopics found for syllabus <code>{row.syllabusCode}</code>.
@@ -985,13 +985,13 @@ function SubtopicPickerInline({
       ) : (
         <>
           {options.data?.suggestion && (
-            <div className="text-[11px] text-emerald-300 flex items-center gap-2 flex-wrap">
+            <div className="text-[11px] text-success flex items-center gap-2 flex-wrap">
               Best guess: <span className="text-foreground/90 font-medium">{options.data.suggestion.title}</span>
               {options.data.suggestion.id !== selectedId && (
                 <button
                   type="button"
                   onClick={() => setSelectedId(options.data!.suggestion!.id)}
-                  className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200"
+                  className="px-2 py-0.5 rounded bg-success/15 border border-success/30 hover:bg-success/25 text-success"
                   data-testid={tid(`button-accept-suggestion-${row.id}`)}
                 >
                   Use suggestion
@@ -1021,7 +1021,7 @@ function SubtopicPickerInline({
               type="button"
               onClick={() => onPick(selectedId === "" ? null : Number(selectedId))}
               disabled={busy || selectedId === "" || selectedId === row.subtopicId}
-              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-200 flex items-center gap-1 disabled:opacity-40"
+              className="text-xs px-3 py-1.5 rounded-lg bg-success/15 border border-success/30 hover:bg-success/25 text-success flex items-center gap-1 disabled:opacity-40"
               data-testid={tid(`button-save-subtopic-${row.id}`)}
             >
               <Link2 className="w-3 h-3" /> Link subtopic

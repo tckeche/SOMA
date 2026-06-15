@@ -65,11 +65,11 @@ const TYPE_LABEL: Record<PlanSession["type"], string> = {
 };
 
 const TYPE_COLOUR: Record<PlanSession["type"], string> = {
-  drill: "bg-rose-500/15 text-rose-200 border-rose-500/25",
-  review: "bg-amber-500/15 text-amber-200 border-amber-500/25",
-  exam_practice: "bg-emerald-500/15 text-emerald-200 border-emerald-500/25",
-  concept_recap: "bg-sky-500/15 text-sky-200 border-sky-500/25",
-  examiner_misconception: "bg-violet-500/15 text-violet-200 border-violet-500/25",
+  drill: "bg-danger/15 text-danger border-danger/25",
+  review: "bg-warning/15 text-warning border-warning/25",
+  exam_practice: "bg-success/15 text-success border-success/25",
+  concept_recap: "bg-info/15 text-info border-info/25",
+  examiner_misconception: "bg-primary/15 text-primary border-primary/25",
 };
 
 export function RevisionPlanCard() {
@@ -148,7 +148,7 @@ export function RevisionPlanCard() {
     return (
       <section className="space-y-3" data-testid="section-revision-plan">
         <Header />
-        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-violet-400 animate-spin" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-primary animate-spin" /></div>
       </section>
     );
   }
@@ -167,13 +167,13 @@ export function RevisionPlanCard() {
                 onClick={() => setSelectedSubject(p.subject)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                   active
-                    ? "bg-violet-500/15 text-violet-200 border border-violet-500/25"
+                    ? "bg-primary/15 text-primary border border-primary/25"
                     : "text-muted-foreground hover:text-foreground border border-transparent"
                 }`}
                 data-testid={`plan-tab-${p.id}`}
               >
                 {p.subject}
-                {p.stale && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Plan is out of date" />}
+                {p.stale && <span className="w-1.5 h-1.5 rounded-full bg-warning" title="Plan is out of date" />}
               </button>
             );
           })}
@@ -250,7 +250,7 @@ export function RevisionPlanCard() {
               });
             }}
             disabled={generate.isPending}
-            className="text-sm px-4 py-2 rounded-lg bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/30 text-violet-200 flex items-center gap-2 disabled:opacity-50"
+            className="text-sm px-4 py-2 rounded-lg bg-primary/20 border border-primary/30 hover:bg-primary/30 text-primary flex items-center gap-2 disabled:opacity-50"
             data-testid="button-generate-plan"
           >
             <Sparkles className="w-4 h-4" /> Generate my plan
@@ -289,7 +289,7 @@ function PlanView({
               {plan.subject} <span className="text-muted-foreground font-normal">· {plan.syllabusCode} · {plan.level}</span>
             </p>
             {plan.stale && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-200 flex items-center gap-1">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning/15 border border-warning/30 text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> Out of date
               </span>
             )}
@@ -310,7 +310,7 @@ function PlanView({
         <button
           onClick={() => onRefresh()}
           disabled={refreshing}
-          className="text-xs px-3 py-1.5 rounded-lg bg-violet-500/15 border border-violet-500/30 hover:bg-violet-500/25 text-violet-200 flex items-center gap-1.5 disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 hover:bg-primary/25 text-primary flex items-center gap-1.5 disabled:opacity-50"
           data-testid="button-refresh-plan"
         >
           <RefreshCcw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} /> Refresh

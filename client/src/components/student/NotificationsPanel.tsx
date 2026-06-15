@@ -129,7 +129,7 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
               <div className="flex items-center gap-2 min-w-0">
                 {isUnread && (
                   <span
-                    className="w-2 h-2 rounded-full bg-rose-500 shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                    className="w-2 h-2 rounded-full bg-danger shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
                     aria-label="Unread"
                     data-testid={`notification-dot-${n.id}`}
                   />
@@ -208,7 +208,7 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
             <div
               className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${
                 unreadCount > 0
-                  ? "bg-violet-500/15 text-violet-300 border border-violet-500/30"
+                  ? "bg-primary/15 text-primary border border-primary/30"
                   : "bg-muted/60 text-muted-foreground border border-card-border"
               }`}
             >
@@ -216,7 +216,7 @@ export default function NotificationsPanel({ items, unreadCount, studentKey }: P
             </div>
             {unreadCount > 0 && (
               <span
-                className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-[10px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-card tabular-nums"
+                className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-danger text-[10px] font-bold text-white flex items-center justify-center leading-none ring-2 ring-card tabular-nums"
                 aria-label={`${unreadCount} unread notifications`}
                 data-testid="bell-unread-count"
               >

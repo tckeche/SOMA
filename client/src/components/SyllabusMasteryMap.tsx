@@ -89,7 +89,7 @@ export function SyllabusMasteryMap({
           <p className="text-xs text-muted-foreground">{description}</p>
         </header>
         <div className="flex justify-center py-12">
-          <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
         </div>
       </section>
     );
@@ -103,7 +103,7 @@ export function SyllabusMasteryMap({
           <p className="text-xs text-muted-foreground">{description}</p>
         </header>
         <div className="rounded-2xl border border-card-border bg-card/70 p-8 text-center">
-          <AlertTriangle className="w-8 h-8 mx-auto text-amber-400 mb-2" />
+          <AlertTriangle className="w-8 h-8 mx-auto text-warning mb-2" />
           <p className="text-sm text-muted-foreground">Couldn't load your mastery map.</p>
         </div>
       </section>
@@ -161,8 +161,8 @@ function SubjectCard({ node }: { node: SubjectNode }) {
         onClick={() => setExpanded((v) => !v)}
         className="w-full p-5 flex items-center gap-4 hover:bg-foreground/[0.02] text-left"
       >
-        <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center shrink-0">
-          <BookOpen className="w-5 h-5 text-violet-300" />
+        <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
+          <BookOpen className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">
@@ -181,7 +181,7 @@ function SubjectCard({ node }: { node: SubjectNode }) {
               {masteryPct > 0 && ` · ${masteryPct}%`}
             </span>
             {node.examinerInsightCount > 0 && (
-              <span className="text-rose-300">
+              <span className="text-danger">
                 {node.examinerInsightCount} examiner insight{node.examinerInsightCount !== 1 ? "s" : ""}
               </span>
             )}
@@ -221,7 +221,7 @@ function TopicRow({ node }: { node: TopicNode }) {
             <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> {node.understandingPercent}%</span>
             <span>{node.attemptedSubtopics}/{node.totalSubtopics} subtopics tested</span>
             {node.examinerInsightCount > 0 && (
-              <span className="text-rose-300">{node.examinerInsightCount} examiner insight{node.examinerInsightCount !== 1 ? "s" : ""}</span>
+              <span className="text-danger">{node.examinerInsightCount} examiner insight{node.examinerInsightCount !== 1 ? "s" : ""}</span>
             )}
           </div>
         </div>
@@ -240,7 +240,7 @@ function TopicRow({ node }: { node: TopicNode }) {
 }
 
 function UnderstandingBar({ percent }: { percent: number }) {
-  const colour = percent >= 80 ? "bg-emerald-400" : percent >= 50 ? "bg-amber-400" : percent > 0 ? "bg-rose-400" : "bg-muted";
+  const colour = percent >= 80 ? "bg-success" : percent >= 50 ? "bg-warning" : percent > 0 ? "bg-danger" : "bg-muted";
   return (
     <div className="hidden sm:block w-20 h-1.5 bg-foreground/[0.06] rounded-full overflow-hidden shrink-0">
       <div className={`h-full ${colour}`} style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
@@ -257,19 +257,19 @@ function SubtopicLeafRow({ leaf }: { leaf: SubtopicLeaf }) {
         ? "Covered, not tested"
         : "Not yet tested";
   const stateColour = leaf.masteryAchieved
-    ? "text-emerald-300"
+    ? "text-success"
     : leaf.tested && leaf.understandingPercent >= 50
-      ? "text-amber-200"
+      ? "text-warning"
       : leaf.tested
-        ? "text-rose-300"
+        ? "text-danger"
         : "text-muted-foreground";
   return (
     <div className="flex items-center gap-3 pl-10 py-1.5">
       <div className="shrink-0">
         {leaf.masteryAchieved ? (
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <CheckCircle2 className="w-3.5 h-3.5 text-success" />
         ) : (
-          <Circle className={`w-3.5 h-3.5 ${leaf.tested ? "text-amber-400" : "text-muted-foreground/40"}`} />
+          <Circle className={`w-3.5 h-3.5 ${leaf.tested ? "text-warning" : "text-muted-foreground/40"}`} />
         )}
       </div>
       <div className="flex-1 min-w-0">
@@ -280,7 +280,7 @@ function SubtopicLeafRow({ leaf }: { leaf: SubtopicLeaf }) {
       </div>
       <p className={`text-[11px] ${stateColour} shrink-0`}>{stateLabel}</p>
       {leaf.examinerInsightCount > 0 && (
-        <span className="text-[10px] text-rose-300 shrink-0">{leaf.examinerInsightCount} examiner</span>
+        <span className="text-[10px] text-danger shrink-0">{leaf.examinerInsightCount} examiner</span>
       )}
     </div>
   );

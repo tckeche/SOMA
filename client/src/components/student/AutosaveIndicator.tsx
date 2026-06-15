@@ -39,7 +39,7 @@ export function AutosaveIndicator({
   if (status === "failed") {
     return (
       <span
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium bg-rose-500/10 text-rose-300 border-rose-500/30"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium bg-danger/10 text-danger border-danger/30"
         role="status"
         aria-live="assertive"
         data-testid="autosave-indicator"
@@ -53,7 +53,7 @@ export function AutosaveIndicator({
   // saved
   return (
     <span
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium bg-success/10 text-success border-success/30"
       role="status"
       aria-live="polite"
       data-testid="autosave-indicator"

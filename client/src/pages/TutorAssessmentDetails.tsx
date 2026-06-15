@@ -97,7 +97,7 @@ function formatBytes(bytes: number) {
 }
 
 const CARD_CLASS = "bg-card/80 backdrop-blur-md border border-card-border rounded-2xl p-6 shadow-2xl";
-const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-violet-500/40 bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-all";
+const STANDARD_ACTION_BUTTON_CLASS = "inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-primary/40 bg-primary/20 text-primary hover:bg-primary/30 transition-all";
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "—";
@@ -421,7 +421,7 @@ export default function TutorAssessmentDetails() {
             </button>
           </Link>
           <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
           </div>
         </div>
       </div>
@@ -477,8 +477,8 @@ export default function TutorAssessmentDetails() {
         <div className={CARD_CLASS}>
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
-                <BookOpen className="w-6 h-6 text-violet-400" />
+              <div className="w-12 h-12 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                <BookOpen className="w-6 h-6 text-primary" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">{quiz.title}</h1>
@@ -519,9 +519,9 @@ export default function TutorAssessmentDetails() {
                 setShowDueDatePicker(true);
                 setNewDueDate(currentDueDate ? new Date(currentDueDate).toISOString().slice(0, 16) : "");
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/60 border border-border/50 text-foreground/80 hover:bg-slate-700/60 transition-all text-sm"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/60 border border-border/50 text-foreground/80 hover:bg-muted transition-all text-sm"
             >
-              <CalendarDays className="w-4 h-4 text-violet-400" />
+              <CalendarDays className="w-4 h-4 text-primary" />
               {currentDueDate ? `Due: ${formatDate(currentDueDate)}` : "Set Due Date"}
             </button>
             <button
@@ -542,7 +542,7 @@ export default function TutorAssessmentDetails() {
               </div>
             </Link>
             {quiz.isArchived && (
-              <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs">
+              <Badge className="bg-warning/10 text-warning border border-warning/30 text-xs">
                 Archived
               </Badge>
             )}
@@ -554,15 +554,15 @@ export default function TutorAssessmentDetails() {
               <p className="text-xs text-muted-foreground mt-1">Level</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
-              <p className="text-2xl font-bold text-violet-300">{details.totalAssigned}</p>
+              <p className="text-2xl font-bold text-primary">{details.totalAssigned}</p>
               <p className="text-xs text-muted-foreground mt-1">Total Assigned</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
-              <p className="text-2xl font-bold text-emerald-300">{submittedCount}</p>
+              <p className="text-2xl font-bold text-success">{submittedCount}</p>
               <p className="text-xs text-muted-foreground mt-1">Submitted</p>
             </div>
             <div className="bg-foreground/5 rounded-xl p-4 border border-border/50">
-              <p className="text-2xl font-bold text-cyan-300">{avgGradePct !== null ? `${avgGradePct}%` : "—"}</p>
+              <p className="text-2xl font-bold text-info">{avgGradePct !== null ? `${avgGradePct}%` : "—"}</p>
               <p className="text-xs text-muted-foreground mt-1">Avg Grade</p>
             </div>
           </div>
@@ -635,7 +635,7 @@ export default function TutorAssessmentDetails() {
                               const pct = assignment.maxGrade > 0 ? Math.round((assignment.finalGrade / assignment.maxGrade) * 100) : 0;
                               return (
                                 <>
-                                  <p className={`text-sm font-bold ${pct >= 70 ? "text-emerald-400" : pct >= 40 ? "text-amber-400" : "text-red-400"}`}>
+                                  <p className={`text-sm font-bold ${pct >= 70 ? "text-success" : pct >= 40 ? "text-warning" : "text-danger"}`}>
                                     {pct}%
                                   </p>
                                   <p className="text-[10px] text-muted-foreground">{assignment.finalGrade}/{assignment.maxGrade}</p>
@@ -652,7 +652,7 @@ export default function TutorAssessmentDetails() {
                           {assignment.reportId && (assignment.detailedStatus === "submitted" || assignment.detailedStatus === "feedback_ready") && (
                             <Link href={`/soma/review/${assignment.reportId}`}>
                               <button
-                                className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                                className="p-2 text-info hover:text-info/80 hover:bg-info/10 rounded-lg transition-colors"
                                 title="View Diagnostic Report"
                               >
                                 <FileText className="w-4 h-4" />
@@ -661,7 +661,7 @@ export default function TutorAssessmentDetails() {
                           )}
                           <button
                             onClick={() => setRevokeStudentId(assignment.studentId)}
-                            className="p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            className="p-2 text-danger/60 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
                             title="Revoke assignment"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -690,7 +690,7 @@ export default function TutorAssessmentDetails() {
           </div>
 
           {storageUnconfigured ? (
-            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+            <div className="rounded-xl bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">
               File storage isn't configured on the server yet.
             </div>
           ) : (
@@ -701,7 +701,7 @@ export default function TutorAssessmentDetails() {
                   accept="application/pdf"
                   data-testid="attach-file-input"
                   onChange={(e) => handleSelectFile(e.target.files?.[0] ?? null)}
-                  className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-violet-300 hover:file:bg-violet-500/30"
+                  className="text-sm text-foreground/80 file:mr-3 file:rounded-lg file:border-0 file:bg-primary/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/30"
                 />
                 <button
                   data-testid="attach-upload"
@@ -736,7 +736,7 @@ export default function TutorAssessmentDetails() {
                       className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 border border-border/50 px-4 py-3"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <FileText className="w-4 h-4 text-violet-400 shrink-0" />
+                        <FileText className="w-4 h-4 text-primary shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{att.filename}</p>
                           <p className="text-xs text-muted-foreground">{formatBytes(att.sizeBytes)}</p>
@@ -746,7 +746,7 @@ export default function TutorAssessmentDetails() {
                         <button
                           data-testid={`attach-download-${att.id}`}
                           onClick={() => downloadAttachment(att.id)}
-                          className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                          className="p-2 text-info hover:text-info/80 hover:bg-info/10 rounded-lg transition-colors"
                           title="Download"
                         >
                           <Download className="w-4 h-4" />
@@ -754,7 +754,7 @@ export default function TutorAssessmentDetails() {
                         <button
                           data-testid={`attach-delete-${att.id}`}
                           onClick={() => setDeleteAttachmentId(att.id)}
-                          className="p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          className="p-2 text-danger/60 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -778,7 +778,7 @@ export default function TutorAssessmentDetails() {
           </div>
 
           {storageUnconfigured ? (
-            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+            <div className="rounded-xl bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">
               File storage isn't configured on the server yet.
             </div>
           ) : responses.length === 0 ? (
@@ -805,7 +805,7 @@ export default function TutorAssessmentDetails() {
                   <div className="flex items-center gap-3 shrink-0">
                     {resp.status === "marked" ? (
                       <div className="text-right">
-                        <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs">
+                        <Badge className="bg-success/10 text-success border border-success/30 text-xs">
                           Marked
                         </Badge>
                         <p className="text-xs text-foreground/80 mt-1">
@@ -813,14 +813,14 @@ export default function TutorAssessmentDetails() {
                         </p>
                       </div>
                     ) : (
-                      <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs">
+                      <Badge className="bg-warning/10 text-warning border border-warning/30 text-xs">
                         Submitted
                       </Badge>
                     )}
                     <button
                       data-testid={`resp-download-${resp.id}`}
                       onClick={() => downloadResponse(resp.id)}
-                      className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                      className="p-2 text-info hover:text-info/80 hover:bg-info/10 rounded-lg transition-colors"
                       title="Download"
                     >
                       <Download className="w-4 h-4" />
@@ -850,7 +850,7 @@ export default function TutorAssessmentDetails() {
       <AlertDialog open={revokeStudentId !== null} onOpenChange={(open) => { if (!open) setRevokeStudentId(null); }}>
         <AlertDialogContent className="bg-card border-border">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-300">Revoke Assignment</AlertDialogTitle>
+            <AlertDialogTitle className="text-danger">Revoke Assignment</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
               This will remove the student's access to this quiz. This action cannot be undone.
             </AlertDialogDescription>
@@ -858,7 +858,7 @@ export default function TutorAssessmentDetails() {
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={() => setRevokeStudentId(null)}
-              className="bg-muted text-foreground/80 border-border hover:bg-slate-700"
+              className="bg-muted text-foreground/80 border-border hover:bg-muted/80"
             >
               Cancel
             </AlertDialogCancel>
@@ -867,7 +867,7 @@ export default function TutorAssessmentDetails() {
                 if (revokeStudentId) revokeMutation.mutate(revokeStudentId);
               }}
               disabled={revokeMutation.isPending}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-danger text-white hover:bg-danger/90"
             >
               {revokeMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -883,7 +883,7 @@ export default function TutorAssessmentDetails() {
       <AlertDialog open={deleteAttachmentId !== null} onOpenChange={(open) => { if (!open) setDeleteAttachmentId(null); }}>
         <AlertDialogContent className="bg-card border-border">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-300">Delete Worksheet</AlertDialogTitle>
+            <AlertDialogTitle className="text-danger">Delete Worksheet</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
               This will permanently remove this worksheet attachment. This action cannot be undone.
             </AlertDialogDescription>
@@ -891,14 +891,14 @@ export default function TutorAssessmentDetails() {
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={() => setDeleteAttachmentId(null)}
-              className="bg-muted text-foreground/80 border-border hover:bg-slate-700"
+              className="bg-muted text-foreground/80 border-border hover:bg-muted/80"
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => { if (deleteAttachmentId !== null) deleteAttachmentMutation.mutate(deleteAttachmentId); }}
               disabled={deleteAttachmentMutation.isPending}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-danger text-white hover:bg-danger/90"
             >
               {deleteAttachmentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
             </AlertDialogAction>
@@ -912,7 +912,7 @@ export default function TutorAssessmentDetails() {
           <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <FileCheck className="w-5 h-5 text-violet-400" />
+                <FileCheck className="w-5 h-5 text-primary" />
                 Mark Response
               </h3>
               <button onClick={() => setMarkUpload(null)} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground/80 p-1">
@@ -931,7 +931,7 @@ export default function TutorAssessmentDetails() {
                   data-testid="resp-mark-score"
                   value={markScore}
                   onChange={(e) => setMarkScore(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+                  className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 />
               </div>
               <div>
@@ -942,7 +942,7 @@ export default function TutorAssessmentDetails() {
                   data-testid="resp-mark-max"
                   value={markMax}
                   onChange={(e) => setMarkMax(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+                  className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                 />
               </div>
             </div>
@@ -953,7 +953,7 @@ export default function TutorAssessmentDetails() {
                 value={markFeedback}
                 onChange={(e) => setMarkFeedback(e.target.value)}
                 rows={4}
-                className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 resize-none"
+                className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 resize-none"
               />
             </div>
             <button
@@ -976,7 +976,7 @@ export default function TutorAssessmentDetails() {
                 markMutation.mutate({ id: markUpload.id, score, maxScore, feedback: markFeedback.trim() || undefined });
               }}
               disabled={markMutation.isPending}
-              className="w-full py-3 min-h-[44px] rounded-xl text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="w-full py-3 min-h-[44px] rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {markMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Save Mark"}
             </button>
@@ -990,7 +990,7 @@ export default function TutorAssessmentDetails() {
           <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <CalendarDays className="w-5 h-5 text-violet-400" />
+                <CalendarDays className="w-5 h-5 text-primary" />
                 Change Due Date
               </h3>
               <button onClick={() => setShowDueDatePicker(false)} className="text-muted-foreground hover:text-foreground/80 p-1">
@@ -1004,14 +1004,14 @@ export default function TutorAssessmentDetails() {
               type="datetime-local"
               value={newDueDate}
               onChange={(e) => setNewDueDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 mb-4"
+              className="w-full px-3 py-2.5 rounded-lg bg-muted/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 mb-4"
             />
             <div className="flex gap-3">
               {currentDueDate && (
                 <button
                   onClick={() => dueDateMutation.mutate("")}
                   disabled={dueDateMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-slate-700 transition-all"
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-muted text-foreground/80 border border-border hover:bg-muted/80 transition-all"
                 >
                   Remove Date
                 </button>
@@ -1019,7 +1019,7 @@ export default function TutorAssessmentDetails() {
               <button
                 onClick={() => dueDateMutation.mutate(newDueDate)}
                 disabled={!newDueDate || dueDateMutation.isPending}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {dueDateMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin mx-auto" />
@@ -1058,7 +1058,7 @@ export default function TutorAssessmentDetails() {
                     value={assignSearch}
                     onChange={(e) => setAssignSearch(e.target.value)}
                     placeholder="Search by name or email..."
-                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-muted/60 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-emerald-500/40"
+                    className="w-full h-11 pl-11 pr-4 rounded-xl bg-muted/60 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-success/40"
                     data-testid="input-search-assign-details"
                     autoFocus
                   />
@@ -1093,7 +1093,7 @@ export default function TutorAssessmentDetails() {
                         {filtered.length > 0 && (
                           <button
                             onClick={toggleAllVisible}
-                            className="text-emerald-300 hover:text-emerald-200 font-medium"
+                            className="text-success hover:text-success/80 font-medium"
                             data-testid="button-select-all-assign-details"
                           >
                             {allVisibleSelected ? "Clear selection" : "Select all visible"}
@@ -1109,14 +1109,14 @@ export default function TutorAssessmentDetails() {
                             onClick={() => toggleStudentSelection(student.id)}
                             className={`w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
                               selectedStudentIds.has(student.id)
-                                ? "bg-emerald-500/20 border-2 border-emerald-500/60"
+                                ? "bg-success/20 border-2 border-success/60"
                                 : "bg-muted/40 border-2 border-border/50 hover:bg-muted/60"
                             }`}
                             data-testid={`assign-student-details-${student.id}`}
                             aria-pressed={selectedStudentIds.has(student.id)}
                           >
                             <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                              selectedStudentIds.has(student.id) ? "bg-emerald-500 border-emerald-500" : "border-slate-500"
+                              selectedStudentIds.has(student.id) ? "bg-success border-success" : "border-muted-foreground"
                             }`}>
                               {selectedStudentIds.has(student.id) && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
                             </div>
@@ -1140,20 +1140,20 @@ export default function TutorAssessmentDetails() {
                 })()}
                 <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
-                    <Clock className="w-3.5 h-3.5 text-violet-400" />
+                    <Clock className="w-3.5 h-3.5 text-primary" />
                     Due Date & Time <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
                     value={assignDueDate}
                     onChange={(e) => setAssignDueDate(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-card/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+                    className="w-full px-3 py-2.5 min-h-[44px] rounded-lg bg-card/80 border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                   />
                 </div>
                 <button
                   onClick={() => assignMutation.mutate({ studentIds: selectedStudentList, dueDate: assignDueDate || undefined })}
                   disabled={selectedStudentList.length === 0 || assignMutation.isPending}
-                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full mt-4 py-3 min-h-[44px] rounded-xl text-sm font-medium bg-success text-white hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   {assignMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin mx-auto" />

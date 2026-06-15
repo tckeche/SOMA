@@ -56,7 +56,7 @@ export default function ForgotPassword() {
       <div className="w-full max-w-md">
         <Link href="/login">
           <span
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-violet-400 transition-colors cursor-pointer mb-8 block"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer mb-8 block"
             data-testid="link-back-to-login"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -75,10 +75,10 @@ export default function ForgotPassword() {
         <div className="bg-card/50 backdrop-blur-md border border-border/50 rounded-2xl p-8 shadow-xl">
           {sent ? (
             <div className="text-center py-4" data-testid="status-reset-sent">
-              <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+              <CheckCircle className="w-12 h-12 text-success mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-foreground mb-2">Check your inbox</h2>
               <p className="text-sm text-muted-foreground mb-6">
-                If <span className="text-violet-300 font-medium">{email}</span> is registered, you'll receive a password reset link shortly. Check your spam folder if it doesn't arrive within a minute.
+                If <span className="text-primary font-medium">{email}</span> is registered, you'll receive a password reset link shortly. Check your spam folder if it doesn't arrive within a minute.
               </p>
               <Link href="/login">
                 <button
@@ -137,7 +137,7 @@ export default function ForgotPassword() {
               <p className="text-center text-xs text-muted-foreground mt-6">
                 Remember your password?{" "}
                 <Link href="/login">
-                  <span className="text-violet-400 hover:text-violet-300 transition-colors font-medium cursor-pointer" data-testid="link-sign-in">
+                  <span className="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer" data-testid="link-sign-in">
                     Sign in
                   </span>
                 </Link>

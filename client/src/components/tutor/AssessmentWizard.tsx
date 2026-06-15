@@ -216,10 +216,10 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
   return (
     <div className="glass-card p-4 md:p-5 space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
-        <BookOpen className="w-4 h-4 text-violet-400" />
+        <BookOpen className="w-4 h-4 text-primary" />
         <h2 className="font-semibold text-foreground text-sm">Assessment Parameters</h2>
         {activeQuizId && (
-          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+          <Badge className="bg-success/10 text-success border-success/30 text-[10px]">
             Live · ID {activeQuizId}
           </Badge>
         )}
@@ -228,7 +228,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           onClick={() => onQuickStartChange(!quickStart)}
           className={`ml-auto text-[11px] rounded-md px-2 py-1 border transition-colors ${
             quickStart
-              ? "border-violet-500/50 bg-violet-500/15 text-violet-200"
+              ? "border-primary/50 bg-primary/15 text-primary"
               : "border-border/50 bg-foreground/[0.03] text-muted-foreground hover:text-foreground hover:bg-foreground/5"
           }`}
           title="Hide examining body and topics — let the Co-Pilot infer scope from your prompt"
@@ -238,7 +238,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         </button>
       </div>
       {quickStart && (
-        <p className="text-[11px] text-violet-300/80 -mt-2">
+        <p className="text-[11px] text-primary/80 -mt-2">
           Quick start on — examining body fixed to Cambridge, topics skipped. The Co-Pilot will infer scope from your prompt.
         </p>
       )}
@@ -263,7 +263,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
                 disabled={disabled}
                 className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
                   selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                    ? "border-primary/50 bg-primary/10 text-primary"
                     : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                 data-testid={`wizard-format-${opt.value}`}
@@ -304,7 +304,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
                     disabled={disabled}
                     className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-center transition-colors ${
                       selected
-                        ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                        ? "border-primary/50 bg-primary/10 text-primary"
                         : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                     } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                     data-testid={`wizard-mode-${opt.value}`}
@@ -361,7 +361,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
                 max={MAX_QUESTIONS}
                 value={Math.min(MAX_QUESTIONS, Math.max(minQuestions, questionCount))}
                 onChange={(e) => onQuestionCountChange(clampCount(Number(e.target.value)))}
-                className="flex-1 accent-violet-500"
+                className="flex-1 accent-primary"
                 data-testid="wizard-count-slider"
               />
             </div>
@@ -372,7 +372,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs uppercase text-muted-foreground">Structured share</Label>
-                <span className="text-[10px] text-violet-300">{structuredRatio}% structured</span>
+                <span className="text-[10px] text-primary">{structuredRatio}% structured</span>
               </div>
               <input
                 type="range"
@@ -381,12 +381,12 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
                 step={5}
                 value={structuredRatio}
                 onChange={(e) => onStructuredRatioChange(Number(e.target.value))}
-                className="w-full accent-violet-500"
+                className="w-full accent-primary"
                 data-testid="wizard-ratio-slider"
               />
               <p className="text-[11px] text-muted-foreground" data-testid="wizard-split-summary">
-                <span className="text-violet-200 font-medium">{structuredCount}</span> structured ·{" "}
-                <span className="text-violet-200 font-medium">{mcqCount}</span> multiple choice
+                <span className="text-primary font-medium">{structuredCount}</span> structured ·{" "}
+                <span className="text-primary font-medium">{mcqCount}</span> multiple choice
               </p>
             </div>
           )}
@@ -397,7 +397,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
       <div className="space-y-1.5">
         <Label
           className={`text-xs uppercase transition-colors ${
-            titleError ? "text-red-400" : "text-muted-foreground"
+            titleError ? "text-danger" : "text-muted-foreground"
           }`}
         >
           Title{titleError && <span className="ml-1 normal-case lowercase tracking-normal">— required</span>}
@@ -408,13 +408,13 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           placeholder="e.g. Pure Mathematics Paper 1"
           className={`glass-input text-sm h-12 transition-all ${
             titleError
-              ? "border-red-500 ring-2 ring-red-500/50 shadow-[0_0_22px_rgba(239,68,68,0.65)] animate-pulse"
+              ? "border-danger ring-2 ring-danger/50 shadow-[0_0_22px_rgba(239,68,68,0.65)] animate-pulse"
               : ""
           }`}
           data-testid="input-quiz-title"
         />
         {!titleProvided && (
-          <p className="text-[11px] text-amber-300/90 flex items-center gap-1" data-testid="hint-title-required">
+          <p className="text-[11px] text-warning/90 flex items-center gap-1" data-testid="hint-title-required">
             <AlertCircle className="w-3 h-3 shrink-0" />
             Title is required before you can continue.
           </p>
@@ -506,7 +506,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
       </div>
 
       <div className="text-xs text-muted-foreground flex items-start gap-2">
-        <AlertCircle className="w-3.5 h-3.5 mt-0.5 text-violet-400 shrink-0" />
+        <AlertCircle className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
         <span>To publish: complete every step, add at least one question, and stay within a 1–300 minute time limit.</span>
       </div>
 
@@ -558,9 +558,9 @@ function StepBar({
               onClick={() => { if (clickable) onStep(s.key); }}
               className={`w-full flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] border transition-colors ${
                 isCurrent
-                  ? "border-violet-500/50 bg-violet-500/10 text-violet-200"
+                  ? "border-primary/50 bg-primary/10 text-primary"
                   : isDone
-                    ? "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-300 hover:bg-emerald-500/10"
+                    ? "border-success/30 bg-success/[0.06] text-success hover:bg-success/10"
                     : "border-border/30 bg-foreground/[0.03] text-muted-foreground hover:border-border/50"
               } ${clickable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
               disabled={!clickable}
@@ -609,7 +609,7 @@ function StepExaminingBody({
                 onClick={() => onChange(b.slug)}
                 className={`text-left rounded-lg border px-3 py-3 text-sm transition-colors ${
                   selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                    ? "border-primary/50 bg-primary/10 text-primary"
                     : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 }`}
                 data-testid={`wizard-body-${b.slug}`}
@@ -660,7 +660,7 @@ function StepLevel({
                 onClick={() => onChange(l.code)}
                 className={`rounded-lg border px-3 py-3 text-sm transition-colors text-left ${
                   selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                    ? "border-primary/50 bg-primary/10 text-primary"
                     : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 }`}
                 data-testid={`wizard-level-${l.code}`}
@@ -715,7 +715,7 @@ function StepSubject({
                 onClick={() => onChange(s.slug)}
                 className={`text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                   selected
-                    ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                    ? "border-primary/50 bg-primary/10 text-primary"
                     : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
                 }`}
                 data-testid={`wizard-subject-${s.slug}`}
@@ -728,7 +728,7 @@ function StepSubject({
       )}
       {resolvedSyllabus && (
         <div className="flex items-center gap-2" data-testid="wizard-syllabus-chip">
-          <Badge className="bg-violet-500/10 text-violet-200 border-violet-500/30 text-[10px]">
+          <Badge className="bg-primary/10 text-primary border-primary/30 text-[10px]">
             Syllabus {resolvedSyllabus.syllabusCode}
           </Badge>
           <span className="text-[11px] text-muted-foreground truncate">{resolvedSyllabus.title}</span>
@@ -799,7 +799,7 @@ function StepTopics({
           <button
             type="button"
             onClick={onClearTopics}
-            className="text-[11px] text-violet-400 hover:text-violet-300 shrink-0"
+            className="text-[11px] text-primary hover:text-primary shrink-0"
             data-testid="wizard-clear-topics"
           >
             Clear ({totalSelected})
@@ -836,7 +836,7 @@ function StepTopics({
                       key={t.id}
                       className={`rounded-md border ${
                         headerChecked || someSubsSelected
-                          ? "border-violet-500/40 bg-violet-500/10"
+                          ? "border-primary/40 bg-primary/10"
                           : "border-border/30 bg-foreground/[0.03]"
                       }`}
                     >
@@ -854,7 +854,7 @@ function StepTopics({
                               onToggleTopic(t.id);
                             }
                           }}
-                          className="accent-violet-500"
+                          className="accent-primary"
                           data-testid={`wizard-topic-checkbox-${t.id}`}
                         />
                         <button
@@ -897,14 +897,14 @@ function StepTopics({
                               <label
                                 key={s.id}
                                 className={`flex items-start gap-2 text-[11px] rounded px-2 py-1 cursor-pointer ${
-                                  checked ? "bg-violet-500/15" : "hover:bg-foreground/5"
+                                  checked ? "bg-primary/15" : "hover:bg-foreground/5"
                                 }`}
                               >
                                 <input
                                   type="checkbox"
                                   checked={checked}
                                   onChange={() => onToggleSubtopic(t.id, s.id)}
-                                  className="mt-0.5 accent-violet-500"
+                                  className="mt-0.5 accent-primary"
                                   data-testid={`wizard-subtopic-checkbox-${s.id}`}
                                 />
                                 <span className="flex-1 text-foreground/80">

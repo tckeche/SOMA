@@ -35,14 +35,14 @@ export function DraftRecoveryBanner({
 
   return (
     <div
-      className="glass-card border border-violet-500/30 bg-violet-500/5 p-3 md:p-4 mb-3 flex flex-col md:flex-row md:items-center gap-3"
+      className="glass-card border border-primary/30 bg-primary/5 p-3 md:p-4 mb-3 flex flex-col md:flex-row md:items-center gap-3"
       role="status"
       aria-live="polite"
       data-testid="draft-recovery-banner"
     >
       <div className="flex items-start gap-3 flex-1 min-w-0">
-        <div className="mt-0.5 p-2 rounded-lg bg-violet-500/10 border border-violet-500/20 shrink-0">
-          <FileText className="w-4 h-4 text-violet-300" aria-hidden="true" />
+        <div className="mt-0.5 p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+          <FileText className="w-4 h-4 text-primary" aria-hidden="true" />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground">
@@ -57,7 +57,7 @@ export function DraftRecoveryBanner({
       <div className="flex items-center gap-2 shrink-0">
         <Button
           size="sm"
-          className="bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/40 text-violet-200 text-xs"
+          className="bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs"
           onClick={onContinue}
           data-testid="button-draft-continue"
         >
@@ -65,7 +65,7 @@ export function DraftRecoveryBanner({
         </Button>
         <Button
           size="sm"
-          className="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs"
+          className="bg-danger/10 hover:bg-danger/20 border border-danger/30 text-danger text-xs"
           onClick={onDelete}
           data-testid="button-draft-delete"
         >

@@ -53,7 +53,7 @@ export default function SuperAdminTutorDetail({ params }: { params: { tutorId: s
     enabled: !!userId,
   });
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-red-500" /></div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-danger" /></div>;
   if (!data) return <div className="p-8 text-foreground/80">Tutor not found.</div>;
 
   return (
@@ -67,8 +67,9 @@ export default function SuperAdminTutorDetail({ params }: { params: { tutorId: s
         <ThemeToggle />
       </div>
 
-      <section className="bg-card/70 border border-card-border rounded-xl p-5">
-        <h1 className="text-xl font-semibold text-foreground">{data.tutorName || data.tutorEmail}</h1>
+      <section className="glass-card p-5">
+        <p className="eyebrow text-danger mb-1">Tutor Profile</p>
+        <h1 className="text-xl soma-display text-foreground">{data.tutorName || data.tutorEmail}</h1>
         <p className="text-sm text-muted-foreground">{data.tutorEmail}</p>
         <p className="text-xs text-muted-foreground mt-2">
           Last login: {data.lastLoginAt ? formatDistanceToNow(new Date(data.lastLoginAt), { addSuffix: true }) : "No login tracked yet"}
@@ -82,8 +83,8 @@ export default function SuperAdminTutorDetail({ params }: { params: { tutorId: s
         <Metric label="Subjects" value={data.subjects.length} />
       </section>
 
-      <section className="bg-card/70 border border-card-border rounded-xl p-5">
-        <h2 className="font-semibold text-foreground mb-3">Adopted Students</h2>
+      <section className="glass-card p-5">
+        <p className="eyebrow mb-3">Adopted Students</p>
         {data.students.length === 0 ? <p className="text-sm text-muted-foreground">No students assigned yet.</p> : (
           <div className="space-y-2">
             {data.students.map((s) => (
@@ -95,8 +96,8 @@ export default function SuperAdminTutorDetail({ params }: { params: { tutorId: s
         )}
       </section>
 
-      <section className="bg-card/70 border border-card-border rounded-xl p-5">
-        <h2 className="font-semibold text-foreground mb-3">Recent Completed Assessments</h2>
+      <section className="glass-card p-5">
+        <p className="eyebrow mb-3">Recent Completed Assessments</p>
         {data.recentAssessments.length === 0 ? <p className="text-sm text-muted-foreground">No submissions yet.</p> : (
           <div className="space-y-2">
             {data.recentAssessments.map((r) => (
@@ -112,5 +113,5 @@ export default function SuperAdminTutorDetail({ params }: { params: { tutorId: s
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
-  return <div className="bg-card/70 border border-card-border rounded-xl p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="text-lg font-semibold text-foreground">{value}</p></div>;
+  return <div className="stat-card p-4"><p className="eyebrow">{label}</p><p className="text-lg font-semibold text-foreground mt-1">{value}</p></div>;
 }

@@ -7,7 +7,7 @@ import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider forcedTheme="dark" attribute="class" defaultTheme="dark" enableSystem={false} storageKey="mathquizhub-theme" themes={["light", "dark"]}>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="mathquizhub-theme" themes={["light", "dark"]}>
       <App />
     </ThemeProvider>
   </QueryClientProvider>,

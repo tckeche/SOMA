@@ -106,7 +106,7 @@ function SubjectCombobox({
                     onChange(query.trim());
                     setOpen(false);
                   }}
-                  className="text-violet-400 hover:text-violet-300"
+                  className="text-primary hover:text-primary/80"
                 >
                   Use "{query.trim()}"
                 </button>
@@ -124,9 +124,9 @@ function SubjectCombobox({
                   setOpen(false);
                   setQuery("");
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-violet-500/10 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-primary/10 transition-colors"
               >
-                <Check className={cn("w-4 h-4", value === opt ? "opacity-100 text-violet-400" : "opacity-0")} />
+                <Check className={cn("w-4 h-4", value === opt ? "opacity-100 text-primary" : "opacity-0")} />
                 <span className="truncate">{opt}</span>
               </button>
             ))
@@ -513,7 +513,7 @@ export default function StudentAuth() {
       </div>
       <div className="w-full max-w-md">
         <Link href="/">
-          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-violet-400 transition-colors cursor-pointer mb-8 block" data-testid="link-back-home">
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer mb-8 block" data-testid="link-back-home">
             <ArrowLeft className="w-4 h-4" />
             Back to home
           </span>
@@ -540,7 +540,7 @@ export default function StudentAuth() {
                 onClick={() => switchMode("login")}
                 className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all ${
                   mode === "login"
-                    ? "bg-violet-600/80 text-white shadow-lg shadow-violet-500/20"
+                    ? "bg-primary/80 text-white shadow-lg shadow-primary/20"
                     : "text-muted-foreground hover:text-foreground/80"
                 }`}
                 data-testid="button-tab-login"
@@ -552,7 +552,7 @@ export default function StudentAuth() {
                 onClick={() => switchMode("signup")}
                 className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all ${
                   mode === "signup"
-                    ? "bg-violet-600/80 text-white shadow-lg shadow-violet-500/20"
+                    ? "bg-primary/80 text-white shadow-lg shadow-primary/20"
                     : "text-muted-foreground hover:text-foreground/80"
                 }`}
                 data-testid="button-tab-signup"
@@ -564,7 +564,7 @@ export default function StudentAuth() {
 
           <form onSubmit={mode === "login" ? handleLogin : mode === "signup" ? handleSignup : handleResetPassword} className="space-y-4">
             {statusNote && (
-              <div className="text-xs rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-200 px-3 py-2">
+              <div className="text-xs rounded-lg border border-primary/30 bg-primary/10 text-primary px-3 py-2">
                 {statusNote}
               </div>
             )}
@@ -582,7 +582,7 @@ export default function StudentAuth() {
                       onClick={() => setAccountType("student")}
                       className={`flex items-center justify-center gap-2 py-3 px-3 text-sm rounded-lg border transition-colors min-h-[44px] ${
                         accountType === "student"
-                          ? "border-violet-500 bg-violet-500/15 text-foreground"
+                          ? "border-primary bg-primary/15 text-foreground"
                           : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground/80"
                       }`}
                       data-testid="button-account-type-student"
@@ -597,7 +597,7 @@ export default function StudentAuth() {
                       onClick={() => setAccountType("tutor")}
                       className={`flex items-center justify-center gap-2 py-3 px-3 text-sm rounded-lg border transition-colors min-h-[44px] ${
                         accountType === "tutor"
-                          ? "border-violet-500 bg-violet-500/15 text-foreground"
+                          ? "border-primary bg-primary/15 text-foreground"
                           : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground/80"
                       }`}
                       data-testid="button-account-type-tutor"
@@ -610,7 +610,7 @@ export default function StudentAuth() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                      First Name <span className="text-red-400">*</span>
+                      First Name <span className="text-danger">*</span>
                     </label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -627,7 +627,7 @@ export default function StudentAuth() {
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                      Surname <span className="text-red-400">*</span>
+                      Surname <span className="text-danger">*</span>
                     </label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -646,7 +646,7 @@ export default function StudentAuth() {
                 {accountType === "student" && (
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                    Subject <span className="text-red-400">*</span>
+                    Subject <span className="text-danger">*</span>
                   </label>
                   <SubjectCombobox value={subject} onChange={setSubject} />
                 </div>
@@ -655,7 +655,7 @@ export default function StudentAuth() {
                 <>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                    Exam Body / Syllabus <span className="text-red-400">*</span>
+                    Exam Body / Syllabus <span className="text-danger">*</span>
                   </label>
                   <div className="relative">
                     <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -679,7 +679,7 @@ export default function StudentAuth() {
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                    Level <span className="text-red-400">*</span>
+                    Level <span className="text-danger">*</span>
                   </label>
                   <div className="relative">
                     <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -729,7 +729,7 @@ export default function StudentAuth() {
                   data-testid="input-email"
                 />
               </div>
-              {formErrors.email && <p className="text-xs text-red-400 mt-1">{formErrors.email}</p>}
+              {formErrors.email && <p className="text-xs text-danger mt-1">{formErrors.email}</p>}
             </div>
 
             {mode !== "reset" && (
@@ -762,7 +762,7 @@ export default function StudentAuth() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {formErrors.password && <p className="text-xs text-red-400 mt-1">{formErrors.password}</p>}
+                {formErrors.password && <p className="text-xs text-danger mt-1">{formErrors.password}</p>}
               </div>
             )}
 
@@ -770,7 +770,7 @@ export default function StudentAuth() {
               <button
                 type="button"
                 onClick={() => setLocation("/forgot-password")}
-                className="text-xs text-violet-400 hover:text-violet-300 transition-colors w-full text-right -mt-1"
+                className="text-xs text-primary hover:text-primary/80 transition-colors w-full text-right -mt-1"
                 data-testid="button-forgot-password"
               >
                 Forgot password?
@@ -801,22 +801,22 @@ export default function StudentAuth() {
 
             {authError && (
               <div
-                className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2.5"
+                className="flex items-start gap-2 rounded-lg bg-danger/10 border border-danger/30 px-3 py-2.5"
                 data-testid="text-auth-error"
                 role="alert"
               >
-                <span className="text-red-400 text-xs leading-relaxed">{authError}</span>
+                <span className="text-danger text-xs leading-relaxed">{authError}</span>
               </div>
             )}
             {mode === "login" && verificationEmail && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
-                <p className="text-xs text-amber-100">Still waiting for verification at <strong>{verificationEmail}</strong>?</p>
+              <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 space-y-2">
+                <p className="text-xs text-warning">Still waiting for verification at <strong>{verificationEmail}</strong>?</p>
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={handleResendVerification} disabled={loading} className="text-xs px-2.5 py-1.5 rounded-md border border-amber-500/30 bg-amber-500/20 text-amber-100">
+                  <button type="button" onClick={handleResendVerification} disabled={loading} className="text-xs px-2.5 py-1.5 rounded-md border border-warning/30 bg-warning/20 text-warning">
                     Resend verification email
                   </button>
                   {resendAttempts >= 3 && (
-                    <button type="button" onClick={handleSendVerificationCode} disabled={loading} className="text-xs px-2.5 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/20 text-violet-100">
+                    <button type="button" onClick={handleSendVerificationCode} disabled={loading} className="text-xs px-2.5 py-1.5 rounded-md border border-primary/30 bg-primary/20 text-primary">
                       Get a code instead
                     </button>
                   )}
@@ -831,7 +831,7 @@ export default function StudentAuth() {
                       className="flex-1 glass-input py-2 text-xs"
                       placeholder="7-digit code"
                     />
-                    <button type="button" onClick={handleVerifyCode} disabled={loading} className="text-xs px-3 py-2 rounded-md border border-emerald-500/30 bg-emerald-500/20 text-emerald-100">
+                    <button type="button" onClick={handleVerifyCode} disabled={loading} className="text-xs px-3 py-2 rounded-md border border-success/30 bg-success/20 text-success">
                       Verify
                     </button>
                   </div>
@@ -847,7 +847,7 @@ export default function StudentAuth() {
                 <button
                   type="button"
                   onClick={() => switchMode("signup")}
-                  className="text-violet-400 hover:text-violet-300 transition-colors font-medium"
+                  className="text-primary hover:text-primary/80 transition-colors font-medium"
                   data-testid="link-switch-to-signup"
                 >
                   Sign up
@@ -859,7 +859,7 @@ export default function StudentAuth() {
                 <button
                   type="button"
                   onClick={() => switchMode("login")}
-                  className="text-violet-400 hover:text-violet-300 transition-colors font-medium"
+                  className="text-primary hover:text-primary/80 transition-colors font-medium"
                   data-testid="link-switch-to-login"
                 >
                   Log in
@@ -871,7 +871,7 @@ export default function StudentAuth() {
                 <button
                   type="button"
                   onClick={() => switchMode("login")}
-                  className="text-violet-400 hover:text-violet-300 transition-colors font-medium"
+                  className="text-primary hover:text-primary/80 transition-colors font-medium"
                   data-testid="link-back-to-login"
                 >
                   Back to login

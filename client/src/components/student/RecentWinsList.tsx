@@ -7,11 +7,11 @@ interface Props {
 }
 
 const TYPE_META: Record<DashboardRecentWin["type"], { Icon: typeof Trophy; tone: string }> = {
-  high_score: { Icon: Trophy, tone: "text-amber-300" },
-  first_completion: { Icon: Flag, tone: "text-emerald-300" },
-  improvement: { Icon: Sparkles, tone: "text-cyan-300" },
-  streak: { Icon: Sparkles, tone: "text-violet-300" },
-  mastery: { Icon: Award, tone: "text-emerald-300" },
+  high_score: { Icon: Trophy, tone: "text-warning" },
+  first_completion: { Icon: Flag, tone: "text-success" },
+  improvement: { Icon: Sparkles, tone: "text-info" },
+  streak: { Icon: Sparkles, tone: "text-primary" },
+  mastery: { Icon: Award, tone: "text-success" },
 };
 
 export default function RecentWinsList({ wins }: Props) {
@@ -23,7 +23,7 @@ export default function RecentWinsList({ wins }: Props) {
         data-testid="panel-recent-wins"
       >
         <header className="flex items-center gap-2 mb-3">
-          <Trophy className="w-5 h-5 text-amber-300" />
+          <Trophy className="w-5 h-5 text-warning" />
           <h2 className="text-sm font-semibold text-foreground">Recent wins</h2>
         </header>
         <p className="text-xs text-muted-foreground">
@@ -40,7 +40,7 @@ export default function RecentWinsList({ wins }: Props) {
       data-testid="panel-recent-wins"
     >
       <header className="flex items-center gap-2 mb-3">
-        <Trophy className="w-5 h-5 text-amber-300" />
+        <Trophy className="w-5 h-5 text-warning" />
         <div>
           <h2 className="text-sm font-semibold text-foreground">Recent wins</h2>
           <p className="text-[11px] text-muted-foreground">Worth pausing on</p>

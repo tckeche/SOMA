@@ -86,13 +86,13 @@ const CARD_CLASS =
 function statusBadge(status: ReviewQuestion["reviewStatus"]) {
   switch (status) {
     case "approved":
-      return <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">approved</Badge>;
+      return <Badge className="bg-success/20 text-success border border-success/40">approved</Badge>;
     case "needs_review":
-      return <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">needs review</Badge>;
+      return <Badge className="bg-warning/20 text-warning border border-warning/40">needs review</Badge>;
     case "auto_blocked":
-      return <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40">blocked</Badge>;
+      return <Badge className="bg-danger/20 text-danger border border-danger/40">blocked</Badge>;
     case "excluded":
-      return <Badge className="bg-slate-500/20 text-slate-300 border border-slate-500/40">excluded</Badge>;
+      return <Badge className="bg-muted text-muted-foreground border border-border">excluded</Badge>;
     default:
       return <Badge>{status}</Badge>;
   }
@@ -156,7 +156,7 @@ function QuestionCard({
         <div className="flex items-center gap-2 flex-wrap">
           {isExcluded ? (
             <Badge
-              className="bg-slate-500/20 text-slate-300 border border-slate-500/40"
+              className="bg-muted text-muted-foreground border border-border"
               data-testid={`q-excluded-badge-${q.id}`}
             >
               Excluded
@@ -191,7 +191,7 @@ function QuestionCard({
               </Button>
               <Button
                 size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="bg-success hover:bg-success/90 text-white"
                 disabled={pending}
                 data-testid={`approve-question-${q.id}`}
                 onClick={() => onMutate(q.id, { action: "approve" })}
@@ -222,11 +222,11 @@ function QuestionCard({
       </div>
 
       {flags.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-          <div className="flex items-center gap-2 text-amber-300 text-sm font-medium mb-1">
+        <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3">
+          <div className="flex items-center gap-2 text-warning text-sm font-medium mb-1">
             <AlertTriangle className="h-4 w-4" /> Flags
           </div>
-          <ul className="list-disc list-inside text-sm text-amber-200/90 space-y-1">
+          <ul className="list-disc list-inside text-sm text-warning/90 space-y-1">
             {flags.map((f, i) => (
               <li key={i}>{f}</li>
             ))}
@@ -289,7 +289,7 @@ function QuestionCard({
                 <li
                   key={i}
                   className={`text-sm flex items-start gap-2 ${
-                    isCorrect ? "text-emerald-300 font-medium" : "text-muted-foreground"
+                    isCorrect ? "text-success font-medium" : "text-muted-foreground"
                   }`}
                 >
                   <span className="mt-0.5">{isCorrect ? "✓" : "•"}</span>

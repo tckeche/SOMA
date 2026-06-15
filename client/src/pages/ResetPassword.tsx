@@ -138,14 +138,14 @@ export default function ResetPassword() {
 
           {pageState === "loading" && (
             <div className="text-center py-8" data-testid="status-verifying">
-              <Loader2 className="w-8 h-8 text-violet-400 mx-auto animate-spin mb-3" />
+              <Loader2 className="w-8 h-8 text-primary mx-auto animate-spin mb-3" />
               <p className="text-sm text-muted-foreground">Verifying your reset link…</p>
             </div>
           )}
 
           {pageState === "invalid" && (
             <div className="text-center py-4" data-testid="status-invalid-token">
-              <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+              <AlertCircle className="w-12 h-12 text-danger mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-foreground mb-2">Link expired or invalid</h2>
               <p className="text-sm text-muted-foreground mb-6">
                 This password reset link has expired or already been used. Please request a new one.
@@ -161,7 +161,7 @@ export default function ResetPassword() {
               </Link>
               <p className="text-center text-xs text-muted-foreground mt-4">
                 <Link href="/login">
-                  <span className="text-violet-400 hover:text-violet-300 transition-colors cursor-pointer" data-testid="link-back-to-login">
+                  <span className="text-primary hover:text-primary/80 transition-colors cursor-pointer" data-testid="link-back-to-login">
                     Back to login
                   </span>
                 </Link>
@@ -171,7 +171,7 @@ export default function ResetPassword() {
 
           {pageState === "success" && (
             <div className="text-center py-4" data-testid="status-password-updated">
-              <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+              <CheckCircle className="w-12 h-12 text-success mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-foreground mb-2">Password updated!</h2>
               <p className="text-sm text-muted-foreground">Redirecting you to the login page…</p>
             </div>
@@ -238,7 +238,7 @@ export default function ResetPassword() {
 
                 {confirmPassword.length > 0 && (
                   <p
-                    className={`text-xs ${newPassword === confirmPassword ? "text-emerald-400" : "text-red-400"}`}
+                    className={`text-xs ${newPassword === confirmPassword ? "text-success" : "text-danger"}`}
                     data-testid="text-password-match-status"
                   >
                     {newPassword === confirmPassword ? "✓ Passwords match" : "✗ Passwords do not match"}
@@ -246,7 +246,7 @@ export default function ResetPassword() {
                 )}
 
                 {passwordError && (
-                  <p className="text-xs text-red-400" data-testid="text-password-error">{passwordError}</p>
+                  <p className="text-xs text-danger" data-testid="text-password-error">{passwordError}</p>
                 )}
 
                 <button
