@@ -53,9 +53,9 @@ function shortLabel(topic: string, max = 14): string {
 }
 
 function readinessColor(pct: number): { bg: string; text: string; border: string } {
-  if (pct >= 75) return { bg: "bg-emerald-500/20", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-500/40" };
-  if (pct >= 50) return { bg: "bg-amber-500/20", text: "text-amber-700 dark:text-amber-300", border: "border-amber-500/40" };
-  if (pct > 0)   return { bg: "bg-red-500/20",   text: "text-red-700 dark:text-red-300",       border: "border-red-500/40" };
+  if (pct >= 75) return { bg: "bg-success/20", text: "text-success", border: "border-success/40" };
+  if (pct >= 50) return { bg: "bg-warning/20", text: "text-warning", border: "border-warning/40" };
+  if (pct > 0)   return { bg: "bg-danger/20",   text: "text-danger",       border: "border-danger/40" };
   return { bg: "bg-muted/50", text: "text-muted-foreground", border: "border-border/60" };
 }
 
@@ -183,12 +183,12 @@ function SubjectInsightCard({ subj }: { subj: SubjectInsight }) {
           <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
             {topicsSorted.slice(0, 8).map((t) => {
               const barColor = t.understandingPercent >= 75
-                ? "from-emerald-500 to-emerald-400"
+                ? "from-success to-success"
                 : t.understandingPercent >= 50
-                  ? "from-amber-500 to-amber-400"
+                  ? "from-warning to-warning"
                   : t.understandingPercent > 0
-                    ? "from-red-500 to-red-400"
-                    : "from-slate-600 to-slate-500";
+                    ? "from-danger to-danger"
+                    : "from-muted to-muted";
               return (
                 <div key={t.topic} className="px-3 py-2 rounded-md bg-foreground/[0.03] border border-border/40">
                   <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -260,10 +260,10 @@ function SubjectInsightCard({ subj }: { subj: SubjectInsight }) {
             })}
           </div>
           <div className="mt-3 flex items-center gap-3 text-[9px] text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/60" /> 75%+</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500/60" /> 50–74%</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500/60" /> &lt;50%</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-500/40" /> Not yet attempted</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-success/60" /> 75%+</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-warning/60" /> 50–74%</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-danger/60" /> &lt;50%</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-muted/40" /> Not yet attempted</span>
           </div>
         </div>
       )}

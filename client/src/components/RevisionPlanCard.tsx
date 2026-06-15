@@ -65,11 +65,11 @@ const TYPE_LABEL: Record<PlanSession["type"], string> = {
 };
 
 const TYPE_COLOUR: Record<PlanSession["type"], string> = {
-  drill: "bg-rose-500/15 text-rose-200 border-rose-500/25",
-  review: "bg-amber-500/15 text-amber-200 border-amber-500/25",
-  exam_practice: "bg-emerald-500/15 text-emerald-200 border-emerald-500/25",
-  concept_recap: "bg-sky-500/15 text-sky-200 border-sky-500/25",
-  examiner_misconception: "bg-violet-500/15 text-violet-200 border-violet-500/25",
+  drill: "bg-danger/15 text-danger border-danger/25",
+  review: "bg-warning/15 text-warning border-warning/25",
+  exam_practice: "bg-success/15 text-success border-success/25",
+  concept_recap: "bg-info/15 text-info border-info/25",
+  examiner_misconception: "bg-primary/15 text-primary border-primary/25",
 };
 
 export function RevisionPlanCard() {

@@ -240,7 +240,7 @@ function TopicRow({ node }: { node: TopicNode }) {
 }
 
 function UnderstandingBar({ percent }: { percent: number }) {
-  const colour = percent >= 80 ? "bg-emerald-400" : percent >= 50 ? "bg-amber-400" : percent > 0 ? "bg-rose-400" : "bg-muted";
+  const colour = percent >= 80 ? "bg-success" : percent >= 50 ? "bg-warning" : percent > 0 ? "bg-danger" : "bg-muted";
   return (
     <div className="hidden sm:block w-20 h-1.5 bg-foreground/[0.06] rounded-full overflow-hidden shrink-0">
       <div className={`h-full ${colour}`} style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
@@ -257,19 +257,19 @@ function SubtopicLeafRow({ leaf }: { leaf: SubtopicLeaf }) {
         ? "Covered, not tested"
         : "Not yet tested";
   const stateColour = leaf.masteryAchieved
-    ? "text-emerald-300"
+    ? "text-success"
     : leaf.tested && leaf.understandingPercent >= 50
-      ? "text-amber-200"
+      ? "text-warning"
       : leaf.tested
-        ? "text-rose-300"
+        ? "text-danger"
         : "text-muted-foreground";
   return (
     <div className="flex items-center gap-3 pl-10 py-1.5">
       <div className="shrink-0">
         {leaf.masteryAchieved ? (
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <CheckCircle2 className="w-3.5 h-3.5 text-success" />
         ) : (
-          <Circle className={`w-3.5 h-3.5 ${leaf.tested ? "text-amber-400" : "text-muted-foreground/40"}`} />
+          <Circle className={`w-3.5 h-3.5 ${leaf.tested ? "text-warning" : "text-muted-foreground/40"}`} />
         )}
       </div>
       <div className="flex-1 min-w-0">

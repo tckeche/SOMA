@@ -61,10 +61,10 @@ export function CohortMisconceptionHeatmap() {
 
   return (
     <section className="space-y-5" data-testid="cohort-misconception-heatmap">
-      <div className="bg-gradient-to-br from-violet-500/10 to-sky-500/5 border border-violet-500/20 rounded-2xl p-5">
+      <div className="bg-gradient-to-br from-primary/10 to-sky-500/5 border border-primary/20 rounded-2xl p-5">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center shrink-0">
-            <Users className="w-5 h-5 text-violet-300" />
+          <div className="w-9 h-9 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5 text-primary" />
           </div>
           <div className="flex-1">
             <h2 className="text-base font-semibold text-foreground">Where your class is getting stuck</h2>
@@ -120,7 +120,7 @@ function CohortRow({ row, cohortSize }: { row: HeatmapRow; cohortSize: number })
               <span>· {row.topic}{row.subtopicTitle ? ` · ${row.subtopicTitle}` : ""}</span>
             </span>
             {row.examYear && (
-              <span className="text-rose-300 flex items-center gap-1">
+              <span className="text-danger flex items-center gap-1">
                 <Quote className="w-3 h-3" /> Examiners flagged this in {row.examYear}
               </span>
             )}
@@ -131,7 +131,7 @@ function CohortRow({ row, cohortSize }: { row: HeatmapRow; cohortSize: number })
       {/* Cohort bar — visual share */}
       <div className="h-2 bg-foreground/[0.04] rounded-full overflow-hidden mb-3">
         <div
-          className="h-full bg-gradient-to-r from-violet-400 to-rose-400"
+          className="h-full bg-gradient-to-r from-primary to-danger"
           style={{ width: `${sharePct}%` }}
         />
       </div>

@@ -39,9 +39,9 @@ export interface MarkLossPredictorProps {
 }
 
 const CONFIDENCE_COPY: Record<PaperPrediction["confidenceLabel"], { label: string; tone: string }> = {
-  high: { label: "high confidence", tone: "text-emerald-300" },
-  medium: { label: "medium confidence", tone: "text-amber-200" },
-  low: { label: "low confidence — keep practising", tone: "text-rose-300" },
+  high: { label: "high confidence", tone: "text-success" },
+  medium: { label: "medium confidence", tone: "text-warning" },
+  low: { label: "low confidence — keep practising", tone: "text-danger" },
 };
 
 export function MarkLossPredictor({ endpoint = "/api/student/mark-loss-prediction" }: MarkLossPredictorProps) {
