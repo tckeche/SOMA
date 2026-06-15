@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/supabase";
 import { formatPersonName } from "@/lib/personName";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz } from "@shared/schema";
+import { defaultDueDateInputValue } from "@shared/dueDate";
 import { toProperCase, getInitials } from "@/lib/utils";
 import {
   ArrowLeft, BookOpen, Users, Trash2, Plus, FileText,
@@ -525,7 +526,7 @@ export default function TutorAssessmentDetails() {
               onClick={() => {
                 setShowAssignModal(true);
                 setSelectedStudentIds(new Set());
-                setAssignDueDate("");
+                setAssignDueDate(defaultDueDateInputValue(details?.quiz?.createdAt));
               }}
               className={STANDARD_ACTION_BUTTON_CLASS}
             >
@@ -1138,7 +1139,7 @@ export default function TutorAssessmentDetails() {
                 <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
                     <Clock className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date & Time <span className="text-muted-foreground">(optional)</span>
+                    Due Date & Time <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"

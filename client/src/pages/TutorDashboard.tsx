@@ -6,6 +6,7 @@ import { supabase, authFetch } from "@/lib/supabase";
 import { formatPersonName } from "@/lib/personName";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
+import { defaultDueDateInputValue } from "@shared/dueDate";
 import { formatDuration, getInitials } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -1126,7 +1127,7 @@ export default function TutorDashboard() {
                             <p className="text-[10px] text-muted-foreground">{quiz.subject || "General"}</p>
                           </div>
                           <button
-                            onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(""); }}
+                            onClick={() => { setShowAssignModal(quiz.id); setSelectedStudentIds(new Set()); setDueDate(defaultDueDateInputValue(quiz.createdAt)); }}
                             className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"
                             data-testid={`button-assign-${quiz.id}`}
                           >
@@ -1268,7 +1269,7 @@ export default function TutorDashboard() {
                 <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
                     <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date <span className="text-muted-foreground">(optional)</span>
+                    Due Date <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
@@ -1340,7 +1341,7 @@ export default function TutorDashboard() {
                     return (
                       <button
                         key={quiz.id}
-                        onClick={() => setAssignForStudentQuizId(quiz.id)}
+                        onClick={() => { setAssignForStudentQuizId(quiz.id); setDueDate(defaultDueDateInputValue(quiz.createdAt)); }}
                         className={`w-full min-h-[44px] flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left ${
                           selected
                             ? "bg-indigo-500/12 border border-indigo-500/25"
@@ -1367,7 +1368,7 @@ export default function TutorDashboard() {
                 <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
                     <CalendarDays className="w-3.5 h-3.5 text-violet-400" />
-                    Due Date <span className="text-muted-foreground">(optional)</span>
+                    Due Date <span className="text-muted-foreground">(defaults to 5 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
