@@ -452,6 +452,37 @@
     flex: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
   }
 
+  /* ── Warm Editorial primitives (faithful to the design pack) ──────── */
+  .soma-card  { background: hsl(var(--card)); border: 1px solid hsl(var(--card-border)); border-radius: 14px; box-shadow: var(--shadow-sm); }
+  .soma-card-2 { background: hsl(var(--secondary)); border: 1px solid hsl(var(--border)); border-radius: 12px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    font-family: var(--font-sans); font-weight: 600; font-size: 13.5px; letter-spacing: -0.01em;
+    padding: 0 15px; min-height: 40px; border-radius: 10px;
+    border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+    transition: transform .1s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .btn:active { transform: translateY(0.5px); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); box-shadow: 0 1px 2px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.18); }
+  .btn-primary:hover { box-shadow: 0 4px 14px hsl(var(--primary) / .35), inset 0 1px 0 rgba(255,255,255,.18); }
+  .btn-ghost { background: hsl(var(--card)); color: hsl(var(--secondary-foreground)); border-color: hsl(var(--border)); box-shadow: var(--shadow-sm); }
+  .btn-ghost:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); }
+  .btn-quiet { background: transparent; color: hsl(var(--secondary-foreground)); }
+  .btn-quiet:hover { background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+  .btn-sm { min-height: 32px; font-size: 12.5px; padding: 0 11px; border-radius: 8px; }
+
+  .seg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; background: hsl(var(--muted)); border: 1px solid hsl(var(--border)); border-radius: 10px; }
+  .seg button {
+    font-family: var(--font-sans); font-weight: 600; font-size: 12.5px; letter-spacing: -0.01em;
+    padding: 6px 11px; border-radius: 7px; border: none; background: transparent;
+    color: hsl(var(--muted-foreground)); cursor: pointer; transition: all .16s ease;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .seg button:hover { color: hsl(var(--foreground)); }
+  .seg button[aria-pressed="true"] { background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: var(--shadow-sm); }
+
   /* Section header gradient wash (kept; theme-aware) */
   html.light .section-header::before {
     background: linear-gradient(90deg, rgba(91, 61, 240, 0.10) 0%, transparent 60%);
