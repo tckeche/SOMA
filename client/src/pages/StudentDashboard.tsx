@@ -13,6 +13,7 @@ import SomaHeader from "@/components/soma/SomaHeader";
 import { Ring, Spark } from "@/components/soma/Charts";
 import AssignmentsList from "@/components/student/AssignmentsList";
 import CompletedAssessmentsTab from "@/components/student/CompletedAssessmentsTab";
+import StudentNotificationsBell from "@/components/student/StudentNotificationsBell";
 import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
@@ -553,6 +554,13 @@ export default function StudentDashboard() {
         displayName={displayName}
         initials={initials}
         onLogout={handleLogout}
+        rightActions={
+          <StudentNotificationsBell
+            items={data?.notifications.items ?? []}
+            unreadCount={data?.notifications.unreadCount ?? 0}
+            studentKey={userId ?? ""}
+          />
+        }
       />
 
       <main className="max-w-[1240px] mx-auto px-6 py-8 space-y-6">
