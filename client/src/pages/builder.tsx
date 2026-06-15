@@ -60,6 +60,34 @@ function somaQuestionToDraft(q: SomaQuestion): DraftQuestion {
 }
 
 function rawToDraftQuestion(raw: any): DraftQuestion | null {
+  const stem = String(raw.prompt_text || raw.promptText || raw.stem || raw.question || "");
+  if (!stem) return null;
+  // Tags are shared across every question type.
+  const tags = {
+    topicTag: raw.topic_tag ? String(raw.topic_tag) : raw.topicTag ? String(raw.topicTag) : null,
+    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : raw.subtopicTag ? String(raw.subtopicTag) : null,
+    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : raw.difficultyTag ? String(raw.difficultyTag) : null,
+  };
+  const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
+  const qtype = String(raw.question_type || raw.questionType || "").toLowerCase();
+
+  // Structured / written answers carry no options or single correct answer —
+  // they're marked by the AI against a mark scheme, so validate them separately.
+  if (qtype === "structured") {
+    return {
+      draftId: raw.draftId || makeDraftId(),
+      stem,
+      options: [],
+      correctAnswer: "",
+      explanation: String(raw.explanation || ""),
+      marks,
+      questionType: "structured",
+      markScheme: String(raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || ""),
+      graphSpec: null,
+      ...tags,
+    };
+  }
+
   let opts = raw.options;
   if (opts && !Array.isArray(opts) && typeof opts === "object") {
     const keys = Object.keys(opts);
@@ -69,20 +97,16 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
   }
   if (!Array.isArray(opts) || opts.length < 4) return null;
   opts = (opts as any[]).map(String).slice(0, 4);
-  const stem = String(raw.prompt_text || raw.promptText || raw.stem || raw.question || "");
-  if (!stem) return null;
   return {
     draftId: raw.draftId || makeDraftId(),
     stem,
     options: opts,
     correctAnswer: String(raw.correct_answer || raw.correctAnswer || opts[0] || ""),
     explanation: String(raw.explanation || ""),
-    marks: Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1,
-    questionType: (raw.question_type === "graph" || raw.questionType === "graph") ? "graph" : "multiple_choice",
+    marks,
+    questionType: qtype === "graph" ? "graph" : "multiple_choice",
     graphSpec: raw.graphSpec ?? raw.graph_spec ?? null,
-    topicTag: raw.topic_tag ? String(raw.topic_tag) : raw.topicTag ? String(raw.topicTag) : null,
-    subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : raw.subtopicTag ? String(raw.subtopicTag) : null,
-    difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : raw.difficultyTag ? String(raw.difficultyTag) : null,
+    ...tags,
   };
 }
 
@@ -129,6 +153,13 @@ function getDraftValidationError(questions: DraftQuestion[]): string | null {
   if (questions.length === 0) return "Draft is empty.";
   for (const q of questions) {
     if (!q.stem?.trim()) return "A draft question is missing a prompt.";
+    if (q.questionType === "structured") {
+      // Structured answers have no options; they need a mark scheme so the AI
+      // marker has something to grade understanding against.
+      if (!q.markScheme?.trim()) return "Each structured question needs a mark scheme.";
+      if (!Number.isFinite(q.marks) || q.marks < 1) return "Each structured question needs at least 1 mark.";
+      continue;
+    }
     if (!Array.isArray(q.options) || q.options.length !== 4) return "Each question must have exactly 4 options.";
     if (!q.correctAnswer || !q.options.includes(q.correctAnswer)) return "Each question must have a valid correct answer.";
   }
@@ -174,6 +205,17 @@ export default function BuilderPage() {
   // "pdf" = tutor uploads worksheet PDFs and students submit a PDF response
   // (no questions, no timer, no MCQ engine). Chosen up front in the wizard.
   const [format, setFormat] = useState<"mcq" | "pdf">("mcq");
+  // Quiz sub-type (only meaningful when format === "mcq", i.e. not a PDF):
+  //   "mcq"        — multiple-choice only (legacy behaviour)
+  //   "structured" — written / structured answers only
+  //   "hybrid"     — a mix of both
+  const [quizMode, setQuizMode] = useState<"mcq" | "structured" | "hybrid">("mcq");
+  // Authoritative number of questions (1–15; hybrid needs ≥2). The Co-Pilot
+  // must generate exactly this many — it's no longer inferred from the prompt.
+  const [questionCount, setQuestionCount] = useState<number>(5);
+  // For hybrid quizzes: percentage of the total that should be structured.
+  // The actual structured/MCQ split is derived from this and the total.
+  const [structuredRatio, setStructuredRatio] = useState<number>(50);
   // Wizard step: 0=Body, 1=Level, 2=Subject, 3=Topics, 4=Time limit.
   // In edit mode we jump straight to the end (everything already filled).
   // Default to step 1 (Level) when quick-start is on at mount so we never
@@ -581,6 +623,18 @@ export default function BuilderPage() {
       }
       setTimeLimitMinutes(quizData.timeLimitMinutes ?? 60);
       setFormat((quizData as any).format === "pdf" ? "pdf" : "mcq");
+      const savedMode = (quizData as any).quizMode;
+      if (savedMode === "structured" || savedMode === "hybrid" || savedMode === "mcq") {
+        setQuizMode(savedMode);
+      }
+      const savedCount = Number((quizData as any).questionCount);
+      if (Number.isFinite(savedCount) && savedCount >= 1 && savedCount <= 15) {
+        setQuestionCount(savedCount);
+        const savedStructured = Number((quizData as any).structuredCount);
+        if (savedMode === "hybrid" && Number.isFinite(savedStructured) && savedStructured > 0) {
+          setStructuredRatio(Math.round((savedStructured / savedCount) * 100));
+        }
+      }
       setPopulated(true);
       if (isEditMode) setWizardStep(4);
     }
@@ -698,6 +752,9 @@ export default function BuilderPage() {
       subject: legacySubjectName || null,
       timeLimitMinutes,
       format,
+      quizMode: format === "pdf" ? "mcq" : quizMode,
+      questionCount,
+      structuredCount,
     });
     const quiz = await quizRes.json();
     setActiveQuizId(quiz.id);
@@ -776,6 +833,12 @@ export default function BuilderPage() {
           syllabusCode: resolvedSyllabusCode,
           selectedTopicIds,
           selectedSubtopicIds,
+          // Parametric requirements — the Co-Pilot must honour these exactly
+          // instead of inferring counts from free text.
+          quizMode,
+          totalQuestions: questionCount,
+          structuredCount,
+          mcqCount,
         },
         difficultySpread,
       };
@@ -992,6 +1055,9 @@ export default function BuilderPage() {
         topics: selectedTopicTitles,
         timeLimitMinutes,
         format,
+        quizMode: format === "pdf" ? "mcq" : quizMode,
+        questionCount,
+        structuredCount,
       });
     },
     onSuccess: () => {
@@ -1107,6 +1173,18 @@ export default function BuilderPage() {
 
   const totalQuestions = draftQuestions.length;
   const draftValidationError = useMemo(() => getDraftValidationError(draftQuestions), [draftQuestions]);
+
+  // Derived structured/MCQ split from the wizard controls. For a PDF or a pure
+  // MCQ quiz there are zero structured questions; for a pure structured quiz
+  // every question is structured; hybrid splits by `structuredRatio` but keeps
+  // at least one of each.
+  const structuredCount = useMemo(() => {
+    if (format === "pdf" || quizMode === "mcq") return 0;
+    if (quizMode === "structured") return questionCount;
+    const s = Math.round(questionCount * (structuredRatio / 100));
+    return Math.min(questionCount - 1, Math.max(1, s));
+  }, [format, quizMode, questionCount, structuredRatio]);
+  const mcqCount = format === "pdf" ? 0 : Math.max(0, questionCount - structuredCount);
 
   const previewQuestions = useMemo(() =>
     draftQuestions.map((q, idx) => ({
@@ -1353,6 +1431,20 @@ export default function BuilderPage() {
             format={format}
             onFormatChange={(next) => { setFormat(next); markMeta(); }}
             formatLocked={!!activeQuizId}
+            quizMode={quizMode}
+            onQuizModeChange={(m) => {
+              setQuizMode(m);
+              // Hybrid needs at least one of each type, so bump the total to 2.
+              if (m === "hybrid" && questionCount < 2) setQuestionCount(2);
+              markMeta();
+            }}
+            questionCount={questionCount}
+            onQuestionCountChange={(n) => { setQuestionCount(n); markMeta(); }}
+            structuredRatio={structuredRatio}
+            onStructuredRatioChange={(r) => { setStructuredRatio(r); markMeta(); }}
+            structuredCount={structuredCount}
+            mcqCount={mcqCount}
+            modeLocked={!!activeQuizId}
             quickStart={quickStart}
             onQuickStartChange={(next) => {
               setQuickStart(next);

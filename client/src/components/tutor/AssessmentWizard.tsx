@@ -17,6 +17,10 @@ import {
   Loader2,
   AlertCircle,
   ChevronDown,
+  PenLine,
+  Combine,
+  Minus,
+  Plus,
 } from "lucide-react";
 
 // ── Types shared with builder.tsx ──────────────────────────────────────────
@@ -103,6 +107,20 @@ export interface AssessmentWizardProps {
   // Locked once the assessment exists so the format can't change after rows
   // (questions or worksheets) are tied to one delivery model.
   formatLocked?: boolean;
+
+  // Quiz sub-type + parametric question counts (only shown for the quiz engine,
+  // i.e. when format !== "pdf").
+  quizMode: "mcq" | "structured" | "hybrid";
+  onQuizModeChange: (next: "mcq" | "structured" | "hybrid") => void;
+  questionCount: number;
+  onQuestionCountChange: (next: number) => void;
+  structuredRatio: number;
+  onStructuredRatioChange: (next: number) => void;
+  // Derived split, supplied by the parent for display.
+  structuredCount: number;
+  mcqCount: number;
+  // Locked alongside the format once the assessment exists.
+  modeLocked?: boolean;
 }
 
 const STEPS: Array<{
@@ -131,7 +149,17 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     activeQuizId, metaDirty, onSaveMeta, saveMetaPending,
     quickStart, onQuickStartChange,
     format, onFormatChange, formatLocked = false,
+    quizMode, onQuizModeChange,
+    questionCount, onQuestionCountChange,
+    structuredRatio, onStructuredRatioChange,
+    structuredCount, mcqCount, modeLocked = false,
   } = props;
+
+  // Hybrid quizzes need at least one of each type, so the floor is 2.
+  const minQuestions = quizMode === "hybrid" ? 2 : 1;
+  const MAX_QUESTIONS = 15;
+  const clampCount = (n: number) =>
+    Math.max(minQuestions, Math.min(MAX_QUESTIONS, Math.round(n)));
 
   // In quick-start mode the tutor only sees Level / Subject / Time. Examining
   // body and Topics are intentionally hidden so the Co-Pilot can drive scope.
@@ -215,12 +243,13 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         </p>
       )}
 
-      {/* Assessment type — chosen up front. Drives the whole build flow. */}
+      {/* Assessment type — chosen up front. Quiz drives the Co-Pilot engine;
+          PDF switches to worksheet upload + student PDF submission. */}
       <div className="space-y-1.5">
         <Label className="text-xs uppercase text-muted-foreground">Assessment type</Label>
         <div className="grid grid-cols-2 gap-2">
           {([
-            { value: "mcq" as const, title: "Multiple Choice", desc: "AI-built MCQs, auto-marked", icon: ListChecks },
+            { value: "mcq" as const, title: "Quiz", desc: "AI-built questions, auto-marked", icon: ListChecks },
             { value: "pdf" as const, title: "PDF Submission", desc: "Upload worksheet, mark by hand", icon: FileText },
           ]).map((opt) => {
             const Icon = opt.icon;
@@ -252,6 +281,117 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
           <p className="text-[11px] text-muted-foreground">Type is locked once the assessment is created.</p>
         )}
       </div>
+
+      {/* Quiz sub-type + parametric question count — quiz engine only. */}
+      {format !== "pdf" && (
+        <div className="space-y-3 rounded-lg border border-border/30 bg-background/30 p-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase text-muted-foreground">Question style</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: "mcq" as const, title: "Multiple choice", icon: ListChecks },
+                { value: "structured" as const, title: "Structured", icon: PenLine },
+                { value: "hybrid" as const, title: "Hybrid", icon: Combine },
+              ]).map((opt) => {
+                const Icon = opt.icon;
+                const selected = quizMode === opt.value;
+                const disabled = modeLocked && !selected;
+                return (
+                  <button
+                    type="button"
+                    key={opt.value}
+                    onClick={() => { if (!modeLocked) onQuizModeChange(opt.value); }}
+                    disabled={disabled}
+                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-center transition-colors ${
+                      selected
+                        ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                        : "border-border/50 bg-foreground/[0.03] text-foreground/80 hover:bg-foreground/5"
+                    } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                    data-testid={`wizard-mode-${opt.value}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="text-[11px] font-semibold leading-tight">{opt.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {modeLocked && (
+              <p className="text-[11px] text-muted-foreground">Question style is locked once the assessment is created.</p>
+            )}
+          </div>
+
+          {/* Number of questions dial. */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase text-muted-foreground">Number of questions</Label>
+              <span className="text-[10px] text-muted-foreground">
+                {minQuestions}–{MAX_QUESTIONS}{quizMode === "hybrid" ? " · min 2 for hybrid" : ""}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onQuestionCountChange(clampCount(questionCount - 1))}
+                disabled={questionCount <= minQuestions}
+                className="h-9 w-9 shrink-0 rounded-md border border-border/50 bg-foreground/[0.03] flex items-center justify-center text-foreground hover:bg-foreground/5 disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label="Decrease question count"
+                data-testid="wizard-count-decrement"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <div
+                className="min-w-[3rem] text-center text-2xl font-bold tabular-nums text-foreground"
+                data-testid="wizard-question-count"
+              >
+                {questionCount}
+              </div>
+              <button
+                type="button"
+                onClick={() => onQuestionCountChange(clampCount(questionCount + 1))}
+                disabled={questionCount >= MAX_QUESTIONS}
+                className="h-9 w-9 shrink-0 rounded-md border border-border/50 bg-foreground/[0.03] flex items-center justify-center text-foreground hover:bg-foreground/5 disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label="Increase question count"
+                data-testid="wizard-count-increment"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <input
+                type="range"
+                min={minQuestions}
+                max={MAX_QUESTIONS}
+                value={Math.min(MAX_QUESTIONS, Math.max(minQuestions, questionCount))}
+                onChange={(e) => onQuestionCountChange(clampCount(Number(e.target.value)))}
+                className="flex-1 accent-violet-500"
+                data-testid="wizard-count-slider"
+              />
+            </div>
+          </div>
+
+          {/* Hybrid split — structured vs multiple choice. */}
+          {quizMode === "hybrid" && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase text-muted-foreground">Structured share</Label>
+                <span className="text-[10px] text-violet-300">{structuredRatio}% structured</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={structuredRatio}
+                onChange={(e) => onStructuredRatioChange(Number(e.target.value))}
+                className="w-full accent-violet-500"
+                data-testid="wizard-ratio-slider"
+              />
+              <p className="text-[11px] text-muted-foreground" data-testid="wizard-split-summary">
+                <span className="text-violet-200 font-medium">{structuredCount}</span> structured ·{" "}
+                <span className="text-violet-200 font-medium">{mcqCount}</span> multiple choice
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Title lives above the stepper — tutor can edit it at any step. */}
       <div className="space-y-1.5">

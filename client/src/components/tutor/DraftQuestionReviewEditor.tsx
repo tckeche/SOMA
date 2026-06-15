@@ -9,11 +9,13 @@ import type { DraftQuestion } from "@shared/schema";
 // edits are buffered locally and committed once on Save (so the draft autosave
 // fires once per save, not per keystroke). Used in the builder Review modal.
 interface EditBuffer {
+  questionType: DraftQuestion["questionType"];
   stem: string;
   options: string[];
   correctIndex: number;
   marks: number;
   explanation: string;
+  markScheme: string;
 }
 
 const FIELD_CLASS =
@@ -38,11 +40,13 @@ export function DraftQuestionReviewEditor({
     setEditing((prev) => ({
       ...prev,
       [idx]: {
+        questionType: q.questionType,
         stem: q.stem,
         options: [...q.options],
         correctIndex,
         marks: q.marks,
         explanation: q.explanation ?? "",
+        markScheme: q.markScheme ?? "",
       },
     }));
   }
@@ -60,27 +64,38 @@ export function DraftQuestionReviewEditor({
   }
 
   function isValid(buf: EditBuffer): boolean {
+    if (buf.stem.trim().length === 0 || !Number.isFinite(buf.marks) || buf.marks <= 0) return false;
+    if (buf.questionType === "structured") {
+      // Structured answers have no options; they need a mark scheme instead.
+      return buf.markScheme.trim().length > 0;
+    }
     return (
-      buf.stem.trim().length > 0 &&
       buf.options.length >= 2 &&
       buf.options.every((o) => o.trim().length > 0) &&
       buf.correctIndex >= 0 &&
-      buf.correctIndex < buf.options.length &&
-      Number.isFinite(buf.marks) &&
-      buf.marks > 0
+      buf.correctIndex < buf.options.length
     );
   }
 
   function saveEdit(idx: number) {
     const buf = editing[idx];
     if (!buf || !isValid(buf)) return;
-    onSave(idx, {
-      stem: buf.stem,
-      options: buf.options,
-      correctAnswer: buf.options[buf.correctIndex] ?? buf.options[0] ?? "",
-      marks: buf.marks,
-      explanation: buf.explanation,
-    });
+    if (buf.questionType === "structured") {
+      onSave(idx, {
+        stem: buf.stem,
+        marks: buf.marks,
+        markScheme: buf.markScheme,
+        explanation: buf.explanation,
+      });
+    } else {
+      onSave(idx, {
+        stem: buf.stem,
+        options: buf.options,
+        correctAnswer: buf.options[buf.correctIndex] ?? buf.options[0] ?? "",
+        marks: buf.marks,
+        explanation: buf.explanation,
+      });
+    }
     cancelEdit(idx);
   }
 
@@ -115,6 +130,9 @@ export function DraftQuestionReviewEditor({
               )}
               {q.questionType === "graph" && (
                 <Badge className="bg-violet-500/10 text-violet-400 border border-violet-500/20">graph</Badge>
+              )}
+              {q.questionType === "structured" && (
+                <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/20">structured</Badge>
               )}
               {!isEditing && q.difficultyTag && <Badge variant="outline">{q.difficultyTag}</Badge>}
 
@@ -178,6 +196,21 @@ export function DraftQuestionReviewEditor({
                   />
                 </div>
 
+                {buf!.questionType === "structured" ? (
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">
+                    Mark scheme · what a good answer covers
+                  </label>
+                  <textarea
+                    value={buf!.markScheme}
+                    onChange={(e) => patchBuffer(idx, { markScheme: e.target.value })}
+                    rows={4}
+                    data-testid={`input-review-markscheme-${idx}`}
+                    className={`${FIELD_CLASS} resize-y`}
+                    placeholder="List the key points / understanding the AI should look for."
+                  />
+                </div>
+                ) : (
                 <div>
                   <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">
                     Options · select the correct answer
@@ -236,6 +269,7 @@ export function DraftQuestionReviewEditor({
                     <Plus className="w-3.5 h-3.5" /> Add option
                   </button>
                 </div>
+                )}
 
                 <div className="flex items-center gap-3">
                   <label className="text-xs uppercase tracking-wider text-muted-foreground">Marks</label>
@@ -262,7 +296,9 @@ export function DraftQuestionReviewEditor({
 
                 {!isValid(buf!) && (
                   <p className="text-xs text-amber-300">
-                    Every option needs text, a correct answer must be selected, and marks must be at least 1.
+                    {buf!.questionType === "structured"
+                      ? "A structured question needs a prompt, a mark scheme, and at least 1 mark."
+                      : "Every option needs text, a correct answer must be selected, and marks must be at least 1."}
                   </p>
                 )}
               </div>
@@ -271,6 +307,14 @@ export function DraftQuestionReviewEditor({
                 <div className="text-foreground font-medium mb-3" data-testid={`review-stem-${idx}`}>
                   <MarkdownRenderer content={q.stem} />
                 </div>
+                {q.questionType === "structured" ? (
+                  <div className="text-sm rounded-lg bg-sky-500/[0.06] border border-sky-500/20 px-3 py-2 mb-3" data-testid={`review-markscheme-${idx}`}>
+                    <span className="text-xs font-medium text-sky-300 block mb-1">Mark scheme</span>
+                    {q.markScheme
+                      ? <MarkdownRenderer content={q.markScheme} />
+                      : <span className="text-muted-foreground">No mark scheme yet.</span>}
+                  </div>
+                ) : (
                 <ul className="space-y-1.5 mb-3">
                   {q.options.map((opt, i) => {
                     const isCorrect = opt === q.correctAnswer;
@@ -296,6 +340,7 @@ export function DraftQuestionReviewEditor({
                     );
                   })}
                 </ul>
+                )}
                 {q.explanation && (
                   <div className="text-sm text-muted-foreground border-t border-border/40 pt-3" data-testid={`review-explanation-${idx}`}>
                     <span className="font-medium text-foreground block mb-1">Explanation</span>
