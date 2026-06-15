@@ -15,7 +15,7 @@ export const copilotDraftSchema = z.object({
   topic_tag: z.string().optional(),
   subtopic_tag: z.string().optional(),
   difficulty_tag: z.string().optional(),
-  question_type: z.enum(["multiple_choice", "graph"]).default("multiple_choice"),
+  question_type: z.enum(["multiple_choice", "graph", "structured"]).default("multiple_choice"),
   graph_spec: graphSpecSchema.optional(),
 });
 
