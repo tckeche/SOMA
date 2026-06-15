@@ -86,7 +86,7 @@ beforeAll(async () => {
 afterAll(() => httpServer.close());
 
 // Create a quiz owned by TUTOR_A and assign STUDENT_ASSIGNED to it.
-async function createQuizWithAssignedStudent(format: "mcq" | "pdf" = "pdf", acceptPdf = true): Promise<number> {
+async function createQuizWithAssignedStudent(format: "mcq" | "pdf" = "pdf"): Promise<number> {
   const quizRes = await request
     .post("/api/tutor/quizzes")
     .set("Authorization", `Bearer ${tutorAToken}`)
@@ -221,7 +221,10 @@ describe("format enforcement (mcq assessments reject PDF flows)", () => {
 
 describe("student submission uploads", () => {
   it("rejects upload when the assessment doesn't accept PDF responses", async () => {
-    const quizId = await createQuizWithAssignedStudent("pdf", false);
+    // After the format consolidation, a non-PDF (mcq) assessment is exactly the
+    // one that doesn't accept PDF responses — the submission-upload route gates
+    // on `quiz.format === "pdf"` (there is no separate acceptsPdfResponse flag).
+    const quizId = await createQuizWithAssignedStudent("mcq");
     const res = await request
       .post(`/api/quizzes/${quizId}/submission-upload`)
       .set("Authorization", `Bearer ${studentAssignedToken}`)
