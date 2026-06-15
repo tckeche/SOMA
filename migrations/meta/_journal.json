@@ -85,6 +85,13 @@
       "when": 1781440000000,
       "tag": "0012_structured_review_request",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781460000000,
+      "tag": "0013_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

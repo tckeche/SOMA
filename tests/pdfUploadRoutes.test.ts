@@ -220,6 +220,19 @@ describe("format enforcement (mcq assessments reject PDF flows)", () => {
 });
 
 describe("student submission uploads", () => {
+  it("rejects upload when the assessment doesn't accept PDF responses", async () => {
+    // After the format consolidation, a non-PDF (mcq) assessment is exactly the
+    // one that doesn't accept PDF responses — the submission-upload route gates
+    // on `quiz.format === "pdf"` (there is no separate acceptsPdfResponse flag).
+    const quizId = await createQuizWithAssignedStudent("mcq");
+    const res = await request
+      .post(`/api/quizzes/${quizId}/submission-upload`)
+      .set("Authorization", `Bearer ${studentAssignedToken}`)
+      .attach("file", PDF, { filename: "answers.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/does not accept PDF responses/i);
+  });
+
   it("rejects a file whose bytes are not a real PDF (magic-byte spoof)", async () => {
     const quizId = await createQuizWithAssignedStudent();
     const res = await request
