@@ -449,8 +449,10 @@
      Without these, .row blocks fall back to normal flow and their
      children jam together (labels/values with no gap), meter bars
      (flex:1) collapse to zero width, and trailing chips/chevrons
-     wrap onto their own line. Inline `style` gaps still override. */
-  .row { display: flex; align-items: center; gap: 10px; }
+     wrap onto their own line. Matches the design source exactly: no
+     default gap (rows set their own inline gap); `.between` / `.wrap`
+     are applied alongside `.row` in the markup. */
+  .row { display: flex; align-items: center; }
   .row.between { justify-content: space-between; }
   .row.wrap { flex-wrap: wrap; }
 

@@ -174,11 +174,12 @@ function NextActions({
   const heroDue = hero.status === "overdue" ? "Overdue" : humanize(hero.dueDate);
 
   // Hero meta line: "{q} questions · {marks} marks · ~{minutes} min", dropping
-  // any part we don't have data for (graceful zero-states).
+  // any part we don't have data for (graceful zero-states). The time estimate
+  // is derived from marks (~1.2 min/mark), matching the design source.
   const heroMetaParts: string[] = [];
   if (hero.questionCount > 0) heroMetaParts.push(`${hero.questionCount} questions`);
   if (hero.maxScore > 0) heroMetaParts.push(`${hero.maxScore} marks`);
-  if (hero.estimatedMinutes > 0) heroMetaParts.push(`~${hero.estimatedMinutes} min`);
+  if (hero.maxScore > 0) heroMetaParts.push(`~${Math.round(hero.maxScore * 1.2)} min`);
   const heroMeta = heroMetaParts.join(" · ") || "Ready when you are";
 
   // "Up next" = next 2-3 assignments after the hero.
@@ -193,7 +194,7 @@ function NextActions({
 
       <div style={{ padding: "14px 22px 20px" }}>
         {/* hero action */}
-        <div className="soma-card-2" style={{ padding: 0, position: "relative", overflow: "hidden" }}>
+        <div className="soma-card-2" style={{ padding: 0, position: "relative", overflow: "hidden", background: "hsl(var(--card))", borderColor: "hsl(var(--card-border))", boxShadow: "var(--shadow-sm)" }}>
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: toneVar }} />
           <div style={{ padding: "20px 22px 20px 24px" }}>
             <div className="row between wrap" style={{ gap: 16, alignItems: "flex-start" }}>
@@ -233,7 +234,7 @@ function NextActions({
                   className="row between"
                   style={{
                     width: "100%", textAlign: "left", gap: 12, padding: "12px 14px",
-                    background: "hsl(var(--muted))", border: "1px solid hsl(var(--border))", borderRadius: 12, cursor: "pointer",
+                    background: "hsl(var(--secondary))", border: "1px solid hsl(var(--border))", borderRadius: 12, cursor: "pointer",
                   }}
                   data-testid={`up-next-${a.quizId}`}
                 >
@@ -248,7 +249,7 @@ function NextActions({
                       <span style={{ display: "block", fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.quizTitle}</span>
                       <span className="text-muted-foreground" style={{ fontSize: 12 }}>
                         {a.quizSubject || "General"}
-                        {a.questionCount > 0 ? ` · ${a.questionCount} questions` : ""}
+                        {a.questionCount > 0 ? ` · ${a.questionCount} Q` : ""}
                         {a.maxScore > 0 ? ` · ${a.maxScore} marks` : ""}
                       </span>
                     </span>
@@ -307,7 +308,7 @@ function PerformanceBlock({
       <div className="row between" style={{ marginBottom: 16 }}>
         <div>
           <div className="eyebrow">How you're doing</div>
-          <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4 }}>Your progress</h3>
+          <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4, whiteSpace: "nowrap" }}>Your progress</h3>
         </div>
         <span className={`chip ${trendMeta.cls}`}><TrendIcon className="w-3.5 h-3.5" />{trendMeta.label}</span>
       </div>
@@ -387,7 +388,7 @@ function FocusBlock({
       <div className="row between wrap" style={{ marginBottom: 16, gap: 10 }}>
         <div>
           <div className="eyebrow">Where to focus</div>
-          <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4 }}>Mastery &amp; readiness</h3>
+          <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4, whiteSpace: "nowrap" }}>Mastery &amp; readiness</h3>
         </div>
         <span className="text-muted-foreground" style={{ fontSize: 12, maxWidth: 240, textAlign: "right" }}>
           How exam-ready each subject is, and the topics moving the needle.
@@ -417,7 +418,7 @@ function FocusBlock({
               <div
                 key={`${t.subject}-${t.topic}`}
                 className="row between"
-                style={{ gap: 12, padding: "11px 14px", background: "hsl(var(--muted))", border: "1px solid hsl(var(--border))", borderRadius: 12 }}
+                style={{ gap: 12, padding: "11px 14px", background: "hsl(var(--secondary))", border: "1px solid hsl(var(--border))", borderRadius: 12 }}
               >
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span className="row" style={{ gap: 8, marginBottom: 7 }}>
@@ -438,16 +439,16 @@ function FocusBlock({
 
       {/* examiner tip */}
       {tip && (
-        <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: "hsl(var(--primary) / 0.08)", border: "1px solid hsl(var(--primary) / 0.2)" }}>
+        <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: "hsl(var(--accent))", border: "1px solid var(--accent-border)" }}>
           <div className="row between" style={{ marginBottom: 8 }}>
-            <span className="row" style={{ gap: 8, color: "hsl(var(--primary))", fontWeight: 700, fontSize: 13 }}>
+            <span className="row" style={{ gap: 8, color: "hsl(var(--accent-foreground))", fontWeight: 700, fontSize: 13 }}>
               <Sparkles className="w-4 h-4" /> Examiner insight · {tip.topic}
             </span>
             <span className="chip chip-brand" style={{ fontSize: 10 }}>{tip.frequency}</span>
           </div>
           <p style={{ margin: "0 0 8px", fontSize: 13.5, lineHeight: 1.5 }} className="text-muted-foreground">{tip.text}</p>
           <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: 600 }}>
-            <span style={{ color: "hsl(var(--primary))" }}>Do this → </span>{tip.action}
+            <span style={{ color: "hsl(var(--accent-foreground))" }}>Do this → </span>{tip.action}
           </p>
         </div>
       )}
@@ -463,7 +464,7 @@ function WinsBlock({ wins }: { wins: DashboardRecentWin[] }) {
       <div className="row between" style={{ marginBottom: 14 }}>
         <div>
           <div className="eyebrow">Recent wins</div>
-          <h3 className="soma-display" style={{ fontSize: 18, marginTop: 4 }}>Worth celebrating</h3>
+          <h3 className="soma-display" style={{ fontSize: 18, marginTop: 4, whiteSpace: "nowrap" }}>Worth celebrating</h3>
         </div>
         <Award className="w-5 h-5" style={{ color: "hsl(var(--primary))" }} />
       </div>

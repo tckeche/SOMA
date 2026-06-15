@@ -44,7 +44,6 @@ export interface DashboardAssignmentRow {
   scorePercent: number | null;
   completedAt: string | null;
   questionCount: number;
-  estimatedMinutes: number;
 }
 
 export interface DashboardPerformance {
