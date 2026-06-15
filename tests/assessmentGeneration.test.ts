@@ -203,11 +203,15 @@ describe("graph question rendering and theme/button safeguards", () => {
     expect(html).not.toContain("Cartesian graph");
   });
 
-  it("forces dark mode and removes the light-mode toggle from the app shell", () => {
+  it("defaults to dark mode but keeps the light-mode toggle available in the app shell", () => {
     const mainSource = fs.readFileSync("client/src/main.tsx", "utf8");
-    const appSource = fs.readFileSync("client/src/App.tsx", "utf8");
-    expect(mainSource).toContain('forcedTheme="dark"');
-    expect(appSource).not.toContain("ThemeToggle");
+    const dashboardSource = fs.readFileSync("client/src/pages/StudentDashboard.tsx", "utf8");
+    // Dark remains the default entry experience for the premium redesign…
+    expect(mainSource).toContain('defaultTheme="dark"');
+    // …but the theme is no longer force-locked, so the dual-theme toggle works.
+    expect(mainSource).not.toContain("forcedTheme");
+    // The light/dark toggle is wired into the dashboard shell.
+    expect(dashboardSource).toContain("ThemeToggle");
   });
 
   it("keeps Back / Exit Preview / Exit Assessment buttons on the shared default size", () => {
