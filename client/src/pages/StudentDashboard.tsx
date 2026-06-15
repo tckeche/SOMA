@@ -1,28 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
+import { formatDistanceToNow } from "date-fns";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { subscribeToSomaMutations } from "@/lib/realtimeEvents";
 import {
-  LogOut, Sparkles, ArrowRight, AlertCircle, RefreshCw, Loader2, LayoutDashboard, ListChecks,
+  Sparkles, ArrowRight, AlertCircle, RefreshCw, BookOpen, Clock, ChevronRight,
+  TrendingUp, TrendingDown, Minus, Award, Trophy, Flag, Flame,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import NotificationsPanel from "@/components/student/NotificationsPanel";
-import SubjectCoverageCard from "@/components/student/SubjectCoverageCard";
-import PerformanceCard from "@/components/student/PerformanceCard";
-import RemindersCarousel from "@/components/student/RemindersCarousel";
-import NextActionsList from "@/components/student/NextActionsList";
-import RecentWinsList from "@/components/student/RecentWinsList";
-import CompletedAssessmentsTab from "@/components/student/CompletedAssessmentsTab";
+import SomaHeader from "@/components/soma/SomaHeader";
+import { Ring, Spark } from "@/components/soma/Charts";
 import AssignmentsList from "@/components/student/AssignmentsList";
-import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
-import { SyllabusMasteryMap } from "@/components/SyllabusMasteryMap";
+import CompletedAssessmentsTab from "@/components/student/CompletedAssessmentsTab";
 import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
-import type { DashboardReminder, StudentDashboardPayload } from "@/types/studentDashboard";
+import type {
+  DashboardAssignmentRow,
+  DashboardRecentWin,
+  StudentDashboardPayload,
+} from "@/types/studentDashboard";
 
 interface StudyTipResponse {
   tips: Array<{
@@ -36,6 +34,50 @@ interface StudyTipResponse {
   cacheHit: boolean;
   elapsedMs: number;
 }
+
+type ViewKey = "dashboard" | "assignments" | "tools";
+
+// ---- small helpers ----
+
+/** Humanize an ISO timestamp / date into a short relative or due label. */
+function humanize(iso: string | null): string {
+  if (!iso) return "No due date";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return formatDistanceToNow(d, { addSuffix: true });
+}
+
+/** Days from now (negative = past). */
+function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return (d.getTime() - Date.now()) / 86_400_000;
+}
+
+function scoreColor(pct: number): string {
+  if (pct >= 75) return "hsl(var(--success))";
+  if (pct >= 55) return "hsl(var(--warning))";
+  return "hsl(var(--danger))";
+}
+
+const MASTERY_META: Record<
+  string,
+  { label: string; cls: string }
+> = {
+  needs_work: { label: "Weak", cls: "chip-danger" },
+  in_progress: { label: "Developing", cls: "chip-warning" },
+  mastered: { label: "Secure", cls: "chip-success" },
+  untested: { label: "Untested", cls: "chip" },
+};
+
+const WIN_META: Record<DashboardRecentWin["type"], { Icon: typeof Trophy }> = {
+  high_score: { Icon: Trophy },
+  first_completion: { Icon: Flag },
+  improvement: { Icon: Sparkles },
+  streak: { Icon: Flame },
+  mastery: { Icon: Award },
+};
 
 function DashboardSkeleton() {
   return (
@@ -70,16 +112,357 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+// ---- Dashboard sections ----
+
+interface ExaminerTip {
+  topic: string;
+  text: string;
+  action: string;
+  frequency: string;
+  subject?: string;
+}
+
+/** 1. Next actions (hero + up next). */
+function NextActions({
+  assignments,
+  dueSummary,
+  onStart,
+}: {
+  assignments: DashboardAssignmentRow[];
+  dueSummary: string;
+  onStart: (quizId: number) => void;
+}) {
+  const overdue = assignments.find((a) => a.status === "overdue");
+  const pending = assignments.find((a) => a.status === "pending");
+  const hero = overdue ?? pending;
+  if (!hero) {
+    return (
+      <section className="soma-card" style={{ padding: 22 }}>
+        <div className="eyebrow">Pick up where you left off</div>
+        <h2 className="soma-display" style={{ fontSize: 22, marginTop: 6 }}>You're all caught up</h2>
+        <p className="text-sm text-muted-foreground mt-1">Nothing pending right now — your tutor will assign new work as you progress.</p>
+      </section>
+    );
+  }
+
+  const d = daysUntil(hero.dueDate);
+  const heroTone =
+    hero.status === "overdue" ? "danger" : d !== null && d <= 2 ? "warning" : "brand";
+  const toneVar =
+    heroTone === "danger" ? "hsl(var(--danger))" : heroTone === "warning" ? "hsl(var(--warning))" : "hsl(var(--primary))";
+  const heroDue = hero.status === "overdue" ? "Overdue" : humanize(hero.dueDate);
+
+  // "Up next" = next 2-3 assignments after the hero.
+  const upNext = assignments.filter((a) => a !== hero).slice(0, 3);
+
+  return (
+    <section className="soma-card" style={{ padding: 0, overflow: "hidden" }}>
+      <div className="row between" style={{ padding: "18px 22px 0" }}>
+        <div className="eyebrow">Pick up where you left off</div>
+        <span className={`chip ${heroTone === "brand" ? "chip-info" : `chip-${heroTone}`}`}>{dueSummary}</span>
+      </div>
+
+      <div style={{ padding: "14px 22px 20px" }}>
+        {/* hero action */}
+        <div className="soma-card-2" style={{ padding: 0, position: "relative", overflow: "hidden" }}>
+          <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: toneVar }} />
+          <div style={{ padding: "20px 22px 20px 24px" }}>
+            <div className="row between wrap" style={{ gap: 16, alignItems: "flex-start" }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+                  <span className={`chip chip-${heroTone}`}>
+                    {hero.status === "overdue" ? <AlertCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                    {heroDue}
+                  </span>
+                  <span className="chip">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    {hero.quizSubject || "General"}{hero.quizLevel ? ` · ${hero.quizLevel}` : ""}
+                  </span>
+                </div>
+                <h2 className="soma-display" style={{ fontSize: 26, marginBottom: 8, lineHeight: 1.12 }}>{hero.quizTitle}</h2>
+                <div className="text-muted-foreground" style={{ fontSize: 13 }}>{hero.maxScore} marks</div>
+              </div>
+              <button className="btn btn-primary" onClick={() => onStart(hero.quizId)} style={{ flex: "none" }}>
+                Start now <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* up next */}
+        {upNext.length > 0 && (
+          <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+            <div className="eyebrow" style={{ marginBottom: 2 }}>Up next</div>
+            {upNext.map((a) => {
+              const ad = daysUntil(a.dueDate);
+              const soon = a.status === "overdue" || (ad !== null && ad <= 2);
+              const dueLabel = a.status === "overdue" ? "Overdue" : humanize(a.dueDate);
+              return (
+                <button
+                  key={a.assignmentId}
+                  onClick={() => onStart(a.quizId)}
+                  className="row between"
+                  style={{
+                    width: "100%", textAlign: "left", gap: 12, padding: "12px 14px",
+                    background: "hsl(var(--muted))", border: "1px solid hsl(var(--border))", borderRadius: 12, cursor: "pointer",
+                  }}
+                  data-testid={`up-next-${a.quizId}`}
+                >
+                  <span className="row" style={{ gap: 12, minWidth: 0 }}>
+                    <span style={{
+                      width: 36, height: 36, borderRadius: 9, flex: "none", display: "grid", placeItems: "center",
+                      background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", color: "hsl(var(--primary))",
+                    }}>
+                      <BookOpen className="w-4 h-4" />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.quizTitle}</span>
+                      <span className="text-muted-foreground" style={{ fontSize: 12 }}>{a.quizSubject || "General"} · {a.maxScore} marks</span>
+                    </span>
+                  </span>
+                  <span className="row" style={{ gap: 10, flex: "none" }}>
+                    <span className={`chip ${soon ? "chip-warning" : ""}`} style={{ fontSize: 11 }}>{dueLabel}</span>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** 2. Performance. */
+function PerformanceBlock({
+  data,
+}: {
+  data: StudentDashboardPayload;
+}) {
+  const p = data.performance;
+  const avg = p.averageScorePercent ?? 0;
+  const accuracy = p.accuracyPercent ?? 0;
+
+  // Sparkline: completed assessments by completedAt ascending → scorePercent (skip nulls).
+  const sparkData = useMemo(() => {
+    return data.completed
+      .filter((c) => c.completedAt && c.scorePercent != null)
+      .slice()
+      .sort((a, b) => new Date(a.completedAt!).getTime() - new Date(b.completedAt!).getTime())
+      .map((c) => c.scorePercent as number)
+      .slice(-8);
+  }, [data.completed]);
+
+  const bySubject = data.subjects
+    .filter((s) => s.averageScorePercent != null)
+    .map((s) => ({ subject: s.subject, pct: Math.round(s.averageScorePercent as number) }));
+
+  const trend = p.recentTrend;
+  const trendMeta =
+    trend === "up"
+      ? { Icon: TrendingUp, cls: "chip-success", label: "Improving" }
+      : trend === "down"
+      ? { Icon: TrendingDown, cls: "chip-danger", label: "Slipping" }
+      : trend === "new"
+      ? { Icon: Sparkles, cls: "chip-brand", label: "New" }
+      : { Icon: Minus, cls: "chip", label: "Steady" };
+  const TrendIcon = trendMeta.Icon;
+
+  return (
+    <section className="soma-card" style={{ padding: 22 }}>
+      <div className="row between" style={{ marginBottom: 16 }}>
+        <div>
+          <div className="eyebrow">How you're doing</div>
+          <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4 }}>Your progress</h3>
+        </div>
+        <span className={`chip ${trendMeta.cls}`}><TrendIcon className="w-3.5 h-3.5" />{trendMeta.label}</span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18, alignItems: "center" }} className="grid-collapse">
+        <div className="row" style={{ gap: 16 }}>
+          <Ring pct={Math.round(avg)} size={92} stroke={9}>
+            <div style={{ textAlign: "center" }}>
+              <div className="num" style={{ fontSize: 24 }}>{Math.round(avg)}%</div>
+              <div className="eyebrow" style={{ fontSize: 8 }}>avg</div>
+            </div>
+          </Ring>
+          <div style={{ display: "grid", gap: 10, flex: 1 }}>
+            <div className="row between" style={{ paddingBottom: 8, borderBottom: "1px solid hsl(var(--border))" }}>
+              <span className="text-muted-foreground" style={{ fontSize: 13 }}>Accuracy</span>
+              <span className="num" style={{ fontSize: 17 }}>{Math.round(accuracy)}%</span>
+            </div>
+            <div className="row between" style={{ paddingBottom: 8, borderBottom: "1px solid hsl(var(--border))" }}>
+              <span className="text-muted-foreground" style={{ fontSize: 13 }}>Completed</span>
+              <span className="num" style={{ fontSize: 17 }}>{p.totalCompleted}/{p.totalAssigned}</span>
+            </div>
+            {sparkData.length >= 2 && (
+              <div className="row between">
+                <span className="text-muted-foreground" style={{ fontSize: 13 }}>Recent trend</span>
+                <Spark data={sparkData} w={96} h={28} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 11 }}>
+          <div className="eyebrow">By subject</div>
+          {bySubject.length === 0 ? (
+            <p className="text-muted-foreground" style={{ fontSize: 12 }}>No scored subjects yet.</p>
+          ) : (
+            bySubject.map((s) => (
+              <div key={s.subject} className="row" style={{ gap: 12 }}>
+                <span style={{ width: 92, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.subject}</span>
+                <span className="meter" style={{ flex: 1 }}><span style={{ width: s.pct + "%", background: scoreColor(s.pct) }} /></span>
+                <span className="num" style={{ fontSize: 13, width: 34, textAlign: "right" }}>{s.pct}%</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** 3. Where to focus — readiness rings + topic mastery + examiner tip. */
+function FocusBlock({
+  data,
+  tip,
+}: {
+  data: StudentDashboardPayload;
+  tip: ExaminerTip | null;
+}) {
+  const readiness = data.subjects.map((s) => ({
+    label: s.subject,
+    pct: Math.round(s.coverage.masteryPercent),
+  }));
+
+  const topics = useMemo(() => {
+    const flat = data.subjects.flatMap((s) =>
+      s.topics.map((t) => ({
+        topic: t.topic,
+        subject: s.subject,
+        pct: Math.round(t.understandingPercent),
+        status: t.status,
+      })),
+    );
+    return flat.sort((a, b) => a.pct - b.pct).slice(0, 6);
+  }, [data.subjects]);
+
+  return (
+    <section className="soma-card" style={{ padding: 22 }}>
+      <div className="row between wrap" style={{ marginBottom: 16, gap: 10 }}>
+        <div>
+          <div className="eyebrow">Where to focus</div>
+          <h3 className="soma-display" style={{ fontSize: 20, marginTop: 4 }}>Mastery &amp; readiness</h3>
+        </div>
+        <span className="text-muted-foreground" style={{ fontSize: 12, maxWidth: 240, textAlign: "right" }}>
+          How exam-ready each subject is, and the topics moving the needle.
+        </span>
+      </div>
+
+      {/* readiness rings */}
+      {readiness.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(92px, 1fr))", gap: 12, marginBottom: 18 }}>
+          {readiness.map((r) => (
+            <div key={r.label} className="well" style={{ padding: 12, display: "grid", placeItems: "center", gap: 8 }}>
+              <Ring pct={r.pct} size={64} stroke={6} color={scoreColor(r.pct)}>
+                <span className="num" style={{ fontSize: 15 }}>{r.pct}%</span>
+              </Ring>
+              <span style={{ fontSize: 11, fontWeight: 600 }}>{r.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* topic mastery list */}
+      {topics.length > 0 && (
+        <div style={{ display: "grid", gap: 8 }}>
+          {topics.map((t) => {
+            const m = MASTERY_META[t.status] ?? MASTERY_META.untested;
+            return (
+              <div
+                key={`${t.subject}-${t.topic}`}
+                className="row between"
+                style={{ gap: 12, padding: "11px 14px", background: "hsl(var(--muted))", border: "1px solid hsl(var(--border))", borderRadius: 12 }}
+              >
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span className="row" style={{ gap: 8, marginBottom: 7 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{t.topic}</span>
+                    <span className="text-muted-foreground" style={{ fontSize: 11 }}>{t.subject}</span>
+                  </span>
+                  <span className="meter" style={{ maxWidth: 280 }}><span style={{ width: t.pct + "%", background: scoreColor(t.pct) }} /></span>
+                </span>
+                <span className="row" style={{ gap: 8, flex: "none" }}>
+                  <span className="num" style={{ fontSize: 14, width: 34, textAlign: "right", color: scoreColor(t.pct) }}>{t.pct}%</span>
+                  <span className={`chip ${m.cls}`} style={{ fontSize: 11 }}>{m.label}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* examiner tip */}
+      {tip && (
+        <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: "hsl(var(--primary) / 0.08)", border: "1px solid hsl(var(--primary) / 0.2)" }}>
+          <div className="row between" style={{ marginBottom: 8 }}>
+            <span className="row" style={{ gap: 8, color: "hsl(var(--primary))", fontWeight: 700, fontSize: 13 }}>
+              <Sparkles className="w-4 h-4" /> Examiner insight · {tip.topic}
+            </span>
+            <span className="chip chip-brand" style={{ fontSize: 10 }}>{tip.frequency}</span>
+          </div>
+          <p style={{ margin: "0 0 8px", fontSize: 13.5, lineHeight: 1.5 }} className="text-muted-foreground">{tip.text}</p>
+          <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: 600 }}>
+            <span style={{ color: "hsl(var(--primary))" }}>Do this → </span>{tip.action}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 4. Recent wins. */
+function WinsBlock({ wins }: { wins: DashboardRecentWin[] }) {
+  if (wins.length === 0) return null;
+  return (
+    <section className="soma-card" style={{ padding: 22 }}>
+      <div className="row between" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="eyebrow">Recent wins</div>
+          <h3 className="soma-display" style={{ fontSize: 18, marginTop: 4 }}>Worth celebrating</h3>
+        </div>
+        <Award className="w-5 h-5" style={{ color: "hsl(var(--primary))" }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+        {wins.map((w, i) => {
+          const Icon = (WIN_META[w.type] ?? WIN_META.mastery).Icon;
+          return (
+            <div key={i} className="well" style={{ padding: 14 }} data-testid={`win-${w.type}-${i}`}>
+              <div className="row between" style={{ marginBottom: 6 }}>
+                <span style={{
+                  width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center",
+                  background: "hsl(var(--success) / 0.12)", color: "hsl(var(--success))", border: "1px solid hsl(var(--success) / 0.25)",
+                }}>
+                  <Icon className="w-4 h-4" />
+                </span>
+                <span className="text-muted-foreground" style={{ fontSize: 11 }}>{humanize(w.ts)}</span>
+              </div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{w.title}</div>
+              <div className="text-muted-foreground" style={{ fontSize: 12 }}>{w.detail}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function StudentDashboard() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { session, userId } = useSupabaseSession();
-  const initialTab = (() => {
-    if (typeof window === "undefined") return "home" as const;
-    const tab = new URLSearchParams(window.location.search).get("tab");
-    return tab === "completed" ? ("completed" as const) : ("home" as const);
-  })();
-  const [activeTab, setActiveTab] = useState<"home" | "completed">(initialTab);
+  const [view, setView] = useState<ViewKey>("dashboard");
 
   useEffect(() => {
     return subscribeToSomaMutations(() => {
@@ -87,7 +470,7 @@ export default function StudentDashboard() {
     });
   }, [queryClient, userId]);
 
-  const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } = useQuery<StudentDashboardPayload>({
+  const { data, isLoading, isError, refetch } = useQuery<StudentDashboardPayload>({
     queryKey: ["/api/student/dashboard", userId],
     queryFn: async () => {
       const res = await authFetch("/api/student/dashboard");
@@ -101,7 +484,9 @@ export default function StudentDashboard() {
     refetchOnMount: "always",
   });
 
-  const { data: syllabusInsights, isLoading: syllabusInsightsLoading } = useQuery<{ subjects: SubjectInsight[] }>({
+  // Syllabus-insights query — preserved verbatim (its data feeds the Focus list
+  // indirectly via subjects; kept fetching so cache/realtime stay consistent).
+  useQuery<{ subjects: unknown[] }>({
     queryKey: ["/api/student/syllabus-insights", userId],
     queryFn: async () => {
       const res = await authFetch("/api/student/syllabus-insights");
@@ -111,10 +496,7 @@ export default function StudentDashboard() {
     enabled: !!userId,
   });
 
-  // Examiner-driven study tips, fetched per subject. Each query is cached
-  // server-side for 10 minutes and client-side for 5; we merge the results
-  // into the reminders array so the carousel surfaces real, syllabus-grounded
-  // mistakes alongside the generic composed reminders.
+  // Examiner-driven study tips, fetched per subject.
   const subjectsForTips = useMemo(
     () => (data?.subjects ?? []).slice(0, 4),
     [data?.subjects],
@@ -132,226 +514,103 @@ export default function StudentDashboard() {
       staleTime: 5 * 60 * 1000,
     })),
   });
-  const studyTipReminders: DashboardReminder[] = useMemo(() => {
-    const out: DashboardReminder[] = [];
-    tipQueries.forEach((q, idx) => {
-      const subject = subjectsForTips[idx]?.subject;
-      if (!q.data || !subject) return;
-      for (const tip of q.data.tips) {
-        out.push({
-          id: tip.id,
-          topic: tip.topic,
-          text: tip.tip,
-          whyItMatters: tip.whyItMatters,
-          correctApproach: tip.correctApproach,
-          frequency: tip.frequency,
-          subject,
-        });
-      }
-    });
-    return out;
-  }, [tipQueries, subjectsForTips]);
-  const mergedReminders: DashboardReminder[] = useMemo(() => {
-    const composed = data?.reminders ?? [];
-    // Surface the examiner tips first — they're more actionable than the
-    // generic composed reminders.
-    return [...studyTipReminders, ...composed];
-  }, [studyTipReminders, data?.reminders]);
 
-  const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
-  const formatUpdated = (d: Date | null) => {
-    if (!d) return "";
-    const diffSec = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
-    if (diffSec < 5) return "just now";
-    if (diffSec < 60) return `${diffSec}s ago`;
-    const mins = Math.round(diffSec / 60);
-    return `${mins}m ago`;
-  };
+  // First available examiner tip across all subjects → single Focus panel.
+  const examinerTip: ExaminerTip | null = useMemo(() => {
+    for (let i = 0; i < tipQueries.length; i++) {
+      const q = tipQueries[i];
+      const subject = subjectsForTips[i]?.subject;
+      const first = q.data?.tips?.[0];
+      if (first) {
+        return {
+          topic: first.topic,
+          text: first.tip,
+          action: first.correctApproach,
+          frequency: first.frequency.replace(/_/g, " "),
+          subject,
+        };
+      }
+    }
+    return null;
+  }, [tipQueries, subjectsForTips]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setLocation("/login");
   };
 
+  const launchQuiz = (quizId: number) => setLocation(`/soma/quiz/${quizId}`);
+
   const displayName = data?.student.displayName ?? (session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Student");
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
+  const streakWin = data?.recentWins.find((w) => w.type === "streak");
+
   return (
     <div className="min-h-screen">
-      <header className="border-b border-border/70 bg-background/95 backdrop-blur-xl sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/">
-            <div className="flex items-center gap-3 cursor-pointer" data-testid="link-dashboard-home">
-              <img src="/MCEC - White Logo.png" alt="MCEC Logo" loading="lazy" className="h-10 w-auto object-contain brightness-0 dark:brightness-100" />
-              <div>
-                <h1 className="text-lg font-bold gradient-text" data-testid="text-dashboard-title">SOMA</h1>
-                <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Student Dashboard</p>
-              </div>
-            </div>
-          </Link>
+      <SomaHeader
+        roleLabel="Student"
+        displayName={displayName}
+        initials={initials}
+        onLogout={handleLogout}
+      />
 
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => refetch()}
-              className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-lg hover-elevate"
-              aria-label="Refresh dashboard"
-              title={lastUpdated ? `Last updated ${formatUpdated(lastUpdated)}` : "Refresh"}
-              data-testid="button-refresh-dashboard"
-            >
-              {isFetching ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              <span>{isFetching ? "Refreshing…" : `Updated ${formatUpdated(lastUpdated)}`}</span>
-            </button>
-            <div className="flex items-center gap-3">
-              <div
-                className="avatar w-10 h-10 text-sm"
-                data-testid="avatar-user"
-              >
-                {initials}
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-sm font-medium text-foreground" data-testid="text-user-name">{displayName}</p>
-                <p className="text-[10px] text-muted-foreground">{session?.user?.email}</p>
-              </div>
-            </div>
-            <ThemeToggle />
-            <button
-              onClick={handleLogout}
-              className="text-muted-foreground hover:text-foreground transition-colors p-2 min-h-[44px] min-w-[44px]"
-              aria-label="Log out"
-              data-testid="button-logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-[1240px] mx-auto px-6 py-8 space-y-6">
         {isLoading ? (
           <DashboardSkeleton />
         ) : isError || !data ? (
           <ErrorState onRetry={() => refetch()} />
         ) : (
           <>
-            {/* 1. Notifications panel — always shown first */}
-            <NotificationsPanel
-              items={data.notifications.items}
-              unreadCount={data.notifications.unreadCount}
-              studentKey={userId ?? ""}
-            />
-
-            {/* 2. Greeting + due summary */}
-            <section className="glass-card relative overflow-hidden p-6" data-testid="section-greeting">
-              <div aria-hidden className="pointer-events-none absolute -top-16 -right-12 h-44 w-44 rounded-full bg-primary/10 blur-3xl" />
-              <div className="relative">
-                <div className="eyebrow mb-2">Welcome back</div>
-                <h2 className="soma-display text-3xl text-foreground" data-testid="text-greeting">{data.greeting}</h2>
-                <p className="text-sm text-muted-foreground mt-2" data-testid="text-due-summary">{data.dueSummary}</p>
+            {/* PageIntro */}
+            <div className="row between wrap" style={{ gap: 12 }} data-testid="section-greeting">
+              <div>
+                <h1 className="soma-display" style={{ fontSize: 34, marginBottom: 4 }} data-testid="text-greeting">{data.greeting}</h1>
+                <div className="text-muted-foreground" style={{ fontSize: 14 }} data-testid="text-due-summary">{data.dueSummary}</div>
               </div>
-            </section>
+              {streakWin && (
+                <span className="chip chip-brand" style={{ fontSize: 12 }}>
+                  <Flame className="w-3.5 h-3.5" />{streakWin.title}
+                </span>
+              )}
+            </div>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "home" | "completed")}>
-              <TabsList className="bg-card/60 border border-card-border">
-                <TabsTrigger value="home" data-testid="tab-trigger-home">
-                  <LayoutDashboard className="w-4 h-4 mr-2" /> Home
-                </TabsTrigger>
-                <TabsTrigger value="completed" data-testid="tab-trigger-completed">
-                  <ListChecks className="w-4 h-4 mr-2" /> Completed ({data.completed.length})
-                </TabsTrigger>
-              </TabsList>
+            {/* view switcher */}
+            <div className="seg" role="group" aria-label="View">
+              <button aria-pressed={view === "dashboard"} onClick={() => setView("dashboard")}>Dashboard</button>
+              <button aria-pressed={view === "assignments"} onClick={() => setView("assignments")}>Assignments</button>
+              <button aria-pressed={view === "tools"} onClick={() => setView("tools")}>Study tools</button>
+            </div>
 
-              <TabsContent value="home" className="space-y-6 mt-6">
-                {/* 3. What to do now + Recent wins */}
-                <div className="grid md:grid-cols-2 gap-5">
-                  <NextActionsList actions={data.nextActions} />
-                  <RecentWinsList wins={data.recentWins} />
-                </div>
+            {view === "dashboard" && (
+              <div style={{ display: "grid", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
+                <NextActions assignments={data.assignments} dueSummary={data.dueSummary} onStart={launchQuiz} />
+                <PerformanceBlock data={data} />
+                <FocusBlock data={data} tip={examinerTip} />
+                <WinsBlock wins={data.recentWins} />
+              </div>
+            )}
 
-                {/* 4. Reminders carousel */}
-                <RemindersCarousel reminders={mergedReminders} />
-
-                {/* 5. Performance section */}
-                <PerformanceCard performance={data.performance} subjects={data.subjects} />
-
-                {/* 5a. Mark-loss predictor (Phase 3.2) */}
-                <MarkLossPredictor />
-
-                {/* 5a2. Revision plan (Phase 3.3) */}
-                <RevisionPlanCard />
-
-                {/* 5a3. Command-word coach (Phase 4.2) */}
-                <CommandWordCoach />
-
-                {/* 5b. Syllabus mastery map (Phase 3.1) */}
-                <SyllabusMasteryMap />
-
-                {/* 5c. Topic-coverage radar + paper readiness (legacy view, kept
-                       alongside the mastery map for now). */}
-                <section className="space-y-3" data-testid="section-syllabus-insights">
-                  <header>
-                    <h2 className="text-lg font-semibold text-foreground">Topic coverage radar</h2>
-                    <p className="text-xs text-muted-foreground">Quick overview of which topics you've touched and where you stand.</p>
-                  </header>
-                  <SyllabusInsightsSection
-                    insights={syllabusInsights}
-                    isLoading={syllabusInsightsLoading}
-                    studentFirstName={data.student.displayName}
-                  />
-                </section>
-
-                {/* 6. Per-subject syllabus coverage */}
-                <section className="space-y-3" data-testid="section-subjects">
-                  <header className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-lg font-semibold text-foreground">Your subjects</h2>
-                      <p className="text-xs text-muted-foreground">Each subject shows the syllabus topics for the level you're studying.</p>
-                    </div>
-                  </header>
-                  {data.subjects.length === 0 ? (
-                    <div className="rounded-2xl border border-card-border bg-card/70 p-8 text-center">
-                      <p className="text-sm text-muted-foreground">Once you have an assigned assessment or your tutor sets your subjects, your syllabus coverage will appear here.</p>
-                    </div>
-                  ) : (
-                    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {data.subjects.map((s) => (
-                        <SubjectCoverageCard key={s.subject} subject={s} />
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                {/* 7. Open assignments */}
+            {view === "assignments" && (
+              <div className="space-y-6">
                 <section className="space-y-3" data-testid="section-assignments">
-                  <header>
-                    <h2 className="text-lg font-semibold text-foreground">Pending assessments</h2>
-                    <p className="text-xs text-muted-foreground">Sorted by what's most urgent.</p>
-                  </header>
+                  <div className="eyebrow">Pending assessments</div>
                   <AssignmentsList assignments={data.assignments} />
                 </section>
-              </TabsContent>
+                <section className="space-y-3">
+                  <div className="eyebrow">Completed ({data.completed.length})</div>
+                  <CompletedAssessmentsTab completed={data.completed} />
+                </section>
+              </div>
+            )}
 
-              <TabsContent value="completed" className="mt-6">
-                <CompletedAssessmentsTab completed={data.completed} />
-              </TabsContent>
-            </Tabs>
-
-            {/* SOMA Tutor CTA */}
-            <section className="flex justify-center pt-2 pb-6">
-              <button
-                style={{ background: "hsl(var(--success-soft))", borderColor: "hsl(var(--success-line))", color: "hsl(var(--success))" }}
-                className="group inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl border font-semibold text-sm hover:shadow-md transition-all duration-300"
-                data-testid="button-consult-ai-tutor"
-                onClick={() => setLocation("/soma/chat")}
-              >
-                <Sparkles className="w-4 h-4 group-hover:animate-pulse" />
-                Consult SOMA Tutor
-                <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
-              </button>
-            </section>
+            {view === "tools" && (
+              <div className="space-y-6">
+                <MarkLossPredictor />
+                <RevisionPlanCard />
+                <CommandWordCoach />
+              </div>
+            )}
           </>
         )}
       </main>
