@@ -329,6 +329,36 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   };
 }
 
+/**
+ * Normalise the quiz sub-type + parametric counts coming off the wizard.
+ * Clamps the total to 1–15 (≥2 for hybrid), forces the structured/MCQ split to
+ * be internally consistent with the chosen mode, and collapses everything to a
+ * pure-MCQ shape for PDF assessments (which don't use the quiz engine).
+ */
+function normalizeQuizModeFields(
+  format: "mcq" | "pdf",
+  rawMode: unknown,
+  rawCount: unknown,
+  rawStructured: unknown,
+): { mode: "mcq" | "structured" | "hybrid"; count: number; structured: number } {
+  if (format === "pdf") return { mode: "mcq", count: 0, structured: 0 };
+  const mode = rawMode === "structured" || rawMode === "hybrid" ? rawMode : "mcq";
+  const minCount = mode === "hybrid" ? 2 : 1;
+  let count = Number(rawCount);
+  if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 5;
+  count = Math.max(minCount, Math.min(15, Math.round(count)));
+  let structured: number;
+  if (mode === "mcq") structured = 0;
+  else if (mode === "structured") structured = count;
+  else {
+    // Hybrid: keep at least one of each type.
+    let s = Number(rawStructured);
+    if (!Number.isFinite(s)) s = Math.round(count / 2);
+    structured = Math.max(1, Math.min(count - 1, Math.round(s)));
+  }
+  return { mode, count, structured };
+}
+
 const adminRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 admin requests per windowMs
@@ -514,6 +544,40 @@ function shuffleOptions<T>(arr: T[]): T[] {
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
+  const rawType = String(raw.question_type || raw.questionType || "").toLowerCase();
+
+  // Structured / written answers have no options or single correct answer —
+  // they're marked by the AI against a mark scheme. Validate them separately
+  // so the 4-option gate below doesn't reject them.
+  if (rawType === "structured") {
+    const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
+    if (!stem) return null;
+    const markScheme = String(
+      raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || "",
+    );
+    if (!markScheme.trim()) return null;
+    const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
+    return {
+      draftId: `draft-${crypto.randomUUID()}`,
+      stem,
+      options: [],
+      correctAnswer: "",
+      explanation: String(raw.explanation || ""),
+      marks,
+      questionType: "structured",
+      markScheme,
+      graphSpec: null,
+      topicTag: raw.topic_tag ? String(raw.topic_tag) : (raw.topicTag ? String(raw.topicTag) : null),
+      subtopicTag: raw.subtopic_tag ? String(raw.subtopic_tag) : (raw.subtopicTag ? String(raw.subtopicTag) : null),
+      difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : (raw.difficultyTag ? String(raw.difficultyTag) : null),
+      subtopicId: Number.isFinite(Number(raw.subtopic_id ?? raw.subtopicId)) ? Number(raw.subtopic_id ?? raw.subtopicId) : null,
+      learningRequirementId: Number.isFinite(Number(raw.learning_requirement_id ?? raw.learningRequirementId)) ? Number(raw.learning_requirement_id ?? raw.learningRequirementId) : null,
+      targetMisconceptionIds: null,
+      commandWord: raw.command_word ? String(raw.command_word) : (raw.commandWord ? String(raw.commandWord) : null),
+      assessmentObjective: raw.assessment_objective ? String(raw.assessment_objective) : (raw.assessmentObjective ? String(raw.assessmentObjective) : null),
+    };
+  }
+
   let opts = raw.options;
   if (opts && !Array.isArray(opts) && typeof opts === "object") {
     const keys = Object.keys(opts);
@@ -4154,12 +4218,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
-      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format } = req.body;
+      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
       if (!title) return res.status(400).json({ message: "title is required" });
       if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
         return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
       }
       const normalizedFormat = format === "pdf" ? "pdf" : "mcq";
+      const { mode: normMode, count: normCount, structured: normStructured } =
+        normalizeQuizModeFields(normalizedFormat, quizMode, questionCount, structuredCount);
       const cleanTopics = Array.isArray(topics)
         ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
         : [];
@@ -4173,6 +4239,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         timeLimitMinutes: Number(timeLimitMinutes),
         authorId: tutorId,
         format: normalizedFormat,
+        quizMode: normMode,
+        questionCount: normCount,
+        structuredCount: normStructured,
         status: "published",
       });
       res.json(quiz);
@@ -4288,7 +4357,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       // Validate each draft question before write
       for (const q of draft) {
-        if (!q.stem || !Array.isArray(q.options) || q.options.length !== 4) {
+        if (!q.stem) {
+          return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
+        }
+        if (q.questionType === "structured") {
+          // Structured answers carry no options; they need a mark scheme so the
+          // AI marker has something to grade understanding against.
+          if (!q.markScheme || !String(q.markScheme).trim()) {
+            return res.status(400).json({ message: `Structured question "${String(q.stem).slice(0, 40)}" is missing a mark scheme` });
+          }
+          continue;
+        }
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
           return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
         }
         if (q.questionType === "graph" && q.graphSpec) {
@@ -4326,6 +4406,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         marks: q.marks,
         questionType: q.questionType,
         graphSpec: (q.graphSpec ?? null) as import("@shared/schema").GraphQuestionSpec | null,
+        markScheme: q.markScheme ?? null,
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
@@ -4373,7 +4454,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
 
-      const { title, syllabus, level, subject, topics, timeLimitMinutes, format } = req.body;
+      const { title, syllabus, level, subject, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
       const updates: Record<string, string | number | string[] | null> = {};
       if (title !== undefined) updates.title = title;
       if (syllabus !== undefined) updates.syllabus = syllabus || null;
@@ -4382,12 +4463,32 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       // Format is chosen up front and locked once the quiz row exists — questions
       // / worksheets are tied to one delivery model. Accept the field only when it
       // matches the existing value (idempotent no-op); reject any actual change.
+      const currentFormat = (existing as any).format === "pdf" ? "pdf" : "mcq";
       if (format !== undefined) {
         const requested = format === "pdf" ? "pdf" : "mcq";
-        const current = (existing as any).format === "pdf" ? "pdf" : "mcq";
-        if (requested !== current) {
+        if (requested !== currentFormat) {
           return res.status(409).json({ message: "Assessment type cannot be changed after creation." });
         }
+      }
+      // Quiz sub-type is likewise locked once the quiz exists (questions are
+      // tied to it). Question count / structured split stay adjustable so the
+      // tutor can re-balance before generating. Reject a mode change outright.
+      const currentMode = (existing as any).quizMode ?? "mcq";
+      if (quizMode !== undefined && currentFormat !== "pdf") {
+        const requestedMode = ["mcq", "structured", "hybrid"].includes(quizMode) ? quizMode : "mcq";
+        if (requestedMode !== currentMode) {
+          return res.status(409).json({ message: "Question style cannot be changed after creation." });
+        }
+      }
+      if (currentFormat !== "pdf" && (questionCount !== undefined || structuredCount !== undefined)) {
+        const norm = normalizeQuizModeFields(
+          currentFormat,
+          currentMode,
+          questionCount ?? (existing as any).questionCount,
+          structuredCount ?? (existing as any).structuredCount,
+        );
+        updates.questionCount = norm.count;
+        updates.structuredCount = norm.structured;
       }
       if (topics !== undefined) {
         const clean = Array.isArray(topics)
@@ -4835,6 +4936,32 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         assessmentSnapshot = lines.join("\n");
       }
 
+      // ── Parametric requirements — hard caps on count + question-type mix ──
+      // The tutor sets these on the wizard dial; the copilot must honour them
+      // exactly on a fresh/REPLACE_ALL generation rather than inferring counts
+      // from the free-text prompt.
+      let parametricBlock = "";
+      {
+        const m = (assessmentContext as any)?.assessmentMeta || {};
+        const mode = m.quizMode === "structured" || m.quizMode === "hybrid" ? m.quizMode : "mcq";
+        const total = Number.isFinite(Number(m.totalQuestions)) ? Number(m.totalQuestions) : null;
+        const structuredN = Number.isFinite(Number(m.structuredCount)) ? Number(m.structuredCount) : 0;
+        const mcqN = total != null ? Math.max(0, total - structuredN) : null;
+        if (total != null && total > 0) {
+          const parts = ["=== PARAMETRIC REQUIREMENTS (HARD CONSTRAINTS) ==="];
+          if (mode === "mcq") {
+            parts.push(`Target size: EXACTLY ${total} multiple-choice question(s). Do NOT produce structured questions.`);
+          } else if (mode === "structured") {
+            parts.push(`Target size: EXACTLY ${total} structured (written-answer) question(s). Do NOT produce multiple-choice questions.`);
+          } else {
+            parts.push(`This is a HYBRID quiz. Target size: EXACTLY ${structuredN} structured (written-answer) question(s) AND EXACTLY ${mcqN} multiple-choice question(s) — ${total} in total.`);
+          }
+          parts.push(`These counts are fixed by the tutor. On a fresh build or REPLACE_ALL, the "questions" array MUST match these counts and the type split exactly — never exceed or fall short. When the tutor explicitly asks to ADD a specific number, or to fix/replace named questions, follow that instruction instead.`);
+          parts.push("================================================");
+          parametricBlock = parts.join("\n");
+        }
+      }
+
       const copilotSystemPrompt = `You are SOMA Copilot, an expert mathematics assessment generator for the MCEC platform.
 
 CRITICAL OUTPUT RULE: Your ENTIRE response must be a single valid JSON object. Do NOT write any prose, markdown, or explanation outside the JSON. All explanations go inside the "reply" field within the JSON. Do NOT start with text like "Here are your questions:" — start immediately with the opening "{".
@@ -4957,6 +5084,25 @@ CRITICAL graph_spec RULES — violating any of these makes the question INVALID:
 11. DO NOT REVEAL THE ANSWER IN THE LABEL — if the question asks the student to read a value (radius, gradient, θ, etc.) from the graph, write the label with SYMBOLIC notation. Example: question asks "find the radius" → label "s = rθ", NOT "s = 4θ" (which gives away r = 4).`
   : `question_type MUST be "multiple_choice" for every question. Do NOT include graph questions or graph_spec.`}
 
+## STRUCTURED (WRITTEN-ANSWER) QUESTION FORMAT:
+Produce structured questions ONLY when the PARAMETRIC REQUIREMENTS ask for them. A structured question is a written/extended answer the student types — it is NOT multiple choice. Each structured question MUST have:
+- question_type: "structured"
+- prompt_text: the question or task (non-empty). Open with a clear command word (e.g. State, Explain, Describe, Compare, Evaluate, Justify) appropriate to the marks.
+- marks_worth: integer 1–15 reflecting the depth/number of points expected
+- mark_scheme: the marking points / model answer the AI marker grades UNDERSTANDING against. Write it as concise points (one idea per line) covering what a full-mark answer must convey. Non-empty.
+- explanation: a brief note on what a strong answer demonstrates (optional)
+- topic_tag, subtopic_tag, difficulty_tag
+- DO NOT include "options" or "correct_answer" for a structured question — omit both entirely.
+Example:
+{
+  "question_type": "structured",
+  "prompt_text": "Explain how an increase in temperature affects the rate of a reversible reaction at equilibrium.",
+  "marks_worth": 4,
+  "mark_scheme": "Increasing temperature favours the endothermic direction\\nPosition of equilibrium shifts to oppose the change (Le Chatelier)\\nForward/back rate both increase but unequally\\nValue of Kc changes with temperature",
+  "explanation": "A strong answer links the temperature change to the endothermic direction and uses Le Chatelier's principle.",
+  "topic_tag": "Equilibria", "subtopic_tag": "Le Chatelier", "difficulty_tag": "medium"
+}
+
 ## MATH FORMATTING — MANDATORY:
 ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX delimiters.
 - Inline math: $x^2 + 3x - 5$ (single dollar signs, within a sentence)
@@ -4979,6 +5125,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const userPrompt = [
         draftContextBlock || "(Draft is currently empty — no questions yet)",
         assessmentSnapshot,
+        parametricBlock,
         catalogueBlock,
         `Current request from tutor:\n${text}`,
         `Conversation memory:\n${memoryTranscript || "No previous turns."}`,
