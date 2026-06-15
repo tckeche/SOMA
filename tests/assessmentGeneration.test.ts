@@ -206,12 +206,15 @@ describe("graph question rendering and theme/button safeguards", () => {
   it("defaults to dark mode but keeps the light-mode toggle available in the app shell", () => {
     const mainSource = fs.readFileSync("client/src/main.tsx", "utf8");
     const dashboardSource = fs.readFileSync("client/src/pages/StudentDashboard.tsx", "utf8");
+    const headerSource = fs.readFileSync("client/src/components/soma/SomaHeader.tsx", "utf8");
     // Dark remains the default entry experience for the premium redesign…
     expect(mainSource).toContain('defaultTheme="dark"');
     // …but the theme is no longer force-locked, so the dual-theme toggle works.
     expect(mainSource).not.toContain("forcedTheme");
-    // The light/dark toggle is wired into the dashboard shell.
-    expect(dashboardSource).toContain("ThemeToggle");
+    // The light/dark toggle is wired into the shared app-shell header, which the
+    // dashboard renders.
+    expect(headerSource).toContain("ThemeToggle");
+    expect(dashboardSource).toContain("SomaHeader");
   });
 
   it("keeps Back / Exit Preview / Exit Assessment buttons on the shared default size", () => {
