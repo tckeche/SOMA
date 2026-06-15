@@ -15,7 +15,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getLevelColor, getSubjectIcon } from "@/lib/subjectColors";
 import { useToast } from "@/hooks/use-toast";
 import { emitSomaMutation, subscribeToSomaMutations } from "@/lib/realtimeEvents";
 import { type DashboardStats } from "@/components/dashboard-charts";
@@ -894,7 +894,7 @@ export default function TutorDashboard() {
               <>
                 <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
                   {tutorQuizzes.map((quiz) => {
-                    const sc = getSubjectColor(quiz.subject);
+                    const sc = getLevelColor(quiz.level);
                     const SubIcon = getSubjectIcon(quiz.subject);
                     const selected = assignForStudentQuizId === quiz.id;
                     return (
@@ -907,8 +907,8 @@ export default function TutorDashboard() {
                         <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${selected ? "bg-primary border-primary" : "border-border"}`}>
                           {selected && <Check className="w-3 h-3 text-white" />}
                         </div>
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}12`, borderColor: `${sc.hex}28` }}>
-                          <SubIcon className="w-3.5 h-3.5" style={{ color: sc.hex }} />
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${sc.bg} ${sc.border}`}>
+                          <SubIcon className={`w-3.5 h-3.5 ${sc.label}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-medium text-foreground truncate">{quiz.title}</p>

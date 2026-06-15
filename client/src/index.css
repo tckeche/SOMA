@@ -662,6 +662,14 @@
   html.light .bg-green-500\/10,
   html.light .bg-green-500\/15 { background-color: rgb(220, 252, 231); }
 
+  /* blue family (AS level) */
+  html.light .bg-blue-500\/10,
+  html.light .bg-blue-500\/15,
+  html.light .bg-blue-500\/20 { background-color: rgb(219, 234, 254); }
+  html.light .border-blue-500\/20,
+  html.light .border-blue-500\/25,
+  html.light .border-blue-500\/30 { border-color: rgb(147, 197, 253); }
+
   /* slate neutral family */
   html.light .bg-slate-500\/10,
   html.light .bg-slate-500\/15,

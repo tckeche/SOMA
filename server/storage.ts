@@ -169,6 +169,7 @@ export interface IStorage {
   adoptStudent(tutorId: string, studentId: string): Promise<TutorStudent>;
   removeAdoptedStudent(tutorId: string, studentId: string): Promise<void>;
   getAdoptedStudents(tutorId: string): Promise<SomaUser[]>;
+  getAdoptedStudentsWithProfile(tutorId: string): Promise<(SomaUser & { levels: string[]; subjects: string[] })[]>;
   getAvailableStudents(tutorId: string): Promise<SomaUser[]>;
 
   createQuizAssignments(quizId: number, studentIds: string[], dueDate?: Date | null): Promise<QuizAssignment[]>;
@@ -983,6 +984,37 @@ class DatabaseStorage implements IStorage {
       .innerJoin(somaUsers, eq(tutorStudents.studentId, somaUsers.id))
       .where(eq(tutorStudents.tutorId, tutorId));
     return rows.map((r) => r.student);
+  }
+
+  // Enrich each adopted student with the distinct levels and subjects derived
+  // from the quizzes assigned to them. soma_users has no level/subject column,
+  // so the student's profile is inferred from their assignments.
+  async getAdoptedStudentsWithProfile(tutorId: string): Promise<(SomaUser & { levels: string[]; subjects: string[] })[]> {
+    const students = await this.getAdoptedStudents(tutorId);
+    if (students.length === 0) return [];
+    const ids = students.map((s) => s.id);
+    const rows = await this.database
+      .select({ studentId: quizAssignments.studentId, level: somaQuizzes.level, subject: somaQuizzes.subject })
+      .from(quizAssignments)
+      .innerJoin(somaQuizzes, eq(quizAssignments.quizId, somaQuizzes.id))
+      .where(inArray(quizAssignments.studentId, ids));
+    const LEVEL_ORDER = ["IGCSE", "AS", "A2", "University"];
+    const rank = (l: string) => { const i = LEVEL_ORDER.indexOf(l); return i === -1 ? 99 : i; };
+    const byStudent = new Map<string, { levels: Set<string>; subjects: Set<string> }>();
+    for (const r of rows) {
+      let e = byStudent.get(r.studentId);
+      if (!e) { e = { levels: new Set(), subjects: new Set() }; byStudent.set(r.studentId, e); }
+      if (r.level) e.levels.add(r.level);
+      if (r.subject) e.subjects.add(r.subject);
+    }
+    return students.map((s) => {
+      const e = byStudent.get(s.id);
+      return {
+        ...s,
+        levels: e ? Array.from(e.levels).sort((a, b) => rank(a) - rank(b)) : [],
+        subjects: e ? Array.from(e.subjects).sort() : [],
+      };
+    });
   }
 
   async getAvailableStudents(tutorId: string): Promise<SomaUser[]> {
@@ -1868,6 +1900,19 @@ export class MemoryStorage implements IStorage {
   async getAdoptedStudents(tutorId: string): Promise<SomaUser[]> {
     const adoptedIds = this.tutorStudentsList.filter((ts) => ts.tutorId === tutorId).map((ts) => ts.studentId);
     return this.somaUsersList.filter((u) => adoptedIds.includes(u.id));
+  }
+
+  async getAdoptedStudentsWithProfile(tutorId: string): Promise<(SomaUser & { levels: string[]; subjects: string[] })[]> {
+    const students = await this.getAdoptedStudents(tutorId);
+    const LEVEL_ORDER = ["IGCSE", "AS", "A2", "University"];
+    const rank = (l: string) => { const i = LEVEL_ORDER.indexOf(l); return i === -1 ? 99 : i; };
+    return students.map((s) => {
+      const quizIds = this.quizAssignmentsList.filter((qa) => qa.studentId === s.id).map((qa) => qa.quizId);
+      const quizzes = this.somaQuizzesList.filter((q) => quizIds.includes(q.id));
+      const levels = Array.from(new Set(quizzes.map((q) => q.level).filter((l): l is string => !!l))).sort((a, b) => rank(a) - rank(b));
+      const subjects = Array.from(new Set(quizzes.map((q) => q.subject).filter((x): x is string => !!x))).sort();
+      return { ...s, levels, subjects };
+    });
   }
 
   async getAvailableStudents(tutorId: string): Promise<SomaUser[]> {

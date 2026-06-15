@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getLevelColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format, formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -459,7 +459,7 @@ export default function SuperAdminDashboard() {
             ) : (
               <div className="space-y-2">
                 {filteredQuizzes.map((quiz) => {
-                  const sc = getSubjectColor(quiz.subject);
+                  const sc = getLevelColor(quiz.level);
                   const SubIcon = getSubjectIcon(quiz.subject);
                   return (
                     <div
@@ -467,8 +467,8 @@ export default function SuperAdminDashboard() {
                       className="flex items-center gap-4 glass-card px-5 py-3.5"
                       data-testid={`quiz-row-${quiz.id}`}
                     >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center border ${sc.border} shrink-0`} style={{ backgroundColor: `${sc.hex}15` }}>
-                        <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center border ${sc.border} ${sc.bg} shrink-0`}>
+                        <SubIcon className={`w-4 h-4 ${sc.label}`} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{quiz.title}</p>

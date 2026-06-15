@@ -10,6 +10,9 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SomaUser } from "@shared/schema";
 import { formatPersonName } from "@/lib/personName";
+import { getLevelColor } from "@/lib/subjectColors";
+
+type StudentWithProfile = SomaUser & { levels: string[]; subjects: string[] };
 
 function formatStudentName(student: SomaUser): string {
   return formatPersonName(student);
@@ -31,7 +34,7 @@ export default function TutorStudents() {
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  const { data: adoptedStudents = [], isLoading: studentsLoading } = useQuery<SomaUser[]>({
+  const { data: adoptedStudents = [], isLoading: studentsLoading } = useQuery<StudentWithProfile[]>({
     queryKey: ["/api/tutor/students", userId],
     queryFn: async () => {
       if (!userId) return [];
@@ -260,19 +263,42 @@ export default function TutorStudents() {
             {filteredStudents.map((student) => {
               const name = formatStudentName(student);
               const si = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+              const levels = student.levels || [];
+              const subjects = student.subjects || [];
+              const lc = getLevelColor(levels[0]);
               return (
                 <div
                   key={student.id}
                   className="group flex items-center gap-4 bg-card/60 backdrop-blur-md border border-card-border rounded-xl px-5 py-4 hover:border-border transition-all"
                   data-testid={`student-card-${student.id}`}
                 >
-                  <div className="w-10 h-10 rounded-full bg-success/20 border border-success/40 flex items-center justify-center text-xs font-bold text-success shrink-0">
+                  <div className={`w-10 h-10 rounded-full ${lc.bg} border ${lc.border} flex items-center justify-center text-xs font-bold ${lc.label} shrink-0`} data-testid={`avatar-student-${student.id}`}>
                     {si}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{name}</p>
-                    {student.email && (
-                      <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                    {levels.length > 0 || subjects.length > 0 ? (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        {levels.map((lvl) => {
+                          const c = getLevelColor(lvl);
+                          return (
+                            <span
+                              key={lvl}
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${c.bg} ${c.label}`}
+                              data-testid={`student-level-${student.id}-${lvl}`}
+                            >
+                              {lvl}
+                            </span>
+                          );
+                        })}
+                        {subjects.length > 0 && (
+                          <span className="text-xs text-muted-foreground truncate" data-testid={`student-subjects-${student.id}`}>
+                            {subjects.join(", ")}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground truncate" data-testid={`student-noprofile-${student.id}`}>No assessments yet</p>
                     )}
                   </div>
                   <div className="flex items-center gap-4 shrink-0">

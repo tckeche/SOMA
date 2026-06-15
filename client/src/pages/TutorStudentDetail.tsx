@@ -4,7 +4,7 @@ import { useParams, Link } from "wouter";
 import { authFetch } from "@/lib/supabase";
 import { formatPersonName } from "@/lib/personName";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getLevelColor, getSubjectIcon } from "@/lib/subjectColors";
 import { format, formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1239,15 +1239,15 @@ export default function TutorStudentDetail() {
                 <div className="divide-y divide-white/[0.03]">
                   {assignments.map((a) => {
                     const status = getStatusLabel(a);
-                    const sc = getSubjectColor(a.quizSubject);
+                    const sc = getLevelColor(a.quizLevel);
                     const SubIcon = getSubjectIcon(a.quizSubject);
                     const pct = a.score !== null && a.maxScore > 0 ? Math.round((a.score / a.maxScore) * 100) : null;
                     const duration = formatDuration(a.startedAt, a.completedAt);
                     const scoreColor = pct !== null ? (pct >= 70 ? "text-success bg-success/10 border-success/15" : pct >= 40 ? "text-warning bg-warning/10 border-warning/15" : "text-danger bg-danger/10 border-danger/15") : "";
                     return (
                       <div key={a.assignmentId} className="px-6 py-4 flex items-center gap-4 hover:bg-foreground/[0.02] transition-colors group" data-testid={`assignment-${a.assignmentId}`}>
-                        <div className="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0" style={{ backgroundColor: `${sc.hex}08`, borderColor: `${sc.hex}18` }}>
-                          <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 ${sc.bg} ${sc.border}`}>
+                          <SubIcon className={`w-4 h-4 ${sc.label}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-medium text-foreground truncate">{a.quizTitle}</p>

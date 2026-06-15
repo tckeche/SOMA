@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { CheckCircle2, Eye, Printer, TrendingDown, TrendingUp } from "lucide-react";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getSubjectColor, getSubjectIcon, getLevelColor } from "@/lib/subjectColors";
 import type { DashboardAssignmentRow } from "@/types/studentDashboard";
 import AssessmentLifecycleBadge, { getAssessmentLifecycle } from "@/components/student/AssessmentLifecycleBadge";
 
@@ -63,6 +63,7 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
       <ul className="space-y-2.5" data-testid="list-completed">
         {completed.map((row) => {
           const sc = getSubjectColor(row.quizSubject || "General");
+          const lc = getLevelColor(row.quizLevel);
           const Icon = getSubjectIcon(row.quizSubject || "General");
           const pct = row.scorePercent ?? 0;
           const lifecycle = getAssessmentLifecycle(row);
@@ -75,8 +76,8 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
               className="flex items-center gap-3 rounded-xl border border-card-border bg-card/50 p-3"
               data-testid={`completed-row-${row.quizId}`}
             >
-              <div className={`w-10 h-10 rounded-lg ${sc.bg} border ${sc.border} flex items-center justify-center shrink-0`}>
-                <Icon className={`w-5 h-5 ${sc.label}`} />
+              <div className={`w-10 h-10 rounded-lg ${lc.bg} border ${lc.border} flex items-center justify-center shrink-0`}>
+                <Icon className={`w-5 h-5 ${lc.label}`} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">

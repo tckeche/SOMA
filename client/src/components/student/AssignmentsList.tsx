@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { ArrowRight, Calendar, BookOpen, AlertTriangle } from "lucide-react";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getSubjectColor, getSubjectIcon, getLevelColor } from "@/lib/subjectColors";
 import type { DashboardAssignmentRow } from "@/types/studentDashboard";
 
 interface Props {
@@ -38,6 +38,7 @@ export default function AssignmentsList({ assignments }: Props) {
     <ul className="space-y-2.5" data-testid="list-assignments">
       {sorted.map((row) => {
         const sc = getSubjectColor(row.quizSubject || "General");
+        const lc = getLevelColor(row.quizLevel);
         const Icon = getSubjectIcon(row.quizSubject || "General");
         const isOverdue = row.status === "overdue";
         const dueLabel = row.dueDate
@@ -49,8 +50,8 @@ export default function AssignmentsList({ assignments }: Props) {
           <li key={row.assignmentId} data-testid={`assignment-${row.quizId}`}>
             <Link href={`/soma/quiz/${row.quizId}`}>
               <div className={`flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/60 ${isOverdue ? "border-danger/30 bg-danger/5" : "border-card-border bg-card/50"}`}>
-                <div className={`w-10 h-10 rounded-lg ${sc.bg} border ${sc.border} flex items-center justify-center shrink-0`}>
-                  <Icon className={`w-5 h-5 ${sc.label}`} />
+                <div className={`w-10 h-10 rounded-lg ${lc.bg} border ${lc.border} flex items-center justify-center shrink-0`}>
+                  <Icon className={`w-5 h-5 ${lc.label}`} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

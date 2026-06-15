@@ -88,6 +88,36 @@ export function getSubjectColor(subject: string | null | undefined): SubjectColo
   return color;
 }
 
+// Level-based colour coding. Subject *icons* are tinted by the assessment's
+// level (not the subject) so every IGCSE subject shares one colour, every AS
+// another, etc. Colours route through palette families that have html.light
+// overrides in index.css, so the icon colours adapt between dark and light.
+export type LevelKey = "IGCSE" | "AS" | "A2" | "University";
+
+const LEVEL_COLORS: Record<LevelKey, SubjectColor> = {
+  IGCSE:      { hex: "#34d399", bg: "bg-emerald-500/15", border: "border-emerald-500/30", ring: "ring-emerald-500", label: "text-emerald-400" },
+  AS:         { hex: "#60a5fa", bg: "bg-blue-500/15",    border: "border-blue-500/30",    ring: "ring-blue-500",    label: "text-blue-400" },
+  A2:         { hex: "#fbbf24", bg: "bg-amber-500/15",   border: "border-amber-500/30",   ring: "ring-amber-500",   label: "text-amber-400" },
+  University: { hex: "#a78bfa", bg: "bg-violet-500/15",  border: "border-violet-500/30",  ring: "ring-violet-500",  label: "text-violet-400" },
+};
+
+const LEVEL_DEFAULT: SubjectColor = { hex: "#94a3b8", bg: "bg-muted", border: "border-border", ring: "ring-border", label: "text-muted-foreground" };
+
+export function normalizeLevel(level: string | null | undefined): LevelKey | null {
+  if (!level) return null;
+  const v = level.trim().toUpperCase();
+  if (v === "IGCSE" || v.includes("IGCSE")) return "IGCSE";
+  if (v.startsWith("UNIVERS") || v === "UNI" || v.includes("UNIVERS") || v.includes("DEGREE")) return "University";
+  if (v === "A2" || v === "A2 LEVEL" || v.includes("A2")) return "A2";
+  if (v === "AS" || v === "AS LEVEL" || /\bAS\b/.test(v)) return "AS";
+  return null;
+}
+
+export function getLevelColor(level: string | null | undefined): SubjectColor {
+  const key = normalizeLevel(level);
+  return key ? LEVEL_COLORS[key] : LEVEL_DEFAULT;
+}
+
 const ICON_KEYWORDS: [string[], LucideIcon][] = [
   [["math", "maths", "mathematics", "calculus", "algebra", "trigonometry", "geometry", "statistics", "arithmetic"], Calculator],
   [["pure math", "pure maths", "further math", "further maths", "advanced math"], Sigma],

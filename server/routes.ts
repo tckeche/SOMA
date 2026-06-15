@@ -2503,7 +2503,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/tutor/students", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
-      const students = await storage.getAdoptedStudents(tutorId);
+      const students = await storage.getAdoptedStudentsWithProfile(tutorId);
       res.json(students);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to fetch students" });

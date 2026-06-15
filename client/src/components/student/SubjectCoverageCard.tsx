@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus, CheckCircle2, Circle, AlertCircle, Sparkles } from "lucide-react";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getSubjectColor, getSubjectIcon, getLevelColor } from "@/lib/subjectColors";
 import type { StudentDashboardSubject } from "@/types/studentDashboard";
 
 interface Props {
@@ -24,6 +24,7 @@ function TrendBadge({ trend }: { trend: StudentDashboardSubject["recentTrend"] }
 export default function SubjectCoverageCard({ subject }: Props) {
   const [expanded, setExpanded] = useState(false);
   const sc = getSubjectColor(subject.subject);
+  const lc = getLevelColor(subject.level);
   const SubjectIcon = getSubjectIcon(subject.subject);
   const visibleTopics = expanded ? subject.topics : subject.topics.slice(0, 5);
   const masteredPct = subject.coverage.masteryPercent;
@@ -40,13 +41,13 @@ export default function SubjectCoverageCard({ subject }: Props) {
       data-testid={`card-subject-${subject.subject.replace(/\s+/g, "-").toLowerCase()}`}
     >
       <header className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-xl ${sc.bg} border ${sc.border} flex items-center justify-center shrink-0`}>
-          <SubjectIcon className={`w-5 h-5 ${sc.label}`} />
+        <div className={`w-10 h-10 rounded-xl ${lc.bg} border ${lc.border} flex items-center justify-center shrink-0`}>
+          <SubjectIcon className={`w-5 h-5 ${lc.label}`} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h3 className="text-base font-semibold text-foreground truncate">{subject.subject}</h3>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${sc.bg} ${sc.label}`}>{levelTag}</span>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${lc.bg} ${lc.label}`}>{levelTag}</span>
           </div>
           <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
             <span>{subject.completedCount} done</span>

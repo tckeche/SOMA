@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
-import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
+import { getLevelColor, getSubjectIcon } from "@/lib/subjectColors";
 import { formatDateShort, assessmentDisplayName } from "@/lib/assessmentNaming";
 import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment, SomaUser } from "@shared/schema";
 import { defaultDueDateInputValue } from "@shared/dueDate";
@@ -411,7 +411,7 @@ function BankView({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {quizzes.map((quiz) => {
-            const sc = getSubjectColor(quiz.subject);
+            const sc = getLevelColor(quiz.level);
             const SubIcon = getSubjectIcon(quiz.subject);
             return (
               <div
@@ -420,8 +420,8 @@ function BankView({
                 data-testid={`bank-card-${quiz.id}`}
               >
                 <div className="flex items-start gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${sc.border} shrink-0`} style={{ backgroundColor: `${sc.hex}15` }}>
-                    <SubIcon className="w-4 h-4" style={{ color: sc.hex }} />
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${sc.border} ${sc.bg} shrink-0`}>
+                    <SubIcon className={`w-4 h-4 ${sc.label}`} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-foreground line-clamp-2" data-testid={`bank-name-${quiz.id}`}>{assessmentDisplayName(quiz)}</h3>
@@ -1041,7 +1041,7 @@ export default function TutorAssessments() {
         ) : (
           <div className="space-y-3">
             {filteredSortedQuizzes.map((quiz) => {
-              const sc = getSubjectColor(quiz.subject);
+              const sc = getLevelColor(quiz.level);
               const SubIcon = getSubjectIcon(quiz.subject);
               const isExpanded = expandedQuiz === quiz.id;
               const reports = isExpanded && quizReportsData?.quiz?.id === quiz.id ? quizReportsData.reports : [];
@@ -1074,8 +1074,8 @@ export default function TutorAssessments() {
                     data-testid={`quiz-tile-${quiz.id}`}
                   >
                     <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${sc.border} shrink-0`} style={{ backgroundColor: `${sc.hex}15` }}>
-                        <SubIcon className="w-5 h-5" style={{ color: sc.hex }} />
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${sc.border} ${sc.bg} shrink-0`}>
+                        <SubIcon className={`w-5 h-5 ${sc.label}`} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-0.5">
