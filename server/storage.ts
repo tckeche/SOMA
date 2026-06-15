@@ -151,6 +151,7 @@ export interface IStorage {
   getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]>;
   updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined>;
   getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>>;
+  getSomaQuestionsByQuizIds(quizIds: number[]): Promise<Record<number, SomaQuestion[]>>;
   deleteSomaQuestion(id: number): Promise<void>;
   deleteSomaQuestionsByQuizId(quizId: number): Promise<void>;
   /** Atomically replace all questions for a quiz inside a DB transaction. */
@@ -794,6 +795,20 @@ class DatabaseStorage implements IStorage {
       acc[row.quizId] = row.totalMarks;
       return acc;
     }, {});
+  }
+
+  // Batched fetch of full questions for many quizzes in ONE query, grouped by
+  // quizId. Replaces per-quiz getSomaQuestionsByQuizId calls inside loops (the
+  // N+1 pattern on the tutor report / analysis endpoints).
+  async getSomaQuestionsByQuizIds(quizIds: number[]): Promise<Record<number, SomaQuestion[]>> {
+    if (quizIds.length === 0) return {};
+    const rows = await this.database
+      .select()
+      .from(somaQuestions)
+      .where(inArray(somaQuestions.quizId, quizIds));
+    const grouped: Record<number, SomaQuestion[]> = {};
+    for (const q of rows) (grouped[q.quizId] ??= []).push(q);
+    return grouped;
   }
 
   async deleteSomaQuestion(id: number): Promise<void> {
@@ -1748,6 +1763,16 @@ export class MemoryStorage implements IStorage {
       totals[q.quizId] = (totals[q.quizId] || 0) + q.marks;
     }
     return totals;
+  }
+
+  async getSomaQuestionsByQuizIds(quizIds: number[]): Promise<Record<number, SomaQuestion[]>> {
+    const wanted = new Set(quizIds);
+    const grouped: Record<number, SomaQuestion[]> = {};
+    for (const q of this.somaQuestionsList) {
+      if (!wanted.has(q.quizId)) continue;
+      (grouped[q.quizId] ??= []).push(q);
+    }
+    return grouped;
   }
 
   async deleteSomaQuestion(id: number): Promise<void> {

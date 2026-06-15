@@ -3796,11 +3796,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
       const reports = await storage.getSomaReportsByStudentId(studentId);
 
-      const reportsWithMax = await Promise.all(reports.map(async (r) => {
-        const questions = await storage.getSomaQuestionsByQuizId(r.quizId);
-        const maxScore = questions.reduce((s, q) => s + q.marks, 0);
-        return { ...r, maxScore };
-      }));
+      // Batch the max-score lookup (one query) instead of one query per report.
+      const reportTotals = await storage.getSomaQuestionTotalsByQuizIds(reports.map((r) => r.quizId));
+      const reportsWithMax = reports.map((r) => ({ ...r, maxScore: reportTotals[r.quizId] ?? 0 }));
 
       res.json({ reports: reportsWithMax, submissions: [] });
     } catch (err: any) {
@@ -3826,12 +3824,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Get all reports for this student
       const allReports = await storage.getSomaReportsByStudentId(studentId);
 
+      // Batch max-score lookup (one query) instead of one per assignment.
+      const assignmentTotals = await storage.getSomaQuestionTotalsByQuizIds(assignments.map((a) => a.quizId));
       // Build detailed assignment rows
-      const assignmentRows = await Promise.all(assignments.map(async (a) => {
+      const assignmentRows = assignments.map((a) => {
         const quiz = a.quiz;
         const report = allReports.find((r) => r.quizId === a.quizId);
-        const questions = await storage.getSomaQuestionsByQuizId(a.quizId);
-        const maxScore = questions.reduce((sum, q) => sum + q.marks, 0);
+        const maxScore = assignmentTotals[a.quizId] ?? 0;
 
         return {
           assignmentId: a.id,
@@ -3849,7 +3848,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           startedAt: report?.startedAt || null,
           completedAt: report?.completedAt || null,
         };
-      }));
+      });
 
       // Calculate aggregates
       const completedAssignments = assignmentRows.filter((a) => a.assignmentStatus === "completed");
@@ -4053,9 +4052,11 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       ]);
       const reportByQuiz = new Map(reports.map((r) => [r.quizId, r]));
       const questionPerformance: QuestionPerformanceRow[] = [];
-      const assignmentRows = await Promise.all(assignments.map(async (a) => {
+      // Batch all questions for the assigned quizzes in one query (was N+1).
+      const questionsByQuiz = await storage.getSomaQuestionsByQuizIds(assignments.map((a) => a.quizId));
+      const assignmentRows = assignments.map((a) => {
         const matched = reportByQuiz.get(a.quizId);
-        const questions = await storage.getSomaQuestionsByQuizId(a.quizId);
+        const questions = questionsByQuiz[a.quizId] ?? [];
         const maxScore = questions.reduce((sum, q) => sum + q.marks, 0);
         if (matched?.answersJson) {
           const answers = (matched.answersJson || {}) as Record<string, string>;
@@ -4073,7 +4074,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           }
         }
         return { quizSubject: a.quiz.subject, quizTitle: a.quiz.title, score: matched?.score ?? null, maxScore };
-      }));
+      });
       const analysis = computeStudentPerformance(assignmentRows, questionPerformance);
 
       // 2. Top up uncovered topics from each subject's syllabus inventory so
@@ -7301,13 +7302,14 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
 
         if (completedReports.length > 0) {
           hasStudentData = true;
-          const feedbackEntries = await Promise.all(completedReports.map(async (r, i) => {
-            const questions = await storage.getSomaQuestionsByQuizId(r.quizId);
-            const maxScore = questions.reduce((s, q) => s + q.marks, 0);
+          // Batch max-score lookup (one query) instead of one per report.
+          const feedbackTotals = await storage.getSomaQuestionTotalsByQuizIds(completedReports.map((r) => r.quizId));
+          const feedbackEntries = completedReports.map((r, i) => {
+            const maxScore = feedbackTotals[r.quizId] ?? 0;
             const pct = maxScore > 0 ? Math.round((r.score / maxScore) * 100) : 0;
             const scoreInfo = r.score !== null ? `Score: ${r.score}/${maxScore} (${pct}%)` : "Score: N/A";
             return `--- Quiz ${i + 1}: "${r.quiz.title}" | Topic: ${r.quiz.topic || "General"} | ${scoreInfo} ---\n${r.aiFeedbackHtml}`;
-          }));
+          });
           completedContext = feedbackEntries.join("\n\n");
         }
 
