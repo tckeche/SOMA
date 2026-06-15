@@ -7076,7 +7076,7 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
       const list = Array.isArray(parsed?.misspelled)
         ? Array.from(new Set(parsed.misspelled
             .map((w: unknown) => String(w).toLowerCase().trim())
-            .filter((w: string) => w.length > 0 && /^[\p{L}']+$/u.test(w))))
+            .filter((w: string) => w.length > 0 && /^[A-Za-z']+$/.test(w))))
             .slice(0, 100)
         : [];
       res.json({ misspelled: list });

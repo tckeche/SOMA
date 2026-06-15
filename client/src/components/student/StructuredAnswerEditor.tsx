@@ -82,7 +82,9 @@ function decorateMisspellings(root: HTMLElement, words: Set<string>) {
     const content = textNode.textContent ?? "";
     if (!content.trim()) continue;
     // Split on word boundaries, keeping separators so we can rebuild verbatim.
-    const parts = content.split(/(\b[\p{L}']+\b)/u);
+    // ASCII word chars only (no \p{L}/u flag) to stay compatible with the
+    // project's TS target; fine for UK-English light flagging.
+    const parts = content.split(/(\b[A-Za-z']+\b)/);
     if (!parts.some((p) => words.has(p.toLowerCase()))) continue;
     const frag = document.createDocumentFragment();
     for (const part of parts) {

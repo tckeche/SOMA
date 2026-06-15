@@ -1191,7 +1191,13 @@ export const insertSomaQuizSchema = createInsertSchema(somaQuizzes, {
 export const insertSomaQuestionSchema = createInsertSchema(somaQuestions).omit({ id: true });
 export const insertSyllabusDocumentSchema = createInsertSchema(syllabusDocuments).omit({ id: true, uploadedAt: true });
 export const insertSyllabusChunkSchema = createInsertSchema(syllabusChunks).omit({ id: true });
-export const insertSomaReportSchema = createInsertSchema(somaReports).omit({ id: true, createdAt: true });
+export const insertSomaReportSchema = createInsertSchema(somaReports, {
+  // drizzle-zod infers the jsonb `structuredMarking` column too loosely (nested
+  // fields become optional/any), which clashes with the strict select type.
+  // Pin it to the real shape so InsertSomaReport stays compatible with both the
+  // Drizzle insert type and SomaReport.
+  structuredMarking: z.custom<Record<string, StructuredAnswerMark>>().nullable().optional(),
+}).omit({ id: true, createdAt: true });
 
 export type SomaUser = typeof somaUsers.$inferSelect;
 export type InsertSomaUser = z.infer<typeof insertSomaUserSchema>;
