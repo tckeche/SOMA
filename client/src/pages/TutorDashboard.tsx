@@ -22,6 +22,7 @@ import { type DashboardStats } from "@/components/dashboard-charts";
 import { Ring, Spark, Donut, RadarChart } from "@/components/soma/Charts";
 import SomaHeader from "@/components/soma/SomaHeader";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
+import TutorNotificationsBell from "@/components/tutor/TutorNotificationsBell";
 
 interface AIInsight {
   name: string;
@@ -392,15 +393,18 @@ export default function TutorDashboard() {
         initials={initials}
         onLogout={handleLogout}
         rightActions={
-          <nav className="hidden md:flex items-center gap-0.5 mr-1">
-            <span className="px-3 py-2 text-[13px] font-semibold text-primary cursor-default" data-testid="nav-dashboard">Dashboard</span>
-            <Link href="/tutor/students">
-              <span className="px-3 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground cursor-pointer" data-testid="nav-students">Students</span>
-            </Link>
-            <Link href="/tutor/assessments">
-              <span className="px-3 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground cursor-pointer" data-testid="nav-assessments">Assessments</span>
-            </Link>
-          </nav>
+          <>
+            <nav className="hidden md:flex items-center gap-0.5 mr-1">
+              <span className="px-3 py-2 text-[13px] font-semibold text-primary cursor-default" data-testid="nav-dashboard">Dashboard</span>
+              <Link href="/tutor/students">
+                <span className="px-3 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground cursor-pointer" data-testid="nav-students">Students</span>
+              </Link>
+              <Link href="/tutor/assessments">
+                <span className="px-3 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground cursor-pointer" data-testid="nav-assessments">Assessments</span>
+              </Link>
+            </nav>
+            <TutorNotificationsBell userId={userId} />
+          </>
         }
       />
 
