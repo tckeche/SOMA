@@ -230,13 +230,17 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
         onInput={handleInput}
         onBlur={emitChange}
         spellCheck={false}
-        className="soma-structured-surface px-4 py-3 min-h-[180px] max-h-[60vh] overflow-y-auto text-slate-800 text-[15px] focus:outline-none"
+        className="soma-structured-surface px-4 py-3 min-h-[180px] text-slate-800 text-[15px] focus:outline-none"
         style={{
           lineHeight: `${LINE_HEIGHT}px`,
           backgroundImage:
             "repeating-linear-gradient(to bottom, transparent, transparent " +
             `${LINE_HEIGHT - 1}px, rgba(148,163,184,0.35) ${LINE_HEIGHT - 1}px, rgba(148,163,184,0.35) ${LINE_HEIGHT}px)`,
-          backgroundAttachment: "local",
+          // Anchor the ruled lines to the content box so each line of text rests
+          // on a rule (rather than starting from the padding edge, which left
+          // the text floating between lines).
+          backgroundOrigin: "content-box",
+          backgroundClip: "content-box",
         }}
         data-testid="structured-answer-surface"
       />
