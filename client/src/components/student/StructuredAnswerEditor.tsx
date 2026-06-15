@@ -226,7 +226,7 @@ export default function StructuredAnswerEditor({ value, onChange, disabled, plac
         role="textbox"
         aria-multiline="true"
         aria-label="Your answer"
-        data-placeholder={placeholder || "Type your answer here…"}
+        data-placeholder={placeholder ?? ""}
         onInput={handleInput}
         onBlur={emitChange}
         spellCheck={false}
