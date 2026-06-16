@@ -35,6 +35,7 @@ import DraftRecoveryBanner from "@/components/tutor/DraftRecoveryBanner";
 import AssessmentWizard from "@/components/tutor/AssessmentWizard";
 import DraftQuestionReviewEditor from "@/components/tutor/DraftQuestionReviewEditor";
 import TutorWorksheetManager from "@/components/tutor/TutorWorksheetManager";
+import { evaluateDraftQuestionQuality } from "@/lib/draftQualityGate";
 
 type CopilotAction = "ADD" | "REPLACE_ALL" | "REPLACE_SELECTED" | "DELETE" | "REORDER" | "NONE";
 type GenerationState = "generation_started" | "generation_in_progress" | "generation_failed" | "partial_success" | "validation_failed" | "persistence_failed" | "ready_for_review";
@@ -151,17 +152,12 @@ function applyDraftAction(
 
 function getDraftValidationError(questions: DraftQuestion[]): string | null {
   if (questions.length === 0) return "Draft is empty.";
-  for (const q of questions) {
-    if (!q.stem?.trim()) return "A draft question is missing a prompt.";
-    if (q.questionType === "structured") {
-      // Structured answers have no options; they need a mark scheme so the AI
-      // marker has something to grade understanding against.
-      if (!q.markScheme?.trim()) return "Each structured question needs a mark scheme.";
-      if (!Number.isFinite(q.marks) || q.marks < 1) return "Each structured question needs at least 1 mark.";
-      continue;
+  for (let idx = 0; idx < questions.length; idx += 1) {
+    const q = questions[idx];
+    const blocker = evaluateDraftQuestionQuality(q).issues.find((issue) => issue.severity === "blocker");
+    if (blocker) {
+      return `Question ${idx + 1}: ${blocker.message}`;
     }
-    if (!Array.isArray(q.options) || q.options.length !== 4) return "Each question must have exactly 4 options.";
-    if (!q.correctAnswer || !q.options.includes(q.correctAnswer)) return "Each question must have a valid correct answer.";
   }
   return null;
 }
@@ -1784,7 +1780,7 @@ export default function BuilderPage() {
                 <Button
                   className="w-full border border-success/40 bg-success/10 text-success hover:bg-success/20 hover:border-success/60 transition-all font-semibold min-h-[44px]"
                   onClick={handlePublish}
-                  disabled={isPublishing || !activeQuizId}
+                  disabled={isPublishing || !activeQuizId || !!draftValidationError}
                   data-testid="button-publish-draft"
                 >
                   {isPublishing ? (

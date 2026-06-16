@@ -88,6 +88,121 @@ interface ReviewData {
   diagnoses?: Record<string, QuestionDiagnosis>;
 }
 
+function ReviewWorkflowStatus({
+  report,
+  hasStructured,
+  canConfirm,
+  isOwner,
+  onRetryFailedMarking,
+  isRetryingFailedMarking,
+}: {
+  report: ReviewReport;
+  hasStructured: boolean;
+  canConfirm: boolean;
+  isOwner: boolean;
+  onRetryFailedMarking: () => void;
+  isRetryingFailedMarking: boolean;
+}) {
+  const isPendingStructured = report.status === "pending" && hasStructured;
+  const reviewRequested = report.reviewRequested === true;
+  const isFailed = report.status === "failed";
+
+  if (isFailed) {
+    return (
+      <div className="glass-card p-4 mb-6 border-l-4 border-l-danger bg-danger/[0.06]" data-testid="review-workflow-status">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-danger shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">Marking could not be completed</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Automatic marking failed for this report. A tutor should retry or review the answers manually before the result is trusted.
+            </p>
+            {(canConfirm || isOwner) && (
+              <Button
+                className="mt-3 min-h-[40px]"
+                variant="outline"
+                onClick={onRetryFailedMarking}
+                disabled={isRetryingFailedMarking}
+                data-testid="button-retry-failed-marking"
+              >
+                {isRetryingFailedMarking
+                  ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Retrying marking…</>
+                  : "Retry automatic marking"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPendingStructured) {
+    return (
+      <div className="glass-card p-4 mb-6 border-l-4 border-l-warning bg-warning/[0.06]" data-testid="review-workflow-status">
+        <div className="flex items-start gap-3">
+          <Loader2 className="w-5 h-5 text-warning shrink-0 mt-0.5 animate-spin" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">Structured answers are still being marked</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Scores and tutor actions should wait until the marking job finishes.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (reviewRequested) {
+    return (
+      <div className="glass-card p-4 mb-6 border-l-4 border-l-primary bg-primary/[0.08]" data-testid="review-workflow-status">
+        <div className="flex items-start gap-3">
+          <PenLine className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {canConfirm ? "Tutor review requested" : "Your tutor review request is queued"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {canConfirm
+                ? "Check the AI suggested marks below, adjust anything unfair, and save the final score."
+                : "Your teacher has been asked to review the AI marking before you rely on this result."}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasStructured && isOwner) {
+    return (
+      <div className="glass-card p-4 mb-6 border-l-4 border-l-info bg-info/[0.06]" data-testid="review-workflow-status">
+        <div className="flex items-start gap-3">
+          <Brain className="w-5 h-5 text-info shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">AI-marked written answers are ready</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Review the feedback below. If a written mark looks unfair, use the review request box to ask your tutor to check it.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass-card p-4 mb-6 border-l-4 border-l-success bg-success/[0.06]" data-testid="review-workflow-status">
+      <div className="flex items-start gap-3">
+        <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-foreground">Feedback is ready</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            This report is available to review, download, and discuss with the learner.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SomaQuizReview() {
   const reportRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
@@ -185,6 +300,24 @@ export default function SomaQuizReview() {
     },
     onError: (err: Error) => {
       toast({ title: "Could not request review", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const retryFailedMarkingMutation = useMutation({
+    mutationFn: async () => {
+      const res = await authFetch(`/api/soma/reports/${reportId}/retry`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Could not retry marking");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Retry started", description: "Automatic marking is running again. Refresh shortly to see the updated report." });
+      queryClient.invalidateQueries({ queryKey: ["/api/soma/reports", reportId, "review"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not retry marking", description: err.message, variant: "destructive" });
     },
   });
 
@@ -415,6 +548,15 @@ export default function SomaQuizReview() {
             </div>
           </div>
         </div>
+
+        <ReviewWorkflowStatus
+          report={report}
+          hasStructured={hasStructured}
+          canConfirm={canConfirm}
+          isOwner={isOwner}
+          onRetryFailedMarking={() => retryFailedMarkingMutation.mutate()}
+          isRetryingFailedMarking={retryFailedMarkingMutation.isPending}
+        />
 
         {stillMarking && (
           <div className="glass-card p-4 mb-6 border-l-4 border-l-warning bg-warning/[0.06]" data-testid="banner-still-marking">

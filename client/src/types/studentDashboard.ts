@@ -39,6 +39,7 @@ export interface DashboardAssignmentRow {
   assignedAt: string;
   reportId: number | null;
   reportStatus: string | null;
+  reviewRequested: boolean;
   score: number | null;
   maxScore: number;
   scorePercent: number | null;

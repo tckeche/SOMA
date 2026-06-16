@@ -3,6 +3,7 @@ import { Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { authFetch } from "@/lib/supabase";
+import RoleRecovery from "@/components/RoleRecovery";
 
 interface RoleRouterProps {
   studentComponent: React.ComponentType<any>;
@@ -13,26 +14,37 @@ export default function RoleRouter({ studentComponent: StudentComp, tutorCompone
   const { session, isLoading: isSessionLoading } = useSupabaseSession();
   const [role, setRole] = useState<string | null>(null);
   const [isRoleLoading, setIsRoleLoading] = useState(true);
+  const [roleError, setRoleError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!session?.user?.id) {
       setRole(null);
+      setRoleError(false);
       setIsRoleLoading(false);
       return;
     }
 
     setIsRoleLoading(true);
+    setRoleError(false);
     authFetch("/api/auth/me")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("Role lookup failed");
+        return res.json();
+      })
       .then((data) => {
-        setRole(data.role || "student");
+        const nextRole = typeof data?.role === "string" ? data.role : null;
+        if (!nextRole) throw new Error("Role missing");
+        setRole(nextRole);
+        setRoleError(false);
         setIsRoleLoading(false);
       })
       .catch(() => {
-        setRole("student");
+        setRole(null);
+        setRoleError(true);
         setIsRoleLoading(false);
       });
-  }, [session?.user?.id]);
+  }, [session?.user?.id, retryNonce]);
 
   if (isSessionLoading || isRoleLoading) {
     return (
@@ -47,6 +59,10 @@ export default function RoleRouter({ studentComponent: StudentComp, tutorCompone
 
   if (!session) {
     return <Redirect to="/login" />;
+  }
+
+  if (roleError) {
+    return <RoleRecovery onRetry={() => setRetryNonce((n) => n + 1)} />;
   }
 
   if (role === "super_admin") {

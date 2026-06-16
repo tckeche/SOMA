@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { authFetch } from "@/lib/supabase";
-import { Activity, AlertTriangle, Loader2, Zap, RefreshCcw, TrendingUp, Users, History } from "lucide-react";
+import { Activity, AlertTriangle, Loader2, Zap, RefreshCcw, TrendingUp, Users, History, ShieldCheck } from "lucide-react";
 
 interface DimensionRow {
   key: string;
@@ -101,6 +101,16 @@ interface AIUsageReport {
   };
   guardrails: {
     maxTokensByTask: Record<string, number>;
+    budget?: {
+      mode: "monitor_only";
+      dailyBudgetUsd: number | null;
+      rangeBudgetUsd: number | null;
+      spendUsd: number;
+      projectedDailySpendUsd: number | null;
+      budgetUsedPercent: number | null;
+      state: "ok" | "watch" | "over_budget" | "unconfigured";
+      message: string;
+    };
   };
 }
 
@@ -198,6 +208,10 @@ export function SuperAdminAIUsage() {
         />
         <SummaryCard label="Live process p95" value={`${overall.p95LatencyMs}ms`} />
       </div>
+
+      {data.guardrails.budget && (
+        <BudgetGuardrailCard budget={data.guardrails.budget} days={days} />
+      )}
 
       {/* Daily spend */}
       <div className={CARD}>
@@ -324,6 +338,43 @@ export function SuperAdminAIUsage() {
         )}
       </div>
     </section>
+  );
+}
+
+function BudgetGuardrailCard({
+  budget,
+  days,
+}: {
+  budget: NonNullable<AIUsageReport["guardrails"]["budget"]>;
+  days: number;
+}) {
+  const tone = budget.state === "over_budget"
+    ? "border-danger/40 bg-danger/10 text-danger"
+    : budget.state === "watch"
+      ? "border-warning/40 bg-warning/10 text-warning"
+      : budget.state === "ok"
+        ? "border-success/30 bg-success/10 text-success"
+        : "border-border bg-muted/20 text-muted-foreground";
+  return (
+    <div className={`${CARD} ${tone}`} data-testid="ai-budget-guardrail">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" /> AI budget guardrail · monitor only
+          </h3>
+          <p className="mt-1 text-xs opacity-90">{budget.message}</p>
+        </div>
+        <div className="text-right text-xs">
+          <div>Range: {days}d</div>
+          <div>Spend: {formatUsd(budget.spendUsd)}</div>
+          <div>Budget: {budget.rangeBudgetUsd === null ? "Not configured" : formatUsd(budget.rangeBudgetUsd)}</div>
+          {budget.budgetUsedPercent !== null && <div>{budget.budgetUsedPercent}% used</div>}
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] opacity-80">
+        This phase only surfaces spend risk. It does not block tutor/student AI actions yet.
+      </p>
+    </div>
   );
 }
 
