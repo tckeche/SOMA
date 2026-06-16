@@ -186,7 +186,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[72px] w-[308px] bg-foreground"
+                className="block h-[48px] w-[205px] bg-foreground sm:h-[72px] sm:w-[308px]"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -202,7 +202,7 @@ export default function Landing() {
           </Link>
           <Link href="/login">
             <span
-              className="soma-display absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer text-[2.8rem] leading-none text-foreground"
+              className="soma-display hidden cursor-pointer leading-none text-foreground sm:absolute sm:left-1/2 sm:top-1/2 sm:block sm:-translate-x-1/2 sm:-translate-y-1/2 sm:text-[2.8rem]"
               data-testid="link-brand-soma"
             >
               SOMA
@@ -306,13 +306,13 @@ export default function Landing() {
         <footer className="mt-12 flex flex-col items-center justify-between gap-6 border-t border-border pt-8 sm:flex-row">
           <Link href="/login">
             <span
-              className="flex cursor-pointer items-center gap-2.5"
+              className="flex cursor-pointer flex-wrap items-center gap-2.5"
               data-testid="link-footer-home"
             >
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[72px] w-[308px] bg-foreground"
+                className="block h-[48px] w-[205px] bg-foreground sm:h-[72px] sm:w-[308px]"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -324,7 +324,7 @@ export default function Landing() {
                   maskSize: "contain",
                 }}
               />
-              <span className="soma-display text-[2.8rem] leading-none text-foreground">SOMA</span>
+              <span className="soma-display text-[2rem] leading-none text-foreground sm:text-[2.8rem]">SOMA</span>
             </span>
           </Link>
         </footer>
