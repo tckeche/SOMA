@@ -48,7 +48,7 @@ Each assessment carries a `format` column on `soma_quizzes` (`'mcq'` default, or
 The Soma Quiz Engine provides a LaTeX-aware MCQ player and a summary view. The Soma Quiz Review offers post-quiz analysis, including explanations and AI feedback.
 
 ### Authentication System
-A single `/login` route manages tab-based login, signup, and forgot-password functionalities with inline error handling.
+A single portal-aware `/login` route manages tab-based login, signup, and forgot-password with inline error handling. The `?portal=tutor|student` query param (parsed via wouter `useSearch`, default `student`) selects the entry point: the heading, switch-portal link, and signup account type lock to the portal. Login is gated on the resolved role — the tutor portal accepts `tutor`/`super_admin`, the student portal only `student`; a mismatch signs the user out and shows an error. Landing CTAs route to `/login?portal=student` and `/login?portal=tutor`.
 
 ### Database Migrations Policy
 The production schema is managed by `BOOTSTRAP_QUERIES` in `server/bootstrap.ts`, which runs idempotently on every server start. `server/schemaVerifier.ts` validates the live DB against `shared/schema.ts` at startup, failing in production if schema declarations are missing from the database.

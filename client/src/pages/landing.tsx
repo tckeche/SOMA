@@ -231,7 +231,7 @@ export default function Landing() {
             </p>
 
             <div className="mt-7 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-              <Link href="/login">
+              <Link href="/login?portal=student">
                 <button
                   className="btn btn-primary min-h-[44px] cursor-pointer px-6"
                   data-testid="button-enter-portal"
@@ -240,7 +240,7 @@ export default function Landing() {
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </Link>
-              <Link href="/login">
+              <Link href="/login?portal=tutor">
                 <span
                   className="btn btn-ghost min-h-[44px] cursor-pointer px-6"
                   data-testid="link-admin-access"

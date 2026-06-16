@@ -88,6 +88,7 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
   const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
   const duration = formatDuration(report.startedAt, report.completedAt);
   const startedDate = formatDate(report.startedAt);
+  const submittedDate = formatDate(report.completedAt);
   const answersObj = (report.answersJson || {}) as Record<string, string>;
   const safeQuestions = questions ?? [];
   const correctCount = safeQuestions.filter(q => answersObj[String(q.id)] === q.correctAnswer).length;
@@ -110,10 +111,17 @@ function StudentReportCard({ report, maxScore, questions, onViewReport }: {
               {initials}
             </span>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground truncate" data-testid={`report-student-name-${report.id}`}>
-              {studentName}
-            </p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <p className="text-sm font-medium text-foreground truncate flex-1 min-w-0" data-testid={`report-student-name-${report.id}`}>
+                {studentName}
+              </p>
+              {submittedDate !== "—" && (
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0" data-testid={`report-submitted-date-${report.id}`}>
+                  Submitted {submittedDate}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
               {startedDate !== "—" && (
                 <span className="flex items-center gap-1">

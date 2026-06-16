@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { AuthRequestError, supabase, authFetch, withTimeout } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft, BookOpen, GraduationCap, Check, ChevronsUpDown } from "lucide-react";
@@ -140,8 +140,14 @@ function SubjectCombobox({
 type AuthMode = "login" | "signup" | "reset";
 
 export default function StudentAuth() {
+  // The auth page is portal-aware: `?portal=tutor` makes this the tutor entry
+  // (tutors / super-admins only); anything else is the student entry. Login is
+  // gated on the resolved portal and signup is locked to it.
+  const search = useSearch();
+  const portal: "student" | "tutor" =
+    new URLSearchParams(search).get("portal") === "tutor" ? "tutor" : "student";
   const [mode, setMode] = useState<AuthMode>("login");
-  const [accountType, setAccountType] = useState<"student" | "tutor">("student");
+  const [accountType, setAccountType] = useState<"student" | "tutor">(portal);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -161,6 +167,12 @@ export default function StudentAuth() {
   const activeRequestId = useRef(0);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  // Keep the signup account type locked to the active portal, even if the user
+  // switches between /login?portal=student and ?portal=tutor without remounting.
+  useEffect(() => {
+    setAccountType(portal);
+  }, [portal]);
 
   const resetForm = () => {
     setEmail("");
@@ -231,13 +243,32 @@ export default function StudentAuth() {
         });
         if (!syncRes.ok) throw new Error("Failed to sync account");
         const syncData = await syncRes.json();
-        if (syncData.role === "super_admin") {
+        const role: string = syncData.role;
+        // Enforce the portal the user logged in through: the tutor login accepts
+        // only tutor / super-admin accounts, the student login only students.
+        const portalAllowsRole =
+          portal === "tutor"
+            ? role === "tutor" || role === "super_admin"
+            : role === "student";
+        if (!portalAllowsRole) {
+          await supabase.auth.signOut().catch(() => {});
+          const friendly =
+            portal === "tutor"
+              ? "This isn't a tutor account. Please use the student login instead."
+              : "This is the student login. Tutors should use the tutor login instead.";
+          setAuthError(friendly);
+          toast({ title: "Wrong login page", description: friendly, variant: "destructive" });
+          return;
+        }
+        if (role === "super_admin") {
           setLocation("/super-admin");
           return;
-        } else if (syncData.role === "tutor") {
+        } else if (role === "tutor") {
           setLocation("/tutor");
           return;
         }
+        setLocation("/dashboard");
+        return;
       }
 
       setLocation("/dashboard");
@@ -524,8 +555,15 @@ export default function StudentAuth() {
           <h1 className="text-2xl font-bold gradient-text drop-shadow-[0_0_15px_rgba(139,92,246,0.5)]" data-testid="text-auth-title">
             SOMA
           </h1>
-          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">Student &amp; Tutor Portal</p>
-          <p className="text-[11px] text-muted-foreground mt-2">Same login for students and tutors — choose your role when you sign up.</p>
+          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">{portal === "tutor" ? "Tutor Portal" : "Student Portal"}</p>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            {portal === "tutor" ? "Tutor access only. " : "Student access only. "}
+            <Link href={portal === "tutor" ? "/login?portal=student" : "/login?portal=tutor"}>
+              <span className="text-primary hover:underline cursor-pointer" data-testid="link-switch-portal">
+                {portal === "tutor" ? "Student login" : "Tutor login"}
+              </span>
+            </Link>
+          </p>
         </div>
 
         <div className="bg-card/50 backdrop-blur-md border border-border/50 rounded-2xl p-8 shadow-xl">
@@ -570,42 +608,20 @@ export default function StudentAuth() {
             )}
             {mode === "signup" && (
               <>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
-                    I am signing up as
-                  </label>
-                  <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Account type">
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={accountType === "student"}
-                      onClick={() => setAccountType("student")}
-                      className={`flex items-center justify-center gap-2 py-3 px-3 text-sm rounded-lg border transition-colors min-h-[44px] ${
-                        accountType === "student"
-                          ? "border-primary bg-primary/15 text-foreground"
-                          : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground/80"
-                      }`}
-                      data-testid="button-account-type-student"
-                    >
-                      <GraduationCap className="w-4 h-4" />
-                      Student
-                    </button>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={accountType === "tutor"}
-                      onClick={() => setAccountType("tutor")}
-                      className={`flex items-center justify-center gap-2 py-3 px-3 text-sm rounded-lg border transition-colors min-h-[44px] ${
-                        accountType === "tutor"
-                          ? "border-primary bg-primary/15 text-foreground"
-                          : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground/80"
-                      }`}
-                      data-testid="button-account-type-tutor"
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      Tutor
-                    </button>
-                  </div>
+                <div
+                  className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm text-foreground"
+                  data-testid={`signup-account-type-${accountType}`}
+                >
+                  {accountType === "tutor" ? (
+                    <BookOpen className="w-4 h-4 text-primary" />
+                  ) : (
+                    <GraduationCap className="w-4 h-4 text-primary" />
+                  )}
+                  <span>
+                    Creating a{" "}
+                    <span className="font-semibold">{accountType === "tutor" ? "tutor" : "student"}</span>{" "}
+                    account
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

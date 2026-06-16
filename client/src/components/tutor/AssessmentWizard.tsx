@@ -385,8 +385,16 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
                 className="w-full accent-primary"
                 data-testid="wizard-ratio-slider"
               />
+              {/* Two-colour ratio bar so the structured vs multiple-choice split
+                  is distinguishable at a glance (info = structured, brand = MCQ). */}
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" data-testid="wizard-ratio-bar">
+                <div className="bg-info transition-all" style={{ width: `${structuredRatio}%` }} />
+                <div className="bg-primary transition-all" style={{ width: `${100 - structuredRatio}%` }} />
+              </div>
               <p className="text-[11px] text-muted-foreground" data-testid="wizard-split-summary">
-                <span className="text-primary font-medium">{structuredCount}</span> structured ·{" "}
+                <span className="inline-block w-2 h-2 rounded-full bg-info align-middle mr-1" />
+                <span className="text-info font-medium">{structuredCount}</span> structured ·{" "}
+                <span className="inline-block w-2 h-2 rounded-full bg-primary align-middle mr-1" />
                 <span className="text-primary font-medium">{mcqCount}</span> multiple choice
               </p>
             </div>
