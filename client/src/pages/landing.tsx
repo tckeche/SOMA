@@ -166,13 +166,22 @@ export default function Landing() {
               className="flex cursor-pointer items-center gap-2.5"
               data-testid="link-dashboard-home"
             >
-              <img
-                src="/MCEC - White Logo.png"
-                alt="MCEC Logo"
-                loading="lazy"
-                className="h-12 w-auto object-contain brightness-0 dark:brightness-100"
+              <span
+                role="img"
+                aria-label="MCEC Logo"
+                className="block h-[72px] w-[307px] bg-primary"
+                style={{
+                  WebkitMaskImage: 'url("/MCEC - White Logo.png")',
+                  maskImage: 'url("/MCEC - White Logo.png")',
+                  WebkitMaskRepeat: "no-repeat",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskPosition: "left center",
+                  maskPosition: "left center",
+                  WebkitMaskSize: "contain",
+                  maskSize: "contain",
+                }}
               />
-              <span className="soma-display text-xl text-foreground">SOMA</span>
+              <span className="soma-display text-xl text-primary dark:text-foreground">SOMA</span>
             </span>
           </Link>
           <div className="hidden items-center gap-7 md:flex">
@@ -290,13 +299,22 @@ export default function Landing() {
               className="flex cursor-pointer items-center gap-2.5"
               data-testid="link-footer-home"
             >
-              <img
-                src="/MCEC - White Logo.png"
-                alt="MCEC Logo"
-                loading="lazy"
-                className="h-12 w-auto object-contain brightness-0 dark:brightness-100"
+              <span
+                role="img"
+                aria-label="MCEC Logo"
+                className="block h-[72px] w-[307px] bg-primary"
+                style={{
+                  WebkitMaskImage: 'url("/MCEC - White Logo.png")',
+                  maskImage: 'url("/MCEC - White Logo.png")',
+                  WebkitMaskRepeat: "no-repeat",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskPosition: "left center",
+                  maskPosition: "left center",
+                  WebkitMaskSize: "contain",
+                  maskSize: "contain",
+                }}
               />
-              <span className="soma-display text-xl text-foreground">SOMA</span>
+              <span className="soma-display text-xl text-primary dark:text-foreground">SOMA</span>
             </span>
           </Link>
           <nav className="flex flex-wrap items-center justify-center gap-x-7 gap-y-2">
