@@ -122,6 +122,8 @@ export default function TutorDashboard() {
     enabled: !!userId,
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const { data: adoptedStudents = [] } = useQuery<SomaUser[]>({

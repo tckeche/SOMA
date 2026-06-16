@@ -534,6 +534,8 @@ export default function TutorAssessments() {
     enabled: !!userId,
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const { data: assessmentsOverview = [], isError: overviewError, refetch: refetchOverview } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
