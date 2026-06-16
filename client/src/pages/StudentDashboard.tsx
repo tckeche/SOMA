@@ -17,6 +17,7 @@ import StudentNotificationsBell from "@/components/student/StudentNotificationsB
 import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
+import MarkdownRenderer from "@/components/MarkdownRenderer";
 import type {
   DashboardAssignmentRow,
   DashboardRecentWin,
@@ -465,6 +466,58 @@ function FocusBlock({
   );
 }
 
+/** 3b. Written-answer feedback — where the student lost marks + how to improve. */
+function WrittenFeedbackBlock({ data }: { data: StudentDashboardPayload }) {
+  const items = data.structuredFeedback ?? [];
+  if (items.length === 0) return null;
+  return (
+    <section className="soma-card" style={{ padding: 22 }} data-testid="section-written-feedback">
+      <div className="row between" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="eyebrow">Where to improve</div>
+          <h3 className="soma-display" style={{ fontSize: 18, marginTop: 4 }}>Your written answers</h3>
+        </div>
+        <Flag className="w-5 h-5" style={{ color: "hsl(var(--warning))" }} />
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {items.map((f) => (
+          <div
+            key={`${f.quizId}-${f.questionId}`}
+            className="well"
+            style={{ padding: 14 }}
+            data-testid={`written-feedback-${f.quizId}-${f.questionId}`}
+          >
+            <div className="row between" style={{ marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                {f.topic && <span className="chip chip-brand" style={{ fontSize: 10 }}>{f.topic}</span>}
+                {f.subtopic && <span className="chip" style={{ fontSize: 10 }}>{f.subtopic}</span>}
+                <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
+                  {f.subject || f.quizTitle}
+                </span>
+              </div>
+              <span className="chip chip-danger num" style={{ fontSize: 10 }} data-testid={`written-feedback-score-${f.quizId}-${f.questionId}`}>
+                {f.awardedMarks}/{f.maxMarks} marks
+              </span>
+            </div>
+            {f.whereFailing && (
+              <div style={{ marginBottom: 6 }}>
+                <span className="eyebrow" style={{ color: "hsl(var(--warning))" }}>Where it fell short</span>
+                <div style={{ fontSize: 12 }}><MarkdownRenderer content={f.whereFailing} /></div>
+              </div>
+            )}
+            {f.howToImprove && (
+              <div>
+                <span className="eyebrow" style={{ color: "hsl(var(--success))" }}>How to improve</span>
+                <div style={{ fontSize: 12 }}><MarkdownRenderer content={f.howToImprove} /></div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /** 4. Recent wins. */
 function WinsBlock({ wins }: { wins: DashboardRecentWin[] }) {
   if (wins.length === 0) return null;
@@ -637,6 +690,7 @@ export default function StudentDashboard() {
                 <NextActions assignments={data.assignments} onStart={launchQuiz} />
                 <PerformanceBlock data={data} />
                 <FocusBlock data={data} tip={examinerTip} />
+                <WrittenFeedbackBlock data={data} />
                 <WinsBlock wins={data.recentWins} />
               </div>
             )}

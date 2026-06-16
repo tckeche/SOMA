@@ -97,6 +97,22 @@ export interface DashboardNotification {
   derived?: boolean;
 }
 
+export interface StudentStructuredFeedback {
+  quizId: number;
+  quizTitle: string;
+  subject: string | null;
+  questionId: number;
+  questionStem: string;
+  topic: string | null;
+  subtopic: string | null;
+  awardedMarks: number;
+  maxMarks: number;
+  percent: number;
+  whereFailing: string;
+  howToImprove: string;
+  completedAt: string | null;
+}
+
 export interface StudentDashboardPayload {
   student: { id: string; displayName: string; email: string };
   greeting: string;
@@ -109,4 +125,5 @@ export interface StudentDashboardPayload {
   recentWins: DashboardRecentWin[];
   nextActions: DashboardNextAction[];
   reminders: DashboardReminder[];
+  structuredFeedback?: StudentStructuredFeedback[];
 }

@@ -32,6 +32,7 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useChartPalette } from "@/lib/chartTheme";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
+import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { toProperCase, formatDuration, getInitials } from "@/lib/utils";
 
 const GP = "glass-panel-elite";
@@ -53,9 +54,26 @@ interface AssignmentRow {
   completedAt: string | null;
 }
 
+interface StructuredFeedbackItem {
+  quizId: number;
+  quizTitle: string;
+  subject: string | null;
+  questionId: number;
+  questionStem: string;
+  topic: string | null;
+  subtopic: string | null;
+  awardedMarks: number;
+  maxMarks: number;
+  percent: number;
+  whereFailing: string;
+  howToImprove: string;
+  completedAt: string | null;
+}
+
 interface StudentReport {
   student: { id: string; email: string; displayName: string | null };
   assignments: AssignmentRow[];
+  structuredFeedback?: StructuredFeedbackItem[];
   stats: {
     totalAssigned: number;
     totalCompleted: number;
@@ -875,6 +893,60 @@ export default function TutorStudentDetail() {
               isLoading={syllabusInsightsLoading}
               studentFirstName={displayName.split(" ")[0]}
             />
+
+            {/* ── WRITTEN-ANSWER FEEDBACK (structured questions) ───── */}
+            {(report?.structuredFeedback?.length ?? 0) > 0 && (
+              <div className={GP} data-testid="section-structured-feedback">
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-border/40">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-warning/10 border border-warning/15">
+                      <Target className="w-3.5 h-3.5 text-warning" />
+                    </div>
+                    <div>
+                      <h3 className="text-[13px] font-semibold text-foreground">Written-answer feedback</h3>
+                      <p className="text-[10px] text-muted-foreground font-medium">Where {displayName.split(" ")[0]} is losing marks on structured questions &middot; and how to improve</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-5 flex flex-col gap-3">
+                  {report!.structuredFeedback!.map((f) => (
+                    <div
+                      key={`${f.quizId}-${f.questionId}`}
+                      className="rounded-lg border border-border/50 bg-card/40 p-4"
+                      data-testid={`structured-feedback-${f.quizId}-${f.questionId}`}
+                    >
+                      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {f.topic && <span className="chip chip-brand" style={{ fontSize: 10 }}>{f.topic}</span>}
+                          {f.subtopic && <span className="chip" style={{ fontSize: 10 }}>{f.subtopic}</span>}
+                          <span className="text-[11px] text-muted-foreground font-medium">{f.subject || f.quizTitle}</span>
+                        </div>
+                        <span className="chip chip-danger num" style={{ fontSize: 10 }} data-testid={`structured-score-${f.quizId}-${f.questionId}`}>
+                          {f.awardedMarks}/{f.maxMarks} marks
+                        </span>
+                      </div>
+                      {f.questionStem && (
+                        <div className="text-[12px] text-foreground/90 mb-2 line-clamp-2">
+                          <MarkdownRenderer content={f.questionStem} />
+                        </div>
+                      )}
+                      {f.whereFailing && (
+                        <div className="mb-1.5">
+                          <span className="eyebrow text-warning">Where it fell short</span>
+                          <div className="text-[12px] text-foreground/90"><MarkdownRenderer content={f.whereFailing} /></div>
+                        </div>
+                      )}
+                      {f.howToImprove && (
+                        <div>
+                          <span className="eyebrow text-success">How to improve</span>
+                          <div className="text-[12px] text-foreground/90"><MarkdownRenderer content={f.howToImprove} /></div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── LEGACY SUBJECT-LEVEL COVERAGE RADAR ───────────── */}
             {topicPerformance.length >= 2 && (

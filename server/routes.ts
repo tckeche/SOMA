@@ -34,6 +34,7 @@ import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGrap
 import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { buildSyllabusInsights } from "./services/syllabusInsights";
+import { buildStructuredFeedback } from "./services/structuredFeedback";
 import { logError, logInfo, logWarn, requestLogContext } from "./utils/logging";
 import {
   MAX_PDF_BYTES,
@@ -3868,9 +3869,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const totalPossible = gradedAssignments.reduce((sum, a) => sum + a.maxScore, 0);
       const accuracy = totalPossible > 0 ? Math.round((totalCorrect / totalPossible) * 100) : null;
 
+      // Written/structured-answer feedback already captured at AI-marking time —
+      // where the student fell short and how to improve, per question.
+      let structuredFeedback: Awaited<ReturnType<typeof buildStructuredFeedback>> = [];
+      try {
+        structuredFeedback = await buildStructuredFeedback(storage, studentId, { limit: 12 });
+      } catch { /* structured marking unavailable — omit written-answer feedback */ }
+
       res.json({
         student: { id: student.id, email: student.email, displayName: student.displayName },
         assignments: assignmentRows,
+        structuredFeedback,
         stats: {
           totalAssigned: assignmentRows.length,
           totalCompleted: completedAssignments.length,
@@ -3973,7 +3982,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const studentId = s.studentId as string | undefined;
         let weakAreas: Array<{ subject: string; topic: string; subtopic: string | null; understandingPercent: number }> = [];
         let weakPapers: Array<{ subject: string; paper: string; readinessPercent: number; weakTopics: string[] }> = [];
+        let structuredWeak: Array<{ subject: string | null; topic: string | null; subtopic: string | null; awardedMarks: number; maxMarks: number; whereFailing: string; howToImprove: string }> = [];
         if (studentId) {
+          try {
+            structuredWeak = (await buildStructuredFeedback(storage, studentId, { limit: 3 })).map((w) => ({
+              subject: w.subject,
+              topic: w.topic,
+              subtopic: w.subtopic,
+              awardedMarks: w.awardedMarks,
+              maxMarks: w.maxMarks,
+              whereFailing: w.whereFailing,
+              howToImprove: w.howToImprove,
+            }));
+          } catch { /* structured marking unavailable — omit written-answer evidence */ }
           try {
             const mastery = await storage.listStudentTopicMastery(studentId);
             weakAreas = mastery
@@ -4020,6 +4041,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           weakPapers,
           // Subject-level fallback only (use when weakAreas is empty).
           weakSubjects: s.weakTopics,
+          // Written/structured-answer evidence: where the student is failing in
+          // their actual answering and the corrective feedback already captured.
+          structuredWeakAnswers: structuredWeak,
         };
       }));
       const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based intervention explanations. You MUST only reference data provided to you. Never fabricate trends, topics, subtopics, papers, or scores.
@@ -4030,11 +4054,12 @@ Each explanation must be 1-3 sentences and MUST be specific about WHAT the stude
 - When the topic appears in a "weakPapers" entry, tie it to that paper (e.g. "for Paper 1 Maths").
 - Only mention a paper that is present in that student's "weakPapers". Only mention a subtopic that is present in that student's "weakAreas". Never invent topics, subtopics, or papers.
 - If "weakAreas" is empty, fall back to "weakSubjects", trend, and workload counts, and say more practice/data is needed.
+- When a student has "structuredWeakAnswers" (AI-marked written/structured questions), add HOW they are failing in their actual answering and what to do about it: use "whereFailing" to say where their answer fell short and "howToImprove" for the corrective action (e.g. "on written answers they lose marks for not showing the method — they should set out each step"). Only use the exact wording's meaning from these fields; never invent answer-level detail that is not present.
 
-Style example (only when the matching data exists): "Calvin is struggling with Integration for Paper 1 Maths and needs more practice on it, particularly the constant of integration."
+Style example (only when the matching data exists): "Calvin is struggling with Integration for Paper 1 Maths and needs more practice on it, particularly the constant of integration; on written answers he states the result without showing the integration steps, so he should write out each step to secure method marks."
 
 Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
-      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided data — weakAreas are specific topics/subtopics with understanding %, weakPapers are papers with low readiness and their weak topics:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
+      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided data — weakAreas are specific topics/subtopics with understanding %, weakPapers are papers with low readiness and their weak topics, structuredWeakAnswers are AI-marked written answers with where the answer fell short ("whereFailing") and corrective feedback ("howToImprove"):\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
 
       const { generateWithFallback } = await import("./services/aiOrchestrator.js");
       const { hashPayload } = await import("./utils/aiTelemetry.js");
@@ -5817,7 +5842,13 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const student = await storage.getSomaUserById(studentId);
       if (!student) return res.status(404).json({ message: "Student not found" });
       const payload = await buildStudentDashboard({ storage, student });
-      res.json(payload);
+      // Written/structured-answer feedback the student already received at marking
+      // time — where their answers fell short and how to improve, per topic.
+      let structuredFeedback: Awaited<ReturnType<typeof buildStructuredFeedback>> = [];
+      try {
+        structuredFeedback = await buildStructuredFeedback(storage, studentId, { limit: 8 });
+      } catch { /* structured marking unavailable — omit written-answer feedback */ }
+      res.json({ ...payload, structuredFeedback });
     } catch (err: any) {
       console.error("[Student Dashboard] Error:", err);
       res.status(500).json({ message: err.message || "Failed to load dashboard" });
