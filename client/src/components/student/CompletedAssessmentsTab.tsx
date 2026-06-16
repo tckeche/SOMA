@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { CheckCircle2, Eye, Printer, TrendingDown, TrendingUp } from "lucide-react";
 import { getSubjectColor, getSubjectIcon } from "@/lib/subjectColors";
 import type { DashboardAssignmentRow } from "@/types/studentDashboard";
+import AssessmentLifecycleBadge, { getAssessmentLifecycle } from "@/components/student/AssessmentLifecycleBadge";
 
 interface Props {
   completed: DashboardAssignmentRow[];
@@ -11,7 +12,7 @@ interface Props {
 
 export default function CompletedAssessmentsTab({ completed }: Props) {
   const stats = useMemo(() => {
-    const graded = completed.filter((c) => c.scorePercent !== null);
+    const graded = completed.filter((c) => c.scorePercent !== null && c.reportStatus === "completed" && !c.reviewRequested);
     const avg = graded.length > 0
       ? Math.round(graded.reduce((s, r) => s + (r.scorePercent ?? 0), 0) / graded.length)
       : null;
@@ -64,7 +65,9 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
           const sc = getSubjectColor(row.quizSubject || "General");
           const Icon = getSubjectIcon(row.quizSubject || "General");
           const pct = row.scorePercent ?? 0;
-          const tone = pct >= 70 ? "text-success" : pct >= 50 ? "text-warning" : "text-danger";
+          const lifecycle = getAssessmentLifecycle(row);
+          const scoreReady = row.scorePercent !== null && row.reportStatus === "completed" && !row.reviewRequested;
+          const tone = scoreReady ? (pct >= 70 ? "text-success" : pct >= 50 ? "text-warning" : "text-danger") : "text-muted-foreground";
           const TrendIcon = pct >= 70 ? TrendingUp : TrendingDown;
           return (
             <li
@@ -83,6 +86,7 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
                   {row.quizLevel && (
                     <span className="text-[10px] text-muted-foreground px-2 py-0.5 rounded-full bg-muted/60">{row.quizLevel}</span>
                   )}
+                  <AssessmentLifecycleBadge row={row} />
                 </div>
                 <p className="text-sm text-foreground mt-1 truncate">{row.quizTitle}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -92,13 +96,13 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
               <div className="text-right">
                 <div className={`flex items-center justify-end gap-1 text-lg font-semibold ${tone}`}>
                   <TrendIcon className="w-4 h-4" />
-                  {row.scorePercent !== null ? `${row.scorePercent}%` : "—"}
+                  {scoreReady ? `${row.scorePercent}%` : "—"}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  {row.score ?? 0} / {row.maxScore || "?"} marks
+                  {scoreReady ? `${row.score ?? 0} / ${row.maxScore || "?"} marks` : lifecycle.label}
                 </p>
                 <div className="flex items-center gap-3 mt-1.5 justify-end">
-                  {row.reportId ? (
+                  {row.reportId && row.reportStatus !== "failed" ? (
                     <>
                       <Link href={`/soma/review/${row.reportId}`}>
                         <button className="inline-flex items-center gap-1 text-[11px] text-info hover:text-info/80" data-testid={`button-review-${row.quizId}`}>

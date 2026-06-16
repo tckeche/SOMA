@@ -42,6 +42,7 @@ export interface AssignmentRow {
   assignedAt: string;
   reportId: number | null;
   reportStatus: string | null;
+  reviewRequested: boolean;
   score: number | null;
   maxScore: number;
   scorePercent: number | null;
@@ -246,6 +247,7 @@ function buildAssignmentRow(
     assignedAt: new Date(a.createdAt).toISOString(),
     reportId: report?.id || null,
     reportStatus: report?.status || null,
+    reviewRequested: !!report?.reviewRequested,
     score: report?.score ?? null,
     maxScore,
     scorePercent,
