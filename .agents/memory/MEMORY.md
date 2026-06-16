@@ -4,3 +4,4 @@
 - [Self-driven Playwright QA](self-driven-playwright-qa.md) — mint sessions via Supabase admin magiclink+verifyOtp; dashboards need ~14s to populate before screenshots.
 - [Level color theme bridge](level-color-theme-bridge.md) — palette classes from getLevelColor/getSubjectColor need matching html.light overrides in index.css or light mode breaks.
 - [Dashboard N+1 + cross-region DB](dashboard-stats-n1-perf.md) — Supabase pooler is in eu-central-1; per-id await-loops in storage cost seconds. Batch with inArray + Promise.all, bucket in memory.
+- [Tutor analytics authz](tutor-analytics-authz.md) — tutor endpoints that look up per-student server data from a client-supplied studentId must gate on getAdoptedStudents or it's an IDOR.

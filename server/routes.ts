@@ -3955,17 +3955,86 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!Array.isArray(students) || students.length === 0) {
         return res.json({ insights: [] });
       }
-      const truncated = students.slice(0, 8);
-      const dataPayload = truncated.map((s: any) => ({
-        name: s.studentName,
-        trend: s.trend,
-        weakTopics: s.weakTopics,
-        assigned: s.assigned,
-        completed: s.completed,
-        awaiting: s.awaiting,
+      // Authorization: only ever fetch server-side academic data for students
+      // this tutor has actually adopted. Client-supplied studentIds are never
+      // trusted — any id not in the adopted set is dropped, preventing a tutor
+      // from extracting another tutor's students' weakness data via the AI.
+      const tutorIdForAuth = (req as any).tutorId as string | undefined;
+      const adoptedForTutor = tutorIdForAuth ? await storage.getAdoptedStudents(tutorIdForAuth) : [];
+      const adoptedIdSet = new Set(adoptedForTutor.map((a) => a.id));
+      const truncated = students
+        .filter((s: any) => s?.studentId && adoptedIdSet.has(s.studentId))
+        .slice(0, 8);
+      // Enrich each at-risk student with their REAL weak topics/subtopics
+      // (from student_topic_mastery) and weak papers (from the syllabus
+      // catalogue), so the narrative can name the specific topic, subtopic and
+      // paper the student is struggling with — not just the subject.
+      const dataPayload = await Promise.all(truncated.map(async (s: any) => {
+        const studentId = s.studentId as string | undefined;
+        let weakAreas: Array<{ subject: string; topic: string; subtopic: string | null; understandingPercent: number }> = [];
+        let weakPapers: Array<{ subject: string; paper: string; readinessPercent: number; weakTopics: string[] }> = [];
+        if (studentId) {
+          try {
+            const mastery = await storage.listStudentTopicMastery(studentId);
+            weakAreas = mastery
+              .filter((m) => m.tested && m.understandingPercent < 60)
+              .sort((a, b) => a.understandingPercent - b.understandingPercent)
+              .slice(0, 6)
+              .map((m) => ({
+                subject: m.subject,
+                topic: m.topic,
+                subtopic: m.subtopic || null,
+                understandingPercent: m.understandingPercent,
+              }));
+          } catch { /* mastery unavailable — degrade to subject-level */ }
+          // Only resolve paper context for students who actually have granular
+          // weak topics — avoids the catalogue/paper query fan-out otherwise.
+          if (weakAreas.length > 0) {
+          try {
+            const insights = await buildSyllabusInsights(storage, studentId);
+            for (const subj of insights.subjects) {
+              for (const p of subj.papers) {
+                if (p.mappedTopics > 0 && p.attemptedTopics > 0 && p.readinessPercent < 60) {
+                  weakPapers.push({
+                    subject: subj.subject,
+                    paper: `Paper ${p.paperNumber}`,
+                    readinessPercent: p.readinessPercent,
+                    weakTopics: p.weakTopics.map((t) => t.topic),
+                  });
+                }
+              }
+            }
+            weakPapers.sort((a, b) => a.readinessPercent - b.readinessPercent);
+            weakPapers = weakPapers.slice(0, 3);
+          } catch { /* catalogue/paper mappings unavailable — omit paper context */ }
+          }
+        }
+        return {
+          name: s.studentName,
+          trend: s.trend,
+          assigned: s.assigned,
+          completed: s.completed,
+          awaiting: s.awaiting,
+          // Specific evidence — prefer these for the narrative.
+          weakAreas,
+          weakPapers,
+          // Subject-level fallback only (use when weakAreas is empty).
+          weakSubjects: s.weakTopics,
+        };
       }));
-      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based intervention explanations. You MUST only reference data provided to you. Never fabricate trends, topics, or scores. Each explanation must be 1-2 sentences, specific, and actionable. Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
-      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided metrics:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
+      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based intervention explanations. You MUST only reference data provided to you. Never fabricate trends, topics, subtopics, papers, or scores.
+
+Each explanation must be 1-3 sentences and MUST be specific about WHAT the student is struggling with, not just the subject:
+- Name the specific topic(s) from "weakAreas" (e.g. "Integration"), not just the subject.
+- When a "weakAreas" entry has a "subtopic", call it out as the particular sticking point (e.g. "particularly the constant of integration").
+- When the topic appears in a "weakPapers" entry, tie it to that paper (e.g. "for Paper 1 Maths").
+- Only mention a paper that is present in that student's "weakPapers". Only mention a subtopic that is present in that student's "weakAreas". Never invent topics, subtopics, or papers.
+- If "weakAreas" is empty, fall back to "weakSubjects", trend, and workload counts, and say more practice/data is needed.
+
+Style example (only when the matching data exists): "Calvin is struggling with Integration for Paper 1 Maths and needs more practice on it, particularly the constant of integration."
+
+Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
+      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided data — weakAreas are specific topics/subtopics with understanding %, weakPapers are papers with low readiness and their weak topics:\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
 
       const { generateWithFallback } = await import("./services/aiOrchestrator.js");
       const { hashPayload } = await import("./utils/aiTelemetry.js");
