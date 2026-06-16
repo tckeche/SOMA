@@ -4528,7 +4528,8 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       }, traceId);
 
       // Validate each draft question before write
-      for (const q of draft) {
+      for (let i = 0; i < draft.length; i++) {
+        const q = draft[i];
         if (!q.stem) {
           return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
         }
@@ -4546,6 +4547,20 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         if (q.questionType === "graph" && q.graphSpec) {
           const check = repairGraphSpec(q.graphSpec);
           if (!check) return res.status(400).json({ message: "A graph question has an invalid graph spec" });
+        }
+        const quality = validateQuestionQuality({
+          stem: q.stem,
+          options: q.options,
+          correct_answer: q.correctAnswer,
+          explanation: q.explanation ?? undefined,
+          difficulty_tag: q.difficultyTag ?? undefined,
+        });
+        if (quality.reviewStatus === "auto_blocked") {
+          return res.status(422).json({
+            message: `Cannot publish: question ${i + 1} failed quality checks (${quality.blocking.join("; ")}). Fix or regenerate it before publishing.`,
+            questionIndex: i + 1,
+            blocking: quality.blocking,
+          });
         }
       }
 
