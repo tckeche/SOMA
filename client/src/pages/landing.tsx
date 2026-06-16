@@ -186,7 +186,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[108px] w-[460px] bg-foreground"
+                className="block h-[72px] w-[308px] bg-foreground"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -312,7 +312,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[108px] w-[460px] bg-foreground"
+                className="block h-[72px] w-[308px] bg-foreground"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
