@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CheckCircle2, Pencil, Check, X, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Pencil, Check, X, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import type { DraftQuestion } from "@shared/schema";
+import { evaluateDraftQuestionQuality } from "@/lib/draftQualityGate";
 
 // Editable, LaTeX-aware review of the builder's DRAFT questions (pre-publish).
 // Each card renders read-only with full Markdown until the tutor clicks Edit;
@@ -112,6 +113,12 @@ export function DraftQuestionReviewEditor({
       {questions.map((q, idx) => {
         const buf = editing[idx];
         const isEditing = Boolean(buf);
+        const quality = evaluateDraftQuestionQuality(q);
+        const qualityTone = quality.status === "ready"
+          ? "bg-success/10 text-success border-success/25"
+          : quality.status === "blocked"
+            ? "bg-danger/10 text-danger border-danger/25"
+            : "bg-warning/10 text-warning border-warning/25";
 
         return (
           <div
@@ -135,6 +142,16 @@ export function DraftQuestionReviewEditor({
                 <Badge className="bg-info/10 text-info border border-info/20">structured</Badge>
               )}
               {!isEditing && q.difficultyTag && <Badge variant="outline">{q.difficultyTag}</Badge>}
+              {!isEditing && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${qualityTone}`}
+                  data-testid={`draft-quality-status-${idx}`}
+                  title={quality.issues.length > 0 ? quality.issues.map((issue) => issue.message).join(" ") : "No quality warnings detected."}
+                >
+                  {quality.status === "ready" ? <ShieldCheck className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                  {quality.status === "ready" ? "Quality ready" : quality.status === "blocked" ? "Fix before publish" : "Review suggested"}
+                </span>
+              )}
 
               <div className="ml-auto flex items-center gap-2">
                 {isEditing ? (
@@ -345,6 +362,24 @@ export function DraftQuestionReviewEditor({
                   <div className="text-sm text-muted-foreground border-t border-border/40 pt-3" data-testid={`review-explanation-${idx}`}>
                     <span className="font-medium text-foreground block mb-1">Explanation</span>
                     <MarkdownRenderer content={q.explanation} />
+                  </div>
+                )}
+                {quality.issues.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2" data-testid={`draft-quality-issues-${idx}`}>
+                    <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-warning">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Quality gate — warn only
+                    </div>
+                    <ul className="space-y-1 text-xs text-muted-foreground">
+                      {quality.issues.map((issue, issueIdx) => (
+                        <li key={issueIdx}>
+                          <span className={issue.severity === "blocker" ? "text-danger" : "text-warning"}>
+                            {issue.severity === "blocker" ? "Fix:" : "Check:"}
+                          </span>{" "}
+                          {issue.message}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </>

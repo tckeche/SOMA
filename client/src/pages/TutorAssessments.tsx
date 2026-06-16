@@ -21,6 +21,7 @@ import { emitSomaMutation } from "@/lib/realtimeEvents";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { formatDuration as baseFormatDuration } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { DataErrorState, EmptyState } from "@/components/LoadState";
 
 function formatDuration(
   startedAt: string | Date | null,
@@ -514,12 +515,12 @@ export default function TutorAssessments() {
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "Tutor";
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  const { data: tutorQuizzes = [], isLoading: quizzesLoading } = useQuery<SomaQuiz[]>({
+  const { data: tutorQuizzes = [], isLoading: quizzesLoading, isError: quizzesError, refetch: refetchQuizzes } = useQuery<SomaQuiz[]>({
     queryKey: ["/api/tutor/quizzes", userId],
     queryFn: async () => {
       if (!userId) return [];
       const res = await authFetch("/api/tutor/quizzes");
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to load assessments");
       return res.json();
     },
     enabled: !!userId,
@@ -527,12 +528,12 @@ export default function TutorAssessments() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: assessmentsOverview = [] } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
+  const { data: assessmentsOverview = [], isError: overviewError, refetch: refetchOverview } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
     queryKey: ["/api/tutor/assessments-overview", userId],
     queryFn: async () => {
       if (!userId) return [];
       const res = await authFetch("/api/tutor/assessments-overview");
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to load assessment overview");
       return res.json();
     },
     enabled: !!userId,
@@ -588,12 +589,12 @@ export default function TutorAssessments() {
     return list;
   }, [tutorQuizzes, subjectFilter, levelFilter, studentFilter, quizSortBy, overviewByQuizId]);
 
-  const { data: adoptedStudents = [] } = useQuery<SomaUser[]>({
+  const { data: adoptedStudents = [], isError: studentsError, refetch: refetchStudents } = useQuery<SomaUser[]>({
     queryKey: ["/api/tutor/students", userId],
     queryFn: async () => {
       if (!userId) return [];
       const res = await authFetch("/api/tutor/students");
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to load students");
       return res.json();
     },
     enabled: !!userId,
@@ -708,7 +709,7 @@ export default function TutorAssessments() {
     queryKey: ["/api/tutor/quizzes", expandedQuiz, "assignments"],
     queryFn: async () => {
       const res = await authFetch(`/api/tutor/quizzes/${expandedQuiz}/assignments`);
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to load assignments");
       return res.json();
     },
     enabled: !!expandedQuiz && !!userId,
@@ -796,6 +797,11 @@ export default function TutorAssessments() {
     });
   }, []);
   const selectedStudentList = Array.from(selectedStudentIds);
+  const assessmentsUnavailable = quizzesError || overviewError;
+  const refetchAssessments = () => {
+    void refetchQuizzes();
+    void refetchOverview();
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -900,24 +906,33 @@ export default function TutorAssessments() {
         </div>
 
         {view === "bank" ? (
-          <BankView
-            quizzes={bankQuizzes}
-            totalCount={tutorQuizzes.length}
-            loading={authLoading || quizzesLoading}
-            search={bankSearch}
-            setSearch={setBankSearch}
-            subject={bankSubject}
-            setSubject={setBankSubject}
-            level={bankLevel}
-            setLevel={setBankLevel}
-            sort={bankSort}
-            setSort={setBankSort}
-            subjectOptions={subjectOptions}
-            levelOptions={levelOptions}
-            onReassign={(quizId) => openAssignModal(quizId)}
-            onDuplicate={(quizId, title) => setConfirmDuplicate({ quizId, title })}
-            onDelete={(quizId, title) => setConfirmDelete({ quizId, title })}
-          />
+          assessmentsUnavailable && !(authLoading || quizzesLoading) ? (
+            <DataErrorState
+              title="We couldn't load your assessment bank"
+              message="Your saved assessments are safe, but the bank could not be refreshed. Retry before creating duplicates or assuming assessments are missing."
+              onRetry={refetchAssessments}
+              testId="assessment-bank-load-error"
+            />
+          ) : (
+            <BankView
+              quizzes={bankQuizzes}
+              totalCount={tutorQuizzes.length}
+              loading={authLoading || quizzesLoading}
+              search={bankSearch}
+              setSearch={setBankSearch}
+              subject={bankSubject}
+              setSubject={setBankSubject}
+              level={bankLevel}
+              setLevel={setBankLevel}
+              sort={bankSort}
+              setSort={setBankSort}
+              subjectOptions={subjectOptions}
+              levelOptions={levelOptions}
+              onReassign={(quizId) => openAssignModal(quizId)}
+              onDuplicate={(quizId, title) => setConfirmDuplicate({ quizId, title })}
+              onDelete={(quizId, title) => setConfirmDelete({ quizId, title })}
+            />
+          )
         ) : (
         <>
         <div className={`${CARD_CLASS} flex flex-wrap items-end gap-3 p-4`}>
@@ -989,16 +1004,40 @@ export default function TutorAssessments() {
           <div className="flex justify-center py-16">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
+        ) : assessmentsUnavailable ? (
+          <DataErrorState
+            title="We couldn't load your assessments"
+            message="Your assessment bank is safe, but the latest tutor data could not be reached. Retry before creating duplicates or assuming work is missing."
+            onRetry={refetchAssessments}
+            testId="assessments-load-error"
+          />
+        ) : studentsError ? (
+          <DataErrorState
+            title="We couldn't load your student list"
+            message="Assessments loaded, but student filters and assignment actions may be incomplete until the student list is available."
+            onRetry={() => void refetchStudents()}
+            testId="students-load-error"
+          />
         ) : tutorQuizzes.length === 0 ? (
-          <div className={`${CARD_CLASS} text-center py-12`}>
-            <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">No assessments created yet</p>
-          </div>
+          <EmptyState
+            title="No assessments created yet"
+            message="Create your first assessment, upload a worksheet, or use the AI builder to start your tutor library."
+            action={(
+              <Link href="/tutor/assessments/new">
+                <span className="glow-button flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-semibold cursor-pointer">
+                  <Plus className="w-4 h-4" />
+                  Create assessment
+                </span>
+              </Link>
+            )}
+            testId="assessments-empty"
+          />
         ) : filteredSortedQuizzes.length === 0 ? (
-          <div className={`${CARD_CLASS} text-center py-12`}>
-            <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">No assessments match the current filters</p>
-          </div>
+          <EmptyState
+            title="No assessments match the current filters"
+            message="Clear one or more filters to see the rest of your assessment bank."
+            testId="assessments-filtered-empty"
+          />
         ) : (
           <div className="space-y-3">
             {filteredSortedQuizzes.map((quiz) => {

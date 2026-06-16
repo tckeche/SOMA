@@ -14,6 +14,7 @@ import { report as usageReport } from "../services/aiUsageMetrics";
 import { snapshot as healthSnapshot, currentHealthBackend } from "../services/aiHealth";
 import { maxTokensTable } from "../services/aiCostGuards";
 import { getHistoricalUsage } from "../services/aiUsageQueries";
+import { getAiBudgetStatus } from "../services/aiBudgetStatus";
 
 export function registerSuperAdminAiUsageRoutes(app: Express): void {
   // ?days=N (default 30, clamped 1..365). Historical view uses ai_usage_logs;
@@ -27,6 +28,7 @@ export function registerSuperAdminAiUsageRoutes(app: Express): void {
       since.setUTCHours(0, 0, 0, 0);
 
       const historical = await getHistoricalUsage({ since });
+      const budget = getAiBudgetStatus(historical, days);
 
       res.json({
         usage: usageReport(),
@@ -38,6 +40,7 @@ export function registerSuperAdminAiUsageRoutes(app: Express): void {
         },
         guardrails: {
           maxTokensByTask: maxTokensTable(),
+          budget,
         },
       });
     } catch (err: any) {
