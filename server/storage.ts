@@ -1322,33 +1322,61 @@ class DatabaseStorage implements IStorage {
       createdAt: r.assignedAt.toISOString(),
     }));
 
+    // Batch-fetch the per-student data for studentInsights in 3 queries total
+    // instead of 3 queries PER student (the previous N+1 pattern that made this
+    // endpoint multiple seconds against the cross-region Supabase pooler).
+    const [studentRecords, allInsightAssignments, allInsightReports] = await Promise.all([
+      this.database
+        .select({ id: somaUsers.id, displayName: somaUsers.displayName, email: somaUsers.email })
+        .from(somaUsers)
+        .where(inArray(somaUsers.id, adoptedIds)),
+      tutorQuizIds.length === 0
+        ? Promise.resolve([] as Array<{ studentId: string; status: string }>)
+        : this.database
+            .select({ studentId: quizAssignments.studentId, status: quizAssignments.status })
+            .from(quizAssignments)
+            .where(and(
+              inArray(quizAssignments.studentId, adoptedIds),
+              inArray(quizAssignments.quizId, tutorQuizIds),
+            )),
+      tutorQuizIds.length === 0
+        ? Promise.resolve([] as Array<{ studentId: string | null; score: number; quizId: number; subject: string | null }>)
+        : this.database
+            .select({ studentId: somaReports.studentId, score: somaReports.score, quizId: somaReports.quizId, subject: somaQuizzes.subject })
+            .from(somaReports)
+            .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+            .where(and(
+              inArray(somaReports.studentId, adoptedIds),
+              inArray(somaReports.quizId, tutorQuizIds),
+            ))
+            .orderBy(desc(somaReports.createdAt)),
+    ]);
+    const studentById = new Map(studentRecords.map((s) => [s.id, s]));
+    const assignmentsByStudent = new Map<string, { status: string }[]>();
+    for (const a of allInsightAssignments) {
+      const list = assignmentsByStudent.get(a.studentId) ?? [];
+      list.push({ status: a.status });
+      assignmentsByStudent.set(a.studentId, list);
+    }
+    // Reports arrive newest-first; per-student order is preserved as we bucket.
+    const reportsByStudent = new Map<string, { score: number; quizId: number; subject: string | null }[]>();
+    for (const r of allInsightReports) {
+      if (!r.studentId) continue;
+      const list = reportsByStudent.get(r.studentId) ?? [];
+      list.push({ score: r.score, quizId: r.quizId, subject: r.subject });
+      reportsByStudent.set(r.studentId, list);
+    }
+
     const insights: { studentId: string; studentName: string; assigned: number; completed: number; awaiting: number; trend: "improving" | "declining" | "stable"; weakTopics: string[] }[] = [];
     for (const sid of adoptedIds) {
-      const [student] = await this.database.select().from(somaUsers).where(eq(somaUsers.id, sid));
-      // Restrict to quizzes this tutor authored. If the tutor has no quizzes,
-      // there can be no assignments/reports to count for this student.
-      const studentAssignments = tutorQuizIds.length === 0
-        ? []
-        : await this.database.select({ status: quizAssignments.status }).from(quizAssignments).where(and(
-          eq(quizAssignments.studentId, sid),
-          inArray(quizAssignments.quizId, tutorQuizIds),
-        ));
+      const student = studentById.get(sid);
+      const studentAssignments = assignmentsByStudent.get(sid) ?? [];
       const assigned = studentAssignments.length;
       const completed = studentAssignments.filter((a) => a.status === "completed").length;
       const awaiting = studentAssignments.filter((a) => a.status !== "completed").length;
 
-      const reportRows = tutorQuizIds.length === 0
-        ? []
-        : await this.database
-          .select({ score: somaReports.score, quizId: somaReports.quizId, subject: somaQuizzes.subject })
-          .from(somaReports)
-          .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
-          .where(and(
-            eq(somaReports.studentId, sid),
-            inArray(somaReports.quizId, tutorQuizIds),
-          ))
-          .orderBy(desc(somaReports.createdAt))
-          .limit(6);
+      // Keep only the 6 most recent reports per student (was a per-student LIMIT 6).
+      const reportRows = (reportsByStudent.get(sid) ?? []).slice(0, 6);
       const recent = reportRows.slice(0, 3).map((r) => r.score);
       const prev = reportRows.slice(3, 6).map((r) => r.score);
       const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
