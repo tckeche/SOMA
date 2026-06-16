@@ -54,7 +54,7 @@ function UIPeek() {
         <span className="h-2.5 w-2.5 rounded-full bg-warning" />
         <span className="h-2.5 w-2.5 rounded-full bg-success" />
         <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-          app.soma.edu/dashboard
+          soma.melaniacalvin.com/dashboard
         </span>
       </div>
       <div className="p-5 text-left">
@@ -62,7 +62,7 @@ function UIPeek() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <div className="text-base font-bold tracking-tight text-card-foreground">
-              Good afternoon, Amara
+              Good afternoon, Tafadzwa
             </div>
             <div className="text-xs text-muted-foreground">
               2 assessments due · 1 overdue
@@ -81,7 +81,7 @@ function UIPeek() {
             Overdue · was Tue
           </div>
           <div className="pl-2 text-sm font-bold tracking-tight text-card-foreground">
-            Quadratic Equations — Mixed MCQ
+            Quadratic Equations: Mixed MCQ
           </div>
           <div className="mt-0.5 pl-2 text-xs text-muted-foreground">
             15 questions · 25 marks · ~30 min
@@ -220,7 +220,7 @@ export default function Landing() {
               data-testid="text-subtitle"
             >
               SOMA runs timed papers, marks them, and turns the results into
-              clear next steps — for students and the tutors guiding them.
+              clear next steps for students and the tutors guiding them.
             </p>
 
             <p
@@ -250,19 +250,10 @@ export default function Landing() {
               </Link>
             </div>
 
-            {/* trust row */}
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 opacity-70 lg:justify-start">
-              <span className="text-xs font-semibold text-muted-foreground">
-                Trusted by
-              </span>
+            {/* tagline */}
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 lg:justify-start">
               <span className="text-sm font-bold tracking-tight text-foreground">
-                MCEC
-              </span>
-              <span className="text-sm font-bold tracking-tight text-foreground">
-                Brightpath
-              </span>
-              <span className="text-sm font-bold tracking-tight text-foreground">
-                Apex Tuition
+                Pioneering the Evolution of Education!
               </span>
             </div>
           </div>
