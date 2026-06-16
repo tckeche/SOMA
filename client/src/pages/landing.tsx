@@ -58,6 +58,23 @@ function UIPeek() {
         </span>
       </div>
       <div className="p-5 text-left">
+        {/* Melania Calvin brand mark above the greeting */}
+        <span
+          role="img"
+          aria-label="Melania Calvin Educational Consultants"
+          className="mb-4 block h-7 w-[120px]"
+          style={{
+            backgroundColor: "hsl(150 70% 12%)",
+            WebkitMaskImage: 'url("/MCEC - White Logo.png")',
+            maskImage: 'url("/MCEC - White Logo.png")',
+            WebkitMaskRepeat: "no-repeat",
+            maskRepeat: "no-repeat",
+            WebkitMaskPosition: "left center",
+            maskPosition: "left center",
+            WebkitMaskSize: "contain",
+            maskSize: "contain",
+          }}
+        />
         {/* greeting row */}
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -169,7 +186,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[72px] w-[307px] bg-primary"
+                className="block h-[72px] w-[307px] bg-foreground"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -181,23 +198,9 @@ export default function Landing() {
                   maskSize: "contain",
                 }}
               />
-              <span className="soma-display text-xl text-primary dark:text-foreground">SOMA</span>
+              <span className="soma-display text-3xl text-foreground">SOMA</span>
             </span>
           </Link>
-          <div className="hidden items-center gap-7 md:flex">
-            <span className="text-sm font-medium text-muted-foreground">
-              Product
-            </span>
-            <span className="text-sm font-medium text-muted-foreground">
-              For tutors
-            </span>
-            <span className="text-sm font-medium text-muted-foreground">
-              For students
-            </span>
-            <span className="text-sm font-medium text-muted-foreground">
-              by MCEC
-            </span>
-          </div>
           <Link href="/login">
             <span className="btn btn-primary cursor-pointer">
               Sign in
@@ -302,7 +305,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[72px] w-[307px] bg-primary"
+                className="block h-[72px] w-[307px] bg-foreground"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -314,23 +317,9 @@ export default function Landing() {
                   maskSize: "contain",
                 }}
               />
-              <span className="soma-display text-xl text-primary dark:text-foreground">SOMA</span>
+              <span className="soma-display text-3xl text-foreground">SOMA</span>
             </span>
           </Link>
-          <nav className="flex flex-wrap items-center justify-center gap-x-7 gap-y-2">
-            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Product
-            </span>
-            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              For tutors
-            </span>
-            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              For students
-            </span>
-            <span className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              by MCEC
-            </span>
-          </nav>
         </footer>
       </div>
     </div>
