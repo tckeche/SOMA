@@ -102,23 +102,29 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
                   {scoreReady ? `${row.score ?? 0} / ${row.maxScore || "?"} marks` : lifecycle.label}
                 </p>
                 <div className="flex items-center gap-3 mt-1.5 justify-end">
-                  {row.reportId && row.reportStatus !== "failed" ? (
-                    <>
-                      <Link href={`/soma/review/${row.reportId}`}>
-                        <button className="inline-flex items-center gap-1 text-[11px] text-info hover:text-info/80" data-testid={`button-review-${row.quizId}`}>
-                          <Eye className="w-3.5 h-3.5" /> Review
-                        </button>
-                      </Link>
-                      <Link href={`/soma/review/${row.reportId}?view=report`}>
-                        <button
-                          className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80"
-                          title="Open a printable report of this assessment"
-                          data-testid={`button-report-${row.quizId}`}
-                        >
-                          <Printer className="w-3.5 h-3.5" /> Report
-                        </button>
-                      </Link>
-                    </>
+                  {row.reportId ? (
+                    row.reportStatus !== "failed" ? (
+                      <>
+                        <Link href={`/soma/review/${row.reportId}`}>
+                          <button className="inline-flex items-center gap-1 text-[11px] text-info hover:text-info/80" data-testid={`button-review-${row.quizId}`}>
+                            <Eye className="w-3.5 h-3.5" /> Review
+                          </button>
+                        </Link>
+                        <Link href={`/soma/review/${row.reportId}?view=report`}>
+                          <button
+                            className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80"
+                            title="Open a printable report of this assessment"
+                            data-testid={`button-report-${row.quizId}`}
+                          >
+                            <Printer className="w-3.5 h-3.5" /> Report
+                          </button>
+                        </Link>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground/70 italic" data-testid={`text-review-failed-${row.quizId}`}>
+                        Marking failed
+                      </span>
+                    )
                   ) : (
                     <span className="text-[11px] text-muted-foreground/70 italic" data-testid={`text-review-pending-${row.quizId}`}>
                       Report pending
