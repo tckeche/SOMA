@@ -312,19 +312,17 @@ export default function BuilderPage() {
   );
 
   // Quick-start invariant: whenever quickStart is true, the wizard must
-  // (a) force examiningBodySlug='cambridge', (b) carry no topic/subtopic
-  // selections (those steps are hidden, so any leftover IDs would silently
-  // narrow the AI prompt), and (c) sit on a visible step (skip 0=body and
-  // 3=topics). This effect runs reactively — not just on mount — so it also
-  // corrects state after draft recovery or any other path that might reseed
-  // hidden-step values while quickStart is on.
+  // (a) force examiningBodySlug='cambridge' and (b) sit on a visible step
+  // (skip 0=body, which stays hidden). The Topics step remains available in
+  // quick-start mode, so we no longer clear topic/subtopic selections here.
+  // This effect runs reactively — not just on mount — so it also corrects
+  // state after draft recovery or any other path that might reseed the
+  // hidden body step while quickStart is on.
   useEffect(() => {
     if (!quickStart) return;
     if (examiningBodySlug !== "cambridge") setExaminingBodySlug("cambridge");
-    if (selectedTopicIds.length > 0) setSelectedTopicIds([]);
-    if (selectedSubtopicIds.length > 0) setSelectedSubtopicIds([]);
-    if (wizardStep === 0 || wizardStep === 3) setWizardStep(1);
-  }, [quickStart, examiningBodySlug, selectedTopicIds, selectedSubtopicIds, wizardStep]);
+    if (wizardStep === 0) setWizardStep(1);
+  }, [quickStart, examiningBodySlug, wizardStep]);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1447,14 +1445,12 @@ export default function BuilderPage() {
               try { window.localStorage.setItem("soma:wizard-quickstart", next ? "1" : "0"); } catch {}
               if (next) {
                 // Lock examining body to Cambridge (the only one we currently
-                // ingest) and clear any topic selections so the prompt isn't
-                // silently narrowed by stale state.
+                // ingest). The Topics step stays available in quick-start mode,
+                // so we keep any existing topic selections.
                 if (examiningBodySlug !== "cambridge") setExaminingBodySlug("cambridge");
-                if (selectedTopicIds.length > 0) setSelectedTopicIds([]);
-                if (selectedSubtopicIds.length > 0) setSelectedSubtopicIds([]);
-                // If the tutor was sitting on a now-hidden step, jump to the
-                // first visible one so the wizard renders sensibly.
-                if (wizardStep === 0 || wizardStep === 3) setWizardStep(1);
+                // If the tutor was sitting on the now-hidden body step, jump to
+                // the first visible one so the wizard renders sensibly.
+                if (wizardStep === 0) setWizardStep(1);
                 markMeta();
               }
             }}

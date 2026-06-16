@@ -161,10 +161,11 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
   const clampCount = (n: number) =>
     Math.max(minQuestions, Math.min(MAX_QUESTIONS, Math.round(n)));
 
-  // In quick-start mode the tutor only sees Level / Subject / Time. Examining
-  // body and Topics are intentionally hidden so the Co-Pilot can drive scope.
+  // In quick-start mode the tutor sees Level / Subject / Topics / Time. Only the
+  // Examining body step is hidden (locked to Cambridge); the Topics step stays
+  // available so the tutor can manually scope the assessment if they want to.
   const visibleStepKeys = useMemo<Array<0 | 1 | 2 | 3 | 4>>(
-    () => quickStart ? [1, 2, 4] : [0, 1, 2, 3, 4],
+    () => quickStart ? [1, 2, 3, 4] : [0, 1, 2, 3, 4],
     [quickStart],
   );
   const visibleSteps = useMemo(
