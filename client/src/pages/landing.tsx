@@ -177,7 +177,7 @@ export default function Landing() {
 
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-7 sm:px-8">
         {/* ── Nav ─────────────────────────────────────────── */}
-        <nav className="flex items-center justify-between">
+        <nav className="relative flex items-center justify-between">
           <Link href="/login">
             <span
               className="flex cursor-pointer items-center gap-2.5"
@@ -186,7 +186,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[72px] w-[307px] bg-foreground"
+                className="block h-[108px] w-[460px] bg-foreground"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -198,7 +198,14 @@ export default function Landing() {
                   maskSize: "contain",
                 }}
               />
-              <span className="soma-display text-3xl text-foreground">SOMA</span>
+            </span>
+          </Link>
+          <Link href="/login">
+            <span
+              className="soma-display absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer text-[2.8rem] leading-none text-foreground"
+              data-testid="link-brand-soma"
+            >
+              SOMA
             </span>
           </Link>
           <Link href="/login">
@@ -305,7 +312,7 @@ export default function Landing() {
               <span
                 role="img"
                 aria-label="MCEC Logo"
-                className="block h-[72px] w-[307px] bg-foreground"
+                className="block h-[108px] w-[460px] bg-foreground"
                 style={{
                   WebkitMaskImage: 'url("/MCEC - White Logo.png")',
                   maskImage: 'url("/MCEC - White Logo.png")',
@@ -317,7 +324,7 @@ export default function Landing() {
                   maskSize: "contain",
                 }}
               />
-              <span className="soma-display text-3xl text-foreground">SOMA</span>
+              <span className="soma-display text-[2.8rem] leading-none text-foreground">SOMA</span>
             </span>
           </Link>
         </footer>
