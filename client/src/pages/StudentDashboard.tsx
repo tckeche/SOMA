@@ -18,6 +18,7 @@ import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 import type {
   DashboardAssignmentRow,
   DashboardRecentWin,
@@ -580,9 +581,9 @@ export default function StudentDashboard() {
     refetchOnMount: "always",
   });
 
-  // Syllabus-insights query — preserved verbatim (its data feeds the Focus list
-  // indirectly via subjects; kept fetching so cache/realtime stay consistent).
-  useQuery<{ subjects: unknown[] }>({
+  // Syllabus-insights query — drives the topic-coverage radar + paper-readiness
+  // heatmap so the dashboard shows topic + subject + paper-specific detail.
+  const { data: syllabusInsights, isLoading: syllabusInsightsLoading } = useQuery<{ subjects: SubjectInsight[] }>({
     queryKey: ["/api/student/syllabus-insights", userId],
     queryFn: async () => {
       const res = await authFetch("/api/student/syllabus-insights");
@@ -690,6 +691,11 @@ export default function StudentDashboard() {
                 <NextActions assignments={data.assignments} onStart={launchQuiz} />
                 <PerformanceBlock data={data} />
                 <FocusBlock data={data} tip={examinerTip} />
+                <SyllabusInsightsSection
+                  insights={syllabusInsights}
+                  isLoading={syllabusInsightsLoading}
+                  studentFirstName={(data.student.displayName || "").split(" ")[0]}
+                />
                 <WrittenFeedbackBlock data={data} />
                 <WinsBlock wins={data.recentWins} />
               </div>

@@ -69,8 +69,9 @@ export async function buildStructuredFeedback(
     for (const [qid, mark] of Object.entries(marking)) {
       if (!mark) continue;
       const maxMarks = Number(mark.maxMarks) || 0;
+      if (maxMarks <= 0) continue; // un-markable / not yet graded — skip
       const awardedMarks = Number(mark.tutorMarks ?? mark.aiMarks) || 0;
-      const percent = maxMarks > 0 ? Math.round((awardedMarks / maxMarks) * 100) : 0;
+      const percent = Math.round((awardedMarks / maxMarks) * 100);
       if (percent >= weakThreshold) continue;
 
       const whereFailing = (mark.aiUnderstanding || "").trim();
