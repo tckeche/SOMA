@@ -18,7 +18,7 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
-import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
+import { assessTopicScope, resolveReviewStatus, narrowInventoryToSelection } from "./services/questionScope";
 import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
@@ -4683,7 +4683,11 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           if (!q.markScheme || !String(q.markScheme).trim()) {
             return res.status(400).json({ message: `Structured question "${String(q.stem).slice(0, 40)}" is missing a mark scheme` });
           }
-          reviewStatusByIndex[i] = "approved";
+          // Structured drafts carry topic tags and ARE served to students, so
+          // they still go through the scope gate — we only skip the MCQ-only
+          // quality checks (options/answer-key), not the syllabus-scope check.
+          const structuredScope = assessTopicScope(q.topicTag, q.subtopicTag, publishAllowedTopics);
+          reviewStatusByIndex[i] = resolveReviewStatus({ baseStatus: "approved", scope: structuredScope }).reviewStatus;
           continue;
         }
         if (!Array.isArray(q.options) || q.options.length !== 4) {
@@ -4709,6 +4713,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         }
         const scope = assessTopicScope(q.topicTag, q.subtopicTag, publishAllowedTopics);
         reviewStatusByIndex[i] = resolveReviewStatus({ baseStatus: quality.reviewStatus, scope }).reviewStatus;
+      }
+
+      // Never publish a quiz with zero servable questions. Only "approved"
+      // questions reach students (isServableToStudent); if every question is
+      // held for review, publishing would assign students a quiz that shows
+      // "No questions found". Refuse and tell the tutor to review first.
+      const publishServable = reviewStatusByIndex.filter((s) => (s ?? "approved") === "approved").length;
+      if (draft.length > 0 && publishServable === 0) {
+        return res.status(422).json({
+          message: `Cannot publish: none of the ${draft.length} question(s) passed review — every one is held for tutor review or blocked. Review and approve at least one question before publishing.`,
+          reviewSummary: { total: draft.length, servable: 0, needsReview: reviewStatusByIndex.filter((s) => s === "needs_review").length, autoBlocked: reviewStatusByIndex.filter((s) => s === "auto_blocked").length },
+        });
       }
 
       // Assessment-integrity hard gate: never publish a complex-number question
@@ -6660,7 +6676,11 @@ ${JSON.stringify({
         : null;
       // Closed-set scope gate (see tutor-generate route): off-syllabus drift →
       // needs_review. Empty inventory = syllabus not catalogued = no-op.
-      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
+      const allowedTopics = narrowInventoryToSelection(
+        await listAllowedTopicsForSyllabusCode(syllabusCode),
+        selectedTopicIds,
+        selectedSubtopicIds,
+      );
       traceLog("route.somaGenerate.beforeCreateSomaQuestions", {
         quizId: quiz.id,
         questionCount: result.questions.length,
@@ -6826,25 +6846,17 @@ ${JSON.stringify({
       // Closed-set scope gate: classify each question's topic/subtopic tag
       // against the catalogue so off-syllabus drift is caught post-generation
       // (empty inventory = syllabus not catalogued = no-op).
-      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
+      const allowedTopics = narrowInventoryToSelection(
+        await listAllowedTopicsForSyllabusCode(syllabusCode),
+        selectedTopicIds,
+        selectedSubtopicIds,
+      );
       traceLog("route.tutorGenerate.beforeCreateBundle", {
         questionCount: result.questions.length,
         targetMisconceptionIds,
         targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
       }, traceId);
-      const bundle = await storage.createSomaQuizBundle({
-        quiz: {
-          title: quizTitle,
-          topic,
-          subject,
-          syllabus,
-          level,
-          curriculumContext: curriculumContext || null,
-          authorId: tutorId,
-          status: "published",
-          isArchived: false,
-        },
-        questions: balanceAnswerOptions(result.questions).map((q, i) => {
+      const bundleQuestions = balanceAnswerOptions(result.questions).map((q, i) => {
           const quality = validateQuestionQuality(
             { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
             { subject, syllabus, level, topic, subtopic },
@@ -6878,8 +6890,27 @@ ${JSON.stringify({
             qualityWarnings: [...quality.warnings, ...resolved.reasons],
           },
         };
-        }),
-        assignedStudentIds: validAssignedStudentIds,
+        });
+      // If nothing is servable (e.g. every question was held for review or
+      // blocked), do NOT assign students — they would open a published quiz
+      // with zero questions ("No questions found"). The quiz is still created
+      // so the tutor can review/fix it in the assessment bank first.
+      const generatedServable = bundleQuestions.filter((x) => (x.reviewStatus ?? "approved") === "approved").length;
+      const effectiveAssignedStudentIds = generatedServable > 0 ? validAssignedStudentIds : [];
+      const bundle = await storage.createSomaQuizBundle({
+        quiz: {
+          title: quizTitle,
+          topic,
+          subject,
+          syllabus,
+          level,
+          curriculumContext: curriculumContext || null,
+          authorId: tutorId,
+          status: "published",
+          isArchived: false,
+        },
+        questions: bundleQuestions,
+        assignedStudentIds: effectiveAssignedStudentIds,
       });
       traceLog("route.tutorGenerate.afterCreateBundle", {
         quizId: bundle.quiz.id,
@@ -6891,7 +6922,11 @@ ${JSON.stringify({
         quiz: bundle.quiz,
         questions: bundle.questions,
         assignments: bundle.assignments.length,
-        assignedStudentIds: validAssignedStudentIds,
+        assignedStudentIds: effectiveAssignedStudentIds,
+        heldForReview: generatedServable === 0 && validAssignedStudentIds.length > 0,
+        message: generatedServable === 0 && validAssignedStudentIds.length > 0
+          ? "No question passed review, so this quiz was saved for your review but not assigned to students yet. Approve at least one question, then assign it."
+          : undefined,
         warnings: result.warnings,
         reviewSummary: summarizeReviewStatuses(bundle.questions),
         pipeline: {

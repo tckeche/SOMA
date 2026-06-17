@@ -71,6 +71,38 @@ export function assessTopicScope(
 
 export type ReviewStatus = "approved" | "needs_review" | "auto_blocked";
 
+/**
+ * Narrow a full-syllabus inventory down to only the topics the tutor actually
+ * selected, so the scope gate flags drift to a DIFFERENT requested topic (e.g.
+ * a Calculus question in an Algebra quiz) rather than merely drift off the whole
+ * syllabus. Falls back to the full inventory when no usable selection is
+ * supplied — or when the selection matches no inventory topic — so the gate is
+ * never silently disabled.
+ */
+export function narrowInventoryToSelection(
+  inventory: AllowedTopic[],
+  selectedTopicIds?: number[] | null,
+  selectedSubtopicIds?: number[] | null,
+): AllowedTopic[] {
+  const topicIds = (selectedTopicIds ?? []).filter((n) => Number.isFinite(n) && n > 0);
+  if (topicIds.length === 0) return inventory;
+
+  const topicSet = new Set(topicIds);
+  const subSet = new Set((selectedSubtopicIds ?? []).filter((n) => Number.isFinite(n) && n > 0));
+  const narrowed = inventory
+    .filter((t) => topicSet.has(t.topicId))
+    .map((t) => ({
+      ...t,
+      // When specific subtopics were chosen, keep only those; otherwise keep
+      // every subtopic under the selected topic.
+      subtopics: subSet.size > 0 ? t.subtopics.filter((s) => subSet.has(s.id)) : t.subtopics,
+    }));
+
+  // If the selection matched no inventory topic (e.g. a catalogue-cut mismatch),
+  // keep the full inventory rather than disabling the gate entirely.
+  return narrowed.length > 0 ? narrowed : inventory;
+}
+
 export interface ReviewResolution {
   reviewStatus: ReviewStatus;
   /** Extra human-readable reasons added on top of the base quality result. */
