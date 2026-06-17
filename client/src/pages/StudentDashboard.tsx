@@ -19,6 +19,8 @@ import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
+import ExaminerInsightsCarousel, { type ExaminerInsightCard } from "@/components/student/ExaminerInsightsCarousel";
+import TopicCoverageExplorer from "@/components/student/TopicCoverageExplorer";
 import type {
   DashboardAssignmentRow,
   DashboardRecentWin,
@@ -147,14 +149,6 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 // ---- Dashboard sections ----
-
-interface ExaminerTip {
-  topic: string;
-  text: string;
-  action: string;
-  frequency: string;
-  subject?: string;
-}
 
 /** 1. Next actions (hero + up next). */
 function NextActions({
@@ -372,10 +366,8 @@ function PerformanceBlock({
 /** 3. Where to focus — readiness rings + topic mastery + examiner tip. */
 function FocusBlock({
   data,
-  tip,
 }: {
   data: StudentDashboardPayload;
-  tip: ExaminerTip | null;
 }) {
   const readiness = data.subjects.map((s) => ({
     label: s.subject,
@@ -445,22 +437,6 @@ function FocusBlock({
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* examiner tip */}
-      {tip && (
-        <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: "hsl(var(--accent))", border: "1px solid var(--accent-border)" }}>
-          <div className="row between" style={{ marginBottom: 8 }}>
-            <span className="row" style={{ gap: 8, color: "hsl(var(--accent-foreground))", fontWeight: 700, fontSize: 13 }}>
-              <Sparkles className="w-4 h-4" /> Examiner insight · {tip.topic}
-            </span>
-            <span className="chip chip-brand" style={{ fontSize: 10 }}>{tip.frequency}</span>
-          </div>
-          <p style={{ margin: "0 0 8px", fontSize: 13.5, lineHeight: 1.5 }} className="text-muted-foreground">{tip.text}</p>
-          <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, fontWeight: 600 }}>
-            <span style={{ color: "hsl(var(--accent-foreground))" }}>Do this → </span>{tip.action}
-          </p>
         </div>
       )}
     </section>
@@ -602,7 +578,9 @@ export default function StudentDashboard() {
     queries: subjectsForTips.map((s) => ({
       queryKey: ["/api/student/study-tips", s.subject],
       queryFn: async (): Promise<StudyTipResponse> => {
-        const params = new URLSearchParams({ subject: s.subject, board: "Cambridge", top: "3" });
+        // Pull a generous slice per subject so the examiner-insights carousel
+        // can show many different points across all of the student's subjects.
+        const params = new URLSearchParams({ subject: s.subject, board: "Cambridge", top: "8" });
         const res = await authFetch(`/api/student/study-tips?${params.toString()}`);
         if (!res.ok) return { tips: [], cacheHit: false, elapsedMs: 0 };
         return res.json();
@@ -612,23 +590,33 @@ export default function StudentDashboard() {
     })),
   });
 
-  // First available examiner tip across all subjects → single Focus panel.
-  const examinerTip: ExaminerTip | null = useMemo(() => {
-    for (let i = 0; i < tipQueries.length; i++) {
-      const q = tipQueries[i];
-      const subject = subjectsForTips[i]?.subject;
-      const first = q.data?.tips?.[0];
-      if (first) {
-        return {
-          topic: first.topic,
-          text: first.tip,
-          action: first.correctApproach,
-          frequency: first.frequency.replace(/_/g, " "),
-          subject,
-        };
+  // All examiner insights across every subject the student studies, flattened
+  // into carousel cards labelled by subject · level · topic. Interleaved by
+  // subject so the carousel doesn't show one subject's tips all in a row.
+  const examinerInsights: ExaminerInsightCard[] = useMemo(() => {
+    const perSubject = subjectsForTips.map((s, i) => {
+      const subj = subjectsForTips[i]?.subject;
+      const level = (subjectsForTips[i] as any)?.level ?? null;
+      return (tipQueries[i]?.data?.tips ?? []).map((t) => ({
+        id: t.id,
+        subject: subj,
+        level,
+        topic: t.topic,
+        text: t.tip,
+        whyItMatters: t.whyItMatters,
+        action: t.correctApproach,
+        frequency: t.frequency,
+      }));
+    });
+    // Round-robin interleave so subjects alternate in the carousel.
+    const out: ExaminerInsightCard[] = [];
+    const maxLen = Math.max(0, ...perSubject.map((p) => p.length));
+    for (let i = 0; i < maxLen; i++) {
+      for (const p of perSubject) {
+        if (p[i]) out.push(p[i]);
       }
     }
-    return null;
+    return out;
   }, [tipQueries, subjectsForTips]);
 
   const handleLogout = async () => {
@@ -690,7 +678,8 @@ export default function StudentDashboard() {
               <div style={{ display: "grid", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
                 <NextActions assignments={data.assignments} onStart={launchQuiz} />
                 <PerformanceBlock data={data} />
-                <FocusBlock data={data} tip={examinerTip} />
+                <FocusBlock data={data} />
+                <ExaminerInsightsCarousel insights={examinerInsights} />
                 <SyllabusInsightsSection
                   insights={syllabusInsights}
                   isLoading={syllabusInsightsLoading}
@@ -716,8 +705,11 @@ export default function StudentDashboard() {
 
             {view === "tools" && (
               <div className="space-y-6">
-                <MarkLossPredictor />
+                {/* Topic coverage is the anchor: it frames every other tool by
+                    showing what's covered, what's mastered, and what to study next. */}
+                <TopicCoverageExplorer subjects={data.subjects} />
                 <RevisionPlanCard />
+                <MarkLossPredictor />
                 <CommandWordCoach />
               </div>
             )}

@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { supabase, authFetch } from "@/lib/supabase";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { getLevelColor, getSubjectIcon } from "@/lib/subjectColors";
-import { formatDateShort, assessmentDisplayName } from "@/lib/assessmentNaming";
+import { formatDateShort, assessmentDisplayName, assessmentSecondaryLabel } from "@/lib/assessmentNaming";
 import type { SomaQuiz, SomaReport, SomaQuestion, QuizAssignment, SomaUser } from "@shared/schema";
 import { defaultDueDateInputValue } from "@shared/dueDate";
 import {
@@ -433,7 +433,9 @@ function BankView({
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-foreground line-clamp-2" data-testid={`bank-name-${quiz.id}`}>{assessmentDisplayName(quiz)}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{quiz.title}</p>
+                    {assessmentSecondaryLabel(quiz) && (
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate" data-testid={`bank-label-${quiz.id}`}>{assessmentSecondaryLabel(quiz)}</p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-[10px]">
@@ -663,7 +665,7 @@ export default function TutorAssessments() {
     },
   });
 
-  // Open the assign modal with the due date prefilled to 5 days after the
+  // Open the assign modal with the due date prefilled to 3 days after the
   // assessment was created (floored to the hour). The tutor can still change it.
   const openAssignModal = (quizId: number) => {
     const quiz = tutorQuizzes.find((q) => q.id === quizId);
@@ -1096,7 +1098,9 @@ export default function TutorAssessments() {
                           )}
                         </div>
                         <h3 className="text-sm font-medium text-foreground truncate" data-testid={`quiz-name-${quiz.id}`}>{assessmentDisplayName(quiz)}</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5" data-testid={`quiz-date-${quiz.id}`}>{formatDateShort(quiz.createdAt)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate" data-testid={`quiz-label-${quiz.id}`}>
+                          {[assessmentSecondaryLabel(quiz), formatDateShort(quiz.createdAt)].filter(Boolean).join(" · ")}
+                        </p>
                       </div>
                       <div className="p-2 text-muted-foreground">
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -1405,7 +1409,7 @@ export default function TutorAssessments() {
                 <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
                     <Clock className="w-3.5 h-3.5 text-primary" />
-                    Due Date & Time <span className="text-muted-foreground">(defaults to 5 days out)</span>
+                    Due Date & Time <span className="text-muted-foreground">(defaults to 3 days out)</span>
                   </label>
                   <input
                     type="datetime-local"

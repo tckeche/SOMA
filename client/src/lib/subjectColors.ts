@@ -118,9 +118,13 @@ export function getLevelColor(level: string | null | undefined): SubjectColor {
   return key ? LEVEL_COLORS[key] : LEVEL_DEFAULT;
 }
 
+// Order matters: more specific subjects must come BEFORE the generic catch-all
+// so a "Pure Mathematics" tile gets the Sigma icon, while a plain "Mathematics"
+// tile gets the Calculator. This keeps maths variants visually distinct even
+// though they share a colour family by level.
 const ICON_KEYWORDS: [string[], LucideIcon][] = [
-  [["math", "maths", "mathematics", "calculus", "algebra", "trigonometry", "geometry", "statistics", "arithmetic"], Calculator],
-  [["pure math", "pure maths", "further math", "further maths", "advanced math"], Sigma],
+  [["pure math", "pure maths", "further math", "further maths", "advanced math", "calculus", "algebra", "trigonometry", "statistics", "probability"], Sigma],
+  [["math", "maths", "mathematics", "geometry", "arithmetic", "numeracy"], Calculator],
   [["physics", "mechanics", "dynamics", "thermodynamics"], Atom],
   [["chemistry", "chem", "organic", "inorganic", "biochemistry"], FlaskConical],
   [["biology", "bio", "botany", "zoology", "genetics", "anatomy", "physiology"], Dna],
