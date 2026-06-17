@@ -62,7 +62,7 @@ The production schema is managed by `BOOTSTRAP_QUERIES` in `server/bootstrap.ts`
 
 ## External Dependencies
 -   **Auth**: Supabase Auth
--   **AI/LLM Providers**: Google Generative AI (Gemini), Anthropic AI SDK (Claude), OpenAI (GPT-4o, GPT-4o-mini, `text-embedding-3-small`), DeepSeek
+-   **AI/LLM Providers**: Google Generative AI (Gemini 2.5 Flash), Anthropic AI SDK (Claude Opus 4.8, Claude Haiku 4.5), OpenAI (GPT-5, GPT-4o, GPT-4o-mini, `text-embedding-3-small`), DeepSeek
 -   **Database**: PostgreSQL (Supabase)
 -   **ORM**: Drizzle ORM
 -   **Frontend Libraries**: React, Vite, Tailwind CSS, Shadcn UI, react-katex, DOMPurify, wouter
