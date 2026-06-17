@@ -162,8 +162,8 @@ describe("generateAuditedQuiz: happy path (Claude → ChatGPT)", () => {
   it("returns the verified questions and correct telemetry", async () => {
     const result = await generateAuditedQuiz("Derivatives");
     expect(result.questions).toHaveLength(1);
-    expect(result.telemetry.makerModel).toBe("anthropic/claude-sonnet-4-6");
-    expect(result.telemetry.checkerModel).toBe("openai/gpt-4o");
+    expect(result.telemetry.makerModel).toBe("anthropic/claude-opus-4-8");
+    expect(result.telemetry.checkerModel).toBe("openai/gpt-5");
   });
 
   it("surfaces warnings from the verifier", async () => {
@@ -206,7 +206,7 @@ describe("generateAuditedQuiz: Claude maker fails → ChatGPT maker + Gemini ver
 
   it("reports tier-2 models in telemetry", async () => {
     const result = await generateAuditedQuiz("Probability");
-    expect(result.telemetry.makerModel).toBe("openai/gpt-4o");
+    expect(result.telemetry.makerModel).toBe("openai/gpt-5");
     expect(result.telemetry.checkerModel).toBe("google/gemini-2.5-flash");
   });
 });
@@ -236,7 +236,7 @@ describe("generateAuditedQuiz: ChatGPT verifier fails → Gemini verifier", () =
     expect(mockOpenAIVerifier).toHaveBeenCalledTimes(1);
     expect(mockGeminiVerifier).toHaveBeenCalledTimes(1);
     expect(mockOpenAIMaker).not.toHaveBeenCalled();
-    expect(result.telemetry.makerModel).toBe("anthropic/claude-sonnet-4-6");
+    expect(result.telemetry.makerModel).toBe("anthropic/claude-opus-4-8");
     expect(result.telemetry.checkerModel).toBe("google/gemini-2.5-flash");
   });
 });
