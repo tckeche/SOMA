@@ -3893,10 +3893,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const accuracy = totalPossible > 0 ? Math.round((totalCorrect / totalPossible) * 100) : null;
 
       // Written/structured-answer feedback already captured at AI-marking time —
-      // where the student fell short and how to improve, per question.
+      // where the student fell short and how to improve, per question. A tutor
+      // may only see feedback for subjects THEY have assigned this student a quiz
+      // in, so we gate by the tutor's own assigned subjects.
       let structuredFeedback: Awaited<ReturnType<typeof buildStructuredFeedback>> = [];
       try {
-        structuredFeedback = await buildStructuredFeedback(storage, studentId, { limit: 12 });
+        const assignedSubjects = (await storage.getAssignedSubjectsForStudentsByTutor(tutorId, [studentId]))[studentId] || [];
+        structuredFeedback = await buildStructuredFeedback(storage, studentId, { limit: 12, allowedSubjects: assignedSubjects });
       } catch { /* structured marking unavailable — omit written-answer feedback */ }
 
       res.json({
@@ -3997,6 +4000,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const truncated = students
         .filter((s: any) => s?.studentId && adoptedIdSet.has(s.studentId))
         .slice(0, 8);
+      // Subject visibility: a tutor may only see intervention evidence for
+      // subjects they have actually assigned each student a quiz in. Everything
+      // feeding the AI narrative below is gated against this per-student set so
+      // the brief never references a subject the tutor doesn't own.
+      const assignedSubjectsByStudent = tutorIdForAuth
+        ? await storage.getAssignedSubjectsForStudentsByTutor(tutorIdForAuth, truncated.map((s: any) => s.studentId))
+        : {};
       // Enrich each at-risk student with their REAL weak topics/subtopics
       // (from student_topic_mastery) and weak papers (from the syllabus
       // catalogue), so the narrative can name the specific topic, subtopic and
@@ -4006,9 +4016,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         let weakAreas: Array<{ subject: string; topic: string; subtopic: string | null; understandingPercent: number }> = [];
         let weakPapers: Array<{ subject: string; paper: string; readinessPercent: number; weakTopics: string[] }> = [];
         let structuredWeak: Array<{ subject: string | null; topic: string | null; subtopic: string | null; awardedMarks: number; maxMarks: number; whereFailing: string; howToImprove: string }> = [];
+        const allowedSubjects = studentId ? (assignedSubjectsByStudent[studentId] || []) : [];
+        const allowedSubjectSet = new Set(allowedSubjects.map((s) => s.toLowerCase().trim()).filter(Boolean));
         if (studentId) {
           try {
-            structuredWeak = (await buildStructuredFeedback(storage, studentId, { limit: 3 })).map((w) => ({
+            structuredWeak = (await buildStructuredFeedback(storage, studentId, { limit: 3, allowedSubjects })).map((w) => ({
               subject: w.subject,
               topic: w.topic,
               subtopic: w.subtopic,
@@ -4021,7 +4033,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           try {
             const mastery = await storage.listStudentTopicMastery(studentId);
             weakAreas = mastery
-              .filter((m) => m.tested && m.understandingPercent < 60)
+              .filter((m) => m.tested && m.understandingPercent < 60 && allowedSubjectSet.has((m.subject || "").toLowerCase().trim()))
               .sort((a, b) => a.understandingPercent - b.understandingPercent)
               .slice(0, 6)
               .map((m) => ({
@@ -4037,6 +4049,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           try {
             const insights = await buildSyllabusInsights(storage, studentId);
             for (const subj of insights.subjects) {
+              if (!allowedSubjectSet.has((subj.subject || "").toLowerCase().trim())) continue;
               for (const p of subj.papers) {
                 if (p.mappedTopics > 0 && p.attemptedTopics > 0 && p.readinessPercent < 60) {
                   weakPapers.push({

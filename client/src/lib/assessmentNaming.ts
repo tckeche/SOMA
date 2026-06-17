@@ -44,14 +44,29 @@ export function joinSubtopics(segs: string[]): string {
   return `${segs.slice(0, -1).join(", ")} & ${segs[segs.length - 1]}`;
 }
 
-// Display name for an assessment tab/card, e.g.
-// "AS Pure Mathematics - Functions, Quadratics & Series".
+// PRIMARY display name for an assessment tab/card. This is the quiz's *actual*
+// name — what the tutor titled it — so tiles are identified by name, not by a
+// generic "level subject - topics" string. The level/subject/topics belong on a
+// secondary label (see assessmentSecondaryLabel) rather than the headline.
+//
+// We only fall back to a computed "level subject - topics" string when the quiz
+// genuinely has no title.
 export function assessmentDisplayName(quiz: AssessmentNameInput): string {
+  const title = quiz.title ? String(quiz.title).trim() : "";
+  if (title) return title;
+  return assessmentSecondaryLabel(quiz) || "Assessment";
+}
+
+// SECONDARY label for an assessment tile: the level + subject + curriculum
+// subtopics, e.g. "AS Pure Mathematics · Functions, Quadratics & Series". Shown
+// beneath the quiz name to help identify the subject/level at a glance. Returns
+// "" when there's nothing meaningful to show.
+export function assessmentSecondaryLabel(quiz: AssessmentNameInput): string {
   const head = [quiz.level, quiz.subject]
     .map((x) => (x ? String(x).trim() : ""))
     .filter(Boolean)
     .join(" ");
   const subtopics = joinSubtopics(subtopicSegments(quiz));
-  if (head && subtopics) return `${head} - ${subtopics}`;
-  return head || subtopics || quiz.title || "Assessment";
+  if (head && subtopics) return `${head} · ${subtopics}`;
+  return head || subtopics || "";
 }

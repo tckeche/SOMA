@@ -188,6 +188,13 @@ export interface IStorage {
    * A tutor should only see cohort/student performance for these subjects.
    */
   getAssignedSubjectsForStudents(studentIds: string[]): Promise<Record<string, string[]>>;
+  /**
+   * Like getAssignedSubjectsForStudents, but scoped to a single tutor: only
+   * counts subjects from quizzes THAT TUTOR authored and assigned to the
+   * student. This is the authoritative set of subjects a tutor is allowed to
+   * see a student's feedback/intervention data for.
+   */
+  getAssignedSubjectsForStudentsByTutor(tutorId: string, studentIds: string[]): Promise<Record<string, string[]>>;
   updateQuizAssignmentStatus(quizId: number, studentId: string, status: string): Promise<void>;
   deleteQuizAssignment(quizId: number, studentId: string): Promise<void>;
   extendQuizAssignmentDeadlines(quizId: number, hours: number): Promise<number>;
@@ -1082,6 +1089,27 @@ class DatabaseStorage implements IStorage {
       .from(quizAssignments)
       .innerJoin(somaQuizzes, eq(quizAssignments.quizId, somaQuizzes.id))
       .where(inArray(quizAssignments.studentId, studentIds));
+    for (const row of rows) {
+      const subject = (row.subject || "").trim();
+      if (!subject) continue;
+      const list = result[row.studentId] ?? (result[row.studentId] = []);
+      if (!list.some((s) => s.toLowerCase() === subject.toLowerCase())) list.push(subject);
+    }
+    return result;
+  }
+
+  async getAssignedSubjectsForStudentsByTutor(tutorId: string, studentIds: string[]): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const id of studentIds) result[id] = [];
+    if (studentIds.length === 0) return result;
+    const rows = await this.database
+      .selectDistinct({
+        studentId: quizAssignments.studentId,
+        subject: somaQuizzes.subject,
+      })
+      .from(quizAssignments)
+      .innerJoin(somaQuizzes, eq(quizAssignments.quizId, somaQuizzes.id))
+      .where(and(inArray(quizAssignments.studentId, studentIds), eq(somaQuizzes.authorId, tutorId)));
     for (const row of rows) {
       const subject = (row.subject || "").trim();
       if (!subject) continue;
@@ -1999,6 +2027,22 @@ export class MemoryStorage implements IStorage {
       if (!idSet.has(qa.studentId)) continue;
       const quiz = this.somaQuizzesList.find((q) => q.id === qa.quizId);
       const subject = (quiz?.subject || "").trim();
+      if (!subject) continue;
+      const list = result[qa.studentId] ?? (result[qa.studentId] = []);
+      if (!list.some((s) => s.toLowerCase() === subject.toLowerCase())) list.push(subject);
+    }
+    return result;
+  }
+
+  async getAssignedSubjectsForStudentsByTutor(tutorId: string, studentIds: string[]): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const id of studentIds) result[id] = [];
+    const idSet = new Set(studentIds);
+    for (const qa of this.quizAssignmentsList) {
+      if (!idSet.has(qa.studentId)) continue;
+      const quiz = this.somaQuizzesList.find((q) => q.id === qa.quizId);
+      if (!quiz || quiz.authorId !== tutorId) continue;
+      const subject = (quiz.subject || "").trim();
       if (!subject) continue;
       const list = result[qa.studentId] ?? (result[qa.studentId] = []);
       if (!list.some((s) => s.toLowerCase() === subject.toLowerCase())) list.push(subject);

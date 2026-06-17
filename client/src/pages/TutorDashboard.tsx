@@ -24,11 +24,6 @@ import SomaHeader from "@/components/soma/SomaHeader";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 import TutorNotificationsBell from "@/components/tutor/TutorNotificationsBell";
 
-interface AIInsight {
-  name: string;
-  reason: string;
-}
-
 /* ── status chip → Warm Editorial chip class ──────────────────── */
 function statusChipClass(text: string): string {
   switch (text) {
@@ -139,26 +134,6 @@ export default function TutorDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: aiInsights } = useQuery<{ insights: AIInsight[] }>({
-    queryKey: ["/api/tutor/ai/intervention-insights", stats?.studentInsights?.map((s) => s.studentId).join(",")],
-    queryFn: async () => {
-      const atRisk = (stats?.studentInsights || []).filter(
-        (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.awaiting > 0 && s.completed === 0)
-      ).slice(0, 6);
-      if (atRisk.length === 0) return { insights: [] };
-      const res = await authFetch("/api/tutor/ai/intervention-insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ students: atRisk }),
-      });
-      if (!res.ok) return { insights: [] };
-      return res.json();
-    },
-    enabled: (stats?.studentInsights?.length ?? 0) > 0,
-    staleTime: 120000,
-    refetchOnWindowFocus: false,
-  });
-
   const { data: cohortWeaknesses } = useQuery<{
     topics: Array<{
       subject: string; topic: string; subtopic: string | null;
@@ -238,13 +213,6 @@ export default function TutorDashboard() {
     });
   }, [queryClient]);
 
-  const getInsightChip = (studentName: string): string | null => {
-    if (!aiInsights?.insights?.length) return null;
-    const match = aiInsights.insights.find((i) => i.name === studentName)
-      || aiInsights.insights.find((i) => i.name?.toLowerCase() === studentName?.toLowerCase());
-    return match?.reason || null;
-  };
-
   /* ── Per-student plaques: derived from real studentInsights + recentSubmissions ── */
   const studentPlaques = useMemo(() => {
     const plaques = (stats?.studentInsights || []).map((s) => {
@@ -273,7 +241,10 @@ export default function TutorDashboard() {
 
   type Plaque = (typeof studentPlaques)[number];
 
-  /* ── Intervention queue: rank by urgency from real per-student signals ── */
+  /* ── Intervention queue: rank by urgency from real per-student signals.
+        This dashboard view is deliberately a QUICK SUMMARY — a short reason plus
+        weak-topic chips. The detailed, AI-written intervention narrative and the
+        full problem-area breakdown live on the student's profile page. ── */
   const interventions = useMemo(() => {
     return studentPlaques
       .map((s) => {
@@ -281,27 +252,25 @@ export default function TutorDashboard() {
         let reason = "";
         if (s.trend === "declining" && s.completed >= 2) {
           severity = "critical";
-          reason = s.lastScore !== null ? `Declining scores — last at ${s.lastScore}%` : "Declining scores across recent work";
+          reason = s.lastScore !== null ? `Scores declining — last ${s.lastScore}%` : "Scores declining";
         } else if (s.assigned > 0 && s.completed === 0) {
           severity = "high";
-          reason = "No submissions yet on assigned work";
+          reason = "No submissions yet";
         } else if (s.weakTopics.length > 0) {
           severity = "high";
-          reason = `Weak topics: ${s.weakTopics.slice(0, 2).join(", ")}`;
+          reason = "Struggling with key topics";
         } else if (s.completed > 0 && s.completed < 3 && s.assigned > 0) {
           severity = "moderate";
-          reason = "Low evidence — not enough data to judge trend yet";
+          reason = "Not enough data yet";
         }
-        const insight = getInsightChip(s.studentName);
-        return severity ? { s, severity, reason: insight || reason } : null;
+        return severity ? { s, severity, reason, topics: s.weakTopics.slice(0, 3) } : null;
       })
-      .filter((x): x is { s: Plaque; severity: "critical" | "high" | "moderate"; reason: string } => x !== null)
+      .filter((x): x is { s: Plaque; severity: "critical" | "high" | "moderate"; reason: string; topics: string[] } => x !== null)
       .sort((a, b) => {
         const rank = { critical: 0, high: 1, moderate: 2 };
         return rank[a.severity] - rank[b.severity];
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studentPlaques, aiInsights]);
+  }, [studentPlaques]);
 
   /* ── Cohort radar from real per-subject averages ── */
   const radarData = useMemo(
@@ -490,7 +459,7 @@ export default function TutorDashboard() {
                         </span>
                         <span>
                           <h3 className="font-bold text-foreground" style={{ fontSize: 15 }}>Intervention queue</h3>
-                          <span className="text-muted-foreground" style={{ fontSize: 12 }}>Who needs you, ranked by urgency</span>
+                          <span className="text-muted-foreground" style={{ fontSize: 12 }}>Who needs you — open a student for the full breakdown</span>
                         </span>
                       </span>
                       <span className="chip chip-danger">{interventions.length}</span>
@@ -502,7 +471,7 @@ export default function TutorDashboard() {
                       </div>
                     ) : (
                       <div style={{ maxHeight: 360, overflow: "auto" }}>
-                        {interventions.map(({ s, severity, reason }) => {
+                        {interventions.map(({ s, severity, reason, topics }) => {
                           const bar = severity === "critical" ? "hsl(var(--danger))" : severity === "high" ? "hsl(var(--warning))" : "hsl(var(--muted-foreground))";
                           const cls = severity === "critical" ? "chip-danger" : severity === "high" ? "chip-warning" : "";
                           const label = severity === "critical" ? "Critical" : severity === "high" ? "High" : "Watch";
@@ -521,7 +490,14 @@ export default function TutorDashboard() {
                                     <b style={{ fontSize: 14 }}>{s.studentName}</b>
                                     <span className={`chip ${cls}`} style={{ fontSize: 10 }}>{label}</span>
                                   </span>
-                                  <span className="block text-foreground/80" style={{ fontSize: 13, marginTop: 2 }}>{reason}</span>
+                                  <span className="block text-foreground/70" style={{ fontSize: 12.5, marginTop: 2 }}>{reason}</span>
+                                  {topics.length > 0 && (
+                                    <span className="flex items-center flex-wrap" style={{ gap: 4, marginTop: 5 }}>
+                                      {topics.map((t) => (
+                                        <span key={t} className="chip chip-danger" style={{ fontSize: 9.5, padding: "1px 7px" }}>{t}</span>
+                                      ))}
+                                    </span>
+                                  )}
                                 </span>
                               </span>
                               <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -848,7 +824,7 @@ export default function TutorDashboard() {
                 <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
                     <CalendarDays className="w-3.5 h-3.5 text-primary" />
-                    Due Date <span className="text-muted-foreground">(defaults to 5 days out)</span>
+                    Due Date <span className="text-muted-foreground">(defaults to 3 days out)</span>
                   </label>
                   <input
                     type="datetime-local"
@@ -923,7 +899,7 @@ export default function TutorDashboard() {
                 <div className="mt-4 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground mb-2">
                     <CalendarDays className="w-3.5 h-3.5 text-primary" />
-                    Due Date <span className="text-muted-foreground">(defaults to 5 days out)</span>
+                    Due Date <span className="text-muted-foreground">(defaults to 3 days out)</span>
                   </label>
                   <input
                     type="datetime-local"

@@ -39,6 +39,14 @@ export interface BuildStructuredFeedbackOptions {
   weakThreshold?: number;
   /** Maximum number of weak answers to return (most recent + weakest first). */
   limit?: number;
+  /**
+   * Restrict results to these subjects (case-insensitive). Used to enforce that
+   * a tutor only sees written-answer feedback for subjects they have actually
+   * assigned the student a quiz in. Pass `undefined`/`null` (the default) for
+   * the student's own view, where every subject is theirs to see. An empty
+   * array means "no assigned subjects" → no feedback is returned.
+   */
+  allowedSubjects?: string[] | null;
 }
 
 /**
@@ -53,6 +61,14 @@ export async function buildStructuredFeedback(
   const weakThreshold = opts.weakThreshold ?? 60;
   const limit = opts.limit ?? 8;
 
+  // Subject visibility gate. When `allowedSubjects` is provided we only surface
+  // feedback for those subjects; quizzes with no subject are never leaked when a
+  // gate is in force. `undefined` disables the gate entirely (student's own view).
+  const subjectGate = opts.allowedSubjects
+    ? new Set(opts.allowedSubjects.map((s) => s.toLowerCase().trim()).filter(Boolean))
+    : null;
+  if (subjectGate && subjectGate.size === 0) return [];
+
   const reports = await storage.getSomaReportsByStudentId(studentId);
   const withMarking = reports.filter(
     (r) => r.structuredMarking && Object.keys(r.structuredMarking).length > 0,
@@ -64,6 +80,11 @@ export async function buildStructuredFeedback(
 
   const out: StructuredWeakAnswer[] = [];
   for (const report of withMarking) {
+    // Enforce subject visibility before doing any per-question work.
+    if (subjectGate) {
+      const subj = (report.quiz?.subject || "").toLowerCase().trim();
+      if (!subj || !subjectGate.has(subj)) continue;
+    }
     const questions = questionsByQuiz[report.quizId] || [];
     const marking = report.structuredMarking || {};
     for (const [qid, mark] of Object.entries(marking)) {

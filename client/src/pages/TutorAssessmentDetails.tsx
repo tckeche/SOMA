@@ -1141,7 +1141,7 @@ export default function TutorAssessmentDetails() {
                 <div className="mt-4 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <label className="flex items-center gap-2 text-xs font-medium text-foreground/80 mb-2">
                     <Clock className="w-3.5 h-3.5 text-primary" />
-                    Due Date & Time <span className="text-muted-foreground">(defaults to 5 days out)</span>
+                    Due Date & Time <span className="text-muted-foreground">(defaults to 3 days out)</span>
                   </label>
                   <input
                     type="datetime-local"

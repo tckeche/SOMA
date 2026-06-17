@@ -5,6 +5,7 @@ import {
   subtopicSegments,
   joinSubtopics,
   assessmentDisplayName,
+  assessmentSecondaryLabel,
 } from "../client/src/lib/assessmentNaming";
 
 describe("formatDateShort", () => {
@@ -90,34 +91,33 @@ describe("joinSubtopics", () => {
 });
 
 describe("assessmentDisplayName", () => {
-  it("composes level, subject and subtopics", () => {
+  it("uses the quiz's actual title as the primary name", () => {
+    expect(assessmentDisplayName({ title: "My Custom Quiz" })).toBe(
+      "My Custom Quiz",
+    );
+  });
+
+  it("prefers the title even when level/subject/topics are present", () => {
+    // The actual name must win — the level/subject/topics belong on the
+    // secondary label, never the headline.
+    expect(
+      assessmentDisplayName({
+        title: "Quadratics Practice",
+        level: "AS",
+        subject: "Pure Mathematics",
+        topics: ["Functions", "Quadratics", "Series"],
+      }),
+    ).toBe("Quadratics Practice");
+  });
+
+  it("falls back to a composed level/subject/subtopics name when there is no title", () => {
     expect(
       assessmentDisplayName({
         level: "AS",
         subject: "Pure Mathematics",
         topics: ["Functions", "Quadratics", "Series"],
       }),
-    ).toBe("AS Pure Mathematics - Functions, Quadratics & Series");
-  });
-
-  it("shows 'Assorted Topics' when more than three subtopics", () => {
-    expect(
-      assessmentDisplayName({
-        level: "AS",
-        subject: "Pure Mathematics",
-        topics: ["A", "B", "C", "D"],
-      }),
-    ).toBe("AS Pure Mathematics - Assorted Topics");
-  });
-
-  it("excludes paper codes from the name", () => {
-    expect(
-      assessmentDisplayName({
-        level: "A2",
-        subject: "Physics",
-        topics: ["P1", "Mechanics"],
-      }),
-    ).toBe("A2 Physics - Mechanics");
+    ).toBe("AS Pure Mathematics · Functions, Quadratics & Series");
   });
 
   it("falls back gracefully when level/subject are missing", () => {
@@ -126,16 +126,49 @@ describe("assessmentDisplayName", () => {
     ).toBe("Functions");
   });
 
+  it("uses a default when nothing usable is present", () => {
+    expect(assessmentDisplayName({})).toBe("Assessment");
+  });
+});
+
+describe("assessmentSecondaryLabel", () => {
+  it("composes level, subject and subtopics with a middot separator", () => {
+    expect(
+      assessmentSecondaryLabel({
+        level: "AS",
+        subject: "Pure Mathematics",
+        topics: ["Functions", "Quadratics", "Series"],
+      }),
+    ).toBe("AS Pure Mathematics · Functions, Quadratics & Series");
+  });
+
+  it("shows 'Assorted Topics' when more than three subtopics", () => {
+    expect(
+      assessmentSecondaryLabel({
+        level: "AS",
+        subject: "Pure Mathematics",
+        topics: ["A", "B", "C", "D"],
+      }),
+    ).toBe("AS Pure Mathematics · Assorted Topics");
+  });
+
+  it("excludes paper codes from the label", () => {
+    expect(
+      assessmentSecondaryLabel({
+        level: "A2",
+        subject: "Physics",
+        topics: ["P1", "Mechanics"],
+      }),
+    ).toBe("A2 Physics · Mechanics");
+  });
+
   it("uses just the head when there are no usable subtopics", () => {
     expect(
-      assessmentDisplayName({ level: "AS", subject: "Pure Mathematics", topics: ["P1"] }),
+      assessmentSecondaryLabel({ level: "AS", subject: "Pure Mathematics", topics: ["P1"] }),
     ).toBe("AS Pure Mathematics");
   });
 
-  it("falls back to the title, then a default, when nothing else is present", () => {
-    expect(assessmentDisplayName({ title: "My Custom Quiz" })).toBe(
-      "My Custom Quiz",
-    );
-    expect(assessmentDisplayName({})).toBe("Assessment");
+  it("returns an empty string when there is nothing to show", () => {
+    expect(assessmentSecondaryLabel({})).toBe("");
   });
 });
