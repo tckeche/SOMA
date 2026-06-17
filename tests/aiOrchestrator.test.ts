@@ -114,7 +114,7 @@ describe("generateWithFallback: GPT-4o success (primary)", () => {
     mocks.openAICreate.mockResolvedValueOnce(OPENAI_TEXT_RESPONSE);
     const result = await generateWithFallback("System", "User");
     expect(result.metadata.provider).toBe("openai");
-    expect(result.metadata.model).toMatch(/gpt-4o/i);
+    expect(result.metadata.model).toMatch(/gpt-5/i);
     expect(typeof result.metadata.durationMs).toBe("number");
     expect(result.metadata.durationMs).toBeGreaterThanOrEqual(0);
   });

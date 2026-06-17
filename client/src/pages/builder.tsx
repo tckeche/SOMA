@@ -1627,23 +1627,29 @@ export default function BuilderPage() {
             {/* Chat input */}
             <div className="p-3 md:p-4 border-t border-border/30 space-y-2">
               {chatMutation.isPending && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2">
-                  <div className="flex items-center gap-2 text-[11px] text-primary">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>
-                      Generating… {elapsedSecs}s elapsed
-                      {elapsedSecs > 0 && elapsedSecs < 60 ? " · typical 15–45s" : ""}
-                      {elapsedSecs >= 60 ? " · this is taking longer than usual" : ""}
-                    </span>
+                <div className="rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-[11px] text-primary">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>
+                        Generating… {elapsedSecs}s elapsed
+                        {elapsedSecs > 0 && elapsedSecs < 60 ? " · typical 15–45s" : ""}
+                        {elapsedSecs >= 60 ? " · this is taking longer than usual" : ""}
+                      </span>
+                    </div>
+                    <button
+                      onClick={stopGeneration}
+                      className="flex items-center gap-1 text-[11px] text-danger hover:text-danger/80"
+                      data-testid="button-copilot-stop"
+                    >
+                      <StopCircle className="w-3.5 h-3.5" />
+                      Stop
+                    </button>
                   </div>
-                  <button
-                    onClick={stopGeneration}
-                    className="flex items-center gap-1 text-[11px] text-danger hover:text-danger/80"
-                    data-testid="button-copilot-stop"
-                  >
-                    <StopCircle className="w-3.5 h-3.5" />
-                    Stop
-                  </button>
+                  {/* Indeterminate shimmer keeps the long generation wait feeling alive. */}
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-foreground/[0.06]">
+                    <div className="h-full w-full rounded-full bg-gradient-to-r from-transparent via-primary to-transparent opacity-70 progress-shimmer" />
+                  </div>
                 </div>
               )}
               {!chatMutation.isPending && generationState === "generation_failed" && lastAttemptMessage && (

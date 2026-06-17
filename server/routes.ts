@@ -18,6 +18,8 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
+import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
+import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
@@ -1431,6 +1433,27 @@ export function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
     questionType: q.questionType, graphSpec: q.graphSpec,
     // omit: correctAnswer, explanation, optionRationales, targetMisconceptionIds
   };
+}
+
+/**
+ * Per-quiz breakdown of how many questions are servable vs. held for tutor
+ * review vs. auto-blocked. Returned alongside generate/publish responses so a
+ * shortfall (questions withheld by the scope / verification gates) is never
+ * silent — `servable` is what students will actually see.
+ */
+export function summarizeReviewStatuses(
+  questions: Array<{ reviewStatus?: string | null }>,
+): { total: number; servable: number; needsReview: number; autoBlocked: number } {
+  let servable = 0;
+  let needsReview = 0;
+  let autoBlocked = 0;
+  for (const q of questions) {
+    const status = q.reviewStatus ?? "approved";
+    if (status === "auto_blocked") autoBlocked += 1;
+    else if (status === "needs_review") needsReview += 1;
+    else servable += 1;
+  }
+  return { total: questions.length, servable, needsReview, autoBlocked };
 }
 
 /**
@@ -4046,9 +4069,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           structuredWeakAnswers: structuredWeak,
         };
       }));
-      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based intervention explanations. You MUST only reference data provided to you. Never fabricate trends, topics, subtopics, papers, or scores.
+      const systemPrompt = `You are SOMA's Director of Studies — an expert academic mentor writing the intervention brief a senior tutor will act on immediately. Every line is precise, evidence-based, and genuinely useful. You MUST only reference data provided to you. Never fabricate trends, topics, subtopics, papers, or scores.
 
-Each explanation must be 1-3 sentences and MUST be specific about WHAT the student is struggling with, not just the subject:
+Each explanation must be 1-3 sentences and read like a sharp human tutor: diagnostic and specific, never generic. It MUST be specific about WHAT the student is struggling with, not just the subject:
 - Name the specific topic(s) from "weakAreas" (e.g. "Integration"), not just the subject.
 - When a "weakAreas" entry has a "subtopic", call it out as the particular sticking point (e.g. "particularly the constant of integration").
 - When the topic appears in a "weakPapers" entry, tie it to that paper (e.g. "for Paper 1 Maths").
@@ -4056,7 +4079,9 @@ Each explanation must be 1-3 sentences and MUST be specific about WHAT the stude
 - If "weakAreas" is empty, fall back to "weakSubjects", trend, and workload counts, and say more practice/data is needed.
 - When a student has "structuredWeakAnswers" (AI-marked written/structured questions), add HOW they are failing in their actual answering and what to do about it: use "whereFailing" to say where their answer fell short and "howToImprove" for the corrective action (e.g. "on written answers they lose marks for not showing the method — they should set out each step"). Only use the exact wording's meaning from these fields; never invent answer-level detail that is not present.
 
-Style example (only when the matching data exists): "Calvin is struggling with Integration for Paper 1 Maths and needs more practice on it, particularly the constant of integration; on written answers he states the result without showing the integration steps, so he should write out each step to secure method marks."
+Craft each "reason" with quiet authority: name the gap, anchor it to the evidence (the topic, subtopic, paper, or written-answer pattern), and END on the single highest-leverage next step for this student. No filler, no hedging, no praise padding, no restating the obvious.
+
+Style example (only when the matching data exists): "Calvin is struggling with Integration for Paper 1 Maths, particularly the constant of integration; on written answers he states the result without showing the integration steps, so the highest-leverage fix is drilling worked solutions where every method line is written out."
 
 Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
       const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided data — weakAreas are specific topics/subtopics with understanding %, weakPapers are papers with low readiness and their weak topics, structuredWeakAnswers are AI-marked written answers with where the answer fell short ("whereFailing") and corrective feedback ("howToImprove"):\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
@@ -4090,12 +4115,14 @@ Return a JSON array of objects with "name" (student name) and "reason" (explanat
       const { studentName, stats, topicPerformance, assignments } = req.body;
       if (!studentName) return res.status(400).json({ message: "studentName required" });
 
-      const systemPrompt = `You are an academic analytics assistant for a professional tutor platform called SOMA. You produce concise, evidence-based academic summaries for tutors. You MUST only reference data provided. Never fabricate trends, topics, or scores. Return a JSON object with these fields:
-- "narrative" (string, 2-3 sentences summarising overall performance)
-- "weaknesses" (string, 1-2 sentences on recurring weak areas)
-- "improvements" (string, 1-2 sentences on positive trends or strengths)
-- "focusAreas" (array of strings, 2-4 suggested teaching focus topics)
-- "nextSteps" (string, 1-2 sentences on recommended next intervention)`;
+      const systemPrompt = `You are SOMA's Director of Studies, writing the kind of crisp, evidence-based student summary a senior tutor relies on to plan their next session. You MUST only reference data provided. Never fabricate trends, topics, or scores; if the data is thin, say so plainly rather than inventing a trend.
+
+Write with a calm, expert voice — specific, fair, and actionable, never generic praise or filler. Ground every claim in the supplied stats, topic performance, or assignment history. Return a JSON object with these fields:
+- "narrative" (string, 2-3 sentences summarising overall performance — name the trajectory and what is driving it, citing the actual subjects/topics/scores).
+- "weaknesses" (string, 1-2 sentences naming the recurring weak topic(s) from the data, not just a subject).
+- "improvements" (string, 1-2 sentences on genuine positive trends or strengths shown in the data).
+- "focusAreas" (array of 2-4 specific teaching-focus topics drawn from the weakest areas in the data).
+- "nextSteps" (string, 1-2 sentences on the single most useful next intervention, tied to the evidence).`;
 
       const userPrompt = `Generate an academic summary for student "${studentName}" based on this data:
 
@@ -4621,6 +4648,16 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         })),
       }, traceId);
 
+      // Scope gate at publish: classify each draft question's tag against the
+      // catalogue and persist the resulting reviewStatus, so the builder→publish
+      // flow withholds off-syllabus / flagged questions exactly like the
+      // direct-generate flow. Previously this path persisted no reviewStatus, so
+      // a question that would be needs_review slipped through as "approved" and
+      // reached students. (Empty inventory = syllabus not catalogued = no-op.)
+      const { syllabusCode: publishSyllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
+      const publishAllowedTopics = await listAllowedTopicsForSyllabusCode(publishSyllabusCode);
+      const reviewStatusByIndex: Array<"approved" | "needs_review" | "auto_blocked"> = [];
+
       // Validate each draft question before write
       for (let i = 0; i < draft.length; i++) {
         const q = draft[i];
@@ -4633,6 +4670,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           if (!q.markScheme || !String(q.markScheme).trim()) {
             return res.status(400).json({ message: `Structured question "${String(q.stem).slice(0, 40)}" is missing a mark scheme` });
           }
+          reviewStatusByIndex[i] = "approved";
           continue;
         }
         if (!Array.isArray(q.options) || q.options.length !== 4) {
@@ -4656,6 +4694,8 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             blocking: quality.blocking,
           });
         }
+        const scope = assessTopicScope(q.topicTag, q.subtopicTag, publishAllowedTopics);
+        reviewStatusByIndex[i] = resolveReviewStatus({ baseStatus: quality.reviewStatus, scope }).reviewStatus;
       }
 
       // Assessment-integrity hard gate: never publish a complex-number question
@@ -4678,7 +4718,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       // Atomically replace all questions in a DB transaction (delete + insert as one unit)
       // so a failed insert cannot leave the quiz without any questions.
-      const mapped = draft.map((q) => ({
+      const mapped = draft.map((q, idx) => ({
         quizId,
         stem: q.stem,
         options: q.options,
@@ -4688,6 +4728,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         questionType: q.questionType,
         graphSpec: (q.graphSpec ?? null) as import("@shared/schema").GraphQuestionSpec | null,
         markScheme: q.markScheme ?? null,
+        reviewStatus: reviewStatusByIndex[idx] ?? "approved",
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
@@ -4720,7 +4761,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       // Clear in-memory draft only after DB commit succeeded
       draftStore.delete(quizId);
 
-      res.json({ quizId, publishedCount: saved.length, questions: saved });
+      res.json({
+        quizId,
+        publishedCount: saved.length,
+        questions: saved,
+        reviewSummary: summarizeReviewStatuses(saved),
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to publish" });
     }
@@ -6599,6 +6645,9 @@ ${JSON.stringify({
       const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
         ? (result.seedMisconceptionIds ?? null)
         : null;
+      // Closed-set scope gate (see tutor-generate route): off-syllabus drift →
+      // needs_review. Empty inventory = syllabus not catalogued = no-op.
+      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
       traceLog("route.somaGenerate.beforeCreateSomaQuestions", {
         quizId: quiz.id,
         questionCount: result.questions.length,
@@ -6612,6 +6661,12 @@ ${JSON.stringify({
             { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
             { subject, syllabus, level, topic, subtopic },
           );
+          const scope = assessTopicScope(q.topic_tag, q.subtopic_tag, allowedTopics);
+          const resolved = resolveReviewStatus({
+            baseStatus: quality.reviewStatus,
+            scope,
+            confirmed: result.verification?.[i]?.confirmed,
+          });
           return {
           quizId: quiz.id,
           stem: q.stem,
@@ -6624,16 +6679,16 @@ ${JSON.stringify({
           subtopicTag: q.subtopic_tag ?? null,
           optionRationales: q.option_rationales ?? null,
           targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
-          reviewStatus: quality.reviewStatus,
+          reviewStatus: resolved.reviewStatus,
           generationMeta: {
             makerModel: result.telemetry.makerModel,
             verifierModel: result.telemetry.checkerModel,
             warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
               .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
             requestedDifficulty: q.difficulty_tag,
-            blocked: quality.reviewStatus === "auto_blocked",
+            blocked: resolved.reviewStatus === "auto_blocked",
             blockReason: quality.blocking.join("; ") || undefined,
-            qualityWarnings: quality.warnings,
+            qualityWarnings: [...quality.warnings, ...resolved.reasons],
           },
         };
         })
@@ -6649,6 +6704,7 @@ ${JSON.stringify({
         quiz,
         questions: insertedQuestions,
         warnings: result.warnings,
+        reviewSummary: summarizeReviewStatuses(insertedQuestions),
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
@@ -6754,6 +6810,10 @@ ${JSON.stringify({
       const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
         ? (result.seedMisconceptionIds ?? null)
         : null;
+      // Closed-set scope gate: classify each question's topic/subtopic tag
+      // against the catalogue so off-syllabus drift is caught post-generation
+      // (empty inventory = syllabus not catalogued = no-op).
+      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
       traceLog("route.tutorGenerate.beforeCreateBundle", {
         questionCount: result.questions.length,
         targetMisconceptionIds,
@@ -6776,6 +6836,12 @@ ${JSON.stringify({
             { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
             { subject, syllabus, level, topic, subtopic },
           );
+          const scope = assessTopicScope(q.topic_tag, q.subtopic_tag, allowedTopics);
+          const resolved = resolveReviewStatus({
+            baseStatus: quality.reviewStatus,
+            scope,
+            confirmed: result.verification?.[i]?.confirmed,
+          });
           return {
           stem: q.stem,
           options: q.options,
@@ -6787,16 +6853,16 @@ ${JSON.stringify({
           subtopicTag: q.subtopic_tag ?? null,
           optionRationales: q.option_rationales ?? null,
           targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
-          reviewStatus: quality.reviewStatus,
+          reviewStatus: resolved.reviewStatus,
           generationMeta: {
             makerModel: result.telemetry.makerModel,
             verifierModel: result.telemetry.checkerModel,
             warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
               .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
             requestedDifficulty: q.difficulty_tag,
-            blocked: quality.reviewStatus === "auto_blocked",
+            blocked: resolved.reviewStatus === "auto_blocked",
             blockReason: quality.blocking.join("; ") || undefined,
-            qualityWarnings: quality.warnings,
+            qualityWarnings: [...quality.warnings, ...resolved.reasons],
           },
         };
         }),
@@ -6814,6 +6880,7 @@ ${JSON.stringify({
         assignments: bundle.assignments.length,
         assignedStudentIds: validAssignedStudentIds,
         warnings: result.warnings,
+        reviewSummary: summarizeReviewStatuses(bundle.questions),
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,

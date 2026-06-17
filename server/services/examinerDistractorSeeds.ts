@@ -161,11 +161,11 @@ export function renderSeedsForPrompt(seeds: ExaminerSeed[]): string {
     ].join("\n"),
   );
   return [
-    "Examiner-flagged misconceptions for this topic. Treat these as known student errors:",
+    "EXAMINER-REPORT MISCONCEPTIONS — these are real, recurring student errors drawn from official examiner reports for this syllabus. Treat each as a known way students go wrong:",
     ...lines,
     "",
     "When writing distractors:",
-    "- Where it fits the syllabus question, base at least one distractor per question on a misconception above so the wrong answer matches a known student error verbatim.",
+    "- Where it fits the syllabus question, base at least one distractor per question on a misconception above so the wrong answer reproduces a documented examiner-report error verbatim.",
     "- Do not invent misconceptions that aren't in the list.",
     "- Distractors should be plausible to a student who genuinely holds the misconception.",
   ].join("\n");

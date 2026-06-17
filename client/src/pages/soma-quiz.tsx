@@ -8,6 +8,7 @@ import type { GraphQuestionSpec, SomaQuiz } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRotatingMessage } from "@/components/AiThinkingPanel";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, ChevronRight, SkipForward, Send, ArrowLeft, Home,
@@ -100,6 +101,13 @@ function ErrorView({ message }: { message: string }) {
 
 function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }: { quizTitle: string; totalScore: number; maxPossibleScore: number; awaitingReview?: boolean }) {
   const percentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
+  // Called unconditionally (rules of hooks); only surfaced in the awaiting-review branch.
+  const markingMessage = useRotatingMessage([
+    "Reading your written answers…",
+    "Marking on understanding, not wording…",
+    "Awarding method marks…",
+    "Writing your feedback…",
+  ]);
 
   // Hybrid / structured assessments aren't fully scored until the tutor
   // confirms the AI's marks, so we don't show a (misleading) percentage yet.
@@ -107,13 +115,21 @@ function ResultsView({ quizTitle, totalScore, maxPossibleScore, awaitingReview }
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="glass-card w-full max-w-md text-center p-10">
-          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5 border border-primary/30">
-            <Award className="w-10 h-10 text-primary" />
+          <div className="relative w-20 h-20 mx-auto mb-5">
+            {/* radar pulse rings while marking is in flight */}
+            <span className="absolute inset-0 rounded-full border border-primary/30 animate-ping" />
+            <span className="absolute inset-0 rounded-full bg-primary/10 status-pulse" />
+            <div className="relative w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center border border-primary/30">
+              <Award className="w-10 h-10 text-primary" />
+            </div>
           </div>
           <h2 className="text-2xl font-bold mb-1 gradient-text">Assessment Submitted</h2>
           <p className="text-sm text-muted-foreground mb-6">{quizTitle}</p>
           <p className="text-sm text-foreground/80 mb-2">
             Your written answers are being marked by AI right now.
+          </p>
+          <p key={markingMessage} className="text-xs text-primary/80 shimmer-pulse mb-2" data-testid="text-marking-status">
+            {markingMessage}
           </p>
           <p className="text-xs text-muted-foreground italic mb-8">
             Your score and feedback will appear on your dashboard shortly. If you disagree with the marking, you can ask your teacher to review it from the report.

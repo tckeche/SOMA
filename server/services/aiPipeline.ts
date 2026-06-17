@@ -121,10 +121,30 @@ export interface PipelineTelemetry {
   recoveredCount?: number;
 }
 
+/**
+ * Per-question record of whether the answer key was confirmed by an
+ * INDEPENDENT check (deterministic math prover, or a blind solver running on
+ * a different provider from the maker/checker) — as opposed to resting on the
+ * single verifier LLM's judgement. `confirmed: false` means the question
+ * survived the disagreement protocol but nothing independent could vouch for
+ * its key, so callers route it to tutor review rather than auto-serving it.
+ * Parallel to `AuditedQuizResult.questions` (same length, same order).
+ */
+export interface QuestionConfirmation {
+  confirmed: boolean;
+  method: "math_prover" | "blind_solver" | "none";
+}
+
 export interface AuditedQuizResult {
   questions: QuizResult["questions"];
   warnings: PipelineWarning[];
   telemetry: PipelineTelemetry;
+  /**
+   * Independent-verification outcome per surviving question, parallel to
+   * `questions`. Empty/absent when a caller path produced questions without
+   * running the disagreement protocol.
+   */
+  verification: QuestionConfirmation[];
   /** Examiner-misconception ids the batch was seeded against (Phase 2B).
    *  Persist on each question's `target_misconception_ids` so the marker
    *  can cite the matched insight. */
@@ -636,10 +656,17 @@ export function applyDisagreementProtocol(
   verified: QuizResult["questions"],
   upstreamWarnings: PipelineWarning[],
   solverVotes?: Map<number, { chosenOption: string | null; multipleCorrect: boolean }>,
-): { questions: QuizResult["questions"]; warnings: PipelineWarning[]; blocked: BlockedQuestion[] } {
+): {
+  questions: QuizResult["questions"];
+  warnings: PipelineWarning[];
+  blocked: BlockedQuestion[];
+  confirmations: QuestionConfirmation[];
+} {
   const warnings: PipelineWarning[] = [];
   const blocked: BlockedQuestion[] = [];
   const kept: QuizResult["questions"] = [];
+  // Parallel to `kept`: how each surviving question's key was vouched for.
+  const confirmations: QuestionConfirmation[] = [];
 
   // Index unfixed CRITICAL answer-key warnings by question index so we can
   // block them en bloc without re-deriving the heuristic.
@@ -769,10 +796,31 @@ export function applyDisagreementProtocol(
       });
     }
 
+    // Record how this surviving question's key was independently vouched for.
+    // The disagreement checks above already blocked any prover/solver
+    // disagreement, so reaching here with a prover answer or a solver vote
+    // means it AGREED. A question with neither is "kept on verifier judgement
+    // alone" — confirmed=false, which downstream routes route to tutor review.
+    if (proverAnswer !== null) {
+      confirmations.push({ confirmed: true, method: "math_prover" });
+    } else if (solverVotes && solverVotes.has(oneBased)) {
+      const vote = solverVotes.get(oneBased)!;
+      const agrees =
+        vote.chosenOption !== null &&
+        !vote.multipleCorrect &&
+        (vote.chosenOption.trim() === v.correct_answer.trim() ||
+          numericallyEquivalent(vote.chosenOption, v.correct_answer));
+      confirmations.push(
+        agrees ? { confirmed: true, method: "blind_solver" } : { confirmed: false, method: "none" },
+      );
+    } else {
+      confirmations.push({ confirmed: false, method: "none" });
+    }
+
     kept.push(v);
   }
 
-  return { questions: kept, warnings, blocked };
+  return { questions: kept, warnings, blocked, confirmations };
 }
 
 // ─── Catalogue context helpers ─────────────────────────────────────────────
@@ -792,12 +840,33 @@ function buildMakerSystemPrompt(
   const blueprintRule = context.blueprint
     ? `\n- A QUESTION BLUEPRINT is supplied in the user message. Produce one question per row, in row order, matching each row's role, anchor, difficulty, and (for probe rows) the cited misconception verbatim.`
     : "";
+  // Closed-set tagging: when a catalogue context is supplied, every question's
+  // topic_tag / subtopic_tag MUST come from that catalogue. This is the
+  // prevention half of the syllabus-scope guard — the post-generation scope
+  // gate (server/services/questionScope.ts) is the detection half that quarantines
+  // anything that still drifts off the catalogue.
+  const taggingRule = context.catalogueContext
+    ? `\n- TAGGING: set topic_tag and subtopic_tag on every question, copied VERBATIM from a topic/subtopic listed in the Catalogue context below. Do NOT invent a topic or subtopic that is not in that list; every question must stay within the selected catalogue topics.`
+    : `\n- TAGGING: set topic_tag (and subtopic_tag when known) to the topic this question actually tests, staying within the stated scope.`;
+  // Make the two grounding sources explicit so the maker visibly anchors on the
+  // syllabus catalogue and the examiner reports rather than improvising.
+  const groundingSources = [
+    context.catalogueContext
+      ? "the SYLLABUS — the selected topics, subtopics and learning requirements in the Catalogue context below (test exactly what the syllabus requires at this level; do not exceed or fall short of it)"
+      : null,
+    context.examinerSeeds && context.examinerSeeds.length > 0
+      ? "the EXAMINER REPORTS — the documented, recurring student misconceptions listed below; build distractors from them where they fit so wrong options mirror real exam errors"
+      : null,
+  ].filter(Boolean);
+  const groundingRule = groundingSources.length > 0
+    ? `\n\nGROUND EVERY QUESTION IN:\n${groundingSources.map((s) => `- ${s}`).join("\n")}`
+    : "";
   return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.
 
 STRICT SCOPE: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
-Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
+Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.${groundingRule}
 
-Requirements:${blueprintRule}
+Requirements:${blueprintRule}${taggingRule}
 - Exactly 4 distinct options per question.
 - correct_answer MUST match exactly one option verbatim.
 - Distractors must be plausible but clearly wrong under syllabus rules.
@@ -826,7 +895,7 @@ function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
     : "";
   return `You are the SOMA question verifier. For EACH question you receive:
 
-1. CHECK that correct_answer is objectively correct and in-scope for subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}. The 4 options must be distinct and the question solvable.
+1. CHECK that correct_answer is objectively correct AND that the question is answerable using only syllabus-level knowledge for subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""} — not above or outside this syllabus and level. The 4 options must be distinct and the question solvable.
 2. FIX any error you find:
    - If correct_answer is wrong but a correct option exists, change correct_answer to that option.
    - If no option is correct, rewrite one option so it is correct and set correct_answer to it.
@@ -917,6 +986,33 @@ async function instrumentedCall<T>(
   }
 }
 
+// ─── Pipeline model selection (single source of truth) ──────────────────────
+// The quiz-generation pipeline is SOMA's "brain": the Maker drafts questions,
+// the Verifier independently checks correctness and writes explanations, and a
+// blind Solver gives a cross-provider second opinion. These run on the
+// strongest available models — the 15-question cap keeps the cost bounded.
+//   Maker    : Claude Opus 4.8  (was Sonnet 4.6)
+//   Verifier : GPT-5            (was GPT-4o)  — correctness-critical
+//   Solver   : GPT-5 / Opus 4.8 — independent re-answer
+//   Gemini   : retained as a provider-diverse fallback / blind solver
+const MODEL_CLAUDE = "claude-opus-4-8";
+const MODEL_OPENAI = "gpt-5";
+const MODEL_GEMINI = "gemini-2.5-flash";
+
+// GPT-5 and the o-series are reasoning models: they reject `temperature`
+// (only the default is accepted → 400) and instead expose `reasoning_effort`.
+// GPT-4o and earlier take `temperature`. Centralising this keeps every OpenAI
+// call site correct regardless of which model id is configured above.
+function isReasoningModel(model: string): boolean {
+  return /^(gpt-5|o\d)/.test(model);
+}
+function openAITuning(
+  model: string,
+  effort: "low" | "medium" | "high" = "high",
+): { temperature: number } | { reasoning_effort: "low" | "medium" | "high" } {
+  return isReasoningModel(model) ? { reasoning_effort: effort } : { temperature: 0 };
+}
+
 export async function runClaudeMakerSimple(
   context: SomaGenerationContext,
   questionCount: number,
@@ -937,7 +1033,7 @@ export async function runClaudeMakerSimple(
 
   return instrumentedCall<DraftQuiz>(
     "anthropic",
-    "claude-sonnet-4-6",
+    MODEL_CLAUDE,
     systemPrompt,
     userPrompt,
     PromptIds.SOMA_MAKER,
@@ -945,9 +1041,10 @@ export async function runClaudeMakerSimple(
     newRequestId(),
     async () => {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        // No `temperature`: Opus 4.8 rejects sampling params (400). The forced
+        // tool_choice keeps output deterministic enough for the schema gate.
+        model: MODEL_CLAUDE,
         max_tokens: clampMaxTokens(16_384, "generation"),
-        temperature: 0,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
         tools: [{
@@ -983,7 +1080,7 @@ export async function runOpenAIMakerSimple(
 
   return instrumentedCall<DraftQuiz>(
     "openai",
-    "gpt-4o",
+    MODEL_OPENAI,
     systemPrompt,
     userPrompt,
     PromptIds.SOMA_MAKER,
@@ -991,8 +1088,8 @@ export async function runOpenAIMakerSimple(
     newRequestId(),
     async () => {
       const completion = await client.chat.completions.create({
-        model: "gpt-4o",
-        temperature: 0,
+        model: MODEL_OPENAI,
+        ...openAITuning(MODEL_OPENAI, "medium"),
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -1021,7 +1118,7 @@ export async function runOpenAIVerifier(
 
   return instrumentedCall(
     "openai",
-    "gpt-4o",
+    MODEL_OPENAI,
     systemPrompt,
     userPrompt,
     PromptIds.SOMA_VERIFIER,
@@ -1029,8 +1126,8 @@ export async function runOpenAIVerifier(
     newRequestId(),
     async () => {
       const completion = await client.chat.completions.create({
-        model: "gpt-4o",
-        temperature: 0,
+        model: MODEL_OPENAI,
+        ...openAITuning(MODEL_OPENAI, "medium"),
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -1058,14 +1155,14 @@ export async function runGeminiVerifier(
 
   return instrumentedCall(
     "google",
-    "gemini-2.5-flash",
+    MODEL_GEMINI,
     systemPrompt,
     userPrompt,
     PromptIds.SOMA_VERIFIER,
     "verification",
     newRequestId(),
     async () => {
-      const raw = await callGoogle("gemini-2.5-flash", systemPrompt, userPrompt, schema);
+      const raw = await callGoogle(MODEL_GEMINI, systemPrompt, userPrompt, schema);
       const validated = validateAgainstSchema(raw, VerifierResponseSchema);
       if (!validated.ok) throw new Error(`Gemini verifier schema gate failed: ${validated.reason}`);
       return { raw, parsed: { questions: validated.value.questions, warnings: validated.value.warnings ?? [] } };
@@ -1099,9 +1196,9 @@ interface SolverProvider {
 }
 
 const SOLVER_PREFERENCE: SolverProvider[] = [
-  { provider: "google", model: "gemini-2.5-flash", envKey: "GEMINI_API_KEY" },
-  { provider: "openai", model: "gpt-4o", envKey: "OPENAI_API_KEY" },
-  { provider: "anthropic", model: "claude-sonnet-4-6", envKey: "ANTHROPIC_API_KEY" },
+  { provider: "google", model: MODEL_GEMINI, envKey: "GEMINI_API_KEY" },
+  { provider: "openai", model: MODEL_OPENAI, envKey: "OPENAI_API_KEY" },
+  { provider: "anthropic", model: MODEL_CLAUDE, envKey: "ANTHROPIC_API_KEY" },
 ];
 
 /** Pick the first preference-ordered provider that is (a) not excluded and
@@ -1163,7 +1260,7 @@ export async function runBlindSolver(
       const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model: chosen.model,
-        temperature: 0,
+        ...openAITuning(chosen.model, "medium"),
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -1176,9 +1273,9 @@ export async function runBlindSolver(
       const anthropic = new Anthropic({ apiKey });
       const inputSchema = zodToJsonSchema(BlindSolverResponseSchema, "BlindSolverResponse") as any;
       const response = await anthropic.messages.create({
+        // No `temperature`: Opus 4.8 rejects sampling params (400).
         model: chosen.model,
         max_tokens: clampMaxTokens(4096, "verification"),
-        temperature: 0,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
         tools: [{ name: "return_solver_answers", description: "Return blind solver answers JSON.", input_schema: inputSchema }],
@@ -1265,6 +1362,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const requestedCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
   const initialBlockCount = initial.blockedQuestions.length;
   let kept = [...initial.questions];
+  let verification = [...(initial.verification ?? [])];
   let warnings = [...initial.warnings];
   let lastTelemetry = initial.telemetry;
   let lastBlueprint = initial.blueprint;
@@ -1292,6 +1390,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       break;
     }
     kept = [...kept, ...reroll.questions];
+    verification = [...verification, ...(reroll.verification ?? [])];
     warnings = [
       ...warnings,
       ...reroll.warnings.map((w) => ({ ...w, issue: `[reroll #${attempt}] ${w.issue}` })),
@@ -1329,6 +1428,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     seedMisconceptionIds: initial.seedMisconceptionIds,
     blueprint: lastBlueprint,
     blockedQuestions: stillBlocked,
+    verification,
   };
 }
 
@@ -1361,6 +1461,7 @@ async function runOnePassQuiz(
     );
 
     const merged: QuizResult["questions"] = [];
+    const mergedVerification: QuestionConfirmation[] = [];
     const allWarnings: PipelineWarning[] = [];
     let lastTelemetry: PipelineTelemetry = {
       makerModel: "unknown", checkerModel: "unknown", polishModel: null, totalDurationMs: 0,
@@ -1368,6 +1469,7 @@ async function runOnePassQuiz(
     for (const batch of batchResults) {
       const baseIndex = merged.length;
       merged.push(...batch.questions);
+      mergedVerification.push(...(batch.verification ?? []));
       for (const w of batch.warnings) {
         allWarnings.push({ ...w, questionIndex: w.questionIndex + baseIndex });
       }
@@ -1403,6 +1505,7 @@ async function runOnePassQuiz(
       seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
       blueprint: stitchedBlueprint,
       blockedQuestions: allBlocked,
+      verification: mergedVerification.slice(0, finalValidated.questions.length),
     };
   }
 
@@ -1441,11 +1544,11 @@ async function runOnePassQuiz(
   let claudeMadeTheQuiz = true;
   try {
     draft = await pipelineStages.runClaudeMakerSimple(contextWithPlan, questionCount, distribution);
-    makerModel = "anthropic/claude-sonnet-4-6";
+    makerModel = `anthropic/${MODEL_CLAUDE}`;
   } catch (err: any) {
     console.warn(`[SOMA_PIPELINE] Claude maker failed (${err?.message || "unknown"}); falling back to ChatGPT maker.`);
     draft = await pipelineStages.runOpenAIMakerSimple(contextWithPlan, questionCount, distribution);
-    makerModel = "openai/gpt-4o";
+    makerModel = `openai/${MODEL_OPENAI}`;
     claudeMadeTheQuiz = false;
   }
 
@@ -1458,15 +1561,15 @@ async function runOnePassQuiz(
   if (claudeMadeTheQuiz) {
     try {
       verified = await pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan);
-      checkerModel = "openai/gpt-4o";
+      checkerModel = `openai/${MODEL_OPENAI}`;
     } catch (err: any) {
       console.warn(`[SOMA_PIPELINE] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini verifier.`);
       verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-      checkerModel = "google/gemini-2.5-flash";
+      checkerModel = `google/${MODEL_GEMINI}`;
     }
   } else {
     verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-    checkerModel = "google/gemini-2.5-flash";
+    checkerModel = `google/${MODEL_GEMINI}`;
   }
 
   // ── STAGE 2b: stem-drift guard ──────────────────────────────────────────
@@ -1555,6 +1658,7 @@ async function runOnePassQuiz(
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
     blueprint,
     blockedQuestions: protocol.blocked,
+    verification: protocol.confirmations,
   };
 }
 
@@ -1599,7 +1703,7 @@ export async function runQuestionAudit(
     return {
       questions: mathCheck.questions,
       warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings, ...explanationWarnings],
-      verifierModel: "openai/gpt-4o",
+      verifierModel: `openai/${MODEL_OPENAI}`,
     };
   } catch (err: any) {
     console.warn(`[COPILOT_AUDIT] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini.`);
@@ -1612,7 +1716,7 @@ export async function runQuestionAudit(
       return {
         questions: mathCheck.questions,
         warnings: [...verified.warnings, ...guarded.warnings, ...validated.warnings, ...mathCheck.warnings, ...explanationWarnings],
-        verifierModel: "google/gemini-2.5-flash",
+        verifierModel: `google/${MODEL_GEMINI}`,
       };
     } catch (err2: any) {
       console.warn(`[COPILOT_AUDIT] Gemini verifier also failed (${err2?.message || "unknown"}); returning unaudited drafts.`);

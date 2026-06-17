@@ -30,6 +30,7 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AiThinkingPanel } from "@/components/AiThinkingPanel";
 import { useChartPalette } from "@/lib/chartTheme";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -1246,10 +1247,17 @@ export default function TutorStudentDetail() {
                         Generate Summary
                       </button>
                     ) : aiLoading ? (
-                      <div className="py-8 text-center">
-                        <Loader2 className="w-6 h-6 text-success animate-spin mx-auto mb-2" />
-                        <p className="text-xs text-muted-foreground font-medium">Analysing student data...</p>
-                      </div>
+                      <AiThinkingPanel
+                        title="Analysing this student"
+                        lines={4}
+                        messages={[
+                          "Reviewing recent assignments…",
+                          "Cross-referencing weak topics…",
+                          "Weighing trends and scores…",
+                          "Writing the summary…",
+                        ]}
+                        data-testid="ai-summary-loading"
+                      />
                     ) : aiSummaryData?.summary ? (
                       <div className="space-y-4 text-[13px] text-foreground/80 leading-relaxed" data-testid="ai-summary-content">
                         <p>{aiSummaryData.summary.narrative}</p>
