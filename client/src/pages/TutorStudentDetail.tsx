@@ -15,7 +15,7 @@ import {
   Trash2, Eye, FileText, Award, Target, CheckCircle2,
   TrendingDown, TrendingUp, Minus, Clock, ChevronRight,
   BarChart3, Layers, AlertTriangle, Activity,
-  ArrowRight, Calendar, Radar as RadarIcon, PlusCircle, Wand2,
+  ArrowRight, Calendar, Radar as RadarIcon, PlusCircle, Wand2, Sparkles,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -35,6 +35,7 @@ import { useChartPalette } from "@/lib/chartTheme";
 import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { toProperCase, formatDuration, getInitials } from "@/lib/utils";
+import { clampWords } from "@/lib/text";
 
 const GP = "glass-panel-elite";
 
@@ -135,7 +136,6 @@ export default function TutorStudentDetail() {
   const { toast } = useToast();
   const [newComment, setNewComment] = useState("");
   const [revokeQuizId, setRevokeQuizId] = useState<number | null>(null);
-  const [showSummary, setShowSummary] = useState(false);
   const [newSubject, setNewSubject] = useState({ subject: "", examBody: "", syllabusCode: "", level: "" });
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<number[]>([]);
   const [profileTab, setProfileTab] = useState<"curriculum" | "assessments">("curriculum");
@@ -377,7 +377,9 @@ export default function TutorStudentDetail() {
       if (!res.ok) return { summary: null };
       return res.json();
     },
-    enabled: showSummary && !!userId && !!studentId && !reportLoading,
+    // Auto-load the moment the profile opens — the full picture is the first
+    // thing the tutor should see, not something behind a button.
+    enabled: !!userId && !!studentId && !reportLoading,
     staleTime: 120000,
     refetchOnWindowFocus: false,
   });
@@ -521,6 +523,41 @@ export default function TutorStudentDetail() {
                   <HeaderStat label="Assessed" value={stats ? `${stats.totalCompleted}/${stats.totalAssigned}` : null} color="text-info" icon={<BookOpen className="w-3.5 h-3.5 text-info/50" />} />
                   <HeaderStat label="Trend" value={overallTrend} color={trendColor} icon={<TrendIcon className="w-3.5 h-3.5 opacity-50" />} />
                 </div>
+              </div>
+            </div>
+
+            {/* ── FULL PICTURE (AI, auto-loaded, ≤80 words) ───────── */}
+            <div className={GP} data-testid="section-full-picture">
+              <div className="px-6 py-5">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/15">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-[13px] font-semibold text-foreground">Full picture</h3>
+                    <p className="text-[10px] text-muted-foreground font-medium">Where {displayName.split(" ")[0]} stands, at a glance</p>
+                  </div>
+                </div>
+                {aiLoading ? (
+                  <AiThinkingPanel
+                    title="Reading the evidence"
+                    lines={3}
+                    messages={[
+                      "Reviewing recent assignments…",
+                      "Cross-referencing weak topics…",
+                      "Writing the full picture…",
+                    ]}
+                    data-testid="full-picture-loading"
+                  />
+                ) : aiSummaryData?.summary?.narrative ? (
+                  <p className="text-[14px] leading-relaxed text-foreground/90" data-testid="text-full-picture">
+                    {clampWords(aiSummaryData.summary.narrative, 80)}
+                  </p>
+                ) : (
+                  <p className="text-[13px] text-muted-foreground" data-testid="text-full-picture-empty">
+                    Not enough evidence yet — assign and mark a few assessments to build {displayName.split(" ")[0]}'s picture.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1238,15 +1275,7 @@ export default function TutorStudentDetail() {
                     </div>
                   </div>
                   <div className="px-6 py-4">
-                    {!showSummary ? (
-                      <button
-                        onClick={() => setShowSummary(true)}
-                        className="w-full py-3 min-h-[44px] rounded-xl text-sm font-semibold text-success bg-success/10 border border-success/15 hover:bg-success/20 transition-all"
-                        data-testid="button-generate-summary"
-                      >
-                        Generate Summary
-                      </button>
-                    ) : aiLoading ? (
+                    {aiLoading ? (
                       <AiThinkingPanel
                         title="Analysing this student"
                         lines={4}
@@ -1260,7 +1289,6 @@ export default function TutorStudentDetail() {
                       />
                     ) : aiSummaryData?.summary ? (
                       <div className="space-y-4 text-[13px] text-foreground/80 leading-relaxed" data-testid="ai-summary-content">
-                        <p>{aiSummaryData.summary.narrative}</p>
                         {aiSummaryData.summary.weaknesses && (
                           <div>
                             <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">Key Weaknesses</p>

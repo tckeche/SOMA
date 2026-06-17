@@ -7,6 +7,7 @@ import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import type { SomaQuiz, SomaUser } from "@shared/schema";
 import { defaultDueDateInputValue } from "@shared/dueDate";
 import { getInitials } from "@/lib/utils";
+import { clampWords } from "@/lib/text";
 import {
   Users, Plus, X,
   Loader2, Check, AlertTriangle,
@@ -23,6 +24,11 @@ import { Ring, Spark, Donut, RadarChart } from "@/components/soma/Charts";
 import SomaHeader from "@/components/soma/SomaHeader";
 import TutorFlagsPanel from "@/components/tutor/TutorFlagsPanel";
 import TutorNotificationsBell from "@/components/tutor/TutorNotificationsBell";
+
+interface AIInsight {
+  name: string;
+  reason: string;
+}
 
 /* ── status chip → Warm Editorial chip class ──────────────────── */
 function statusChipClass(text: string): string {
@@ -134,6 +140,29 @@ export default function TutorDashboard() {
     refetchOnWindowFocus: true,
   });
 
+  // AI intervention flags — a topic-specific, ≤30-word explanation per at-risk
+  // student. Server gates every signal to the subjects this tutor has assigned
+  // the student, so flags never mention work the tutor didn't set.
+  const { data: aiInsights } = useQuery<{ insights: AIInsight[] }>({
+    queryKey: ["/api/tutor/ai/intervention-insights", stats?.studentInsights?.map((s) => s.studentId).join(",")],
+    queryFn: async () => {
+      const atRisk = (stats?.studentInsights || []).filter(
+        (s) => s.trend === "declining" || s.weakTopics.length > 0 || (s.awaiting > 0 && s.completed === 0)
+      ).slice(0, 6);
+      if (atRisk.length === 0) return { insights: [] };
+      const res = await authFetch("/api/tutor/ai/intervention-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ students: atRisk }),
+      });
+      if (!res.ok) return { insights: [] };
+      return res.json();
+    },
+    enabled: (stats?.studentInsights?.length ?? 0) > 0,
+    staleTime: 120000,
+    refetchOnWindowFocus: false,
+  });
+
   const { data: cohortWeaknesses } = useQuery<{
     topics: Array<{
       subject: string; topic: string; subtopic: string | null;
@@ -213,6 +242,14 @@ export default function TutorDashboard() {
     });
   }, [queryClient]);
 
+  // AI flag for a student, clamped to 30 words as a safety net behind the prompt.
+  const getInsightFlag = (studentName: string): string | null => {
+    if (!aiInsights?.insights?.length) return null;
+    const match = aiInsights.insights.find((i) => i.name === studentName)
+      || aiInsights.insights.find((i) => i.name?.toLowerCase() === studentName?.toLowerCase());
+    return match?.reason ? clampWords(match.reason, 30) : null;
+  };
+
   /* ── Per-student plaques: derived from real studentInsights + recentSubmissions ── */
   const studentPlaques = useMemo(() => {
     const plaques = (stats?.studentInsights || []).map((s) => {
@@ -242,27 +279,30 @@ export default function TutorDashboard() {
   type Plaque = (typeof studentPlaques)[number];
 
   /* ── Intervention queue: rank by urgency from real per-student signals.
-        This dashboard view is deliberately a QUICK SUMMARY — a short reason plus
-        weak-topic chips. The detailed, AI-written intervention narrative and the
-        full problem-area breakdown live on the student's profile page. ── */
+        The dashboard flag is a QUICK, TOPIC-SPECIFIC ≤30-word AI explanation of
+        what the student is struggling with (with a rule-based fallback) plus
+        weak-topic chips. The full picture + problem-area breakdown lives on the
+        student's profile page. ── */
   const interventions = useMemo(() => {
     return studentPlaques
       .map((s) => {
         let severity: "critical" | "high" | "moderate" | null = null;
-        let reason = "";
+        let fallback = "";
         if (s.trend === "declining" && s.completed >= 2) {
           severity = "critical";
-          reason = s.lastScore !== null ? `Scores declining — last ${s.lastScore}%` : "Scores declining";
+          fallback = s.lastScore !== null ? `Scores declining — last ${s.lastScore}%` : "Scores declining";
         } else if (s.assigned > 0 && s.completed === 0) {
           severity = "high";
-          reason = "No submissions yet";
+          fallback = "No submissions yet";
         } else if (s.weakTopics.length > 0) {
           severity = "high";
-          reason = "Struggling with key topics";
+          fallback = `Struggling with ${s.weakTopics.slice(0, 2).join(", ")}`;
         } else if (s.completed > 0 && s.completed < 3 && s.assigned > 0) {
           severity = "moderate";
-          reason = "Not enough data yet";
+          fallback = "Not enough data yet";
         }
+        // Prefer the AI's topic-specific explanation; fall back to the rule.
+        const reason = getInsightFlag(s.studentName) || fallback;
         return severity ? { s, severity, reason, topics: s.weakTopics.slice(0, 3) } : null;
       })
       .filter((x): x is { s: Plaque; severity: "critical" | "high" | "moderate"; reason: string; topics: string[] } => x !== null)
@@ -270,7 +310,8 @@ export default function TutorDashboard() {
         const rank = { critical: 0, high: 1, moderate: 2 };
         return rank[a.severity] - rank[b.severity];
       });
-  }, [studentPlaques]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentPlaques, aiInsights]);
 
   /* ── Cohort radar from real per-subject averages ── */
   const radarData = useMemo(

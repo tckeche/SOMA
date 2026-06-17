@@ -4082,22 +4082,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           structuredWeakAnswers: structuredWeak,
         };
       }));
-      const systemPrompt = `You are SOMA's Director of Studies — an expert academic mentor writing the intervention brief a senior tutor will act on immediately. Every line is precise, evidence-based, and genuinely useful. You MUST only reference data provided to you. Never fabricate trends, topics, subtopics, papers, or scores.
+      const systemPrompt = `You are SOMA's Director of Studies writing a one-line intervention flag a senior tutor scans in seconds. Every word earns its place. You MUST only reference data provided — never fabricate trends, topics, subtopics, papers, or scores.
 
-Each explanation must be 1-3 sentences and read like a sharp human tutor: diagnostic and specific, never generic. It MUST be specific about WHAT the student is struggling with, not just the subject:
-- Name the specific topic(s) from "weakAreas" (e.g. "Integration"), not just the subject.
-- When a "weakAreas" entry has a "subtopic", call it out as the particular sticking point (e.g. "particularly the constant of integration").
-- When the topic appears in a "weakPapers" entry, tie it to that paper (e.g. "for Paper 1 Maths").
-- Only mention a paper that is present in that student's "weakPapers". Only mention a subtopic that is present in that student's "weakAreas". Never invent topics, subtopics, or papers.
-- If "weakAreas" is empty, fall back to "weakSubjects", trend, and workload counts, and say more practice/data is needed.
-- When a student has "structuredWeakAnswers" (AI-marked written/structured questions), add HOW they are failing in their actual answering and what to do about it: use "whereFailing" to say where their answer fell short and "howToImprove" for the corrective action (e.g. "on written answers they lose marks for not showing the method — they should set out each step"). Only use the exact wording's meaning from these fields; never invent answer-level detail that is not present.
+HARD LIMIT: each "reason" is AT MOST 30 words. Aim for 18-28. One or two short sentences. No preamble, no name-dropping the student, no filler or praise padding.
 
-Craft each "reason" with quiet authority: name the gap, anchor it to the evidence (the topic, subtopic, paper, or written-answer pattern), and END on the single highest-leverage next step for this student. No filler, no hedging, no praise padding, no restating the obvious.
+Each reason MUST name the specific thing the student is struggling with — the topic(s), and the subtopic when one is given — not just the subject:
+- Lead with the weakest topic(s) from "weakAreas" (e.g. "Integration") and, when present, the "subtopic" as the precise sticking point (e.g. "the constant of integration").
+- Tie it to the paper only when that topic appears in this student's "weakPapers" (e.g. "for Paper 1").
+- When "structuredWeakAnswers" exist, fold in the answering pattern in a few words (e.g. "states results without method").
+- If "weakAreas" is empty, fall back to "weakSubjects" + trend/workload and say more practice/data is needed.
+- Never invent a topic, subtopic, or paper that isn't in that student's data.
 
-Style example (only when the matching data exists): "Calvin is struggling with Integration for Paper 1 Maths, particularly the constant of integration; on written answers he states the result without showing the integration steps, so the highest-leverage fix is drilling worked solutions where every method line is written out."
+End on the single highest-leverage next step, compressed (e.g. "drill worked solutions showing every step").
 
-Return a JSON array of objects with "name" (student name) and "reason" (explanation string).`;
-      const userPrompt = `Analyse these students who may need intervention and explain WHY each one needs attention. Base your explanations strictly on the provided data — weakAreas are specific topics/subtopics with understanding %, weakPapers are papers with low readiness and their weak topics, structuredWeakAnswers are AI-marked written answers with where the answer fell short ("whereFailing") and corrective feedback ("howToImprove"):\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
+Good (27 words): "Integration is weak, especially the constant of integration on Paper 1; written answers skip the method — drill worked solutions that show every step."
+
+Return a JSON array of objects with "name" (student name) and "reason" (≤30-word string).`;
+      const userPrompt = `Write a ≤30-word intervention flag for each student, strictly from the provided evidence — weakAreas are specific topics/subtopics with understanding %, weakPapers are papers with low readiness and their weak topics, structuredWeakAnswers are AI-marked written answers with where the answer fell short ("whereFailing") and corrective feedback ("howToImprove"):\n\n${JSON.stringify(dataPayload, null, 2)}\n\nReturn JSON array: [{"name": "...", "reason": "..."}]`;
 
       const { generateWithFallback } = await import("./services/aiOrchestrator.js");
       const { hashPayload } = await import("./utils/aiTelemetry.js");
@@ -4128,10 +4129,10 @@ Return a JSON array of objects with "name" (student name) and "reason" (explanat
       const { studentName, stats, topicPerformance, assignments } = req.body;
       if (!studentName) return res.status(400).json({ message: "studentName required" });
 
-      const systemPrompt = `You are SOMA's Director of Studies, writing the kind of crisp, evidence-based student summary a senior tutor relies on to plan their next session. You MUST only reference data provided. Never fabricate trends, topics, or scores; if the data is thin, say so plainly rather than inventing a trend.
+      const systemPrompt = `You are SOMA's Director of Studies, writing the crisp, evidence-based student summary a senior tutor reads the instant they open a student's profile. You MUST only reference data provided. Never fabricate trends, topics, or scores; if the data is thin, say so plainly rather than inventing a trend.
 
 Write with a calm, expert voice — specific, fair, and actionable, never generic praise or filler. Ground every claim in the supplied stats, topic performance, or assignment history. Return a JSON object with these fields:
-- "narrative" (string, 2-3 sentences summarising overall performance — name the trajectory and what is driving it, citing the actual subjects/topics/scores).
+- "narrative" (string, THE FULL PICTURE in AT MOST 80 words — aim 55-78. The whole student at a glance: their trajectory, what's driving it, the specific weak topic(s) by name, and any genuine strength. Lead with what matters most; cite real subjects/topics/scores. This is the headline a tutor reads first, so make every word count — no preamble, no restating the obvious.).
 - "weaknesses" (string, 1-2 sentences naming the recurring weak topic(s) from the data, not just a subject).
 - "improvements" (string, 1-2 sentences on genuine positive trends or strengths shown in the data).
 - "focusAreas" (array of 2-4 specific teaching-focus topics drawn from the weakest areas in the data).
