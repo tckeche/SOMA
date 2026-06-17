@@ -20,16 +20,19 @@ interface ModelConfig {
 
 const AI_FALLBACK_CHAIN: ModelConfig[] = [
   // --- TIER 1: OPENAI (PRIMARY) ---
-  { provider: "openai", model: "gpt-4o" },
+  // GPT-5 (reasoning, medium effort) — the strongest brain for student-facing
+  // narratives, feedback, and intervention/insight reasoning. Cost is acceptable
+  // for these comparatively low-volume, high-value calls.
+  { provider: "openai", model: "gpt-5" },
 
   // --- TIER 2: ANTHROPIC ---
-  { provider: "anthropic", model: "claude-sonnet-4-6" },
+  { provider: "anthropic", model: "claude-opus-4-8" },
 
   // --- TIER 3: GOOGLE GEMINI ---
   { provider: "google", model: "gemini-2.5-flash" },
 
-  // --- TIER 4: REMAINING FALLBACKS ---
-  { provider: "openai", model: "o3-mini" },
+  // --- TIER 4: REMAINING FALLBACKS (resilience if the strong tier is down) ---
+  { provider: "openai", model: "gpt-4o" },
   { provider: "deepseek", model: "deepseek-chat" },
   { provider: "openai", model: "gpt-4o-mini" },
 ];
@@ -148,10 +151,17 @@ export async function callGoogle(
   return text;
 }
 
-// o-series reasoning models (o1, o3-mini, etc.) do not accept a `temperature`
-// parameter — passing it causes a 400 error. Detect them by model name prefix.
+// GPT-5 and the o-series (o1, o3-mini, …) are reasoning models: they reject a
+// `temperature` parameter (400) and instead take `reasoning_effort`. Detect by
+// model-name prefix so the chain can mix reasoning and non-reasoning models.
 function isReasoningModel(model: string): boolean {
-  return /^o\d/i.test(model);
+  return /^(gpt-5|o\d)/i.test(model);
+}
+
+// Opus 4.7+ and the Fable/Mythos family reject sampling params (temperature /
+// top_p / top_k → 400). Sonnet 4.6 and Opus 4.5/4.6 still accept them.
+function anthropicRejectsSampling(model: string): boolean {
+  return /claude-opus-4-[78]/i.test(model) || /claude-(fable|mythos)-/i.test(model);
 }
 
 async function callOpenAI(
@@ -176,9 +186,14 @@ async function callOpenAI(
     { role: "user", content: userPrompt },
   ];
 
-  // Reasoning models don't support temperature; standard models default to 0.1
+  // Reasoning models (gpt-5, o-series) reject `temperature` and instead take
+  // `reasoning_effort`; standard models default to 0.1 temperature.
   const config: any = { model, messages };
-  if (!isReasoningModel(model)) config.temperature = 0.1;
+  if (isReasoningModel(model)) {
+    config.reasoning_effort = "medium";
+  } else {
+    config.temperature = 0.1;
+  }
   if (expectedSchema) config.response_format = { type: "json_object" };
 
   const response = await client.chat.completions.create(config);
@@ -198,6 +213,8 @@ async function callAnthropic(
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
   const client = new Anthropic({ apiKey });
   const cappedMaxTokens = maxTokens && maxTokens > 0 ? maxTokens : 16384;
+  // Opus 4.8 (and Fable/Mythos) reject sampling params — omit `temperature` there.
+  const sampling = anthropicRejectsSampling(model) ? {} : { temperature: 0.1 };
 
   if (expectedSchema) {
     const resolved = resolveJsonSchema(expectedSchema);
@@ -210,7 +227,7 @@ async function callAnthropic(
     const response = await client.messages.create({
       model,
       max_tokens: cappedMaxTokens,
-      temperature: 0.1,
+      ...sampling,
       system: systemPrompt,
       tools: [toolDef as any],
       tool_choice: { type: "tool" as const, name: "structured_output" },
@@ -227,7 +244,7 @@ async function callAnthropic(
   const response = await client.messages.create({
     model,
     max_tokens: cappedMaxTokens,
-    temperature: 0.1,
+    ...sampling,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -487,13 +504,15 @@ async function runChain(
           // Cap is already clamped to the task-type ceiling by clampMaxTokens.
           // Use 4096 only as a sane default when no task type was supplied.
           const anthropicMaxTokens = maxTokensCap || 4096;
+          // Opus 4.8 (and Fable/Mythos) reject sampling params — omit there.
+          const anthropicSampling = anthropicRejectsSampling(config.model) ? {} : { temperature: 0.1 };
 
           let anthropicResponse: any;
           if (expectedSchema) {
             const msg = await withTimeout(anthropic.messages.create({
               model: config.model,
               max_tokens: anthropicMaxTokens,
-              temperature: 0.1,
+              ...anthropicSampling,
               system: systemPrompt,
               messages: [{ role: "user", content: userPrompt }],
               tools: [{
@@ -511,7 +530,7 @@ async function runChain(
             const msg = await withTimeout(anthropic.messages.create({
               model: config.model,
               max_tokens: anthropicMaxTokens,
-              temperature: 0.1,
+              ...anthropicSampling,
               system: systemPrompt,
               messages: [{ role: "user", content: userPrompt }],
             }), timeoutMs, timeoutLabel);

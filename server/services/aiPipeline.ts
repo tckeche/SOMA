@@ -848,10 +848,23 @@ function buildMakerSystemPrompt(
   const taggingRule = context.catalogueContext
     ? `\n- TAGGING: set topic_tag and subtopic_tag on every question, copied VERBATIM from a topic/subtopic listed in the Catalogue context below. Do NOT invent a topic or subtopic that is not in that list; every question must stay within the selected catalogue topics.`
     : `\n- TAGGING: set topic_tag (and subtopic_tag when known) to the topic this question actually tests, staying within the stated scope.`;
+  // Make the two grounding sources explicit so the maker visibly anchors on the
+  // syllabus catalogue and the examiner reports rather than improvising.
+  const groundingSources = [
+    context.catalogueContext
+      ? "the SYLLABUS — the selected topics, subtopics and learning requirements in the Catalogue context below (test exactly what the syllabus requires at this level; do not exceed or fall short of it)"
+      : null,
+    context.examinerSeeds && context.examinerSeeds.length > 0
+      ? "the EXAMINER REPORTS — the documented, recurring student misconceptions listed below; build distractors from them where they fit so wrong options mirror real exam errors"
+      : null,
+  ].filter(Boolean);
+  const groundingRule = groundingSources.length > 0
+    ? `\n\nGROUND EVERY QUESTION IN:\n${groundingSources.map((s) => `- ${s}`).join("\n")}`
+    : "";
   return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.
 
 STRICT SCOPE: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
-Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.
+Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.${groundingRule}
 
 Requirements:${blueprintRule}${taggingRule}
 - Exactly 4 distinct options per question.
@@ -882,7 +895,7 @@ function buildVerifierSystemPrompt(context: SomaGenerationContext): string {
     : "";
   return `You are the SOMA question verifier. For EACH question you receive:
 
-1. CHECK that correct_answer is objectively correct and in-scope for subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}. The 4 options must be distinct and the question solvable.
+1. CHECK that correct_answer is objectively correct AND that the question is answerable using only syllabus-level knowledge for subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""} — not above or outside this syllabus and level. The 4 options must be distinct and the question solvable.
 2. FIX any error you find:
    - If correct_answer is wrong but a correct option exists, change correct_answer to that option.
    - If no option is correct, rewrite one option so it is correct and set correct_answer to it.
@@ -1114,7 +1127,7 @@ export async function runOpenAIVerifier(
     async () => {
       const completion = await client.chat.completions.create({
         model: MODEL_OPENAI,
-        ...openAITuning(MODEL_OPENAI, "high"),
+        ...openAITuning(MODEL_OPENAI, "medium"),
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -1247,7 +1260,7 @@ export async function runBlindSolver(
       const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model: chosen.model,
-        ...openAITuning(chosen.model, "high"),
+        ...openAITuning(chosen.model, "medium"),
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
