@@ -121,10 +121,30 @@ export interface PipelineTelemetry {
   recoveredCount?: number;
 }
 
+/**
+ * Per-question record of whether the answer key was confirmed by an
+ * INDEPENDENT check (deterministic math prover, or a blind solver running on
+ * a different provider from the maker/checker) — as opposed to resting on the
+ * single verifier LLM's judgement. `confirmed: false` means the question
+ * survived the disagreement protocol but nothing independent could vouch for
+ * its key, so callers route it to tutor review rather than auto-serving it.
+ * Parallel to `AuditedQuizResult.questions` (same length, same order).
+ */
+export interface QuestionConfirmation {
+  confirmed: boolean;
+  method: "math_prover" | "blind_solver" | "none";
+}
+
 export interface AuditedQuizResult {
   questions: QuizResult["questions"];
   warnings: PipelineWarning[];
   telemetry: PipelineTelemetry;
+  /**
+   * Independent-verification outcome per surviving question, parallel to
+   * `questions`. Empty/absent when a caller path produced questions without
+   * running the disagreement protocol.
+   */
+  verification: QuestionConfirmation[];
   /** Examiner-misconception ids the batch was seeded against (Phase 2B).
    *  Persist on each question's `target_misconception_ids` so the marker
    *  can cite the matched insight. */
@@ -636,10 +656,17 @@ export function applyDisagreementProtocol(
   verified: QuizResult["questions"],
   upstreamWarnings: PipelineWarning[],
   solverVotes?: Map<number, { chosenOption: string | null; multipleCorrect: boolean }>,
-): { questions: QuizResult["questions"]; warnings: PipelineWarning[]; blocked: BlockedQuestion[] } {
+): {
+  questions: QuizResult["questions"];
+  warnings: PipelineWarning[];
+  blocked: BlockedQuestion[];
+  confirmations: QuestionConfirmation[];
+} {
   const warnings: PipelineWarning[] = [];
   const blocked: BlockedQuestion[] = [];
   const kept: QuizResult["questions"] = [];
+  // Parallel to `kept`: how each surviving question's key was vouched for.
+  const confirmations: QuestionConfirmation[] = [];
 
   // Index unfixed CRITICAL answer-key warnings by question index so we can
   // block them en bloc without re-deriving the heuristic.
@@ -769,10 +796,31 @@ export function applyDisagreementProtocol(
       });
     }
 
+    // Record how this surviving question's key was independently vouched for.
+    // The disagreement checks above already blocked any prover/solver
+    // disagreement, so reaching here with a prover answer or a solver vote
+    // means it AGREED. A question with neither is "kept on verifier judgement
+    // alone" — confirmed=false, which downstream routes route to tutor review.
+    if (proverAnswer !== null) {
+      confirmations.push({ confirmed: true, method: "math_prover" });
+    } else if (solverVotes && solverVotes.has(oneBased)) {
+      const vote = solverVotes.get(oneBased)!;
+      const agrees =
+        vote.chosenOption !== null &&
+        !vote.multipleCorrect &&
+        (vote.chosenOption.trim() === v.correct_answer.trim() ||
+          numericallyEquivalent(vote.chosenOption, v.correct_answer));
+      confirmations.push(
+        agrees ? { confirmed: true, method: "blind_solver" } : { confirmed: false, method: "none" },
+      );
+    } else {
+      confirmations.push({ confirmed: false, method: "none" });
+    }
+
     kept.push(v);
   }
 
-  return { questions: kept, warnings, blocked };
+  return { questions: kept, warnings, blocked, confirmations };
 }
 
 // ─── Catalogue context helpers ─────────────────────────────────────────────
@@ -1265,6 +1313,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const requestedCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
   const initialBlockCount = initial.blockedQuestions.length;
   let kept = [...initial.questions];
+  let verification = [...(initial.verification ?? [])];
   let warnings = [...initial.warnings];
   let lastTelemetry = initial.telemetry;
   let lastBlueprint = initial.blueprint;
@@ -1292,6 +1341,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
       break;
     }
     kept = [...kept, ...reroll.questions];
+    verification = [...verification, ...(reroll.verification ?? [])];
     warnings = [
       ...warnings,
       ...reroll.warnings.map((w) => ({ ...w, issue: `[reroll #${attempt}] ${w.issue}` })),
@@ -1329,6 +1379,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
     seedMisconceptionIds: initial.seedMisconceptionIds,
     blueprint: lastBlueprint,
     blockedQuestions: stillBlocked,
+    verification,
   };
 }
 
@@ -1361,6 +1412,7 @@ async function runOnePassQuiz(
     );
 
     const merged: QuizResult["questions"] = [];
+    const mergedVerification: QuestionConfirmation[] = [];
     const allWarnings: PipelineWarning[] = [];
     let lastTelemetry: PipelineTelemetry = {
       makerModel: "unknown", checkerModel: "unknown", polishModel: null, totalDurationMs: 0,
@@ -1368,6 +1420,7 @@ async function runOnePassQuiz(
     for (const batch of batchResults) {
       const baseIndex = merged.length;
       merged.push(...batch.questions);
+      mergedVerification.push(...(batch.verification ?? []));
       for (const w of batch.warnings) {
         allWarnings.push({ ...w, questionIndex: w.questionIndex + baseIndex });
       }
@@ -1403,6 +1456,7 @@ async function runOnePassQuiz(
       seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
       blueprint: stitchedBlueprint,
       blockedQuestions: allBlocked,
+      verification: mergedVerification.slice(0, finalValidated.questions.length),
     };
   }
 
@@ -1555,6 +1609,7 @@ async function runOnePassQuiz(
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
     blueprint,
     blockedQuestions: protocol.blocked,
+    verification: protocol.confirmations,
   };
 }
 

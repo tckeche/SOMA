@@ -201,6 +201,39 @@ describe("applyDisagreementProtocol", () => {
     expect(withArg.questions).toHaveLength(1);
     expect(withArg.blocked).toHaveLength(0);
   });
+
+  // ── Independent-verification confirmations (parallel to kept questions) ─────
+
+  it("confirms a math question via the deterministic prover", () => {
+    const result = applyDisagreementProtocol([mathDraft], [mathQuestion], []);
+    expect(result.confirmations).toEqual([{ confirmed: true, method: "math_prover" }]);
+  });
+
+  it("marks a prose question unconfirmed when no prover or solver vouches for it", () => {
+    const result = applyDisagreementProtocol([proseDraft], [proseQuestion], []);
+    expect(result.confirmations).toEqual([{ confirmed: false, method: "none" }]);
+  });
+
+  it("confirms a prose question when the independent blind solver agrees", () => {
+    const solverVotes = new Map([[1, { chosenOption: "Darwin", multipleCorrect: false }]]);
+    const result = applyDisagreementProtocol([proseDraft], [proseQuestion], [], solverVotes);
+    expect(result.confirmations).toEqual([{ confirmed: true, method: "blind_solver" }]);
+  });
+
+  it("aligns confirmations with kept questions in a mixed batch (blocked dropped)", () => {
+    const wrongMath: QuizResult["questions"][number] = { ...mathQuestion, correct_answer: "5" };
+    const result = applyDisagreementProtocol(
+      [proseDraft, mathDraft, mathDraft],
+      [proseQuestion, mathQuestion, wrongMath],
+      [],
+    );
+    // prose kept (unconfirmed), math kept (prover), wrong math blocked.
+    expect(result.questions).toHaveLength(2);
+    expect(result.confirmations).toEqual([
+      { confirmed: false, method: "none" },
+      { confirmed: true, method: "math_prover" },
+    ]);
+  });
 });
 
 // ─── Per-option rationale validator ────────────────────────────────────────

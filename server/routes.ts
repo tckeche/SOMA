@@ -18,6 +18,8 @@ import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validat
 import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
 import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
+import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
+import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
@@ -1431,6 +1433,27 @@ export function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
     questionType: q.questionType, graphSpec: q.graphSpec,
     // omit: correctAnswer, explanation, optionRationales, targetMisconceptionIds
   };
+}
+
+/**
+ * Per-quiz breakdown of how many questions are servable vs. held for tutor
+ * review vs. auto-blocked. Returned alongside generate/publish responses so a
+ * shortfall (questions withheld by the scope / verification gates) is never
+ * silent — `servable` is what students will actually see.
+ */
+export function summarizeReviewStatuses(
+  questions: Array<{ reviewStatus?: string | null }>,
+): { total: number; servable: number; needsReview: number; autoBlocked: number } {
+  let servable = 0;
+  let needsReview = 0;
+  let autoBlocked = 0;
+  for (const q of questions) {
+    const status = q.reviewStatus ?? "approved";
+    if (status === "auto_blocked") autoBlocked += 1;
+    else if (status === "needs_review") needsReview += 1;
+    else servable += 1;
+  }
+  return { total: questions.length, servable, needsReview, autoBlocked };
 }
 
 /**
@@ -4621,6 +4644,16 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         })),
       }, traceId);
 
+      // Scope gate at publish: classify each draft question's tag against the
+      // catalogue and persist the resulting reviewStatus, so the builder→publish
+      // flow withholds off-syllabus / flagged questions exactly like the
+      // direct-generate flow. Previously this path persisted no reviewStatus, so
+      // a question that would be needs_review slipped through as "approved" and
+      // reached students. (Empty inventory = syllabus not catalogued = no-op.)
+      const { syllabusCode: publishSyllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
+      const publishAllowedTopics = await listAllowedTopicsForSyllabusCode(publishSyllabusCode);
+      const reviewStatusByIndex: Array<"approved" | "needs_review" | "auto_blocked"> = [];
+
       // Validate each draft question before write
       for (let i = 0; i < draft.length; i++) {
         const q = draft[i];
@@ -4633,6 +4666,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
           if (!q.markScheme || !String(q.markScheme).trim()) {
             return res.status(400).json({ message: `Structured question "${String(q.stem).slice(0, 40)}" is missing a mark scheme` });
           }
+          reviewStatusByIndex[i] = "approved";
           continue;
         }
         if (!Array.isArray(q.options) || q.options.length !== 4) {
@@ -4656,6 +4690,8 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             blocking: quality.blocking,
           });
         }
+        const scope = assessTopicScope(q.topicTag, q.subtopicTag, publishAllowedTopics);
+        reviewStatusByIndex[i] = resolveReviewStatus({ baseStatus: quality.reviewStatus, scope }).reviewStatus;
       }
 
       // Assessment-integrity hard gate: never publish a complex-number question
@@ -4678,7 +4714,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
       // Atomically replace all questions in a DB transaction (delete + insert as one unit)
       // so a failed insert cannot leave the quiz without any questions.
-      const mapped = draft.map((q) => ({
+      const mapped = draft.map((q, idx) => ({
         quizId,
         stem: q.stem,
         options: q.options,
@@ -4688,6 +4724,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         questionType: q.questionType,
         graphSpec: (q.graphSpec ?? null) as import("@shared/schema").GraphQuestionSpec | null,
         markScheme: q.markScheme ?? null,
+        reviewStatus: reviewStatusByIndex[idx] ?? "approved",
         topicTag: q.topicTag ?? null,
         subtopicTag: q.subtopicTag ?? null,
         difficultyTag: q.difficultyTag ?? null,
@@ -4720,7 +4757,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       // Clear in-memory draft only after DB commit succeeded
       draftStore.delete(quizId);
 
-      res.json({ quizId, publishedCount: saved.length, questions: saved });
+      res.json({
+        quizId,
+        publishedCount: saved.length,
+        questions: saved,
+        reviewSummary: summarizeReviewStatuses(saved),
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to publish" });
     }
@@ -6599,6 +6641,9 @@ ${JSON.stringify({
       const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
         ? (result.seedMisconceptionIds ?? null)
         : null;
+      // Closed-set scope gate (see tutor-generate route): off-syllabus drift →
+      // needs_review. Empty inventory = syllabus not catalogued = no-op.
+      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
       traceLog("route.somaGenerate.beforeCreateSomaQuestions", {
         quizId: quiz.id,
         questionCount: result.questions.length,
@@ -6612,6 +6657,12 @@ ${JSON.stringify({
             { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
             { subject, syllabus, level, topic, subtopic },
           );
+          const scope = assessTopicScope(q.topic_tag, q.subtopic_tag, allowedTopics);
+          const resolved = resolveReviewStatus({
+            baseStatus: quality.reviewStatus,
+            scope,
+            confirmed: result.verification?.[i]?.confirmed,
+          });
           return {
           quizId: quiz.id,
           stem: q.stem,
@@ -6624,16 +6675,16 @@ ${JSON.stringify({
           subtopicTag: q.subtopic_tag ?? null,
           optionRationales: q.option_rationales ?? null,
           targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
-          reviewStatus: quality.reviewStatus,
+          reviewStatus: resolved.reviewStatus,
           generationMeta: {
             makerModel: result.telemetry.makerModel,
             verifierModel: result.telemetry.checkerModel,
             warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
               .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
             requestedDifficulty: q.difficulty_tag,
-            blocked: quality.reviewStatus === "auto_blocked",
+            blocked: resolved.reviewStatus === "auto_blocked",
             blockReason: quality.blocking.join("; ") || undefined,
-            qualityWarnings: quality.warnings,
+            qualityWarnings: [...quality.warnings, ...resolved.reasons],
           },
         };
         })
@@ -6649,6 +6700,7 @@ ${JSON.stringify({
         quiz,
         questions: insertedQuestions,
         warnings: result.warnings,
+        reviewSummary: summarizeReviewStatuses(insertedQuestions),
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
@@ -6754,6 +6806,10 @@ ${JSON.stringify({
       const targetMisconceptionIds = (result.seedMisconceptionIds ?? []).length > 0
         ? (result.seedMisconceptionIds ?? null)
         : null;
+      // Closed-set scope gate: classify each question's topic/subtopic tag
+      // against the catalogue so off-syllabus drift is caught post-generation
+      // (empty inventory = syllabus not catalogued = no-op).
+      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
       traceLog("route.tutorGenerate.beforeCreateBundle", {
         questionCount: result.questions.length,
         targetMisconceptionIds,
@@ -6776,6 +6832,12 @@ ${JSON.stringify({
             { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
             { subject, syllabus, level, topic, subtopic },
           );
+          const scope = assessTopicScope(q.topic_tag, q.subtopic_tag, allowedTopics);
+          const resolved = resolveReviewStatus({
+            baseStatus: quality.reviewStatus,
+            scope,
+            confirmed: result.verification?.[i]?.confirmed,
+          });
           return {
           stem: q.stem,
           options: q.options,
@@ -6787,16 +6849,16 @@ ${JSON.stringify({
           subtopicTag: q.subtopic_tag ?? null,
           optionRationales: q.option_rationales ?? null,
           targetMisconceptionIds: perQuestionMisconceptionIds(q, result.blueprint?.rows[i], result.seedMisconceptionIds),
-          reviewStatus: quality.reviewStatus,
+          reviewStatus: resolved.reviewStatus,
           generationMeta: {
             makerModel: result.telemetry.makerModel,
             verifierModel: result.telemetry.checkerModel,
             warnings: result.warnings.filter((w) => w.questionIndex === i + 1)
               .map((w) => ({ questionIndex: w.questionIndex, field: w.field, issue: w.issue, autoFixed: w.autoFixed })),
             requestedDifficulty: q.difficulty_tag,
-            blocked: quality.reviewStatus === "auto_blocked",
+            blocked: resolved.reviewStatus === "auto_blocked",
             blockReason: quality.blocking.join("; ") || undefined,
-            qualityWarnings: quality.warnings,
+            qualityWarnings: [...quality.warnings, ...resolved.reasons],
           },
         };
         }),
@@ -6814,6 +6876,7 @@ ${JSON.stringify({
         assignments: bundle.assignments.length,
         assignedStudentIds: validAssignedStudentIds,
         warnings: result.warnings,
+        reviewSummary: summarizeReviewStatuses(bundle.questions),
         pipeline: {
           stages: [
             `Maker (${result.telemetry.makerModel})`,
