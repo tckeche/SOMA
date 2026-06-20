@@ -157,7 +157,9 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
 
   // Hybrid quizzes need at least one of each type, so the floor is 2.
   const minQuestions = quizMode === "hybrid" ? 2 : 1;
-  const MAX_QUESTIONS = 15;
+  // 40 is the platform ceiling (see somaGenerateSchema). Quizzes over 15 are
+  // generated in sequential, de-duplicated batches of 15 server-side.
+  const MAX_QUESTIONS = 40;
   const clampCount = (n: number) =>
     Math.max(minQuestions, Math.min(MAX_QUESTIONS, Math.round(n)));
 

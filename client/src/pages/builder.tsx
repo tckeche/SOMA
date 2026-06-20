@@ -206,9 +206,9 @@ export default function BuilderPage() {
   //   "structured" — written / structured answers only
   //   "hybrid"     — a mix of both
   const [quizMode, setQuizMode] = useState<"mcq" | "structured" | "hybrid">("mcq");
-  // Authoritative number of questions (1–15; hybrid needs ≥2). The Co-Pilot
+  // Authoritative number of questions (1–40; hybrid needs ≥2). The Co-Pilot
   // must generate exactly this many — it's no longer inferred from the prompt.
-  const [questionCount, setQuestionCount] = useState<number>(5);
+  const [questionCount, setQuestionCount] = useState<number>(12);
   // For hybrid quizzes: percentage of the total that should be structured.
   // The actual structured/MCQ split is derived from this and the total.
   const [structuredRatio, setStructuredRatio] = useState<number>(50);
@@ -622,7 +622,7 @@ export default function BuilderPage() {
         setQuizMode(savedMode);
       }
       const savedCount = Number((quizData as any).questionCount);
-      if (Number.isFinite(savedCount) && savedCount >= 1 && savedCount <= 15) {
+      if (Number.isFinite(savedCount) && savedCount >= 1 && savedCount <= 40) {
         setQuestionCount(savedCount);
         const savedStructured = Number((quizData as any).structuredCount);
         if (savedMode === "hybrid" && Number.isFinite(savedStructured) && savedStructured > 0) {

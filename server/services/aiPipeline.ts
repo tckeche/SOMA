@@ -212,6 +212,14 @@ export interface SomaGenerationContext {
    * prevents infinite recursion. Callers should not set this.
    */
   _disableReroll?: boolean;
+  /**
+   * Stems already produced earlier in the SAME quiz. For quizzes larger than
+   * one batch (>15 questions) the batches are generated in sequence and each
+   * subsequent batch receives the prior batches' stems here, so the maker is
+   * told not to repeat or paraphrase them — preventing duplicate questions
+   * across batches. Internal; callers don't set this.
+   */
+  avoidStems?: string[];
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -861,7 +869,13 @@ function buildMakerSystemPrompt(
   const groundingRule = groundingSources.length > 0
     ? `\n\nGROUND EVERY QUESTION IN:\n${groundingSources.map((s) => `- ${s}`).join("\n")}`
     : "";
-  return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.
+  // De-dup across batches: a quiz larger than one batch is built in sequence,
+  // and each later batch is told which stems already exist so it produces
+  // genuinely new questions rather than repeating earlier ones.
+  const avoidRule = context.avoidStems && context.avoidStems.length > 0
+    ? `\n\nDO NOT DUPLICATE: the following questions have ALREADY been generated for this same quiz. Produce entirely new questions — do not repeat or merely paraphrase any of them, and avoid testing the exact same fact with the same numbers:\n${context.avoidStems.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+    : "";
+  return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.${avoidRule}
 
 STRICT SCOPE: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
 Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.${groundingRule}
@@ -1397,7 +1411,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const maxAttempts = Math.max(0, context.maxRerollAttempts ?? 2);
   if (maxAttempts === 0) return initial;
 
-  const requestedCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+  const requestedCount = Math.max(1, Math.min(40, context.questionCount ?? 12));
   const initialBlockCount = initial.blockedQuestions.length;
   let kept = [...initial.questions];
   let verification = [...(initial.verification ?? [])];
@@ -1479,12 +1493,15 @@ async function runOnePassQuiz(
   context: SomaGenerationContext,
   overallStart: number,
 ): Promise<AuditedQuizResult> {
-  const questionCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+  const questionCount = Math.max(1, Math.min(40, context.questionCount ?? 12));
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
 
   // Batch quizzes > 15 into chunks of 15 so each stage stays within token budget.
-  // Batches are run in PARALLEL — they do not depend on each other, so a 30q
-  // quiz takes ~the same wall-clock as a 15q quiz instead of double.
+  // Batches run SEQUENTIALLY so each one can be told the stems already produced
+  // (`avoidStems`) and generate genuinely new questions instead of repeating
+  // earlier batches. The wall-clock cost is bounded — a 40-question quiz is at
+  // most 3 batches — and a duplicate-free exam is worth more than the time
+  // saved by parallelism. Quizzes ≤15 take the single-batch fast path below.
   if (questionCount > 15) {
     const batchSizes: number[] = [];
     let remaining = questionCount;
@@ -1494,9 +1511,13 @@ async function runOnePassQuiz(
       remaining -= size;
     }
 
-    const batchResults = await Promise.all(
-      batchSizes.map((size) => generateAuditedQuiz({ ...context, questionCount: size })),
-    );
+    const batchResults: AuditedQuizResult[] = [];
+    const seenStems: string[] = [...(context.avoidStems ?? [])];
+    for (const size of batchSizes) {
+      const batch = await generateAuditedQuiz({ ...context, questionCount: size, avoidStems: [...seenStems] });
+      batchResults.push(batch);
+      for (const q of batch.questions) seenStems.push(q.stem);
+    }
 
     const merged: QuizResult["questions"] = [];
     const mergedVerification: QuestionConfirmation[] = [];
