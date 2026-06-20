@@ -1166,16 +1166,20 @@ function createAiRouteLimiter(options: {
   });
 }
 
+// Quiz generation must NEVER be blocked by a rate limit under normal use — a
+// tutor needing to build assessments should always succeed. These limits are
+// deliberately set high so they only ever trip on runaway/abusive automation
+// (a genuine DoS backstop), not on real teaching workloads.
 const legacyAdminAiLimiter = createAiRouteLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 3,
-  reason: "legacy/admin AI generation limit exceeded",
+  limit: 200,
+  reason: "legacy/admin AI generation abuse backstop exceeded",
 });
 
 const tutorGenerationAiLimiter = createAiRouteLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 12,
-  reason: "tutor AI generation limit exceeded",
+  limit: 300,
+  reason: "tutor AI generation abuse backstop exceeded",
 });
 
 const tutorCopilotAiLimiter = createAiRouteLimiter({

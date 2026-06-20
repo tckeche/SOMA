@@ -1104,6 +1104,43 @@ export async function runOpenAIMakerSimple(
   );
 }
 
+/**
+ * Third maker fallback (Gemini). The pipeline's #1 rule is that a quiz must
+ * always be produced — so when BOTH the Claude and OpenAI makers are
+ * unavailable (outage, missing key, schema gate), we still draft the quiz on a
+ * provider-diverse third model rather than failing the whole request. The
+ * no-self-grading rule still holds: a Gemini-made draft is verified by OpenAI
+ * (the maker's provider is always excluded from the verifier chain).
+ */
+export async function runGeminiMakerSimple(
+  context: SomaGenerationContext,
+  questionCount: number,
+  distribution: { easy: number; medium: number; hard: number },
+): Promise<DraftQuiz> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
+
+  const schema = zodToJsonSchema(DraftQuizSchema, "DraftQuiz");
+  const systemPrompt = buildMakerSystemPrompt(context, questionCount, distribution);
+  const userPrompt = buildMakerUserPrompt(context);
+
+  return instrumentedCall<DraftQuiz>(
+    "google",
+    MODEL_GEMINI,
+    systemPrompt,
+    userPrompt,
+    PromptIds.SOMA_MAKER,
+    "generation",
+    newRequestId(),
+    async () => {
+      const raw = await callGoogle(MODEL_GEMINI, systemPrompt, userPrompt, schema);
+      const validated = validateAgainstSchema(raw, DraftQuizSchema);
+      if (!validated.ok) throw new Error(`Gemini maker schema gate failed: ${validated.reason}`);
+      return { raw, parsed: validated.value };
+    },
+  );
+}
+
 export async function runOpenAIVerifier(
   draftQuestions: DraftQuiz["questions"],
   context: SomaGenerationContext,
@@ -1306,6 +1343,7 @@ export async function runBlindSolver(
 export const pipelineStages = {
   runClaudeMakerSimple,
   runOpenAIMakerSimple,
+  runGeminiMakerSimple,
   runOpenAIVerifier,
   runGeminiVerifier,
   runBlueprintPlanner,
@@ -1539,37 +1577,84 @@ async function runOnePassQuiz(
   const contextWithPlan: SomaGenerationContext = blueprint ? { ...context, blueprint } : context;
 
   // ── STAGE 1: MAKER ──────────────────────────────────────────────────────
+  // A quiz must ALWAYS be produced, so the maker walks a full provider chain
+  // (Claude → GPT-5 → Gemini) before giving up. Each provider is tried in turn;
+  // only a total three-provider outage aborts the request. `makerProvider`
+  // drives the verifier pairing below so the model that drafts never grades.
   let draft: DraftQuiz;
   let makerModel: string;
-  let claudeMadeTheQuiz = true;
+  let makerProvider: "anthropic" | "openai" | "google";
   try {
     draft = await pipelineStages.runClaudeMakerSimple(contextWithPlan, questionCount, distribution);
     makerModel = `anthropic/${MODEL_CLAUDE}`;
-  } catch (err: any) {
-    console.warn(`[SOMA_PIPELINE] Claude maker failed (${err?.message || "unknown"}); falling back to ChatGPT maker.`);
-    draft = await pipelineStages.runOpenAIMakerSimple(contextWithPlan, questionCount, distribution);
-    makerModel = `openai/${MODEL_OPENAI}`;
-    claudeMadeTheQuiz = false;
+    makerProvider = "anthropic";
+  } catch (claudeErr: any) {
+    console.warn(`[SOMA_PIPELINE] Claude maker failed (${claudeErr?.message || "unknown"}); falling back to ChatGPT maker.`);
+    try {
+      draft = await pipelineStages.runOpenAIMakerSimple(contextWithPlan, questionCount, distribution);
+      makerModel = `openai/${MODEL_OPENAI}`;
+      makerProvider = "openai";
+    } catch (openaiErr: any) {
+      console.warn(`[SOMA_PIPELINE] ChatGPT maker failed (${openaiErr?.message || "unknown"}); falling back to Gemini maker.`);
+      draft = await pipelineStages.runGeminiMakerSimple(contextWithPlan, questionCount, distribution);
+      makerModel = `google/${MODEL_GEMINI}`;
+      makerProvider = "google";
+    }
   }
 
   // ── STAGE 2: VERIFIER (checker + Soma tutor voice) ──────────────────────
-  // Pairing rule: the model that made the quiz must not verify its own work.
-  //   Claude maker → ChatGPT verifier (Gemini as fallback for availability).
-  //   ChatGPT maker → Gemini verifier only (no self-check).
-  let verified: { questions: QuizResult["questions"]; warnings: PipelineWarning[] };
-  let checkerModel: string;
-  if (claudeMadeTheQuiz) {
+  // Pairing rule: the model that made the quiz must NEVER verify its own work.
+  // We build the verifier chain by excluding the maker's provider, then try
+  // each in turn:
+  //   Claude maker  → ChatGPT verifier, Gemini fallback.
+  //   ChatGPT maker → Gemini verifier (only non-self verifier available).
+  //   Gemini maker  → ChatGPT verifier (only non-self verifier available).
+  // If EVERY eligible verifier is down we do not abort — accuracy is still
+  // protected because the questions are shipped UNVERIFIED and routed to tutor
+  // review (verifierDegraded), so a provider outage degrades quality gracefully
+  // instead of producing no quiz at all.
+  const verifierChain: Array<{
+    model: string;
+    run: () => Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[] }>;
+  }> = [];
+  if (makerProvider !== "openai") {
+    verifierChain.push({ model: `openai/${MODEL_OPENAI}`, run: () => pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan) });
+  }
+  if (makerProvider !== "google") {
+    verifierChain.push({ model: `google/${MODEL_GEMINI}`, run: () => pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan) });
+  }
+
+  let verified: { questions: QuizResult["questions"]; warnings: PipelineWarning[] } | null = null;
+  let checkerModel = "none (verifier unavailable — routed to review)";
+  let verifierDegraded = false;
+  for (const link of verifierChain) {
     try {
-      verified = await pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan);
-      checkerModel = `openai/${MODEL_OPENAI}`;
+      verified = await link.run();
+      checkerModel = link.model;
+      break;
     } catch (err: any) {
-      console.warn(`[SOMA_PIPELINE] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini verifier.`);
-      verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-      checkerModel = `google/${MODEL_GEMINI}`;
+      console.warn(`[SOMA_PIPELINE] Verifier ${link.model} failed (${err?.message || "unknown"}); trying next verifier.`);
     }
-  } else {
-    verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-    checkerModel = `google/${MODEL_GEMINI}`;
+  }
+  if (!verified) {
+    // Last-resort degradation: ship the maker's draft with a placeholder
+    // explanation. Deterministic guards + the math prover + the blind solver
+    // still run downstream, so math keys remain authoritative; everything the
+    // protocol cannot independently confirm is routed to tutor review.
+    console.warn(`[SOMA_PIPELINE] All verifiers unavailable; shipping unverified maker draft routed to tutor review.`);
+    verifierDegraded = true;
+    verified = {
+      questions: draft.questions.map((q) => ({
+        ...q,
+        explanation: "Automated verification was unavailable when this question was generated — a tutor should review the answer and explanation before publishing.",
+      })),
+      warnings: [{
+        questionIndex: 0,
+        field: "overall",
+        issue: "Verifier unavailable: every checker provider failed. Questions were shipped unverified and routed to tutor review. Accuracy is not guaranteed until reviewed.",
+        autoFixed: false,
+      }],
+    };
   }
 
   // ── STAGE 2b: stem-drift guard ──────────────────────────────────────────
@@ -1645,6 +1730,15 @@ async function runOnePassQuiz(
   const driftWarning = computeDifficultyDriftWarning(protocol.questions, distribution);
   if (driftWarning) finalWarnings.push(driftWarning);
 
+  // When the verifier was unavailable, accuracy is no longer LLM-cross-checked,
+  // so only the deterministic math prover is allowed to vouch for a key. Every
+  // other surviving question is forced to confirmed=false → tutor review.
+  const finalConfirmations = verifierDegraded
+    ? protocol.confirmations.map((c) =>
+        c.method === "math_prover" ? c : { confirmed: false, method: "none" as const },
+      )
+    : protocol.confirmations;
+
   return {
     questions: protocol.questions,
     warnings: finalWarnings,
@@ -1658,7 +1752,7 @@ async function runOnePassQuiz(
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
     blueprint,
     blockedQuestions: protocol.blocked,
-    verification: protocol.confirmations,
+    verification: finalConfirmations,
   };
 }
 

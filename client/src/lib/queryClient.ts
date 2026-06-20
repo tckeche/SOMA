@@ -127,7 +127,14 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
-      retry: 3,
+      // Keep fetched data in cache for 30 min so navigating back to a page
+      // (dashboard ↔ report ↔ quiz) paints instantly from cache and revalidates
+      // in the background, instead of showing a spinner + refetch every time.
+      gcTime: 1000 * 60 * 30,
+      // 3 retries with exponential backoff made a genuinely-failing request hang
+      // for ~7s before surfacing the error. One quick retry keeps the UI snappy
+      // while still riding out a single transient blip.
+      retry: 1,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30_000),
     },
     mutations: {
