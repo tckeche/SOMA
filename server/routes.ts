@@ -15,7 +15,14 @@ import { registerDomainRoutes } from "./routes/index";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
-import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
+import {
+  sanitizeLatexBackslashes as aiContractsSanitize,
+  repairJsonString,
+  tryParseJson,
+  escapeControlCharsInStrings,
+  repairUnescapedInnerQuotes,
+  repairControlCharCorruption,
+} from "./services/aiContracts";
 import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
 import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
@@ -1357,6 +1364,35 @@ function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
       if (result) {
         console.log(`[COPILOT_DEBUG] Extracted JSON object from mixed text: action=${result.action}, questions=${result.questions.length}`);
         return result;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Attempt 2.6: shared escalating repair ladder (same recovery the maker/
+  // verifier pipeline uses). Critical for fallback providers: when GPT-5 is
+  // rate-limited the copilot falls back to Claude Opus, whose JSON often has
+  // unescaped LaTeX backslashes, inner quotes, or literal control chars that
+  // the attempts above can't recover — leaving the tutor with ZERO attached
+  // questions despite the model reporting success.
+  try {
+    // Run the ladder over BOTH the raw and the LaTeX-backslash-sanitized base
+    // so payloads with combined faults (e.g. `\alpha` invalid escapes AND
+    // unescaped inner quotes) are still recoverable.
+    const bases = [repairJsonString(cleaned), repairJsonString(sanitized)];
+    const candidates = bases.flatMap((base) => [
+      base,
+      escapeControlCharsInStrings(base),
+      repairUnescapedInnerQuotes(base),
+      repairUnescapedInnerQuotes(escapeControlCharsInStrings(base)),
+    ]);
+    for (const candidate of candidates) {
+      const attempt = tryParseJson(candidate);
+      if (attempt.ok) {
+        const result = parseCopilotObject(repairControlCharCorruption(attempt.value));
+        if (result) {
+          console.log(`[COPILOT_DEBUG] Parsed via shared repair ladder: action=${result.action}, questions=${result.questions.length}`);
+          return result;
+        }
       }
     }
   } catch { /* fall through */ }
