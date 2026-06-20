@@ -1,2 +1,2 @@
 - [Background processes & /tmp in this repl](background-procs.md) — detached jobs get SIGKILLed at tool-call end / on deploy events; /tmp files vanish. Run long tsc synchronously with `timeout 115`.
-- [AI JSON repair fallback ladder](ai-json-repair-fallback.md) — when GPT-5 429s, Claude/Gemini fallbacks emit unparseable JSON; ladder must run after strict-fail only, over both raw + backslash-sanitized bases.
+- [AI structured-output policy](ai-json-repair-fallback.md) — JSON-returning LLM calls MUST pass expectedSchema to generateWithFallback (provider-native structured output); repair ladder is fallback only, can't fix unescaped inner quotes.

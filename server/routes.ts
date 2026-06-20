@@ -1319,6 +1319,50 @@ function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
   return { reply: reply || "Here are your questions.", action, questions, positions };
 }
 
+/**
+ * JSON Schema for the copilot response, passed to generateWithFallback so every
+ * provider emits *structurally valid* JSON at the source — closing the failure
+ * class where a free-text reply (e.g. Claude Opus pseudocode with unescaped
+ * inner quotes like OUTPUT "x", or literal newlines) breaks JSON.parse and the
+ * tutor gets ZERO questions. With a schema: Anthropic returns via tool-use
+ * (guaranteed-valid JSON object), OpenAI/DeepSeek/gpt-4o use JSON mode, and
+ * Gemini uses responseSchema. Question items list the common fields explicitly
+ * (so Gemini's strict converter has non-empty properties) while leaving
+ * additionalProperties at its permissive default so richer fields (e.g.
+ * graph_spec) still pass through on the tool-use / JSON-mode providers.
+ */
+const COPILOT_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    action: {
+      type: "string",
+      enum: ["ADD", "REPLACE_ALL", "REPLACE_SELECTED", "DELETE", "REORDER", "NONE"],
+    },
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question_type: { type: "string" },
+          stem: { type: "string" },
+          prompt_text: { type: "string" },
+          options: { type: "array", items: { type: "string" } },
+          correct_answer: { type: "string" },
+          explanation: { type: "string" },
+          marks_worth: { type: "integer" },
+          mark_scheme: { type: "string" },
+          topic_tag: { type: "string" },
+          subtopic_tag: { type: "string" },
+          difficulty_tag: { type: "string" },
+        },
+      },
+    },
+    positions: { type: "array", items: { type: "integer" } },
+  },
+  required: ["reply", "action", "questions"],
+} as const;
+
 // `sanitizeLatexBackslashes` lives in aiContracts.ts so the maker/verifier
 // pipeline benefits from the same protection. Re-exported alias kept here so
 // the existing copilot extractor below reads the same.
@@ -5512,7 +5556,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       // may ask the same question twice intentionally). We still tag the
       // call with a route + userId so it shows up in the admin dashboard.
       const tutorIdForCopilot = (req as any).tutorId as string | undefined;
-      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, undefined, {
+      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, COPILOT_RESPONSE_SCHEMA, {
         taskType: "chat",
         route: "copilot.chat",
         promptVersion: "copilot.system:v1",
@@ -5557,7 +5601,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         // Some graph questions failed repairGraphSpec — retry with an explicit spec prompt
         const retryUserPrompt = `Generate exactly ${graphShortfall} graph question${graphShortfall !== 1 ? "s" : ""} on this topic: ${text}\n\nReturn a JSON object with key "questions" containing the graph questions.`;
         try {
-          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt, undefined, {
+          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt, COPILOT_RESPONSE_SCHEMA, {
             taskType: "generation",
             route: "copilot.graph_retry",
             promptVersion: "copilot.graph_retry:v1",

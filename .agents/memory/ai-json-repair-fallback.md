@@ -1,35 +1,43 @@
 ---
-name: AI JSON repair fallback ladder
-description: Why fallback LLMs (Claude/Gemini) silently yield zero questions when the primary (GPT-5) is rate-limited, and the repair invariants that keep recovery working.
+name: AI structured-output policy (copilot/maker/verifier JSON)
+description: Why LLM JSON parsing fails under provider fallback, and the policy — prefer provider-native structured outputs at the source; the repair ladder is fallback only.
 ---
 
-# AI JSON repair fallback ladder
+# AI structured-output policy
 
-When the primary model (GPT-5) is rate-limited (429) the pipeline falls back to
-Claude Opus (copilot/maker) and Gemini (verifier). Those fallbacks routinely emit
-JSON that `JSON.parse` rejects, and a single repair attempt is not enough — so the
-copilot extractor dropped to a NONE fallback and the verifier "returned unaudited
-drafts", leaving tutors with ZERO attached questions even though the model
-"succeeded".
+**Rule:** every LLM call that must return JSON should pass an `expectedSchema` to
+`generateWithFallback`. The orchestrator turns a schema into provider-native
+structured output — Anthropic tool-use (returns `toolBlock.input`, guaranteed
+syntactic JSON), OpenAI/DeepSeek/gpt-4o `response_format: json_object`, Gemini
+`responseSchema`. Passing `undefined` lets every provider emit free-text JSON,
+which is the original sin behind "generation produced no valid draft".
 
-**Two recurring fault classes** (often combined in one payload):
-- Invalid backslash escapes from un-escaped LaTeX (`\alpha`, `\angle` → `\a` is not
-  a valid JSON escape).
-- Unescaped inner double-quotes and literal control chars inside string values.
+**Why this matters more than any repair code:** the primary model (e.g. GPT-5)
+can time out or rate-limit and silently fall back to Claude/Gemini. Those
+fallbacks routinely emit JSON that `JSON.parse` rejects. The two recurring fault
+classes are (a) invalid backslash escapes from un-escaped LaTeX (`\alpha` → `\a`),
+and (b) **unescaped inner double-quotes** plus literal control chars inside string
+values — classic with IGCSE CS pseudocode like `OUTPUT "x"`. Case (b) is
+**genuinely ambiguous**: neither the hand-rolled repair ladder nor the `jsonrepair`
+library can reliably fix it (verified against adversarial payloads). The only
+robust fix is to never produce broken JSON — i.e. structured output at the source.
 
-**Invariants that must hold for any repair work here:**
-- The escalating repair ladder runs **only after** a strict parse fails, so valid
-  JSON is never mutated. Heuristic repairs (escape control chars, escape inner
-  quotes) are last-resort steps, accepted as semantically lossy on already-broken
-  input.
-- A combined-fault payload needs the ladder run over **both** the raw base and the
-  LaTeX-backslash-sanitized base — sanitizing backslashes alone, or fixing quotes
-  alone, each misses payloads that have both faults.
-- The inner-quote heuristic treats a `"` as a string terminator only when the next
-  non-whitespace char is `,` `:` `}` `]` or EOF; otherwise it escapes it. This is
-  what keeps empty strings and structural quotes intact.
+**How to apply:**
+- New JSON-returning LLM call → define a JSON Schema and pass it as the 3rd arg of
+  `generateWithFallback`. Do NOT rely on post-hoc repair to bail you out.
+- Gemini's schema converter rejects an OBJECT with empty `properties`. Any array
+  of objects in the schema must list its common item fields explicitly. Leave
+  `additionalProperties` permissive (default) so extra per-question fields (e.g.
+  `graph_spec`) still flow through tool-use / json-mode.
+- A schema with `required: [...]` is safe even for call sites that read only one
+  key (e.g. graph-retry reads only `.questions`) — extra required keys are
+  harmless when present.
 
-**Why:** a provider outage must degrade to "questions still generated" not "zero
-questions, no error surfaced". The shared repair helpers in aiContracts are the
-single recovery path; keep the copilot extractor and every verifier routed through
-the same ladder rather than re-inventing per-call repairs.
+**Repair ladder = defense-in-depth only.** The escalating repair helpers in
+`aiContracts` still run, but only *after* a strict parse fails, so valid JSON is
+never mutated. They are a last resort for any legacy call that lacks a schema, not
+the primary contract. Keep new work on the structured-output path.
+
+**Independent concern (not solved by this):** primary-model timeout/latency is a
+separate SLO issue — structured output fixes parse resilience, not the GPT-5
+timeout that forces the fallback in the first place.

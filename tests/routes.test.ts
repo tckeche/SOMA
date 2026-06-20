@@ -1549,6 +1549,29 @@ describe("Copilot parser: schema-mismatch does not discard valid drafts", () => 
     generateWithFallback = mod.generateWithFallback;
   });
 
+  it("passes a JSON schema to generateWithFallback so providers emit structurally-valid JSON", async () => {
+    // Root-cause guard: passing expectedSchema=undefined let providers return
+    // free-text JSON, which broke JSON.parse on Claude-fallback pseudocode
+    // (unescaped inner quotes) and produced zero questions. A schema forces
+    // Anthropic tool-use / OpenAI JSON-mode (guaranteed-valid JSON).
+    vi.mocked(generateWithFallback).mockClear();
+    vi.mocked(generateWithFallback).mockResolvedValueOnce({
+      data: JSON.stringify({ reply: "ok", action: "ADD", questions: [] }),
+      metadata: { provider: "mock", model: "mock-model", durationMs: 10 },
+    });
+    await request.post("/api/tutor/copilot-chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Generate questions about Subject: Mathematics", includeGraphQuestions: false });
+
+    const schemaArg = vi.mocked(generateWithFallback).mock.calls[0]?.[2] as any;
+    expect(schemaArg).toBeDefined();
+    expect(schemaArg.type).toBe("object");
+    expect(schemaArg.properties?.questions?.type).toBe("array");
+    // questions.items must list properties (non-empty) so Gemini's strict
+    // responseSchema converter does not reject the object schema.
+    expect(Object.keys(schemaArg.properties.questions.items.properties).length).toBeGreaterThan(0);
+  });
+
   it("returns drafts when AI payload contains a marks_worth: 0 field (previously swallowed all)", async () => {
     // marks_worth: 0 fails the strict Zod schema (min 1) — was causing full parse to throw
     // and extractJsonArray falling back to wrapping the whole object, yielding 0 drafts
