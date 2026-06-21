@@ -27,7 +27,7 @@ import {
   assessmentAttachments, submissionUploads,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc } from "drizzle-orm";
+import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc, asc } from "drizzle-orm";
 import { invalidateExaminerMisconceptionsCache } from "./services/examinerMisconceptionsCache";
 import { traceLog, countWithField } from "./services/quizTraceLog";
 
@@ -427,7 +427,16 @@ class DatabaseStorage implements IStorage {
   }
 
   async getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]> {
-    return this.database.select().from(somaQuestions).where(eq(somaQuestions.quizId, quizId));
+    // ORDER BY id is required: the student engine positions by array index
+    // (questions[currentIndex]). Without a deterministic order, Postgres may
+    // return rows in a different order on a refetch (mobile reconnect / stale
+    // remount) or autosave resume, so currentIndex would land on a different
+    // question — the selected answer appears blank and a different MCQ shows.
+    return this.database
+      .select()
+      .from(somaQuestions)
+      .where(eq(somaQuestions.quizId, quizId))
+      .orderBy(asc(somaQuestions.id));
   }
 
   async updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined> {
@@ -813,7 +822,8 @@ class DatabaseStorage implements IStorage {
     const rows = await this.database
       .select()
       .from(somaQuestions)
-      .where(inArray(somaQuestions.quizId, quizIds));
+      .where(inArray(somaQuestions.quizId, quizIds))
+      .orderBy(asc(somaQuestions.id));
     const grouped: Record<number, SomaQuestion[]> = {};
     for (const q of rows) (grouped[q.quizId] ??= []).push(q);
     return grouped;
