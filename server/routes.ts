@@ -5564,7 +5564,8 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 ## CRITICAL RULES:
 - correct_answer must exactly match one of the 4 options (copy verbatim)
 - Do not regenerate unchanged questions — only return questions for ADD/REPLACE operations
-- For DELETE and REORDER, "questions" must be an empty array []`;
+- For DELETE and REORDER, "questions" must be an empty array []
+- NEVER claim in "reply" that you created, built, added, or replaced questions unless those exact question objects are present in the "questions" array. For ADD / REPLACE_ALL / REPLACE_SELECTED the "questions" array MUST contain one complete question object per question and MUST NOT be empty. The questions live ONLY in the "questions" array — "reply" is a short summary and must NEVER be used as a substitute for actually producing them.`;
 
       const userPrompt = [
         draftContextBlock || "(Draft is currently empty — no questions yet)",
@@ -5580,16 +5581,87 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       // may ask the same question twice intentionally). We still tag the
       // call with a route + userId so it shows up in the admin dashboard.
       const tutorIdForCopilot = (req as any).tutorId as string | undefined;
-      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, COPILOT_RESPONSE_SCHEMA, {
-        taskType: "chat",
+      // Authoring is a generation task — use the generation token budget. The
+      // legacy "chat" cap of 4096 is a separate latent risk: it can truncate a
+      // large/hybrid draft (quizzes now go up to 40 Qs) into invalid JSON. (It
+      // is NOT the cause of the empty-questions failure handled below, which is
+      // valid JSON with an empty array.) maxTokens is only a ceiling, so short
+      // conversational turns (DELETE/REORDER/NONE) cost nothing extra.
+      let { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, COPILOT_RESPONSE_SCHEMA, {
+        taskType: "generation",
         route: "copilot.chat",
         promptVersion: "copilot.system:v1",
         userId: tutorIdForCopilot,
+        maxTokens: 20_000,
       });
 
-      const structured = extractStructuredCopilotResponse(data);
+      let structured = extractStructuredCopilotResponse(data);
 
       console.log(`[COPILOT_DEBUG] Structured response: action=${structured.action}, raw_questions=${structured.questions.length}, draftSize=${currentDraft.length}`);
+
+      // ── Empty-questions safety net ─────────────────────────────────────────
+      // Under Anthropic tool-use the maker (Claude Opus 4.8) intermittently
+      // returns a structurally-valid object whose "reply" narrates "I built your
+      // quiz" while "questions" is EMPTY — it describes the work in prose instead
+      // of producing it. This is NOT a parse failure (the JSON parses cleanly),
+      // so the repair ladder can't recover it. When a generating action comes
+      // back with zero questions, retry once with a forceful corrective prompt;
+      // if it still fails, replace the model's misleading success narrative with
+      // an honest one so the tutor is never told a quiz was built that wasn't.
+      const GENERATING_ACTIONS = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED"];
+      let emptyQuestionsRetry: "none" | "succeeded" | "failed" = "none";
+      if (GENERATING_ACTIONS.includes(structured.action) && structured.questions.length === 0) {
+        // The tutor's intent (action + which slots to replace) lived in this
+        // original turn — the corrective retry's only job is to produce the
+        // questions, so preserve these for REPLACE_SELECTED.
+        const originalAction = structured.action;
+        const originalPositions = structured.positions;
+        console.warn(`[COPILOT_DEBUG] empty_questions_retry_attempted: action=${structured.action}, draftSize=${currentDraft.length}`);
+        sendEvent("stage", { stage: "drafting", label: "Regenerating questions" });
+        const correctiveUserPrompt = [
+          userPrompt,
+          `=== CRITICAL CORRECTION ===\nYour previous response set action="${structured.action}" but returned an EMPTY "questions" array — you described the questions in "reply" without actually producing them. This is invalid. Return the FULL question objects NOW: one complete object per question inside the "questions" array, honouring the PARAMETRIC REQUIREMENTS above (exact counts and the MCQ/structured split). The "questions" array MUST NOT be empty. Keep "reply" to a single short sentence.`,
+        ].join("\n\n");
+        try {
+          const retry = await generateWithFallback(copilotSystemPrompt, correctiveUserPrompt, COPILOT_RESPONSE_SCHEMA, {
+            taskType: "generation",
+            route: "copilot.chat_retry",
+            promptVersion: "copilot.system:v1",
+            userId: tutorIdForCopilot,
+            maxTokens: 20_000,
+          });
+          const retryStructured = extractStructuredCopilotResponse(retry.data);
+          if (retryStructured.questions.length > 0) {
+            // Carry the original replace-selected intent onto the retry result
+            // so a retry that produced questions but dropped/changed positions
+            // (or downgraded to REPLACE_ALL) doesn't wipe the wrong slots.
+            if (originalAction === "REPLACE_SELECTED") {
+              retryStructured.action = "REPLACE_SELECTED";
+              if (retryStructured.positions.length === 0) {
+                retryStructured.positions = originalPositions;
+              }
+            }
+            structured = retryStructured;
+            metadata = retry.metadata;
+            emptyQuestionsRetry = "succeeded";
+          } else {
+            emptyQuestionsRetry = "failed";
+          }
+        } catch (err: any) {
+          emptyQuestionsRetry = "failed";
+          console.warn(`[COPILOT_DEBUG] empty_questions_retry threw: ${err?.message || "unknown error"}`);
+        }
+        console.log(`[COPILOT_DEBUG] empty_questions_retry outcome=${emptyQuestionsRetry}, final_questions=${structured.questions.length}`);
+        // Still empty for a generating action → the "I built your quiz" reply is
+        // false. Replace it so the honest "no changes applied" suffix isn't
+        // contradicted by a success narrative.
+        if (structured.questions.length === 0) {
+          structured = {
+            ...structured,
+            reply: "I couldn't generate the questions this time — the model returned an empty draft. Please try again; if it keeps happening, try reducing the number of questions or simplifying the request.",
+          };
+        }
+      }
 
       // ── Step 1: Normalise raw question objects into DraftQuestion shape,
       //    tracking which attempted to be graph questions but failed validation

@@ -1,3 +1,4 @@
 - [Background processes & /tmp in this repl](background-procs.md) — detached jobs get SIGKILLed at tool-call end / on deploy events; /tmp files vanish. Run long tsc synchronously with `timeout 115`.
 - [AI structured-output policy](ai-json-repair-fallback.md) — JSON-returning LLM calls MUST pass expectedSchema to generateWithFallback (provider-native structured output); repair ladder is fallback only, can't fix unescaped inner quotes.
 - [Index-based UI needs stable DB order](index-based-ui-needs-stable-order.md) — list queries feeding `arr[index]` UIs MUST ORDER BY a stable key, or refetch/resume reorders blank/swap selections; grading & review equality must match (both trim).
+- [Anthropic tool-use empty structured output](anthropic-tooluse-empty-structured-output.md) — Claude can return valid JSON with empty arrays while prose claims work done; add a semantic non-empty check + retry, repair ladder can't catch it.
