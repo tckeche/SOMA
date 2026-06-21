@@ -341,9 +341,15 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   };
 }
 
+// Platform policy: a single quiz may contain at most this many questions.
+// Enforced at every user-facing write path — wizard metadata, AI generation,
+// the copilot draft-apply, and the manual draft / publish / add-questions
+// routes. (The maker/verifier pipeline keeps its own internal batching ceiling.)
+const MAX_QUESTIONS_PER_QUIZ = 15;
+
 /**
  * Normalise the quiz sub-type + parametric counts coming off the wizard.
- * Clamps the total to 1–40 (≥2 for hybrid), forces the structured/MCQ split to
+ * Clamps the total to 1–15 (≥2 for hybrid), forces the structured/MCQ split to
  * be internally consistent with the chosen mode, and collapses everything to a
  * pure-MCQ shape for PDF assessments (which don't use the quiz engine).
  */
@@ -358,7 +364,7 @@ function normalizeQuizModeFields(
   const minCount = mode === "hybrid" ? 2 : 1;
   let count = Number(rawCount);
   if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 12;
-  count = Math.max(minCount, Math.min(40, Math.round(count)));
+  count = Math.max(minCount, Math.min(MAX_QUESTIONS_PER_QUIZ, Math.round(count)));
   let structured: number;
   if (mode === "mcq") structured = 0;
   else if (mode === "structured") structured = count;
@@ -455,6 +461,37 @@ function applyDraftActionServer(
     }
     default: return current;
   }
+}
+
+// Cap enforcement for the copilot draft-apply path. The client applies
+// `action` + `questions` locally, so we trim the RETURNED questions (not just
+// the simulated draft) to keep the resulting draft within MAX_QUESTIONS_PER_QUIZ:
+// ADD is bounded by the room left in the current draft, REPLACE_ALL by the cap
+// itself. REPLACE_SELECTED / DELETE / REORDER can't grow the draft, so they pass
+// through unchanged. Returns a tutor-facing warning when anything was dropped.
+export function enforceDraftCap(
+  action: CopilotActionType,
+  currentDraftCount: number,
+  questions: DraftQuestion[],
+  max: number = MAX_QUESTIONS_PER_QUIZ,
+): { questions: DraftQuestion[]; warning: string } {
+  if (action === "ADD") {
+    const room = Math.max(0, max - currentDraftCount);
+    if (questions.length > room) {
+      const dropped = questions.length - room;
+      return {
+        questions: questions.slice(0, room),
+        warning: `\n\n⚠️ A quiz can hold at most ${max} questions. I kept ${room} of the new question${room !== 1 ? "s" : ""} and dropped ${dropped} to stay within the limit.`,
+      };
+    }
+  } else if (action === "REPLACE_ALL" && questions.length > max) {
+    const dropped = questions.length - max;
+    return {
+      questions: questions.slice(0, max),
+      warning: `\n\n⚠️ A quiz can hold at most ${max} questions, so I trimmed the draft to ${max} (dropped ${dropped}).`,
+    };
+  }
+  return { questions, warning: "" };
 }
 
 // Detect whether the user's message is requesting graph questions
@@ -4413,7 +4450,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     try {
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
-      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(40).default(30) }).parse(req.body || {});
+      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(1).max(MAX_QUESTIONS_PER_QUIZ).default(MAX_QUESTIONS_PER_QUIZ) }).parse(req.body || {});
       const subjects = await storage.listStudentSubjects(studentId);
       if (subjects.length === 0) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
@@ -4532,6 +4569,10 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               // reflects the number actually published.
               console.error(`[AI Publish] Quiz "${item.topic}" produced 0 usable questions after re-rolls — skipping publish.`);
               continue;
+            }
+            if (generated.questions.length > MAX_QUESTIONS_PER_QUIZ) {
+              console.warn(`[AI Publish] Quiz "${item.topic}" overproduced ${generated.questions.length} questions — trimming to cap of ${MAX_QUESTIONS_PER_QUIZ} before publish.`);
+              generated.questions = generated.questions.slice(0, MAX_QUESTIONS_PER_QUIZ);
             }
             const balancedGen = balanceAnswerOptions(generated.questions);
             const quiz = await storage.createSomaQuizBundle({
@@ -4697,6 +4738,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
       const { questions } = req.body;
       if (!Array.isArray(questions)) return res.status(400).json({ message: "questions array required" });
+      if (questions.length > MAX_QUESTIONS_PER_QUIZ) {
+        return res.status(400).json({ message: `A quiz can have at most ${MAX_QUESTIONS_PER_QUIZ} questions (received ${questions.length}).` });
+      }
       traceLog("route.putDraft.entry", {
         route: "/api/tutor/quizzes/:quizId/draft",
         quizId,
@@ -4752,6 +4796,9 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         return res.json({ quizId, publishedCount: 0, questions: [], format: "pdf" });
       }
       if (draft.length === 0) return res.status(400).json({ message: "Draft is empty — add questions before publishing" });
+      if (draft.length > MAX_QUESTIONS_PER_QUIZ) {
+        return res.status(400).json({ message: `A quiz can have at most ${MAX_QUESTIONS_PER_QUIZ} questions (draft has ${draft.length}). Remove some before publishing.` });
+      }
       traceLog("route.publish.draftLoaded", {
         quizId,
         draftSource: getDraft(quizId).length > 0 && draft === getDraft(quizId) ? "serverStore" : "clientBody",
@@ -4979,6 +5026,10 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         if (!Array.isArray(q.options) || q.options.length !== 4) {
           return res.status(400).json({ message: "Each question must have exactly 4 options" });
         }
+      }
+      const existingForCap = await storage.getSomaQuestionsByQuizId(quizId);
+      if (existingForCap.length + questions.length > MAX_QUESTIONS_PER_QUIZ) {
+        return res.status(400).json({ message: `A quiz can have at most ${MAX_QUESTIONS_PER_QUIZ} questions (already has ${existingForCap.length}, tried to add ${questions.length}).` });
       }
 
       // Look up approved examiner-misconception seeds for this quiz's
@@ -5422,7 +5473,7 @@ Your job is to return a JSON object that describes what action to take on the dr
 }
 
 ## ACTION TYPES:
-- ADD: Append new questions to the end of the draft. Put new questions in "questions", leave "positions" empty.
+- ADD: Append new questions to the end of the draft. Put new questions in "questions", leave "positions" empty. A quiz may hold AT MOST ${MAX_QUESTIONS_PER_QUIZ} questions total — never let an ADD take the draft above ${MAX_QUESTIONS_PER_QUIZ}; if the request would exceed it, add only as many as fit and say so in "reply".
 - REPLACE_ALL: Replace the entire draft with new questions. Put all new questions in "questions", leave "positions" empty.
 - REPLACE_SELECTED: Replace specific questions. "positions[i]" (1-based) is replaced by "questions[i]". Both arrays must be the same length.
 - DELETE: Remove specific questions by position. Put 1-based positions in "positions", leave "questions" empty.
@@ -5786,6 +5837,12 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         });
       }
 
+      // ── Cap enforcement: never let the applied draft exceed the platform
+      //    maximum (see enforceDraftCap).
+      const capResult = enforceDraftCap(structured.action, currentDraft.length, normalisedQuestions);
+      normalisedQuestions = capResult.questions;
+      const draftCapWarning = capResult.warning;
+
       // ── Step 3: Simulate the final draft state on the server to compute
       //    verified graph positions (what the client will actually see)
       const simulatedDraft = applyDraftActionServer(
@@ -5883,7 +5940,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       });
 
       const responsePayload = {
-        reply: `${structured.reply}${replySuffix}${graphVerificationBlock}`,
+        reply: `${structured.reply}${replySuffix}${graphVerificationBlock}${draftCapWarning}`,
         action: structured.action,
         questions: normalisedQuestions,
         positions: structured.positions,
@@ -6577,7 +6634,7 @@ ${JSON.stringify({
     questionCount: z.number()
       .int("Question count must be a whole number")
       .min(1, "Generate at least 1 question")
-      .max(40, "You can generate at most 40 questions at once")
+      .max(MAX_QUESTIONS_PER_QUIZ, `You can generate at most ${MAX_QUESTIONS_PER_QUIZ} questions at once`)
       .default(12),
     difficultyDistribution: z.object({
       // 0 is valid — a tutor may want an exam with no easy (or no hard) questions.
@@ -6819,6 +6876,10 @@ ${JSON.stringify({
           warnings: result.warnings,
         });
       }
+      if (result.questions.length > MAX_QUESTIONS_PER_QUIZ) {
+        console.warn(`[SOMA] Quiz "${quizTitle}" overproduced ${result.questions.length} questions — trimming to cap of ${MAX_QUESTIONS_PER_QUIZ} before persist.`);
+        result.questions = result.questions.slice(0, MAX_QUESTIONS_PER_QUIZ);
+      }
 
       const quiz = await storage.createSomaQuiz({
         title: quizTitle,
@@ -6990,6 +7051,10 @@ ${JSON.stringify({
           message: "Generation produced no usable questions: every question failed the quality checks even after regeneration. Please try again.",
           warnings: result.warnings,
         });
+      }
+      if (result.questions.length > MAX_QUESTIONS_PER_QUIZ) {
+        console.warn(`[SOMA] Tutor quiz "${quizTitle}" overproduced ${result.questions.length} questions — trimming to cap of ${MAX_QUESTIONS_PER_QUIZ} before persist.`);
+        result.questions = result.questions.slice(0, MAX_QUESTIONS_PER_QUIZ);
       }
 
       const adopted = await storage.getAdoptedStudents(tutorId);

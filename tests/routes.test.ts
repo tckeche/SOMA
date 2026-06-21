@@ -87,7 +87,8 @@ vi.mock("@google/generative-ai", () => ({
 }));
 
 // ─── Setup Express app with all routes ───────────────────────────────────────
-import { registerRoutes } from "../server/routes";
+import { registerRoutes, enforceDraftCap } from "../server/routes";
+import { generateAuditedQuiz } from "../server/services/aiPipeline";
 
 let app: express.Express;
 let httpServer: any;
@@ -470,6 +471,122 @@ describe("Tutor Question Management", () => {
   });
 });
 
+// ─── Question-count cap (max 15 per quiz) ─────────────────────────────────────
+describe("Question cap: max 15 questions per quiz", () => {
+  let token: string;
+  let cookie: string;
+
+  // 4xx bodies are wrapped by the response envelope as { error: { message } }.
+  const errMsg = (res: any): string => res.body?.error?.message ?? res.body?.message ?? "";
+
+  function makeQuestions(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      prompt_text: `Q${i + 1}: what is ${i} + ${i}?`,
+      options: ["a", "b", "c", "d"],
+      correct_answer: "a",
+      marks_worth: 1,
+    }));
+  }
+
+  beforeAll(async () => {
+    cookie = await loginAsAdmin();
+    token = await getTutorToken();
+  });
+
+  it("PUT /draft rejects a draft of 16 questions", async () => {
+    const quiz = await createTestQuiz(cookie, { title: "Draft Cap Reject Quiz" });
+    const res = await request
+      .put(`/api/tutor/quizzes/${quiz.id}/draft`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: makeQuestions(16) });
+    expect(res.status).toBe(400);
+    expect(errMsg(res)).toMatch(/at most 15/i);
+  });
+
+  it("PUT /draft accepts a draft of exactly 15 questions", async () => {
+    const quiz = await createTestQuiz(cookie, { title: "Draft Cap Accept Quiz" });
+    const res = await request
+      .put(`/api/tutor/quizzes/${quiz.id}/draft`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: makeQuestions(15) });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /publish rejects a client-sent draft over 15", async () => {
+    const quiz = await createTestQuiz(cookie, { title: "Publish Cap Quiz" });
+    const res = await request
+      .post(`/api/tutor/quizzes/${quiz.id}/publish`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: makeQuestions(20) });
+    expect(res.status).toBe(400);
+    expect(errMsg(res)).toMatch(/at most 15/i);
+  });
+
+  it("POST /questions rejects when existing + incoming exceeds 15", async () => {
+    const quiz = await createTestQuiz(cookie, { title: "Add Cap Quiz" });
+    const first = await request
+      .post(`/api/tutor/quizzes/${quiz.id}/questions`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: makeQuestions(10) });
+    expect(first.status).toBe(200);
+    const second = await request
+      .post(`/api/tutor/quizzes/${quiz.id}/questions`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ questions: makeQuestions(6) });
+    expect(second.status).toBe(400);
+    expect(errMsg(second)).toMatch(/at most 15/i);
+  });
+});
+
+// ─── Copilot draft-apply cap (enforceDraftCap) ────────────────────────────────
+describe("enforceDraftCap", () => {
+  const q = (n: number) => Array.from({ length: n }, () => ({})) as any[];
+
+  it("ADD into an empty draft trims to the 15-question cap", () => {
+    const out = enforceDraftCap("ADD", 0, q(20));
+    expect(out.questions.length).toBe(15);
+    expect(out.warning).toMatch(/at most 15/i);
+  });
+
+  it("ADD respects the room left in a non-empty draft", () => {
+    const out = enforceDraftCap("ADD", 10, q(10));
+    expect(out.questions.length).toBe(5);
+    expect(out.warning).toMatch(/dropped 5/i);
+  });
+
+  it("ADD to a full draft drops everything", () => {
+    const out = enforceDraftCap("ADD", 15, q(3));
+    expect(out.questions.length).toBe(0);
+    expect(out.warning).toMatch(/at most 15/i);
+  });
+
+  it("ADD that fits leaves the questions and warning untouched", () => {
+    const out = enforceDraftCap("ADD", 5, q(5));
+    expect(out.questions.length).toBe(5);
+    expect(out.warning).toBe("");
+  });
+
+  it("REPLACE_ALL trims to the cap", () => {
+    const out = enforceDraftCap("REPLACE_ALL", 0, q(20));
+    expect(out.questions.length).toBe(15);
+    expect(out.warning).toMatch(/at most 15/i);
+  });
+
+  it("REPLACE_ALL within the cap is untouched", () => {
+    const out = enforceDraftCap("REPLACE_ALL", 0, q(15));
+    expect(out.questions.length).toBe(15);
+    expect(out.warning).toBe("");
+  });
+
+  it("non-growing actions pass through unchanged", () => {
+    for (const action of ["REPLACE_SELECTED", "DELETE", "REORDER", "NONE"] as const) {
+      const out = enforceDraftCap(action, 14, q(20));
+      expect(out.questions.length).toBe(20);
+      expect(out.warning).toBe("");
+    }
+  });
+});
+
 // ─── STUDENTS: Registration (legacy — route removed) ───────────────────────────
 describe.skip("POST /api/students", () => {
   it("creates a student", async () => {
@@ -741,6 +858,29 @@ describe("POST /api/soma/generate", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.pipeline.stages)).toBe(true);
     expect(res.body.pipeline.stages.length).toBeGreaterThan(0);
+  });
+
+  it("never persists more than 15 questions even if the generator overproduces", async () => {
+    vi.mocked(generateAuditedQuiz).mockResolvedValueOnce({
+      questions: Array.from({ length: 16 }, (_, i) => ({
+        stem: `Overproduced Q${i + 1}: ${i} + ${i}?`,
+        options: ["1", "2", "3", "4"],
+        correct_answer: "2",
+        explanation: "Mock explanation.",
+        marks: 1,
+      })),
+      warnings: [],
+      telemetry: { makerModel: "anthropic/claude-sonnet-4-6", checkerModel: "openai/gpt-4o", polishModel: null, totalDurationMs: 0 },
+      verification: [],
+      seedMisconceptionIds: [],
+      blueprint: null,
+      blockedQuestions: [],
+    } as any);
+    const res = await request.post("/api/soma/generate")
+      .set("Cookie", cookie)
+      .send({ topic: "Overproduction", title: "Overproduction Quiz" });
+    expect(res.status).toBe(200);
+    expect(res.body.questions.length).toBe(15);
   });
 });
 
