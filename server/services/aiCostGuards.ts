@@ -34,9 +34,12 @@ const MAX_TOKENS: Record<TaskType, number> = {
   // headroom keeps us out of silent-truncation territory.
   generation: 20_000,
 
-  // Verifier returns a corrected version of the input plus warnings —
-  // bounded in size by the input draft, not by free-form generation.
-  verification: 8_192,
+  // Verifier returns a corrected version of the input PLUS a written
+  // explanation and 4 per-option rationales for every question — so its output
+  // is materially LARGER than the input draft, not bounded by it. An 8k cap
+  // truncated ~15-question verified batches → invalid JSON → wasted regen.
+  // 16k comfortably fits a full 15-question verified batch with rationales.
+  verification: 16_384,
 
   // Free-response grading: a few hundred tokens of feedback, never more.
   grading: 1_024,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
@@ -18,7 +18,13 @@ import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
-import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
+import { type SubjectInsight } from "@/components/SyllabusInsightsSection";
+// Lazy-loaded: this section pulls in recharts (the app's heaviest dependency,
+// isolated into its own "charts" chunk). Deferring it keeps the recharts bundle
+// off the dashboard's initial download — it only loads when this section paints.
+const SyllabusInsightsSection = lazy(() =>
+  import("@/components/SyllabusInsightsSection").then((m) => ({ default: m.SyllabusInsightsSection })),
+);
 import ExaminerInsightsCarousel, { type ExaminerInsightCard } from "@/components/student/ExaminerInsightsCarousel";
 import TopicCoverageExplorer from "@/components/student/TopicCoverageExplorer";
 import type {
@@ -680,11 +686,13 @@ export default function StudentDashboard() {
                 <PerformanceBlock data={data} />
                 <FocusBlock data={data} />
                 <ExaminerInsightsCarousel insights={examinerInsights} />
-                <SyllabusInsightsSection
-                  insights={syllabusInsights}
-                  isLoading={syllabusInsightsLoading}
-                  studentFirstName={(data.student.displayName || "").split(" ")[0]}
-                />
+                <Suspense fallback={null}>
+                  <SyllabusInsightsSection
+                    insights={syllabusInsights}
+                    isLoading={syllabusInsightsLoading}
+                    studentFirstName={(data.student.displayName || "").split(" ")[0]}
+                  />
+                </Suspense>
                 <WrittenFeedbackBlock data={data} />
                 <WinsBlock wins={data.recentWins} />
               </div>

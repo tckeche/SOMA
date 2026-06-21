@@ -342,7 +342,7 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
 
 /**
  * Normalise the quiz sub-type + parametric counts coming off the wizard.
- * Clamps the total to 1–15 (≥2 for hybrid), forces the structured/MCQ split to
+ * Clamps the total to 1–40 (≥2 for hybrid), forces the structured/MCQ split to
  * be internally consistent with the chosen mode, and collapses everything to a
  * pure-MCQ shape for PDF assessments (which don't use the quiz engine).
  */
@@ -356,8 +356,8 @@ function normalizeQuizModeFields(
   const mode = rawMode === "structured" || rawMode === "hybrid" ? rawMode : "mcq";
   const minCount = mode === "hybrid" ? 2 : 1;
   let count = Number(rawCount);
-  if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 5;
-  count = Math.max(minCount, Math.min(15, Math.round(count)));
+  if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 12;
+  count = Math.max(minCount, Math.min(40, Math.round(count)));
   let structured: number;
   if (mode === "mcq") structured = 0;
   else if (mode === "structured") structured = count;
@@ -1166,16 +1166,20 @@ function createAiRouteLimiter(options: {
   });
 }
 
+// Quiz generation must NEVER be blocked by a rate limit under normal use — a
+// tutor needing to build assessments should always succeed. These limits are
+// deliberately set high so they only ever trip on runaway/abusive automation
+// (a genuine DoS backstop), not on real teaching workloads.
 const legacyAdminAiLimiter = createAiRouteLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 3,
-  reason: "legacy/admin AI generation limit exceeded",
+  limit: 200,
+  reason: "legacy/admin AI generation abuse backstop exceeded",
 });
 
 const tutorGenerationAiLimiter = createAiRouteLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 12,
-  reason: "tutor AI generation limit exceeded",
+  limit: 300,
+  reason: "tutor AI generation abuse backstop exceeded",
 });
 
 const tutorCopilotAiLimiter = createAiRouteLimiter({
@@ -4389,7 +4393,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     try {
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
-      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(50).default(30) }).parse(req.body || {});
+      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(40).default(30) }).parse(req.body || {});
       const subjects = await storage.listStudentSubjects(studentId);
       if (subjects.length === 0) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
@@ -6481,8 +6485,8 @@ ${JSON.stringify({
     questionCount: z.number()
       .int("Question count must be a whole number")
       .min(1, "Generate at least 1 question")
-      .max(50, "You can generate at most 50 questions at once")
-      .default(8),
+      .max(40, "You can generate at most 40 questions at once")
+      .default(12),
     difficultyDistribution: z.object({
       // 0 is valid — a tutor may want an exam with no easy (or no hard) questions.
       easy: z.number().min(0, "Easy percentage cannot be negative").max(100, "Easy percentage cannot exceed 100"),
