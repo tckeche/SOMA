@@ -241,6 +241,7 @@ export default function BuilderPage() {
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState<{ role: "user" | "ai"; text: string; metadata?: { provider: string; model: string; durationMs: number }; warnings?: { questionIndex: number; field: string; issue: string; autoFixed: boolean }[] }[]>([]);
   const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([]);
+  const [formingQuestions, setFormingQuestions] = useState<DraftQuestion[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -796,6 +797,7 @@ export default function BuilderPage() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setPipelineActive(false);
+    setFormingQuestions([]);
     setGenerationStartedAt(null);
   }, []);
 
@@ -845,6 +847,7 @@ export default function BuilderPage() {
 
       animatePipeline(1);
       setGenerationState("generation_in_progress");
+      setFormingQuestions([]);
       const controller = new AbortController();
       abortControllerRef.current = controller;
       // Inactivity watchdog: abort only if the server goes completely silent for
@@ -911,6 +914,11 @@ export default function BuilderPage() {
               if (payload?.stage === "drafting") animatePipeline(1);
               else if (payload?.stage === "verifying") animatePipeline(2);
               else if (payload?.stage === "saving") animatePipeline(3);
+            } else if (eventName === "preview") {
+              const previews: DraftQuestion[] = (Array.isArray(payload?.questions) ? payload.questions : [])
+                .map((q: any) => rawToDraftQuestion(q))
+                .filter((p: DraftQuestion | null): p is DraftQuestion => p !== null);
+              if (previews.length > 0) setFormingQuestions(previews);
             } else if (eventName === "done") {
               donePayload = payload;
             } else if (eventName === "error") {
@@ -961,6 +969,7 @@ export default function BuilderPage() {
 
       if (data.needsClarification) {
         setPipelineActive(false);
+        setFormingQuestions([]);
         setGenerationState("generation_failed");
         return { action: "NONE" as CopilotAction, questions: [], positions: [], reply: data.reply, metadata: data.metadata, warnings: data.warnings };
       }
@@ -990,6 +999,7 @@ export default function BuilderPage() {
 
         // Update local React state now that server is authoritative
         setDraftQuestions(newDraft);
+        setFormingQuestions([]); // verified draft is in — drop the forming preview
         setIsDraftDirty(false); // draft is clean — just synced
 
         // Update the browser URL without triggering a route change or component remount.
@@ -1005,6 +1015,7 @@ export default function BuilderPage() {
       }
 
       setPipelineActive(false);
+      setFormingQuestions([]);
       return { action, questions, positions, reply: data.reply, metadata: data.metadata, verification: data.verification, warnings: data.warnings };
     },
     onSuccess: (data, message) => {
@@ -1041,6 +1052,7 @@ export default function BuilderPage() {
     },
     onError: (err: Error) => {
       setPipelineActive(false);
+      setFormingQuestions([]);
       setGenerationStartedAt(null);
       setGenerationState(err.message.toLowerCase().includes("draft") ? "persistence_failed" : "generation_failed");
       const friendly = err.message.includes("stopped")
@@ -1790,6 +1802,32 @@ export default function BuilderPage() {
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Live preview — questions forming while the verifier runs */}
+            {pipelineActive && formingQuestions.length > 0 && (
+              <div className="space-y-2 max-h-[40vh] overflow-auto pr-1 border-t border-border/30 pt-3" data-testid="list-preview-questions">
+                <div className="flex items-center gap-1.5 text-[10px] text-primary font-medium">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Verifying answers &amp; explanations… ({formingQuestions.length} forming)
+                </div>
+                {formingQuestions.map((q, idx) => (
+                  <div
+                    key={`preview-${q.draftId}`}
+                    className="bg-primary/[0.04] border border-primary/20 rounded-lg p-3 flex items-start gap-2"
+                    data-testid={`card-preview-q-${idx}`}
+                  >
+                    <span className="text-xs font-mono text-primary font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-foreground/80 line-clamp-2"><MarkdownRenderer content={q.stem} /></div>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.marks}m</Badge>
+                        <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">verifying…</Badge>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

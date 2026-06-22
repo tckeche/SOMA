@@ -5794,6 +5794,14 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
+      // ── Cap enforcement: never let the applied draft exceed the platform
+      //    maximum (see enforceDraftCap). Done BEFORE the preview emit and the
+      //    verifier audit so we only show/verify the questions that will
+      //    actually survive (no misleading over-count, no wasted audit work).
+      const capResult = enforceDraftCap(structured.action, currentDraft.length, normalisedQuestions);
+      normalisedQuestions = capResult.questions;
+      const draftCapWarning = capResult.warning;
+
       // ── Step 2.5: Verifier audit on NEW MCQ questions ──
       // Same ChatGPT → Gemini verifier chain as the main quiz pipeline: checks
       // each answer, fixes any that are wrong, and writes the Soma explanation.
@@ -5818,6 +5826,14 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
           });
         }
       });
+
+      // Stream a preview of the drafted questions so the tutor sees them forming
+      // while the (slow) verifier audit runs below. Display-only — the
+      // authoritative, verified set ships in the final "done" event.
+      if (wantsStream && newQuestionActions.includes(structured.action) && normalisedQuestions.length > 0) {
+        sendEvent("preview", { action: structured.action, questions: normalisedQuestions });
+      }
+
       if (newQuestionActions.includes(structured.action) && mcqToCheck.length > 0) {
         const meta = (assessmentContext as any)?.assessmentMeta || {};
         const checkerContext: SomaGenerationContext = {
@@ -5847,12 +5863,6 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
           };
         });
       }
-
-      // ── Cap enforcement: never let the applied draft exceed the platform
-      //    maximum (see enforceDraftCap).
-      const capResult = enforceDraftCap(structured.action, currentDraft.length, normalisedQuestions);
-      normalisedQuestions = capResult.questions;
-      const draftCapWarning = capResult.warning;
 
       // ── Step 3: Simulate the final draft state on the server to compute
       //    verified graph positions (what the client will actually see)
