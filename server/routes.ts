@@ -5249,12 +5249,23 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     // can show real progress instead of a frozen spinner. Non-streaming
     // clients still get the regular single JSON response at the end.
     const wantsStream = String(req.headers.accept || "").includes("text/event-stream");
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
     if (wantsStream) {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache, no-transform");
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders?.();
+      // Keep the SSE socket warm during long, silent pipeline phases (e.g. GPT-5
+      // verification can run for minutes without emitting a stage event). Without
+      // these pings the client's inactivity watchdog aborts a generation that is
+      // still progressing server-side, surfacing a false "Generation failed".
+      heartbeat = setInterval(() => {
+        try { res.write(": ping\n\n"); } catch { /* socket closed */ }
+      }, 10_000);
+      res.on("close", () => {
+        if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+      });
     }
     const sendEvent = (name: string, payload: unknown) => {
       if (!wantsStream) return;
@@ -5987,6 +5998,8 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       } else {
         return sendInternalError(req, res, err, "copilot.generate", "We could not generate the copilot response. Please try again.");
       }
+    } finally {
+      if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
     }
   });
 

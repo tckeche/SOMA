@@ -255,6 +255,9 @@ export default function BuilderPage() {
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [lastAttemptMessage, setLastAttemptMessage] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Inactivity window (ms): abort generation only after this long with NO bytes
+  // from the server. The server emits stage events plus ~10s SSE heartbeats, so a
+  // legitimate long-running generation stays alive; a truly dead stream still bails.
   const GENERATION_TIMEOUT_MS = 90_000;
 
   const [includeGraphQuestions, setIncludeGraphQuestions] = useState(false);
@@ -844,8 +847,15 @@ export default function BuilderPage() {
       setGenerationState("generation_in_progress");
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      // Timeout bounds the *entire* request including stream consumption.
-      const timeoutId = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+      // Inactivity watchdog: abort only if the server goes completely silent for
+      // GENERATION_TIMEOUT_MS. Reset on every byte received (stage events + SSE
+      // heartbeats) so a long-but-progressing generation is never killed mid-flight.
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      const armIdleWatchdog = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+      };
+      armIdleWatchdog();
       let data: any;
       try {
         let res: Response;
@@ -912,6 +922,9 @@ export default function BuilderPage() {
             while (true) {
               const { value, done } = await reader.read();
               if (value) {
+                // Any byte from the server (stage event or heartbeat) proves it's
+                // still alive — reset the inactivity watchdog.
+                armIdleWatchdog();
                 // Normalise CRLF framing to LF before splitting on the SSE delimiter.
                 buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
               }
@@ -942,7 +955,7 @@ export default function BuilderPage() {
           data = await res.json();
         }
       } finally {
-        clearTimeout(timeoutId);
+        if (idleTimer) clearTimeout(idleTimer);
         abortControllerRef.current = null;
       }
 
