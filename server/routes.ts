@@ -2,6 +2,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
 import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
+import { buildPdfMarkingIdempotencyKey } from "./services/pdfReconciliation";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { computeDefaultDueDate } from "@shared/dueDate";
 import { z } from "zod";
@@ -993,9 +994,9 @@ function publicAttachment<T extends { storagePath?: string }>(row: T) {
 }
 
 /** Strip the internal storage key from a submission row before returning it. */
-function publicSubmission<T extends { storagePath?: string }>(row: T) {
-  const { storagePath, ...rest } = row;
-  return rest;
+function publicSubmission<T extends { storagePath?: string; annotatedStoragePath?: string | null }>(row: T) {
+  const { storagePath, annotatedStoragePath, ...rest } = row;
+  return { ...rest, hasAnnotatedPdf: Boolean(annotatedStoragePath) };
 }
 
 
@@ -3094,6 +3095,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           mimeType: PDF_MIME,
           sizeBytes: file.size,
           uploadedBy: tutorId,
+          documentRole: (req.body?.documentRole === "exam_paper" || req.body?.documentRole === "supporting_resource") ? req.body.documentRole : "worksheet",
         });
         return res.status(201).json(publicAttachment(row));
       } catch (err: any) {
@@ -3241,7 +3243,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           return res.status(400).json({ message: "This assessment does not accept PDF responses" });
         }
 
-        const storagePath = `submissions/${quizId}/${studentId}.pdf`;
+        const contentHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+        const config = quiz.pdfMarkingMode === "dual_ai" ? await storage.getPdfAssessmentConfig(quizId) : undefined;
+        const aiReady = quiz.pdfMarkingMode === "dual_ai" && config?.preparationStatus === "ready" && config.activeRubricVersionId;
+        const storagePath = quiz.pdfMarkingMode === "dual_ai"
+          ? `submissions/${quizId}/${studentId}/versions/${Date.now()}-${crypto.randomUUID()}.pdf`
+          : `submissions/${quizId}/${studentId}.pdf`;
         await uploadPdf(storagePath, file.buffer);
         const row = await storage.upsertSubmissionUpload({
           quizId,
@@ -3250,7 +3257,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           storagePath,
           mimeType: PDF_MIME,
           sizeBytes: file.size,
+          contentHash,
+          aiMarkingStatus: quiz.pdfMarkingMode === "dual_ai" ? (aiReady ? "queued" : "blocked_setup") : null,
         });
+        if (quiz.pdfMarkingMode === "dual_ai" && aiReady && config?.activeRubricVersionId) {
+          await storage.upsertPdfMarkingJob({
+            jobType: "mark_submission",
+            idempotencyKey: buildPdfMarkingIdempotencyKey({ submissionUploadId: row.id, submissionVersion: row.submissionVersion, contentHash, rubricVersionId: config.activeRubricVersionId }),
+            quizId,
+            submissionUploadId: row.id,
+            rubricVersionId: config.activeRubricVersionId,
+            payload: { submissionVersion: row.submissionVersion },
+            maxAttempts: Number(process.env.PDF_MARKING_MAX_ATTEMPTS || 3),
+          });
+        }
         return res.status(201).json(publicSubmission(row));
       } catch (err: any) {
         if (err instanceof FileStorageError) {

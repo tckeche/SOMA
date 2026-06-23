@@ -11,6 +11,7 @@ interface QuizAttachment {
   sizeBytes: number;
   mimeType: string;
   createdAt: string;
+  documentRole?: "worksheet" | "exam_paper" | "supporting_resource";
 }
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -26,7 +27,7 @@ function formatBytes(bytes: number) {
 // Tutor-facing worksheet attachment manager for a single quiz. Upload, list
 // and delete PDF worksheets. Used by the builder when the assessment format is
 // "pdf" — the worksheet IS the assessment that students download and respond to.
-export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
+export default function TutorWorksheetManager({ quizId, pdfMarkingMode = "manual" }: { quizId: number; pdfMarkingMode?: "manual" | "dual_ai" }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -51,6 +52,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("documentRole", pdfMarkingMode === "dual_ai" ? "exam_paper" : "worksheet");
       const res = await authFetch(`/api/tutor/quizzes/${quizId}/attachments`, {
         method: "POST",
         body: formData,
@@ -62,7 +64,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: attachmentsKey });
       setSelectedFile(null);
-      toast({ title: "Worksheet uploaded" });
+      toast({ title: pdfMarkingMode === "dual_ai" ? "Exam paper uploaded" : "Worksheet uploaded" });
     },
     onError: (err: Error) => {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -106,13 +108,22 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
     <div className="glass-card p-4 md:p-5 space-y-4" data-testid="panel-worksheet-manager">
       <div className="flex items-center gap-2">
         <Paperclip className="w-4 h-4 text-primary" />
-        <h2 className="font-semibold text-foreground text-sm">Worksheets</h2>
+        <h2 className="font-semibold text-foreground text-sm">{pdfMarkingMode === "dual_ai" ? "Exam paper PDF" : "Worksheets"}</h2>
         <span className="text-[10px] text-muted-foreground ml-auto">{attachments.length} file{attachments.length === 1 ? "" : "s"}</span>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Upload the worksheet PDF(s) students will download and complete. Students submit a PDF response that you mark manually — there is no timer or multiple-choice engine for this assessment type.
+        {pdfMarkingMode === "dual_ai" ? "Upload the exam paper PDF students will complete. You can then prepare and approve a private marking rubric before AI-assisted marking begins." : "Upload the worksheet PDF(s) students will download and complete. Students submit a PDF response that you mark manually — there is no timer or multiple-choice engine for this assessment type."}
       </p>
+
+
+      {pdfMarkingMode === "dual_ai" && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground space-y-2">
+          <p><strong className="text-foreground">Optional marking scheme</strong> · Private — students cannot view this file.</p>
+          <p>Use the PDF marking setup panel after upload to prepare, review and approve the rubric. AI marks are never released until tutor approval.</p>
+          <Button type="button" variant="outline" size="sm" onClick={async () => { const res = await authFetch(`/api/tutor/quizzes/${quizId}/pdf-marking/prepare`, { method: "POST" }); if (!res.ok) throw new Error("Prepare failed"); toast({ title: "Rubric preparation queued" }); }}>Prepare marking rubric</Button>
+        </div>
+      )}
 
       {storageUnconfigured ? (
         <div className="rounded-xl bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">

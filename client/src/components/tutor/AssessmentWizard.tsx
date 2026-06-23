@@ -104,6 +104,8 @@ export interface AssessmentWizardProps {
   // "pdf" switches the build to worksheet upload + student PDF submission.
   format: "mcq" | "pdf";
   onFormatChange: (next: "mcq" | "pdf") => void;
+  pdfMarkingMode: "manual" | "dual_ai";
+  onPdfMarkingModeChange: (next: "manual" | "dual_ai") => void;
   // Locked once the assessment exists so the format can't change after rows
   // (questions or worksheets) are tied to one delivery model.
   formatLocked?: boolean;
@@ -148,7 +150,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
     timeLimitMinutes, onTimeLimitChange,
     activeQuizId, metaDirty, onSaveMeta, saveMetaPending,
     quickStart, onQuickStartChange,
-    format, onFormatChange, formatLocked = false,
+    format, onFormatChange, pdfMarkingMode, onPdfMarkingModeChange, formatLocked = false,
     quizMode, onQuizModeChange,
     questionCount, onQuestionCountChange,
     structuredRatio, onStructuredRatioChange,
@@ -253,7 +255,7 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         <div className="grid grid-cols-2 gap-2">
           {([
             { value: "mcq" as const, title: "Quiz", desc: "AI-built questions, auto-marked", icon: ListChecks },
-            { value: "pdf" as const, title: "PDF Submission", desc: "Upload worksheet, mark by hand", icon: FileText },
+            { value: "pdf" as const, title: "PDF Submission", desc: "Upload an assessment and choose manual or AI-assisted marking.", icon: FileText },
           ]).map((opt) => {
             const Icon = opt.icon;
             const selected = format === opt.value;
@@ -282,6 +284,23 @@ export function AssessmentWizard(props: AssessmentWizardProps) {
         </div>
         {formatLocked && (
           <p className="text-[11px] text-muted-foreground">Type is locked once the assessment is created.</p>
+        )}
+
+        {format === "pdf" && (
+          <div className="mt-3 rounded-lg border border-border/40 bg-background/30 p-3 space-y-2" data-testid="pdf-marking-method">
+            <Label className="text-xs uppercase text-muted-foreground">PDF marking method</Label>
+            <div className="grid gap-2 md:grid-cols-2">
+              {[
+                { value: "manual" as const, title: "Tutor marks manually", desc: "Use the current PDF workflow and enter marks yourself." },
+                { value: "dual_ai" as const, title: "AI-assisted dual marking", desc: "Two independent AI markers assess the handwritten script, cross-check one another and prepare an annotated result for tutor approval." },
+              ].map((opt) => (
+                <button key={opt.value} type="button" disabled={formatLocked} onClick={() => onPdfMarkingModeChange(opt.value)} className={`text-left rounded-lg border px-3 py-2 ${pdfMarkingMode === opt.value ? "border-primary/50 bg-primary/10 text-primary" : "border-border/50 bg-foreground/[0.03]"} ${formatLocked ? "opacity-60 cursor-not-allowed" : "hover:bg-foreground/5"}`} data-testid={`pdf-marking-mode-${opt.value}`}>
+                  <span className="block text-sm font-semibold">{opt.title}</span>
+                  <span className="block text-[11px] text-muted-foreground mt-0.5">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

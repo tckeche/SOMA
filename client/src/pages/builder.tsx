@@ -201,6 +201,7 @@ export default function BuilderPage() {
   // "pdf" = tutor uploads worksheet PDFs and students submit a PDF response
   // (no questions, no timer, no MCQ engine). Chosen up front in the wizard.
   const [format, setFormat] = useState<"mcq" | "pdf">("mcq");
+  const [pdfMarkingMode, setPdfMarkingMode] = useState<"manual" | "dual_ai">("manual");
   // Quiz sub-type (only meaningful when format === "mcq", i.e. not a PDF):
   //   "mcq"        — multiple-choice only (legacy behaviour)
   //   "structured" — written / structured answers only
@@ -617,6 +618,7 @@ export default function BuilderPage() {
       }
       setTimeLimitMinutes(quizData.timeLimitMinutes ?? 60);
       setFormat((quizData as any).format === "pdf" ? "pdf" : "mcq");
+      setPdfMarkingMode((quizData as any).pdfMarkingMode === "dual_ai" ? "dual_ai" : "manual");
       const savedMode = (quizData as any).quizMode;
       if (savedMode === "structured" || savedMode === "hybrid" || savedMode === "mcq") {
         setQuizMode(savedMode);
@@ -746,6 +748,7 @@ export default function BuilderPage() {
       subject: legacySubjectName || null,
       timeLimitMinutes,
       format,
+      pdfMarkingMode: format === "pdf" ? pdfMarkingMode : "manual",
       quizMode: format === "pdf" ? "mcq" : quizMode,
       questionCount,
       structuredCount,
@@ -1049,6 +1052,7 @@ export default function BuilderPage() {
         topics: selectedTopicTitles,
         timeLimitMinutes,
         format,
+        pdfMarkingMode: format === "pdf" ? pdfMarkingMode : "manual",
         quizMode: format === "pdf" ? "mcq" : quizMode,
         questionCount,
         structuredCount,
@@ -1423,7 +1427,9 @@ export default function BuilderPage() {
             onSaveMeta={() => updateMetaMutation.mutate()}
             saveMetaPending={updateMetaMutation.isPending}
             format={format}
-            onFormatChange={(next) => { setFormat(next); markMeta(); }}
+            onFormatChange={(next) => { setFormat(next); if (next !== "pdf") setPdfMarkingMode("manual"); markMeta(); }}
+            pdfMarkingMode={pdfMarkingMode}
+            onPdfMarkingModeChange={(next) => { setPdfMarkingMode(next); markMeta(); }}
             formatLocked={!!activeQuizId}
             quizMode={quizMode}
             onQuizModeChange={(m) => {
@@ -1461,7 +1467,7 @@ export default function BuilderPage() {
           {format === "pdf" ? (
             <div className="space-y-4">
               {activeQuizId ? (
-                <TutorWorksheetManager quizId={activeQuizId} />
+                <TutorWorksheetManager quizId={activeQuizId} pdfMarkingMode={pdfMarkingMode} />
               ) : (
                 <div className="glass-card p-6 text-center space-y-4" data-testid="panel-pdf-create">
                   <FileText className="w-10 h-10 mx-auto text-primary" />

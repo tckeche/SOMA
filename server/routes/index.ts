@@ -17,6 +17,7 @@ import { registerRevisionPlanRoutes } from "./revisionPlan";
 import { registerCohortHeatmapRoutes } from "./cohortHeatmap";
 import { registerCommandWordsRoutes } from "./commandWords";
 import { registerSuperAdminDiagnosticsRoutes } from "./superAdminDiagnostics";
+import { registerPdfAiMarkingRoutes } from "./pdfAiMarking";
 
 export function registerDomainRoutes(app: Express): void {
   registerSuperAdminAiUsageRoutes(app);
@@ -28,4 +29,5 @@ export function registerDomainRoutes(app: Express): void {
   registerCohortHeatmapRoutes(app);
   registerCommandWordsRoutes(app);
   registerSuperAdminDiagnosticsRoutes(app);
+  registerPdfAiMarkingRoutes(app);
 }
