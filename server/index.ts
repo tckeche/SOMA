@@ -274,6 +274,14 @@ const port = parseInt(process.env.PORT || "5000", 10);
       initStorage();
       const { applyBootstrapMigrations } = await import("./bootstrap");
       await applyBootstrapMigrations();
+      if (process.env.NODE_ENV !== "test") {
+        const { getPdfMarkingConfig } = await import("./services/pdfMarkingConfig");
+        const pdfConfig = getPdfMarkingConfig();
+        if (pdfConfig.enabled && pdfConfig.workerEnabled && pdfConfig.workerRuntime === "in_process" && pdfConfig.configured) {
+          const { startPdfMarkingWorker } = await import("./workers/pdfMarkingWorker");
+          startPdfMarkingWorker();
+        }
+      }
     }
 
     await registerRoutes(httpServer, app);

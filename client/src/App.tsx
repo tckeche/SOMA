@@ -21,6 +21,7 @@ const TutorStudents = lazy(() => import("@/pages/TutorStudents"));
 const TutorStudentDetail = lazy(() => import("@/pages/TutorStudentDetail"));
 const TutorAssessments = lazy(() => import("@/pages/TutorAssessments"));
 const TutorAssessmentDetails = lazy(() => import("@/pages/TutorAssessmentDetails"));
+const TutorPdfMarkingReview = lazy(() => import("@/pages/TutorPdfMarkingReview"));
 const TutorQuizReview = lazy(() => import("@/pages/TutorQuizReview"));
 const SuperAdminDashboard = lazy(() => import("@/pages/SuperAdminDashboard"));
 const SuperAdminTutorDetail = lazy(() => import("@/pages/SuperAdminTutorDetail"));
@@ -55,6 +56,7 @@ function Router() {
       <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} />}</Route>
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>
       <Route path="/tutor/assessment/:quizId">{(params) => <ProtectedRoute component={TutorAssessmentDetails} params={params} />}</Route>
+      <Route path="/tutor/assessment/:quizId/submission/:submissionId/ai-review">{(params) => <ProtectedRoute component={TutorPdfMarkingReview} params={params} />}</Route>
       <Route path="/tutor/quizzes/:quizId/review">{(params) => <ProtectedRoute component={TutorQuizReview} params={params} />}</Route>
       <Route path="/tutor/students/:id">{(params) => <ProtectedRoute component={TutorStudentDetail} params={params} />}</Route>
       <Route path="/tutor/students">{() => <ProtectedRoute component={TutorStudents} />}</Route>

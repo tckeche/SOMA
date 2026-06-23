@@ -1,0 +1,16 @@
+import type { PdfRubric } from "@shared/pdfMarking";
+import { markerDecisionSchema, markerResultSchema, verificationResultSchema, validateMarkerResultAgainstRubric } from "@shared/pdfMarking";
+import { z } from "zod";
+type Decision = z.infer<typeof markerDecisionSchema>;
+export interface ReviewItemDraft { questionLabel: string; rubricItemId: string; reasonCode: string; markerADecision?: Decision; markerBDecision?: Decision; verifierADecision?: unknown; verifierBDecision?: unknown; }
+export function reconcilePdfMarking(input: { rubric: PdfRubric; markerA: z.infer<typeof markerResultSchema>; markerB: z.infer<typeof markerResultSchema>; verifierA: z.infer<typeof verificationResultSchema>; verifierB: z.infer<typeof verificationResultSchema>; }) {
+  validateMarkerResultAgainstRubric(input.markerA, input.rubric); validateMarkerResultAgainstRubric(input.markerB, input.rubric);
+  const maxScore = input.rubric.totalMarks; const accepted: Decision[] = []; const reviewItems: ReviewItemDraft[] = [];
+  const aByItem = new Map(input.markerA.decisions.map(d => [d.rubricItemId, d])); const bByItem = new Map(input.markerB.decisions.map(d => [d.rubricItemId, d]));
+  const va = new Map(input.verifierA.decisions.map(d => [d.targetDecisionId, d])); const vb = new Map(input.verifierB.decisions.map(d => [d.targetDecisionId, d]));
+  for (const q of input.rubric.questions) for (const item of q.rubricItems) { const a = aByItem.get(item.rubricItemId); const b = bByItem.get(item.rubricItemId); const reasons: string[] = []; if (!a || !b) reasons.push("missing_decision"); if (a && b) { if (a.awardedMarks !== b.awardedMarks) reasons.push("mark_disagreement"); if (a.verdict !== b.verdict) reasons.push("verdict_disagreement"); if ([a.verdict, b.verdict].some(v => v === "unreadable" || v === "uncertain")) reasons.push("unreadable_or_uncertain"); if (!a.evidence.length || !b.evidence.length) reasons.push("missing_evidence"); if (va.get(b.decisionId)?.verdict !== "accept") reasons.push("marker_a_verification_not_accept"); if (vb.get(a.decisionId)?.verdict !== "accept") reasons.push("marker_b_verification_not_accept"); if (a.awardedMarks > item.maximumMarks || b.awardedMarks > item.maximumMarks) reasons.push("mark_exceeds_maximum"); }
+    if (reasons.length) reviewItems.push({ questionLabel: q.label, rubricItemId: item.rubricItemId, reasonCode: Array.from(new Set(reasons)).join(","), markerADecision: a, markerBDecision: b, verifierADecision: b ? va.get(b.decisionId) : undefined, verifierBDecision: a ? vb.get(a.decisionId) : undefined }); else if (a) accepted.push(a); }
+  const proposedScore = accepted.reduce((s, d) => s + d.awardedMarks, 0); return { accepted, reviewItems, proposedScore, maxScore, requiresTutorReview: true };
+}
+export function buildPdfMarkingIdempotencyKey(input: { submissionUploadId: number; submissionVersion: number; contentHash: string; rubricVersionId: number }) { return `mark_submission:${input.submissionUploadId}:${input.submissionVersion}:${input.contentHash}:${input.rubricVersionId}`; }
+export function calculateRetryBackoffMs(attempts: number, baseMs = 30000) { return Math.min(30 * 60_000, baseMs * 2 ** Math.max(0, attempts - 1)) + Math.floor(Math.random() * 1000); }

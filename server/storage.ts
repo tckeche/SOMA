@@ -19,12 +19,13 @@ import {
   type FlaggedQuestion, type InsertFlaggedQuestion,
   type AssessmentAttachment, type InsertAssessmentAttachment,
   type SubmissionUpload, type InsertSubmissionUpload,
+  type PdfAssessmentConfig, type InsertPdfAssessmentConfig, type PdfMarkingDocument, type InsertPdfMarkingDocument, type PdfRubricVersion, type InsertPdfRubricVersion, type PdfMarkingJob, type InsertPdfMarkingJob, type PdfMarkingRun, type InsertPdfMarkingRun, type PdfMarkingReviewItem, type InsertPdfMarkingReviewItem, type PdfMarkingAnnotation, type InsertPdfMarkingAnnotation,
   somaQuizzes, somaQuestions, somaUsers, somaReports,
   tutorStudents, quizAssignments, tutorComments, syllabusDocuments, syllabusChunks,
   studentSubjects, tutorNotifications, studentTopicMastery, suggestedAssessments,
   examinerMisconceptions, syllabusTopicInventory,
   studentNotifications, flaggedQuestions,
-  assessmentAttachments, submissionUploads,
+  assessmentAttachments, submissionUploads, pdfAssessmentConfigs, pdfMarkingDocuments, pdfRubricVersions, pdfMarkingJobs, pdfMarkingRuns, pdfMarkingReviewItems, pdfMarkingAnnotations,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ne, inArray, or, isNull, sql, count, avg, sum, desc, asc } from "drizzle-orm";
@@ -288,7 +289,27 @@ export interface IStorage {
   getSubmissionUploadsByQuiz(quizId: number): Promise<SubmissionUpload[]>;
   getSubmissionUpload(id: number): Promise<SubmissionUpload | undefined>;
   getSubmissionUploadByStudent(quizId: number, studentId: string): Promise<SubmissionUpload | undefined>;
-  markSubmissionUpload(id: number, marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null }): Promise<SubmissionUpload | undefined>;
+  markSubmissionUpload(id: number, marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null; aiMarkingStatus?: string | null }): Promise<SubmissionUpload | undefined>;
+  getPdfAssessmentConfig(quizId: number): Promise<PdfAssessmentConfig | undefined>;
+  upsertPdfAssessmentConfig(row: InsertPdfAssessmentConfig): Promise<PdfAssessmentConfig>;
+  createPdfMarkingDocument(row: InsertPdfMarkingDocument): Promise<PdfMarkingDocument>;
+  getPdfMarkingDocumentsByQuiz(quizId: number): Promise<PdfMarkingDocument[]>;
+  deletePdfMarkingDocument(id: number): Promise<void>;
+  createPdfRubricVersion(row: InsertPdfRubricVersion): Promise<PdfRubricVersion>;
+  getPdfRubricVersion(id: number): Promise<PdfRubricVersion | undefined>;
+  getPdfRubricVersionsByQuiz(quizId: number): Promise<PdfRubricVersion[]>;
+  updatePdfRubricVersion(id: number, patch: Partial<InsertPdfRubricVersion>): Promise<PdfRubricVersion | undefined>;
+  upsertPdfMarkingJob(row: InsertPdfMarkingJob): Promise<PdfMarkingJob>;
+  claimNextPdfMarkingJob(workerId: string, staleBefore: Date): Promise<PdfMarkingJob | undefined>;
+  updatePdfMarkingJob(id: number, patch: Partial<PdfMarkingJob>): Promise<PdfMarkingJob | undefined>;
+  createPdfMarkingRun(row: InsertPdfMarkingRun): Promise<PdfMarkingRun>;
+  getPdfMarkingRunsBySubmission(submissionUploadId: number): Promise<PdfMarkingRun[]>;
+  updatePdfMarkingRun(id: number, patch: Partial<InsertPdfMarkingRun>): Promise<PdfMarkingRun | undefined>;
+  createPdfMarkingReviewItem(row: InsertPdfMarkingReviewItem): Promise<PdfMarkingReviewItem>;
+  getPdfMarkingReviewItems(runId: number): Promise<PdfMarkingReviewItem[]>;
+  updatePdfMarkingReviewItem(id: number, patch: Partial<InsertPdfMarkingReviewItem>): Promise<PdfMarkingReviewItem | undefined>;
+  createPdfMarkingAnnotation(row: InsertPdfMarkingAnnotation): Promise<PdfMarkingAnnotation>;
+  getPdfMarkingAnnotations(runId: number): Promise<PdfMarkingAnnotation[]>;
 
 }
 
@@ -1694,7 +1715,7 @@ class DatabaseStorage implements IStorage {
 
   async markSubmissionUpload(
     id: number,
-    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null },
+    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null; aiMarkingStatus?: string | null },
   ): Promise<SubmissionUpload | undefined> {
     const [row] = await this.database
       .update(submissionUploads)
@@ -1704,11 +1725,34 @@ class DatabaseStorage implements IStorage {
         status: marks.status,
         markedAt: marks.markedAt,
         ...(marks.maxScore !== undefined ? { maxScore: marks.maxScore } : {}),
+        ...(marks.aiMarkingStatus !== undefined ? { aiMarkingStatus: marks.aiMarkingStatus } : {}),
       })
       .where(eq(submissionUploads.id, id))
       .returning();
     return row;
   }
+
+  async getPdfAssessmentConfig(quizId: number) { const [r] = await this.database.select().from(pdfAssessmentConfigs).where(eq(pdfAssessmentConfigs.quizId, quizId)); return r; }
+  async upsertPdfAssessmentConfig(row: InsertPdfAssessmentConfig) { const [r] = await this.database.insert(pdfAssessmentConfigs).values(row).onConflictDoUpdate({ target: [pdfAssessmentConfigs.quizId], set: { ...row, updatedAt: new Date() } }).returning(); return r; }
+  async createPdfMarkingDocument(row: InsertPdfMarkingDocument) { const [r] = await this.database.insert(pdfMarkingDocuments).values(row).returning(); return r; }
+  async getPdfMarkingDocumentsByQuiz(quizId: number) { return this.database.select().from(pdfMarkingDocuments).where(eq(pdfMarkingDocuments.quizId, quizId)).orderBy(desc(pdfMarkingDocuments.createdAt)); }
+  async deletePdfMarkingDocument(id: number) { await this.database.delete(pdfMarkingDocuments).where(eq(pdfMarkingDocuments.id, id)); }
+  async createPdfRubricVersion(row: InsertPdfRubricVersion) { const [r] = await this.database.insert(pdfRubricVersions).values(row).returning(); return r; }
+  async getPdfRubricVersion(id: number) { const [r] = await this.database.select().from(pdfRubricVersions).where(eq(pdfRubricVersions.id, id)); return r; }
+  async getPdfRubricVersionsByQuiz(quizId: number) { return this.database.select().from(pdfRubricVersions).where(eq(pdfRubricVersions.quizId, quizId)).orderBy(desc(pdfRubricVersions.version)); }
+  async updatePdfRubricVersion(id: number, patch: Partial<InsertPdfRubricVersion>) { const [r] = await this.database.update(pdfRubricVersions).set(patch).where(eq(pdfRubricVersions.id, id)).returning(); return r; }
+  async upsertPdfMarkingJob(row: InsertPdfMarkingJob) { const [r] = await this.database.insert(pdfMarkingJobs).values(row).onConflictDoUpdate({ target: [pdfMarkingJobs.idempotencyKey], set: { payload: row.payload, availableAt: row.availableAt ?? new Date(), status: "queued", updatedAt: new Date() } }).returning(); return r; }
+  async claimNextPdfMarkingJob(workerId: string, staleBefore: Date) { const rows = await this.database.execute(sql`UPDATE pdf_marking_jobs SET status='processing', locked_at=NOW(), locked_by=${workerId}, attempts=attempts+1, updated_at=NOW() WHERE id = (SELECT id FROM pdf_marking_jobs WHERE (status='queued' OR (status='retry_wait' AND available_at <= NOW()) OR (status='processing' AND locked_at < ${staleBefore})) ORDER BY available_at ASC FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`); return (rows as unknown as { rows: PdfMarkingJob[] }).rows?.[0]; }
+  async updatePdfMarkingJob(id: number, patch: Partial<PdfMarkingJob>) { const [r] = await this.database.update(pdfMarkingJobs).set({ ...patch, updatedAt: new Date() }).where(eq(pdfMarkingJobs.id, id)).returning(); return r; }
+  async createPdfMarkingRun(row: InsertPdfMarkingRun) { const [r] = await this.database.insert(pdfMarkingRuns).values(row).returning(); return r; }
+  async getPdfMarkingRunsBySubmission(submissionUploadId: number) { return this.database.select().from(pdfMarkingRuns).where(eq(pdfMarkingRuns.submissionUploadId, submissionUploadId)).orderBy(desc(pdfMarkingRuns.createdAt)); }
+  async updatePdfMarkingRun(id: number, patch: Partial<InsertPdfMarkingRun>) { const [r] = await this.database.update(pdfMarkingRuns).set(patch).where(eq(pdfMarkingRuns.id, id)).returning(); return r; }
+  async createPdfMarkingReviewItem(row: InsertPdfMarkingReviewItem) { const [r] = await this.database.insert(pdfMarkingReviewItems).values(row).returning(); return r; }
+  async getPdfMarkingReviewItems(runId: number) { return this.database.select().from(pdfMarkingReviewItems).where(eq(pdfMarkingReviewItems.runId, runId)).orderBy(asc(pdfMarkingReviewItems.id)); }
+  async updatePdfMarkingReviewItem(id: number, patch: Partial<InsertPdfMarkingReviewItem>) { const [r] = await this.database.update(pdfMarkingReviewItems).set(patch).where(eq(pdfMarkingReviewItems.id, id)).returning(); return r; }
+  async createPdfMarkingAnnotation(row: InsertPdfMarkingAnnotation) { const [r] = await this.database.insert(pdfMarkingAnnotations).values(row).returning(); return r; }
+  async getPdfMarkingAnnotations(runId: number) { return this.database.select().from(pdfMarkingAnnotations).where(eq(pdfMarkingAnnotations.runId, runId)).orderBy(asc(pdfMarkingAnnotations.id)); }
+
 }
 
 export class MemoryStorage implements IStorage {
@@ -1731,6 +1775,13 @@ export class MemoryStorage implements IStorage {
   private flaggedQuestionsList: FlaggedQuestion[] = [];
   private assessmentAttachmentsList: AssessmentAttachment[] = [];
   private submissionUploadsList: SubmissionUpload[] = [];
+  private pdfAssessmentConfigsList: PdfAssessmentConfig[] = [];
+  private pdfMarkingDocumentsList: PdfMarkingDocument[] = [];
+  private pdfRubricVersionsList: PdfRubricVersion[] = [];
+  private pdfMarkingJobsList: PdfMarkingJob[] = [];
+  private pdfMarkingRunsList: PdfMarkingRun[] = [];
+  private pdfMarkingReviewItemsList: PdfMarkingReviewItem[] = [];
+  private pdfMarkingAnnotationsList: PdfMarkingAnnotation[] = [];
   private somaQuizId = 1;
   private somaQuestionId = 1;
   private somaReportId = 1;
@@ -1748,6 +1799,13 @@ export class MemoryStorage implements IStorage {
   private flaggedQuestionId = 1;
   private assessmentAttachmentId = 1;
   private submissionUploadId = 1;
+  private pdfAssessmentConfigId = 1;
+  private pdfMarkingDocumentId = 1;
+  private pdfRubricVersionId = 1;
+  private pdfMarkingJobId = 1;
+  private pdfMarkingRunId = 1;
+  private pdfMarkingReviewItemId = 1;
+  private pdfMarkingAnnotationId = 1;
 
   async createSomaQuiz(quiz: InsertSomaQuiz): Promise<SomaQuiz> {
     const created: SomaQuiz = {
@@ -1763,6 +1821,7 @@ export class MemoryStorage implements IStorage {
       authorId: quiz.authorId ?? null,
       timeLimitMinutes: quiz.timeLimitMinutes ?? 60,
       format: quiz.format ?? "mcq",
+      pdfMarkingMode: quiz.pdfMarkingMode ?? "manual",
       quizMode: quiz.quizMode ?? "mcq",
       questionCount: quiz.questionCount ?? 5,
       structuredCount: quiz.structuredCount ?? 0,
@@ -2677,6 +2736,7 @@ export class MemoryStorage implements IStorage {
       mimeType: row.mimeType,
       sizeBytes: row.sizeBytes,
       uploadedBy: row.uploadedBy ?? null,
+      documentRole: row.documentRole ?? "worksheet",
       createdAt: new Date(),
     };
     this.assessmentAttachmentsList.push(created);
@@ -2729,6 +2789,9 @@ export class MemoryStorage implements IStorage {
       status: row.status ?? "submitted",
       createdAt: new Date(),
       markedAt: null,
+      aiMarkingStatus: row.aiMarkingStatus ?? null,
+      submissionVersion: row.submissionVersion ?? 1,
+      contentHash: row.contentHash ?? null,
     };
     this.submissionUploadsList.push(created);
     return created;
@@ -2750,7 +2813,7 @@ export class MemoryStorage implements IStorage {
 
   async markSubmissionUpload(
     id: number,
-    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null },
+    marks: { score: number | null; feedback: string | null; status: string; markedAt: Date | null; maxScore?: number | null; aiMarkingStatus?: string | null },
   ): Promise<SubmissionUpload | undefined> {
     const row = this.submissionUploadsList.find((s) => s.id === id);
     if (!row) return undefined;
@@ -2759,10 +2822,32 @@ export class MemoryStorage implements IStorage {
     row.status = marks.status;
     row.markedAt = marks.markedAt;
     if (marks.maxScore !== undefined) row.maxScore = marks.maxScore;
+    if (marks.aiMarkingStatus !== undefined) row.aiMarkingStatus = marks.aiMarkingStatus;
     return row;
   }
-}
 
+  async getPdfAssessmentConfig(quizId: number) { return this.pdfAssessmentConfigsList.find((r) => r.quizId === quizId); }
+  async upsertPdfAssessmentConfig(row: InsertPdfAssessmentConfig) { const existing = this.pdfAssessmentConfigsList.find((r) => r.quizId === row.quizId); if (existing) { Object.assign(existing, row, { updatedAt: new Date() }); return existing; } const created = { id: this.pdfAssessmentConfigId++, primaryExamAttachmentId: null, preparationStatus: "not_started", activeRubricVersionId: null, lastErrorCode: null, lastError: null, preparedAt: null, approvedAt: null, approvedBy: null, ...row, createdAt: new Date(), updatedAt: new Date() } as PdfAssessmentConfig; this.pdfAssessmentConfigsList.push(created); return created; }
+  async createPdfMarkingDocument(row: InsertPdfMarkingDocument) { const created = { id: this.pdfMarkingDocumentId++, pageCount: null, extractedText: null, extractionMetadata: null, processingError: null, processedAt: null, ...row, createdAt: new Date() } as PdfMarkingDocument; this.pdfMarkingDocumentsList.push(created); return created; }
+  async getPdfMarkingDocumentsByQuiz(quizId: number) { return this.pdfMarkingDocumentsList.filter((r) => r.quizId === quizId).sort((a,b)=>b.createdAt.getTime()-a.createdAt.getTime()); }
+  async deletePdfMarkingDocument(id: number) { this.pdfMarkingDocumentsList = this.pdfMarkingDocumentsList.filter((r)=>r.id!==id); }
+  async createPdfRubricVersion(row: InsertPdfRubricVersion) { const created = { id: this.pdfRubricVersionId++, extractionJson: null, modelMetadata: null, createdBy: null, approvedBy: null, approvedAt: null, ...row, createdAt: new Date() } as PdfRubricVersion; this.pdfRubricVersionsList.push(created); return created; }
+  async getPdfRubricVersion(id: number) { return this.pdfRubricVersionsList.find((r)=>r.id===id); }
+  async getPdfRubricVersionsByQuiz(quizId: number) { return this.pdfRubricVersionsList.filter((r)=>r.quizId===quizId).sort((a,b)=>b.version-a.version); }
+  async updatePdfRubricVersion(id: number, patch: Partial<InsertPdfRubricVersion>) { const r=this.pdfRubricVersionsList.find((x)=>x.id===id); if(!r)return undefined; Object.assign(r, patch); return r; }
+  async upsertPdfMarkingJob(row: InsertPdfMarkingJob) { const existing=this.pdfMarkingJobsList.find((j)=>j.idempotencyKey===row.idempotencyKey); if(existing){Object.assign(existing,row,{updatedAt:new Date(),status:"queued"}); return existing;} const created={ id:this.pdfMarkingJobId++, quizId:null, submissionUploadId:null, rubricVersionId:null, status:"queued", attempts:0, maxAttempts:3, lockedAt:null, lockedBy:null, lastErrorCode:null, lastError:null, completedAt:null, ...row, createdAt:new Date(), updatedAt:new Date(), availableAt: row.availableAt ?? new Date() } as PdfMarkingJob; this.pdfMarkingJobsList.push(created); return created; }
+  async claimNextPdfMarkingJob(workerId: string, staleBefore: Date) { const job=this.pdfMarkingJobsList.filter((j)=>j.status==="queued" || (j.status==="retry_wait" && j.availableAt <= new Date()) || (j.status==="processing" && j.lockedAt && j.lockedAt < staleBefore)).sort((a,b)=>a.availableAt.getTime()-b.availableAt.getTime())[0]; if(!job)return undefined; job.status="processing"; job.lockedAt=new Date(); job.lockedBy=workerId; job.attempts+=1; job.updatedAt=new Date(); return job; }
+  async updatePdfMarkingJob(id: number, patch: Partial<PdfMarkingJob>) { const j=this.pdfMarkingJobsList.find((x)=>x.id===id); if(!j)return undefined; Object.assign(j,patch,{updatedAt:new Date()}); return j; }
+  async createPdfMarkingRun(row: InsertPdfMarkingRun) { const created={ id:this.pdfMarkingRunId++, markerAResult:null, markerBResult:null, verifierAResult:null, verifierBResult:null, reconciledResult:null, proposedScore:null, maxScore:null, confidencePct:null, annotatedStoragePath:null, failureCode:null, failureMessage:null, finishedAt:null, ...row, createdAt:new Date() } as PdfMarkingRun; this.pdfMarkingRunsList.push(created); return created; }
+  async getPdfMarkingRunsBySubmission(submissionUploadId: number) { return this.pdfMarkingRunsList.filter((r)=>r.submissionUploadId===submissionUploadId).sort((a,b)=>b.createdAt.getTime()-a.createdAt.getTime()); }
+  async updatePdfMarkingRun(id: number, patch: Partial<InsertPdfMarkingRun>) { const r=this.pdfMarkingRunsList.find((x)=>x.id===id); if(!r)return undefined; Object.assign(r,patch); return r; }
+  async createPdfMarkingReviewItem(row: InsertPdfMarkingReviewItem) { const created={ id:this.pdfMarkingReviewItemId++, resolvedMarks:null, resolutionNote:null, resolvedBy:null, resolvedAt:null, ...row, createdAt:new Date() } as PdfMarkingReviewItem; this.pdfMarkingReviewItemsList.push(created); return created; }
+  async getPdfMarkingReviewItems(runId: number) { return this.pdfMarkingReviewItemsList.filter((r)=>r.runId===runId); }
+  async updatePdfMarkingReviewItem(id: number, patch: Partial<InsertPdfMarkingReviewItem>) { const r=this.pdfMarkingReviewItemsList.find((x)=>x.id===id); if(!r)return undefined; Object.assign(r,patch); return r; }
+  async createPdfMarkingAnnotation(row: InsertPdfMarkingAnnotation) { const created={ id:this.pdfMarkingAnnotationId++, ...row, createdAt:new Date(), updatedAt:new Date() } as PdfMarkingAnnotation; this.pdfMarkingAnnotationsList.push(created); return created; }
+  async getPdfMarkingAnnotations(runId: number) { return this.pdfMarkingAnnotationsList.filter((r)=>r.runId===runId); }
+
+}
 let _storage: IStorage | null = null;
 
 export function initStorage() {
