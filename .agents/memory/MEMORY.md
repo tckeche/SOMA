@@ -1,2 +1,3 @@
 - [Supabase DB access](supabase-db-access.md) — the `executeSql` callback hits Replit's built-in Postgres, NOT the app's Supabase DB; query Supabase via the connection-string secret with `pg`.
 - [Copilot SSE generation timing](copilot-sse-timing.md) — tutor quiz generation legitimately runs 2–4 min; the client must use activity/heartbeat-based timeouts, never a hard wall-clock abort.
+- [PDF dual-AI marking rollout](pdf-dual-ai-marking.md) — keep it disabled: marking is a fail-closed stub; its in-process worker needs vm/scheduled, not autoscale.
