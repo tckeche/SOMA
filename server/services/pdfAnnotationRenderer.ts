@@ -1,0 +1,5 @@
+import { pdfAnnotationSchema } from "@shared/pdfMarking";
+import { z } from "zod";
+export type PdfAnnotationInput = z.infer<typeof pdfAnnotationSchema>;
+export function normalizedToPdfRect(page: { getWidth(): number; getHeight(): number }, ann: Pick<PdfAnnotationInput, "xBp" | "yBp" | "widthBp" | "heightBp">) { const w = page.getWidth(), h = page.getHeight(); const x = (ann.xBp / 10000) * w; const yTop = (ann.yBp / 10000) * h; const width = (ann.widthBp / 10000) * w; const height = (ann.heightBp / 10000) * h; return { x, y: h - yTop - height, width, height }; }
+export async function renderAnnotatedPdf(original: Buffer, annotations: PdfAnnotationInput[]): Promise<Buffer> { for (const ann of annotations) pdfAnnotationSchema.parse(ann); const summary = annotations.map((a, i) => `% SOMA annotation ${i + 1}: page=${a.pageNumber} type=${a.annotationType} x=${a.xBp} y=${a.yBp} text=${a.explanation.slice(0, 200).replace(/[\r\n%]/g, " ")}`).join("\n"); return Buffer.concat([original, Buffer.from(`\n% SOMA annotated copy; original bytes preserved\n${summary}\n`, "utf8")]); }

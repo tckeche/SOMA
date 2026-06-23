@@ -24,6 +24,8 @@ interface SubmissionUpload {
   feedback: string | null;
   createdAt: string;
   markedAt: string | null;
+  aiMarkingStatus?: "queued" | "processing" | "blocked_setup" | "needs_tutor_review" | "ready_for_approval" | "approved" | "failed_retryable" | "failed_terminal" | "superseded" | "manual_override" | null;
+  hasAnnotatedPdf?: boolean;
 }
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -100,7 +102,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: submissionKey });
       setSelectedFile(null);
-      toast({ title: "Response uploaded", description: "Your tutor will mark it soon." });
+      toast({ title: "Response uploaded", description: submission?.aiMarkingStatus ? "AI-assisted marking has been queued." : "Your tutor will mark it soon." });
     },
     onError: (err: Error) => {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -143,6 +145,11 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
       toast({ title: "Download failed", description: (err as Error).message, variant: "destructive" });
     }
   }
+
+
+  const aiStatusText: Record<string, string> = {
+    queued: "Uploaded — queued for marking", processing: "Dual marking in progress", blocked_setup: "Setup incomplete — tutor notified", needs_tutor_review: "Tutor is reviewing a discrepancy", ready_for_approval: "Awaiting tutor review", approved: "Marked", failed_retryable: "Marking could not be completed", failed_terminal: "Marking could not be completed", superseded: "A newer upload replaced this response", manual_override: "Marked by tutor"
+  };
 
   const isMarked = submission?.status === "marked";
   const hasWorksheets = attachments.length > 0;
@@ -211,6 +218,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
             <div className="flex items-center gap-3 min-w-0">
               <FileText className="w-4 h-4 text-primary shrink-0" />
               <p className="text-sm font-medium text-foreground truncate flex-1">{submission.filename}</p>
+              {submission?.aiMarkingStatus && (<p className="text-xs text-primary mb-2">{aiStatusText[submission.aiMarkingStatus] ?? "AI-assisted marking"}</p>)}
               {isMarked ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/30 shrink-0">
                   <CheckCircle2 className="w-3 h-3" /> Marked
