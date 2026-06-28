@@ -593,18 +593,56 @@ function shuffleOptions<T>(arr: T[]): T[] {
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
-  const rawType = String(raw.question_type || raw.questionType || "").toLowerCase();
+  const rawType = String(raw.question_type || raw.questionType || "").toLowerCase().trim();
+  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "").trim();
 
-  // Structured / written answers have no options or single correct answer —
-  // they're marked by the AI against a mark scheme. Validate them separately
-  // so the 4-option gate below doesn't reject them.
-  if (rawType === "structured") {
-    const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
+  // Normalise the options shape up-front so the structured-vs-MCQ decision can
+  // tell a written-answer question apart from a multiple-choice one.
+  let opts = raw.options;
+  if (opts && !Array.isArray(opts) && typeof opts === "object") {
+    const keys = Object.keys(opts);
+    opts = keys.every((k) => /^[A-Z]$/i.test(k))
+      ? keys.sort().map((k) => opts[k])
+      : Object.values(opts);
+  }
+  const hasMcqOptions = Array.isArray(opts) && opts.length >= 4;
+  const hasGraphSpec = !!raw.graph_spec && typeof raw.graph_spec === "object";
+  const markSchemeText = String(
+    raw.mark_scheme || raw.markScheme || raw.marking_scheme || raw.markingScheme || raw.model_answer || raw.modelAnswer || "",
+  ).trim();
+
+  // Structured / written answers carry no options and are marked by the AI
+  // against a mark scheme. Accept the canonical "structured" token, the synonyms
+  // a fallback model (e.g. Gemini) commonly emits instead, OR infer the type
+  // when the shape is unmistakably written-answer (a stem with a mark scheme but
+  // no MCQ options and no graph). Inferring here is what stops a whole
+  // structured draft from being silently dropped when the model mislabels
+  // question_type — the failure that produced "Replaced draft with 0 questions"
+  // despite a 15-question success reply.
+  const STRUCTURED_TYPES = new Set([
+    "structured", "written", "written_answer", "writtenanswer", "short_answer", "shortanswer",
+    "long_answer", "longanswer", "free_response", "freeresponse", "free_text", "freetext",
+    "extended", "extended_response", "extendedresponse", "essay", "open", "open_response",
+    "open_ended", "openended", "short_response", "shortresponse", "text",
+  ]);
+  // A genuine written-answer question never carries MCQ options or a graph
+  // spec, so require that shape for BOTH the explicit-token and the inferred
+  // path. This stops a model that mislabels a real MCQ (e.g. question_type
+  // "text"/"open" but with four valid options) from being coerced to structured
+  // and losing its options.
+  const isStructured =
+    !hasMcqOptions && !hasGraphSpec && !!stem &&
+    (STRUCTURED_TYPES.has(rawType) ||
+      (rawType !== "graph" && rawType !== "multiple_choice" && rawType !== "mcq" && !!markSchemeText));
+
+  if (isStructured) {
     if (!stem) return null;
-    const markScheme = String(
-      raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || "",
-    );
-    if (!markScheme.trim()) return null;
+    // Fall back to the explanation for the mark scheme when no dedicated field
+    // was sent. We deliberately do NOT drop a structured question that lacks a
+    // mark scheme — it is kept (markScheme may be "") so the tutor still sees it;
+    // the publish gate surfaces the missing mark scheme rather than the whole
+    // question silently vanishing at draft time.
+    const markScheme = markSchemeText || String(raw.explanation || "").trim();
     const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
     return {
       draftId: `draft-${crypto.randomUUID()}`,
@@ -627,18 +665,9 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
     };
   }
 
-  let opts = raw.options;
-  if (opts && !Array.isArray(opts) && typeof opts === "object") {
-    const keys = Object.keys(opts);
-    opts = keys.every((k) => /^[A-Z]$/i.test(k))
-      ? keys.sort().map((k) => opts[k])
-      : Object.values(opts);
-  }
-  if (!Array.isArray(opts) || opts.length < 4) return null;
-  opts = opts.map(String).slice(0, 4);
-
-  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
   if (!stem) return null;
+  if (!hasMcqOptions) return null;
+  opts = opts.map(String).slice(0, 4);
 
   const explanation = String(raw.explanation || "");
   const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
@@ -5744,6 +5773,22 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         .filter((q) => allowGraphs || q.questionType !== "graph");
 
       console.log(`[DRAFT_DEBUG] After normalization: total=${normalisedQuestions.length}, graphs=${normalisedQuestions.filter((q) => q.questionType === "graph").length}`);
+
+      // Surface silent normalisation drops: when the model claims questions but
+      // they fail to normalise (e.g. a fallback model mislabels question_type or
+      // omits the mark scheme), log a per-type breakdown so a "0 questions"
+      // outcome is diagnosable instead of mysterious.
+      const droppedDuringNorm = normResults.filter((r) => r.normalised === null).length;
+      if (droppedDuringNorm > 0) {
+        const droppedTypes = structured.questions.reduce((acc: Record<string, number>, q: any, i: number) => {
+          if (normResults[i]?.normalised === null) {
+            const t = String(q.question_type || q.questionType || "untyped").toLowerCase() || "untyped";
+            acc[t] = (acc[t] || 0) + 1;
+          }
+          return acc;
+        }, {});
+        console.warn(`[NORMALISE_DROP] ${droppedDuringNorm}/${structured.questions.length} question(s) dropped during normalisation. By question_type: ${JSON.stringify(droppedTypes)}`);
+      }
 
       // ── Step 2: Graph shortfall detection + targeted retry
       const requestedAsGraphCount = normResults.filter((r) => r.attemptedGraph).length;
