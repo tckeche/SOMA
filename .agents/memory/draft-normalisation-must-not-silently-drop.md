@@ -27,3 +27,12 @@ outcome is diagnosable instead of mysterious.
 **How to apply:** any change to draft/question normalisation (copilot generate,
 soma-generate, publish) must preserve shape-based detection + keep-don't-drop for
 recoverable items, and keep the drop diagnostics in place.
+
+**Two normalisers, keep in lockstep:** there is a server normaliser
+(`server/routes.ts` `normaliseToDraftQuestion`) AND a client one
+(`client/src/pages/builder.tsx` `rawToDraftQuestion`). The client one drives both
+the live SSE preview and the final persistence path (`data.questions` →
+`applyDraftAction` → `syncDraft`), so it is just as load-bearing as the server's.
+A fix to one without the other causes preview-vs-persisted divergence. Match
+field precedence, trimming, the structured-synonym set, and the
+`!hasMcqOptions && !hasGraphSpec` shape guard on both.

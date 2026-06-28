@@ -61,7 +61,9 @@ function somaQuestionToDraft(q: SomaQuestion): DraftQuestion {
 }
 
 function rawToDraftQuestion(raw: any): DraftQuestion | null {
-  const stem = String(raw.prompt_text || raw.promptText || raw.stem || raw.question || "");
+  // Field precedence and trimming kept identical to the server normaliser
+  // (server/routes.ts normaliseToDraftQuestion) to avoid preview-vs-persisted drift.
+  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "").trim();
   if (!stem) return null;
   // Tags are shared across every question type.
   const tags = {
@@ -70,11 +72,44 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
     difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : raw.difficultyTag ? String(raw.difficultyTag) : null,
   };
   const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
-  const qtype = String(raw.question_type || raw.questionType || "").toLowerCase();
+  const qtype = String(raw.question_type || raw.questionType || "").toLowerCase().trim();
 
-  // Structured / written answers carry no options or single correct answer —
-  // they're marked by the AI against a mark scheme, so validate them separately.
-  if (qtype === "structured") {
+  // Normalise the options shape up-front so the structured-vs-MCQ decision can
+  // tell a written-answer question apart from a multiple-choice one.
+  let opts = raw.options;
+  if (opts && !Array.isArray(opts) && typeof opts === "object") {
+    const keys = Object.keys(opts);
+    opts = keys.every((k) => /^[A-Z]$/i.test(k))
+      ? keys.sort().map((k) => opts[k])
+      : Object.values(opts);
+  }
+  const hasMcqOptions = Array.isArray(opts) && opts.length >= 4;
+  const hasGraphSpec = !!(raw.graphSpec ?? raw.graph_spec) && typeof (raw.graphSpec ?? raw.graph_spec) === "object";
+  const markSchemeText = String(
+    raw.mark_scheme || raw.markScheme || raw.marking_scheme || raw.markingScheme || raw.model_answer || raw.modelAnswer || "",
+  ).trim();
+
+  // Structured / written answers carry no options and are marked by the AI
+  // against a mark scheme. Mirror the server normaliser (server/routes.ts
+  // normaliseToDraftQuestion): accept the canonical token, the synonyms a
+  // fallback model commonly emits, OR infer the type from the written-answer
+  // shape (a stem with a mark scheme but no MCQ options and no graph). Both
+  // paths require the no-options/no-graph shape so a mislabeled real MCQ keeps
+  // its options instead of being coerced to structured. Keeping these two
+  // normalisers in lockstep is what stops a structured draft from rendering as
+  // empty/0-question in the preview while the server persists it fine.
+  const STRUCTURED_TYPES = new Set([
+    "structured", "written", "written_answer", "writtenanswer", "short_answer", "shortanswer",
+    "long_answer", "longanswer", "free_response", "freeresponse", "free_text", "freetext",
+    "extended", "extended_response", "extendedresponse", "essay", "open", "open_response",
+    "open_ended", "openended", "short_response", "shortresponse", "text",
+  ]);
+  const isStructured =
+    !hasMcqOptions && !hasGraphSpec &&
+    (STRUCTURED_TYPES.has(qtype) ||
+      (qtype !== "graph" && qtype !== "multiple_choice" && qtype !== "mcq" && !!markSchemeText));
+
+  if (isStructured) {
     return {
       draftId: raw.draftId || makeDraftId(),
       stem,
@@ -83,20 +118,15 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
       explanation: String(raw.explanation || ""),
       marks,
       questionType: "structured",
-      markScheme: String(raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || ""),
+      // Keep the question even when the mark scheme is empty — the draft
+      // validation surfaces the gap rather than the question silently vanishing.
+      markScheme: markSchemeText || String(raw.explanation || "").trim(),
       graphSpec: null,
       ...tags,
     };
   }
 
-  let opts = raw.options;
-  if (opts && !Array.isArray(opts) && typeof opts === "object") {
-    const keys = Object.keys(opts);
-    opts = keys.every((k) => /^[A-Z]$/i.test(k))
-      ? keys.sort().map((k) => opts[k])
-      : Object.values(opts);
-  }
-  if (!Array.isArray(opts) || opts.length < 4) return null;
+  if (!hasMcqOptions) return null;
   opts = (opts as any[]).map(String).slice(0, 4);
   return {
     draftId: raw.draftId || makeDraftId(),
