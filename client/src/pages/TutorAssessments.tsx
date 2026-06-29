@@ -1329,7 +1329,7 @@ export default function TutorAssessments() {
           <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
               <h3 className="text-lg font-bold text-foreground">Assign Assessment to Students</h3>
-              <button onClick={() => setShowAssignModal(null)} className="text-muted-foreground hover:text-foreground/80 p-1">
+              <button onClick={() => setShowAssignModal(null)} aria-label="Close" className="text-muted-foreground hover:text-foreground/80 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
