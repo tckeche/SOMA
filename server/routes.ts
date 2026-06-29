@@ -896,6 +896,16 @@ const uploadImageLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Each call spawns a python3 child (matplotlib) — an expensive, unbounded
+// resource if left open. Cap it per IP so a single client cannot fork a
+// process storm. A quiz page renders a handful of graphs, so this is generous.
+const graphRenderLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
@@ -2278,7 +2288,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.status(202).json({ ok: true, requestId: report.requestId });
   });
 
-  app.post("/api/graph/render-svg", async (req, res) => {
+  app.post("/api/graph/render-svg", graphRenderLimiter, requireSupabaseAuth, async (req, res) => {
     const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
     if (!parsed.success) {
       return res.status(400).json({

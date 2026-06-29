@@ -458,7 +458,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
       title: `Catch up on "${a.quizTitle}"`,
       detail: a.quizSubject ? `${a.quizSubject} — overdue, but the sooner the better.` : "Overdue — the sooner the better.",
       quizId: a.quizId,
-      href: `/quiz/${a.quizId}`,
+      href: `/soma/quiz/${a.quizId}`,
     });
   }
   for (const a of dueToday.slice(0, 2)) {
@@ -467,7 +467,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
       title: `Today: ${a.quizTitle}`,
       detail: a.quizSubject ? `Lock in ${a.quizSubject} before the day ends.` : "Lock this in before the day ends.",
       quizId: a.quizId,
-      href: `/quiz/${a.quizId}`,
+      href: `/soma/quiz/${a.quizId}`,
     });
   }
   if (actions.length < 3) {
@@ -477,7 +477,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
         title: `Tomorrow: ${a.quizTitle}`,
         detail: a.quizSubject ? `Tomorrow's ${a.quizSubject} task — start early to leave room for review.` : "Start early to leave room for review.",
         quizId: a.quizId,
-        href: `/quiz/${a.quizId}`,
+        href: `/soma/quiz/${a.quizId}`,
       });
     }
   }
@@ -493,7 +493,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
         title: `Revisit "${a.quizTitle}"`,
         detail: `You scored ${a.scorePercent}%. A short review session here could lift your overall average noticeably.`,
         quizId: a.quizId,
-        href: a.reportId ? `/report/${a.reportId}` : undefined,
+        href: a.reportId ? `/soma/review/${a.reportId}` : undefined,
       });
     }
   }
