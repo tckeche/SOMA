@@ -2748,6 +2748,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!quiz || quiz.isArchived) {
         return res.status(404).json({ message: "Quiz not found" });
       }
+      // Ownership gate: a tutor may only assign (and force-publish) their own
+      // quiz. Without this, any tutor could assign another tutor's draft to
+      // their students and silently publish it. Mirrors the sibling routes.
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       // When the tutor didn't pick a due date, default it to 5 days after the
       // assessment was created, floored to the hour (e.g. created 15:23 -> due
@@ -3537,10 +3543,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get assignments for a specific quiz
   app.get("/api/tutor/quizzes/:quizId/assignments", requireTutor, async (req, res) => {
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: the roster (student names + emails) must only be
+      // readable by the quiz's author. Mirrors every sibling quiz route.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
       }
       const assignments = await storage.getQuizAssignmentsForQuiz(quizId);
       res.json(assignments);
@@ -3554,8 +3563,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: the response returns the full quiz + questions
+      // (including correctAnswer/marking) and per-student reports, so it must
+      // be restricted to the quiz's author. Mirrors the sibling routes.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
       }
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
@@ -4714,9 +4726,15 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   // Get a specific quiz with its questions
   app.get("/api/tutor/quizzes/:quizId/detail", requireTutor, async (req, res) => {
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: this returns the full question set including
+      // correctAnswer/explanation (unlike the sanitized student route), so it
+      // must be restricted to the author. Mirrors the sibling routes.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
+      }
       const questions = await storage.getSomaQuestionsByQuizId(quiz.id);
       res.json({ ...quiz, questions });
     } catch (err: any) {
@@ -4742,10 +4760,15 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.put("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
     const traceId = newTraceId();
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: the draft store is keyed by quizId; without this a
+      // tutor could overwrite another tutor's working draft.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
+      }
       const { questions } = req.body;
       if (!Array.isArray(questions)) return res.status(400).json({ message: "questions array required" });
       if (questions.length > MAX_QUESTIONS_PER_QUIZ) {
@@ -4773,9 +4796,16 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes/:quizId/publish", requireTutor, async (req, res) => {
     const traceId = newTraceId();
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: publish atomically deletes+replaces the quiz's entire
+      // question bank and flips it to published. Restrict to the author so a
+      // tutor cannot wipe/overwrite another tutor's live assessment.
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       traceLog("route.publish.entry", {
         route: "/api/tutor/quizzes/:quizId/publish",
         quizId,
@@ -4951,9 +4981,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   // Update quiz metadata
   app.put("/api/tutor/quizzes/:quizId", requireTutor, async (req, res) => {
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: only the author may rename/reconfigure a quiz.
+      if (existing.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const { title, syllabus, level, subject, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
       const updates: Record<string, string | number | string[] | null> = {};
@@ -5014,9 +5049,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes/:quizId/questions", requireTutor, async (req, res) => {
     const traceId = newTraceId();
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: only the author may append questions to a quiz.
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const { questions } = req.body;
       if (!Array.isArray(questions) || questions.length === 0) {
@@ -5139,7 +5179,18 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   // Delete a question
   app.delete("/api/tutor/questions/:questionId", requireTutor, async (req, res) => {
     try {
-      await storage.deleteSomaQuestion(parseInt(String(req.params.questionId)));
+      const tutorId = (req as any).tutorId;
+      const questionId = parseInt(String(req.params.questionId));
+      if (isNaN(questionId)) return res.status(400).json({ message: "Invalid question ID" });
+      // Ownership gate: resolve the question's quiz and verify authorship so a
+      // tutor cannot delete questions from another tutor's live assessment.
+      const question = await storage.getSomaQuestionById(questionId);
+      if (!question) return res.status(404).json({ message: "Question not found" });
+      const quiz = await storage.getSomaQuiz(question.quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      await storage.deleteSomaQuestion(questionId);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to delete question" });

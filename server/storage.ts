@@ -149,6 +149,7 @@ export interface IStorage {
   getSomaQuiz(id: number): Promise<SomaQuiz | undefined>;
   updateSomaQuiz(id: number, data: Partial<InsertSomaQuiz>): Promise<SomaQuiz | undefined>;
   createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]>;
+  getSomaQuestionById(id: number): Promise<SomaQuestion | undefined>;
   getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]>;
   updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined>;
   getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>>;
@@ -848,6 +849,11 @@ class DatabaseStorage implements IStorage {
     const grouped: Record<number, SomaQuestion[]> = {};
     for (const q of rows) (grouped[q.quizId] ??= []).push(q);
     return grouped;
+  }
+
+  async getSomaQuestionById(id: number): Promise<SomaQuestion | undefined> {
+    const [q] = await this.database.select().from(somaQuestions).where(eq(somaQuestions.id, id));
+    return q;
   }
 
   async deleteSomaQuestion(id: number): Promise<void> {
@@ -1930,6 +1936,10 @@ export class MemoryStorage implements IStorage {
       (grouped[q.quizId] ??= []).push(q);
     }
     return grouped;
+  }
+
+  async getSomaQuestionById(id: number): Promise<SomaQuestion | undefined> {
+    return this.somaQuestionsList.find((q) => q.id === id);
   }
 
   async deleteSomaQuestion(id: number): Promise<void> {
