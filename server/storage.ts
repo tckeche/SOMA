@@ -248,6 +248,7 @@ export interface IStorage {
     correctQuestions?: number;
   }): Promise<StudentTopicMastery>;
   listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]>;
+  listStudentTopicMasteryForStudents(studentIds: string[]): Promise<Record<string, StudentTopicMastery[]>>;
   createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification>;
   listTutorNotifications(tutorId: string): Promise<TutorNotification[]>;
   markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined>;
@@ -612,6 +613,23 @@ class DatabaseStorage implements IStorage {
 
   async listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]> {
     return this.database.select().from(studentTopicMastery).where(eq(studentTopicMastery.studentId, studentId)).orderBy(studentTopicMastery.updatedAt);
+  }
+
+  // Batched variant: one query for many students instead of N round-trips in a
+  // loop (used by the cohort-weaknesses rollup). Returns a map keyed by
+  // studentId; ids with no rows are simply absent.
+  async listStudentTopicMasteryForStudents(studentIds: string[]): Promise<Record<string, StudentTopicMastery[]>> {
+    if (studentIds.length === 0) return {};
+    const rows = await this.database
+      .select()
+      .from(studentTopicMastery)
+      .where(inArray(studentTopicMastery.studentId, studentIds))
+      .orderBy(studentTopicMastery.updatedAt);
+    const byStudent: Record<string, StudentTopicMastery[]> = {};
+    for (const row of rows) {
+      (byStudent[row.studentId] ??= []).push(row);
+    }
+    return byStudent;
   }
 
   async createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification> {
@@ -2427,6 +2445,16 @@ export class MemoryStorage implements IStorage {
 
   async listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]> {
     return this.studentTopicMasteryList.filter((m) => m.studentId === studentId);
+  }
+
+  async listStudentTopicMasteryForStudents(studentIds: string[]): Promise<Record<string, StudentTopicMastery[]>> {
+    const ids = new Set(studentIds);
+    const byStudent: Record<string, StudentTopicMastery[]> = {};
+    for (const m of this.studentTopicMasteryList) {
+      if (!ids.has(m.studentId)) continue;
+      (byStudent[m.studentId] ??= []).push(m);
+    }
+    return byStudent;
   }
 
   async createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification> {

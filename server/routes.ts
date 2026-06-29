@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type SomaQuiz, type StructuredAnswerMark } from "@shared/schema";
 import { buildPdfMarkingIdempotencyKey } from "./services/pdfReconciliation";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { computeDefaultDueDate } from "@shared/dueDate";
@@ -3888,10 +3888,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         studentNames: string[];
       }> = {};
 
+      // One batched query for the whole cohort instead of one per student.
+      const masteryByStudent = await storage.listStudentTopicMasteryForStudents(adopted.map((s) => s.id));
+
       for (const student of adopted) {
         const visible = visibleSubjectsPerStudent.get(student.id) || new Set<string>();
         if (visible.size === 0) continue; // tutor hasn't assigned this student anything yet
-        const mastery = await storage.listStudentTopicMastery(student.id);
+        const mastery = masteryByStudent[student.id] || [];
         const studentName = student.displayName || student.email?.split("@")[0] || "Student";
         for (const m of mastery) {
           if (!m.tested) continue;
@@ -6493,54 +6496,24 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
   app.get("/api/quizzes/available", requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
-      const allQuizzes = await storage.getSomaQuizzes();
+      // getQuizAssignmentsForStudent is already WHERE-scoped to this student and
+      // joins the quiz row, so we build the response straight from it. The old
+      // path also fetched getSomaQuizzes() (a full-table scan across every
+      // tutor's quizzes) just to intersect — unnecessary and O(all quizzes).
       const assignments = await storage.getQuizAssignmentsForStudent(studentId);
 
-      console.log(`[Available] Fetching for Student: ${studentId}, Found Assignments: ${assignments.length}`);
-
-      // X-ray: log every raw assignment before any filtering
-      for (const a of assignments) {
-        console.log(`[Available]   Assignment quizId=${a.quizId} status="${a.status}" dueDate=${a.dueDate || "null"} quizStatus="${a.quiz?.status}" quizTitle="${a.quiz?.title}"`);
-      }
-
-      const assignmentMap = new Map<number, any>();
-      for (const a of assignments) {
-        if (a.status === "pending") {
-          assignmentMap.set(a.quizId, a);
-        }
-      }
-
-      const pendingCount = assignmentMap.size;
-      const publishedQuizzes = allQuizzes.filter(q => !q.isArchived && q.status === "published");
-
-      console.log(`[Available] Student ${studentId}: ${assignments.length} total assignments, ${pendingCount} pending, ${publishedQuizzes.length} published quizzes, ${allQuizzes.length} total quizzes`);
-
-      // Log any quiz that has a pending assignment but is NOT published (ghost assignment root cause)
-      for (const quizId of Array.from(assignmentMap.keys())) {
-        const matchingQuiz = allQuizzes.find(q => q.id === quizId);
-        if (!matchingQuiz) {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz not found in DB!`);
-        } else if (matchingQuiz.status !== "published") {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz status="${matchingQuiz.status}" (not published) — title="${matchingQuiz.title}"`);
-        } else if (matchingQuiz.isArchived) {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz is archived — title="${matchingQuiz.title}"`);
-        }
-      }
-
-      const available = publishedQuizzes
-        .filter(q => assignmentMap.has(q.id))
-        .map(q => ({
-          ...q,
+      const available = assignments
+        .filter((a) => a.status === "pending" && a.quiz && !a.quiz.isArchived && a.quiz.status === "published")
+        .map((a) => ({
+          ...a.quiz,
           isAssigned: true,
-          assignmentStatus: "pending",
-          dueDate: assignmentMap.get(q.id)?.dueDate || null,
+          assignmentStatus: "pending" as const,
+          dueDate: a.dueDate || null,
         }));
-
-      console.log(`[Available] Returning ${available.length} available quizzes for student ${studentId}`);
 
       return res.json(available);
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to fetch available quizzes" });
+      return sendInternalError(req, res, err, "quizzes.available", "Failed to fetch available quizzes");
     }
   });
 
@@ -7292,19 +7265,28 @@ ${JSON.stringify({
     try {
       const authUser = (req as any).authUser as SomaReadAuthUser;
       const authUserId = String(authUser.id);
-      const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
 
-      if (authUser.role === "super_admin") {
-        return res.json(allQuizzes);
+      // Admin/tutor legitimately need the full set (all, or all-by-author).
+      if (authUser.role === "super_admin" || authUser.role === "tutor") {
+        const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
+        return res.json(
+          authUser.role === "super_admin"
+            ? allQuizzes
+            : allQuizzes.filter((q) => q.authorId === authUserId),
+        );
       }
 
-      if (authUser.role === "tutor") {
-        return res.json(allQuizzes.filter((q) => q.authorId === authUserId));
-      }
-
+      // Student: build from the scoped, quiz-joined assignment rows instead of
+      // scanning every quiz on the platform and intersecting.
       const assignments = await storage.getQuizAssignmentsForStudent(authUserId);
-      const assignedQuizIds = new Set(assignments.map((assignment) => assignment.quizId));
-      return res.json(allQuizzes.filter((q) => assignedQuizIds.has(q.id)));
+      const seen = new Set<number>();
+      const assigned: SomaQuiz[] = [];
+      for (const a of assignments) {
+        if (!a.quiz || a.quiz.isArchived || seen.has(a.quiz.id)) continue;
+        seen.add(a.quiz.id);
+        assigned.push(a.quiz);
+      }
+      return res.json(assigned);
     } catch (err: any) {
       return sendInternalError(req, res, err, "soma.quizzes.list", "Something went wrong while loading quizzes. Please try again.");
     }
