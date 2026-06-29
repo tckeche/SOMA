@@ -104,6 +104,14 @@ const BOOTSTRAP_QUERIES = [
   `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS confidence_level TEXT NOT NULL DEFAULT 'low'`,
   `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ`,
   `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS next_review_at TIMESTAMPTZ`,
+  // Phase 1 catalogue FK columns — declared in shared/schema.ts (subtopicId,
+  // learningRequirementId) but historically missing from bootstrap, so the
+  // drift verifier flags them on a fresh DB. Added as plain INTEGER (no FK)
+  // to match the soma_questions.subtopic_id/learning_requirement_id pattern
+  // above: the verifier only checks column existence, and the referenced
+  // catalogue tables may not exist yet on a minimal bootstrap.
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS subtopic_id INTEGER`,
+  `ALTER TABLE student_topic_mastery ADD COLUMN IF NOT EXISTS learning_requirement_id INTEGER`,
   // PR #53: new tables for examiner misconceptions + syllabus topic inventory (TF-IDF retrieval)
   `CREATE TABLE IF NOT EXISTS examiner_misconceptions (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, misconception TEXT NOT NULL, student_error TEXT NOT NULL, correct_approach TEXT NOT NULL, frequency TEXT NOT NULL DEFAULT 'common', extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS syllabus_topic_inventory (id SERIAL PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES syllabus_documents(id) ON DELETE CASCADE, board TEXT NOT NULL, syllabus_code TEXT NOT NULL, subject TEXT, topic TEXT NOT NULL, subtopic TEXT, description TEXT, extracted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL)`,
