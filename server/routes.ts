@@ -6623,7 +6623,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
             questionStats[key] = { prompt: meta.stem, correct: 0, wrong: 0, commonMistakes: {} };
           }
 
-          if (answer === meta.correctAnswer) {
+          // Use the canonical whitespace-tolerant comparison (same as submit /
+          // regrade). `meta.correctAnswer` is the raw effectiveCorrectAnswer and
+          // is NOT trimmed, so a strict === here mis-counts correct answers as
+          // wrong whenever the stored option carries stray whitespace.
+          if (answersMatch(answer, meta.correctAnswer)) {
             questionStats[key].correct += 1;
           } else {
             questionStats[key].wrong += 1;
@@ -7546,11 +7550,18 @@ ${JSON.stringify({
         }
       }
 
-      const [questions, diagnoses, quiz] = await Promise.all([
+      const [allQuestions, diagnoses, quiz] = await Promise.all([
         storage.getSomaQuestionsByQuizId(report.quizId),
         (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
         storage.getSomaQuiz(report.quizId),
       ]);
+
+      // Only the SERVED questions count toward the review. The score numerator
+      // was computed over isServableToStudent questions at submit time, and the
+      // student only ever saw those — so the review must use the same set, else
+      // the page sums marks over excluded/blocked/needs_review questions and
+      // reports a lower percentage than the student actually achieved.
+      const questions = allQuestions.filter(isServableToStudent);
 
       // The tutor who authored the quiz (or a super admin) may confirm the
       // AI-suggested marks on structured answers.
@@ -7774,7 +7785,12 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
 
       await storage.updateSomaReport(reportId, { status: "pending", aiFeedbackHtml: null });
 
-      const questions = await storage.getSomaQuestionsByQuizId(report.quizId);
+      // Grade over the SAME served set the submit path uses
+      // (.filter(isServableToStudent)). Without this, retry feeds
+      // excluded/blocked/needs_review questions into the grader, inflating
+      // maxPossibleScore and producing a lower percentage + wrong feedback than
+      // the original submission would have.
+      const questions = (await storage.getSomaQuestionsByQuizId(report.quizId)).filter(isServableToStudent);
       const answers = (report.answersJson as Record<string, string>) || {};
       const maxPossibleScore = questions.reduce((s, q) => s + q.marks, 0);
 
