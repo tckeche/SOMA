@@ -534,10 +534,10 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    // A 30s poll + focus refetch is enough; staleTime:0 + refetchOnMount:"always"
+    // forced a network refetch on every mount/remount, defeating the cache.
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
-    refetchOnMount: "always",
-    staleTime: 0,
   });
 
   const { data: assessmentsOverview = [], isError: overviewError, refetch: refetchOverview } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
@@ -549,7 +549,7 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
 
@@ -610,7 +610,7 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
 

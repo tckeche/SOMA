@@ -102,7 +102,7 @@ export default function TutorDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
 
@@ -115,10 +115,11 @@ export default function TutorDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    // Event-driven freshness via subscribeToSomaMutations covers local actions;
+    // a 30s safety-net poll + focus refetch is plenty. staleTime:0 +
+    // refetchOnMount:"always" forced a full refetch on every remount/tab-switch.
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
-    refetchOnMount: "always",
-    staleTime: 0,
   });
 
   const { data: adoptedStudents = [] } = useQuery<SomaUser[]>({
@@ -130,7 +131,7 @@ export default function TutorDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
 
