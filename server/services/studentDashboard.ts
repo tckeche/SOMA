@@ -233,8 +233,13 @@ function buildAssignmentRow(
   now: Date,
 ): AssignmentRow {
   const dueDate = a.dueDate ? new Date(a.dueDate) : null;
-  const overdue = dueDate ? dueDate.getTime() < now.getTime() && a.status !== "completed" : false;
-  const status: AssignmentRow["status"] = a.status === "completed" ? "completed" : overdue ? "overdue" : "pending";
+  // A submitted report (completedAt set) means the student finished this
+  // assignment, even if the fire-and-forget quiz_assignments.status update
+  // failed. Derive completion from the report too, so a dropped status write
+  // never nags the student to re-take work they already submitted.
+  const isDone = a.status === "completed" || (!!report && !!report.completedAt);
+  const overdue = dueDate ? dueDate.getTime() < now.getTime() && !isDone : false;
+  const status: AssignmentRow["status"] = isDone ? "completed" : overdue ? "overdue" : "pending";
   const scorePercent = report && maxScore > 0 ? Math.round((report.score / maxScore) * 100) : null;
   return {
     assignmentId: a.id,
@@ -622,7 +627,11 @@ export async function buildStudentDashboard({ storage, student }: BuildDashboard
     ...storedNotifications,
   ];
   merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const unreadCount = merged.filter((n) => !n.readAt).length;
+  // Only stored notifications are dismissible — "mark all read" writes readAt on
+  // them. Derived/ambient items (overdue / due-today) always carry readAt:null
+  // and have synthetic ids the read endpoint can't persist, so counting them
+  // would pin the unread badge permanently. The badge reflects stored unread.
+  const unreadCount = storedNotifications.filter((n) => !n.readAt).length;
 
   const completed = assignmentRows
     .filter((a) => a.status === "completed")

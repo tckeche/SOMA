@@ -987,7 +987,20 @@ async function persistImageUpload(file: Express.Multer.File, extension: string):
   return filename;
 }
 
-const pdfUpload = multer({ storage: multer.memoryStorage() });
+// Syllabus-document upload (tutor uploads a syllabus PDF for ingestion).
+// Bounded to 20MB + application/pdf only — previously unbounded, so a large
+// multipart body could be buffered entirely into memory before any handler ran.
+const pdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_PDF_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype !== PDF_MIME) {
+      cb(new Error("PDF required"));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 // Dedicated multer instance for the PDF-uploads feature (worksheet attachments
 // and student responses): in-memory, 20MB cap, application/pdf only.
@@ -7395,18 +7408,23 @@ ${JSON.stringify({
         throw dbErr;
       }
 
+      // Resolve everything that can throw BEFORE responding. Previously the
+      // quiz lookup ran after res.json(), so a failure there hit the outer
+      // catch and attempted a second response on an already-sent stream. The
+      // quiz is needed by the notification + background grading below anyway.
+      const requestId = getRequestId(req);
+      const quiz = await storage.getSomaQuiz(quizId);
+
       // `hasStructured` tells the client to show a "being marked" screen rather
       // than a (still-incomplete) score, since structured marking runs async.
       res.json({ ...report, hasStructured });
 
       // Mark quiz assignment as completed
-      const requestId = getRequestId(req);
       storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch((err) => logBackgroundTaskFailure("quiz-assignment.update-status-completed", "warning", err, {
         requestId,
         quizId,
         studentId,
       }));
-      const quiz = await storage.getSomaQuiz(quizId);
       if (quiz?.authorId) {
         const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
         const durationText = durationMs && durationMs > 0 ? `${Math.floor(durationMs / 60000)}m` : "unknown duration";
