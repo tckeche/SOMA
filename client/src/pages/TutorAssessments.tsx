@@ -1081,8 +1081,19 @@ export default function TutorAssessments() {
               return (
                 <div key={quiz.id} className="bg-card/60 backdrop-blur-md border border-card-border rounded-xl overflow-hidden" data-testid={`quiz-card-${quiz.id}`}>
                   <div
-                    className="px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    className="px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                     onClick={() => toggleExpand(quiz.id)}
+                    onKeyDown={(e) => {
+                      // The header nests its own buttons; only toggle when the
+                      // header itself is focused so nested controls stay usable.
+                      if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                        e.preventDefault();
+                        toggleExpand(quiz.id);
+                      }
+                    }}
                     data-testid={`quiz-tile-${quiz.id}`}
                   >
                     <div className="flex items-center gap-4 flex-1 min-w-0">

@@ -3,6 +3,16 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Paperclip, FileText, Upload, Loader2, Trash2 } from "lucide-react";
 
 interface QuizAttachment {
@@ -31,6 +41,7 @@ export default function TutorWorksheetManager({ quizId, pdfMarkingMode = "manual
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [deleteAttachmentId, setDeleteAttachmentId] = useState<number | null>(null);
 
   const attachmentsKey = ["/api/tutor/quizzes", quizId, "attachments"];
 
@@ -148,7 +159,7 @@ export default function TutorWorksheetManager({ quizId, pdfMarkingMode = "manual
                   </div>
                   <button
                     data-testid={`worksheet-delete-${att.id}`}
-                    onClick={() => deleteMutation.mutate(att.id)}
+                    onClick={() => setDeleteAttachmentId(att.id)}
                     disabled={deleteMutation.isPending}
                     className="text-muted-foreground hover:text-danger shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
                     title="Remove worksheet"
@@ -190,6 +201,36 @@ export default function TutorWorksheetManager({ quizId, pdfMarkingMode = "manual
           <p className="text-[11px] text-muted-foreground">PDF only, up to 20MB.</p>
         </>
       )}
+
+      <AlertDialog open={deleteAttachmentId !== null} onOpenChange={(open) => { if (!open) setDeleteAttachmentId(null); }}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-danger">Remove this file?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              {(() => {
+                const name = attachments.find((a) => a.id === deleteAttachmentId)?.filename;
+                return name
+                  ? `"${name}" will be permanently removed. Students will no longer be able to download it. This cannot be undone.`
+                  : "This file will be permanently removed and can't be recovered.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-danger text-white hover:bg-danger/90"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (deleteAttachmentId !== null) {
+                  deleteMutation.mutate(deleteAttachmentId, { onSettled: () => setDeleteAttachmentId(null) });
+                }
+              }}
+            >
+              {deleteMutation.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

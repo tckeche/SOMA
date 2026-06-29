@@ -2916,6 +2916,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
                 status: report.status,
                 answersJson: report.answersJson,
                 aiFeedbackHtml: report.aiFeedbackHtml,
+                structuredMarking: report.structuredMarking,
                 completedAt: report.completedAt,
               }
             : null,
