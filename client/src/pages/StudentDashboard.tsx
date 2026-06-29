@@ -232,7 +232,7 @@ function NextActions({
 
         {/* up next */}
         {upNext.length > 0 && (
-          <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8 }}>
             <div className="eyebrow" style={{ marginBottom: 2 }}>Up next</div>
             {upNext.map((a) => {
               const ad = daysUntil(a.dueDate);
@@ -681,7 +681,7 @@ export default function StudentDashboard() {
             </div>
 
             {view === "dashboard" && (
-              <div style={{ display: "grid", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
                 <NextActions assignments={data.assignments} onStart={launchQuiz} />
                 <PerformanceBlock data={data} />
                 <FocusBlock data={data} />
