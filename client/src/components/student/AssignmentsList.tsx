@@ -9,11 +9,13 @@ interface Props {
 }
 
 export default function AssignmentsList({ assignments }: Props) {
-  // Only show genuinely DUE work: overdue items, or pending items that have a
-  // due date. Pending items with no due date aren't actually "due" yet, so they
-  // are excluded from this list. Completed items are never shown here.
+  // Show all outstanding work: overdue items and pending items (with or without
+  // a due date). This is the dedicated "Pending assessments" list, so a pending
+  // assignment with no due date must still appear here — otherwise a student
+  // sees assigned work on the dashboard hero but "Nothing pending" on this tab.
+  // Completed items are never shown here.
   const open = assignments.filter(
-    (a) => a.status === "overdue" || (a.status === "pending" && !!a.dueDate),
+    (a) => a.status === "overdue" || a.status === "pending",
   );
   if (open.length === 0) {
     return (
