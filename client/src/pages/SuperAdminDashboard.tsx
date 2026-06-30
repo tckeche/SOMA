@@ -262,10 +262,10 @@ export default function SuperAdminDashboard() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex gap-2">
+          <div className="flex gap-2 overflow-x-auto -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => { setActiveTab("tutors"); setSearchQuery(""); }}
-              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] shrink-0 whitespace-nowrap rounded-xl text-sm font-medium transition-all ${
                 activeTab === "tutors"
                   ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
@@ -277,7 +277,7 @@ export default function SuperAdminDashboard() {
             </button>
             <button
               onClick={() => { setActiveTab("users"); setSearchQuery(""); }}
-              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] shrink-0 whitespace-nowrap rounded-xl text-sm font-medium transition-all ${
                 activeTab === "users"
                   ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
@@ -289,7 +289,7 @@ export default function SuperAdminDashboard() {
             </button>
             <button
               onClick={() => { setActiveTab("quizzes"); setSearchQuery(""); }}
-              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] shrink-0 whitespace-nowrap rounded-xl text-sm font-medium transition-all ${
                 activeTab === "quizzes"
                   ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
@@ -301,7 +301,7 @@ export default function SuperAdminDashboard() {
             </button>
             <button
               onClick={() => { setActiveTab("ai"); setSearchQuery(""); }}
-              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] shrink-0 whitespace-nowrap rounded-xl text-sm font-medium transition-all ${
                 activeTab === "ai"
                   ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"
@@ -313,7 +313,7 @@ export default function SuperAdminDashboard() {
             </button>
             <button
               onClick={() => { setActiveTab("insights"); setSearchQuery(""); }}
-              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 min-h-[44px] shrink-0 whitespace-nowrap rounded-xl text-sm font-medium transition-all ${
                 activeTab === "insights"
                   ? "bg-danger/20 text-danger border border-danger/40"
                   : "bg-muted/40 text-muted-foreground border border-border/50 hover:bg-muted/60"

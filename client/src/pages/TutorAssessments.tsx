@@ -1464,7 +1464,7 @@ export default function TutorAssessments() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
               <div className="rounded-lg border border-success/30 bg-success/[0.06] px-3 py-2">
                 <p className="text-[10px] uppercase tracking-wide text-success/80">Newly Assigned</p>
                 <p className="text-lg font-bold text-success">{assignResult.assigned}</p>
