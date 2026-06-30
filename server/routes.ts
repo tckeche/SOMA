@@ -2675,7 +2675,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const students = await storage.getAdoptedStudentsWithProfile(tutorId);
       res.json(students);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch students" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_students", "Failed to fetch students");
     }
   });
 
@@ -2686,7 +2686,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const available = await storage.getAvailableStudents(tutorId);
       res.json(available);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch available students" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_available_students", "Failed to fetch available students");
     }
   });
 
@@ -2707,7 +2707,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       res.json({ adopted: results.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to adopt students" });
+      return sendInternalError(req, res, err, "routes.failed_to_adopt_students", "Failed to adopt students");
     }
   });
 
@@ -2718,7 +2718,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.removeAdoptedStudent(tutorId, String(req.params.studentId));
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to remove student" });
+      return sendInternalError(req, res, err, "routes.failed_to_remove_student", "Failed to remove student");
     }
   });
 
@@ -2729,7 +2729,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const quizzes = await storage.getSomaQuizzesByAuthor(tutorId);
       res.json(quizzes.filter((q) => !q.isArchived));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quizzes" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quizzes", "Failed to fetch quizzes");
     }
   });
 
@@ -2739,7 +2739,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const overview = await storage.getTutorAssessmentsOverview(tutorId);
       res.json(overview);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch overview" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_overview", "Failed to fetch overview");
     }
   });
 
@@ -2840,7 +2840,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         perStudent,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to assign quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_assign_quiz", "Failed to assign quiz");
     }
   });
 
@@ -2883,7 +2883,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.deleteQuizAssignment(quizId, studentId);
       return res.json({ success: true, message: "Student unassigned" });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to unassign student" });
+      return sendInternalError(req, res, err, "routes.failed_to_unassign_student", "Failed to unassign student");
     }
   });
 
@@ -2951,7 +2951,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
     } catch (err: any) {
       logError("route.quiz_details_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "quizDetails", quizId: req.params.quizId });
-      res.status(500).json({ message: err.message || "Failed to fetch quiz details" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quiz_details", "Failed to fetch quiz details");
     }
   });
 
@@ -3474,7 +3474,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to revoke assignment" });
+      return sendInternalError(req, res, err, "routes.failed_to_revoke_assignment", "Failed to revoke assignment");
     }
   });
 
@@ -3495,7 +3495,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await purgeStorageObjects(storagePaths);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_quiz", "Failed to delete quiz");
     }
   });
 
@@ -3510,7 +3510,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updated = await storage.updateSomaQuiz(quizId, { isArchived: !quiz.isArchived });
       return res.json({ success: true, isArchived: updated?.isArchived });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to toggle archive" });
+      return sendInternalError(req, res, err, "routes.failed_to_toggle_archive", "Failed to toggle archive");
     }
   });
 
@@ -3530,7 +3530,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updated = await storage.updateQuizAssignmentsDueDate(quizId, parsedDate);
       return res.json({ success: true, updated });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to update due date" });
+      return sendInternalError(req, res, err, "routes.failed_to_update_due_date", "Failed to update due date");
     }
   });
 
@@ -3550,7 +3550,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updated = await storage.extendQuizAssignmentDeadlines(quizId, hours);
       return res.json({ success: true, message: `Extended deadline by ${hours}h for ${updated} assignment(s)`, updated });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to extend deadline" });
+      return sendInternalError(req, res, err, "routes.failed_to_extend_deadline", "Failed to extend deadline");
     }
   });
 
@@ -3568,7 +3568,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const assignments = await storage.getQuizAssignmentsForQuiz(quizId);
       res.json(assignments);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch assignments" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_assignments", "Failed to fetch assignments");
     }
   });
 
@@ -3591,7 +3591,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const maxScore = questions.reduce((s, q) => s + q.marks, 0);
       res.json({ quiz, reports, questions, maxScore });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reports" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reports", "Failed to fetch reports");
     }
   });
 
@@ -3604,7 +3604,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const comments = await storage.getTutorComments(tutorId, studentId);
       res.json(comments);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch comments" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_comments", "Failed to fetch comments");
     }
   });
 
@@ -3619,7 +3619,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const result = await storage.addTutorComment({ tutorId, studentId, comment: comment.trim() });
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to add comment" });
+      return sendInternalError(req, res, err, "routes.failed_to_add_comment", "Failed to add comment");
     }
   });
 
@@ -3632,7 +3632,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const rows = await storage.listStudentSubjects(studentId);
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch student subjects" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_student_subjects", "Failed to fetch student subjects");
     }
   });
 
@@ -3705,7 +3705,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       res.json(topics);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topics", "Failed to fetch topics");
     }
   });
 
@@ -3743,12 +3743,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }),
   };
 
-  app.get("/api/catalogue/examining-bodies", requireTutor, async (_req, res) => {
+  app.get("/api/catalogue/examining-bodies", requireTutor, async (req, res) => {
     try {
       const bodies = await listExaminingBodies();
       res.json(bodies);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list examining bodies" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_examining_bodies", "Failed to list examining bodies");
     }
   });
 
@@ -3761,19 +3761,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const levels = await listLevelsForBody(parsed.data.body);
       res.json(levels);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list levels" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_levels", "Failed to list levels");
     }
   });
 
   // Public (no-auth) subject-name list for the signup autocomplete. Returns
   // catalogue subject names only — nothing sensitive — sourced from the same
   // catalogue tables as the authed /api/catalogue/subjects endpoint.
-  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (_req, res) => {
+  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (req, res) => {
     try {
       const names = await listAllSubjectNames();
       res.json(names);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list subjects" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_subjects", "Failed to list subjects");
     }
   });
 
@@ -3786,7 +3786,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const subjects = await listSubjectsForBodyLevel(parsed.data.body, parsed.data.level);
       res.json(subjects);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list subjects" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_subjects", "Failed to list subjects");
     }
   });
 
@@ -3804,7 +3804,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const topics = await listCatalogueTopics(body, level, subject);
       res.json({ syllabus, topics });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_topics", "Failed to list topics");
     }
   });
 
@@ -3817,7 +3817,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const context = await getTopicContext(parsed.data.topicIds);
       res.json(context);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topic context" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topic_context", "Failed to fetch topic context");
     }
   });
 
@@ -3835,7 +3835,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       res.json(misconceptions);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch misconceptions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_misconceptions", "Failed to fetch misconceptions");
     }
   });
 
@@ -3858,7 +3858,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         : mastery.filter((m) => visible.has((m.subject || "").toLowerCase()));
       res.json(filtered);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_mastery_data", "Failed to fetch mastery data");
     }
   });
 
@@ -3938,7 +3938,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ topics, studentCount: adopted.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch cohort data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_cohort_data", "Failed to fetch cohort data");
     }
   });
 
@@ -3952,7 +3952,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch syllabus insights" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_syllabus_insights", "Failed to fetch syllabus insights");
     }
   });
 
@@ -3996,7 +3996,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ dueForReview, upcoming });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch review schedule" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_review_schedule", "Failed to fetch review schedule");
     }
   });
 
@@ -4014,7 +4014,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ reports: reportsWithMax, submissions: [] });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_performance", "Failed to fetch performance");
     }
   });
 
@@ -4094,7 +4094,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         },
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch student report" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_student_report", "Failed to fetch student report");
     }
   });
 
@@ -4104,7 +4104,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const stats = await storage.getDashboardStatsForTutor(tutorId);
       res.json(stats);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch stats" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_stats", "Failed to fetch stats");
     }
   });
 
@@ -4124,7 +4124,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const flags = await storage.listFlaggedQuestionsForTutor(tutorId, filter);
       res.json({ flags });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch flagged questions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_flagged_questions", "Failed to fetch flagged questions");
     }
   });
 
@@ -4137,7 +4137,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!updated) return res.status(404).json({ message: "Flag not found" });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to resolve flag" });
+      return sendInternalError(req, res, err, "routes.failed_to_resolve_flag", "Failed to resolve flag");
     }
   });
 
@@ -4148,7 +4148,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const unreadCount = rows.filter((item) => !item.readAt).length;
       res.json({ notifications: rows, unreadCount });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_notifications", "Failed to fetch notifications");
     }
   });
 
@@ -4160,7 +4160,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!row) return res.status(404).json({ message: "Notification not found" });
       res.json(row);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to update notification" });
+      return sendInternalError(req, res, err, "routes.failed_to_update_notification", "Failed to update notification");
     }
   });
 
@@ -4481,7 +4481,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         suggestions: created,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to generate suggestions" });
+      return sendInternalError(req, res, err, "routes.failed_to_generate_suggestions", "Failed to generate suggestions");
     }
   });
 
@@ -4736,7 +4736,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       });
       res.json(quiz);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to create quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_create_quiz", "Failed to create quiz");
     }
   });
 
@@ -4755,7 +4755,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const questions = await storage.getSomaQuestionsByQuizId(quiz.id);
       res.json({ ...quiz, questions });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quiz", "Failed to fetch quiz");
     }
   });
 
@@ -4769,7 +4769,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const questions = getDraft(quizId);
       res.json({ quizId, questions });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch draft" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_draft", "Failed to fetch draft");
     }
   });
 
@@ -4805,7 +4805,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       setDraft(quizId, questions as DraftQuestion[]);
       res.json({ quizId, questions, updatedAt: new Date() });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to save draft" });
+      return sendInternalError(req, res, err, "routes.failed_to_save_draft", "Failed to save draft");
     }
   });
 
@@ -4989,7 +4989,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         reviewSummary: summarizeReviewStatuses(saved),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to publish" });
+      return sendInternalError(req, res, err, "routes.failed_to_publish", "Failed to publish");
     }
   });
 
@@ -5058,7 +5058,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const updated = await storage.updateSomaQuiz(quizId, updates);
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to update quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_update_quiz", "Failed to update quiz");
     }
   });
 
@@ -5189,7 +5189,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       }, traceId);
       res.json(saved);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to add questions" });
+      return sendInternalError(req, res, err, "routes.failed_to_add_questions", "Failed to add questions");
     }
   });
 
@@ -5210,7 +5210,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       await storage.deleteSomaQuestion(questionId);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete question" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_question", "Failed to delete question");
     }
   });
 
@@ -5226,7 +5226,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         uploadedAt: document.uploadedAt,
       })));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch syllabus documents" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_syllabus_documents", "Failed to fetch syllabus documents");
     }
   });
 
@@ -5250,7 +5250,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         filename: d.filename,
       })));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch curriculum syllabi" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_curriculum_syllabi", "Failed to fetch curriculum syllabi");
     }
   });
 
@@ -6094,12 +6094,12 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   // ─── Super Admin Routes ──────────────────────────────────────────
 
-  app.get("/api/super-admin/users", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/users", requireSuperAdmin, async (req, res) => {
     try {
       const users = await storage.getAllSomaUsers();
       res.json(users);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch users" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_users", "Failed to fetch users");
     }
   });
 
@@ -6112,16 +6112,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await storage.deleteSomaUser(userId);
       res.json({ message: "User deleted" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete user" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_user", "Failed to delete user");
     }
   });
 
-  app.get("/api/super-admin/quizzes", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/quizzes", requireSuperAdmin, async (req, res) => {
     try {
       const quizzes = await storage.getAllSomaQuizzes();
       res.json(quizzes);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quizzes" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quizzes", "Failed to fetch quizzes");
     }
   });
 
@@ -6134,7 +6134,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await purgeStorageObjects(storagePaths);
       res.json({ message: "Quiz deleted" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_quiz", "Failed to delete quiz");
     }
   });
 
@@ -6155,7 +6155,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     });
   });
 
-  app.get("/api/super-admin/stats", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/stats", requireSuperAdmin, async (req, res) => {
     try {
       const [users, quizzes] = await Promise.all([
         storage.getAllSomaUsers(),
@@ -6171,16 +6171,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         publishedQuizzes: quizzes.filter((q) => q.status === "published").length,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch stats" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_stats", "Failed to fetch stats");
     }
   });
 
-  app.get("/api/super-admin/tutors", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/tutors", requireSuperAdmin, async (req, res) => {
     try {
       const tutors = await storage.getTutorDashboardSummaries();
       res.json(tutors);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch tutor dashboard data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_tutor_dashboard_data", "Failed to fetch tutor dashboard data");
     }
   });
 
@@ -6192,7 +6192,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!detail) return res.status(404).json({ message: "Tutor not found" });
       res.json(detail);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch tutor detail" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_tutor_detail", "Failed to fetch tutor detail");
     }
   });
 
@@ -6216,7 +6216,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       }));
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reports" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reports", "Failed to fetch reports");
     }
   });
 
@@ -6224,7 +6224,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     try {
       res.json([]);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch submissions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_submissions", "Failed to fetch submissions");
     }
   });
 
@@ -6244,7 +6244,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json({ ...payload, structuredFeedback });
     } catch (err: any) {
       console.error("[Student Dashboard] Error:", err);
-      res.status(500).json({ message: err.message || "Failed to load dashboard" });
+      return sendInternalError(req, res, err, "routes.failed_to_load_dashboard", "Failed to load dashboard");
     }
   });
 
@@ -6255,7 +6255,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const unreadCount = items.filter((n) => !n.readAt).length;
       res.json({ items, unreadCount });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_notifications", "Failed to fetch notifications");
     }
   });
 
@@ -6268,7 +6268,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!updated) return res.status(404).json({ message: "Notification not found" });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to mark notification read" });
+      return sendInternalError(req, res, err, "routes.failed_to_mark_notification_read", "Failed to mark notification read");
     }
   });
 
@@ -6278,7 +6278,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const count = await storage.markAllStudentNotificationsRead(studentId);
       res.json({ updated: count });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to mark notifications read" });
+      return sendInternalError(req, res, err, "routes.failed_to_mark_notifications_read", "Failed to mark notifications read");
     }
   });
 
@@ -6291,7 +6291,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!deleted) return res.status(404).json({ message: "Notification not found" });
       res.json({ deleted: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to dismiss notification" });
+      return sendInternalError(req, res, err, "routes.failed_to_dismiss_notification", "Failed to dismiss notification");
     }
   });
 
@@ -6301,7 +6301,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to load syllabus insights" });
+      return sendInternalError(req, res, err, "routes.failed_to_load_syllabus_insights", "Failed to load syllabus insights");
     }
   });
 
@@ -6313,7 +6313,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const dashboard = await buildStudentDashboard({ storage, student });
       res.json({ subjects: dashboard.subjects });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch coverage" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_coverage", "Failed to fetch coverage");
     }
   });
 
@@ -6336,7 +6336,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         })),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_performance", "Failed to fetch performance");
     }
   });
 
@@ -6405,7 +6405,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       );
       res.json({ tips, cacheHit, elapsedMs: Math.round(elapsed * 10) / 10 });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch study tips" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_study_tips", "Failed to fetch study tips");
     }
   });
 
@@ -6425,7 +6425,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const reminders = composeReminders(subjectLevels, { max: 8 });
       res.json({ reminders });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reminders" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reminders", "Failed to fetch reminders");
     }
   });
 
@@ -6438,7 +6438,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const topics = getCurriculumTopics(subject, pickEffectiveLevel([level]));
       res.json({ subject, level, topics });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topics", "Failed to fetch topics");
     }
   });
 
@@ -6467,7 +6467,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json(flag);
     } catch (err: any) {
       console.error("[Student Flag] Error:", err);
-      res.status(500).json({ message: err.message || "Failed to flag question" });
+      return sendInternalError(req, res, err, "routes.failed_to_flag_question", "Failed to flag question");
     }
   });
 
@@ -6479,7 +6479,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await storage.unflagQuestion(studentId, questionId);
       res.json({ ok: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to remove flag" });
+      return sendInternalError(req, res, err, "routes.failed_to_remove_flag", "Failed to remove flag");
     }
   });
 
@@ -6489,7 +6489,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const flags = await storage.listFlaggedQuestionsForStudent(studentId);
       res.json({ flags });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list flags" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_flags", "Failed to list flags");
     }
   });
 
@@ -6650,7 +6650,7 @@ ${JSON.stringify({
 
       return res.json({ analysis: data, submissionCount: reports.length, metadata, questionStats });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to analyze class" });
+      return sendInternalError(req, res, err, "routes.failed_to_analyze_class", "Failed to analyze class");
     }
   });
 
