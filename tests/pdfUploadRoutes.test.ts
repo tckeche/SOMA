@@ -9,6 +9,7 @@
  * isStorageConfigured() reports true so the 503 guard is satisfied.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import express from "express";
 import { createServer } from "http";
 import supertest from "supertest";
@@ -38,7 +39,8 @@ vi.mock("../server/services/fileStorage", async (importOriginal) => {
 });
 
 import { registerRoutes } from "../server/routes";
-import { deleteObject } from "../server/services/fileStorage";
+import { deleteObject, isStorageConfigured } from "../server/services/fileStorage";
+import { discoverDomainModules } from "../server/modules/routerLoader";
 
 let app: express.Express;
 let httpServer: any;
@@ -194,6 +196,28 @@ describe("tutor worksheet attachments", () => {
       });
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toMatch(/not a valid PDF/i);
+  });
+
+  it("rejects files over the 20MB upload cap", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    const tooLarge = Buffer.concat([Buffer.from("%PDF-"), Buffer.alloc(20 * 1024 * 1024)]);
+    const res = await request
+      .post(`/api/tutor/quizzes/${quizId}/attachments`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .attach("file", tooLarge, { filename: "large.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/File too large/);
+  });
+
+  it("preserves the storage-unavailable response", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    (isStorageConfigured as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
+    const res = await request
+      .post(`/api/tutor/quizzes/${quizId}/attachments`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .attach("file", PDF, { filename: "worksheet.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(503);
+    expect(res.body.error?.message ?? res.body.message).toBe("File storage is not configured");
   });
 });
 
@@ -400,5 +424,22 @@ describe("quiz delete purges storage objects", () => {
     const calledPaths = (deleteObject as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(calledPaths.some((p: string) => p.startsWith(`assessments/${quizId}/`))).toBe(true);
     expect(calledPaths).toContain(`submissions/${quizId}/${STUDENT_ASSIGNED}.pdf`);
+  });
+});
+
+
+describe("phase 4 PDF module migration", () => {
+  it("discovers PDF upload modules and removes migrated handlers from the monolith", async () => {
+    const modules = await discoverDomainModules();
+    expect(modules.map((m) => m.name)).toEqual(expect.arrayContaining(["pdfAttachments", "pdfSubmissions"]));
+
+    const legacyRoutes = readFileSync("server/routes.ts", "utf8");
+    expect(legacyRoutes).not.toContain('/api/tutor/quizzes/:quizId/attachments');
+    expect(legacyRoutes).not.toContain('app.get("/api/tutor/quizzes/:quizId/attachments"');
+    expect(legacyRoutes).not.toContain('app.get("/api/quizzes/:quizId/attachments"');
+    expect(legacyRoutes).not.toContain('/api/quizzes/:quizId/submission-upload');
+    expect(legacyRoutes).not.toContain('app.get("/api/quizzes/:quizId/submission-upload"');
+    expect(legacyRoutes).not.toContain('app.get("/api/tutor/quizzes/:quizId/submission-uploads"');
+    expect(legacyRoutes).not.toContain('app.get("/api/tutor/submission-uploads/:id/download"');
   });
 });

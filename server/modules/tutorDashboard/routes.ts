@@ -1,0 +1,1 @@
+import {Router} from "express"; import {asyncHandler} from "../../lib/asyncHandler"; import {requireTutor} from "../../middleware/roles"; import * as c from "./controller"; export const router=Router(); router.get("/dashboard-stats",requireTutor,asyncHandler(c.stats));

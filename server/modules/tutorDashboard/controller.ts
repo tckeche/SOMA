@@ -1,0 +1,1 @@
+import type {Request,Response} from "express"; import {sendInternalError} from "../../utils/apiErrors"; import * as s from "./service"; export async function stats(req:Request,res:Response){try{return res.json(await s.stats((req as any).tutorId));}catch(e:any){return sendInternalError(req,res,e,"routes.failed_to_fetch_stats","Failed to fetch stats");}}

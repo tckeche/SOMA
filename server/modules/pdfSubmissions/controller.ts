@@ -1,0 +1,13 @@
+import type { Request, Response } from "express";
+import { sendInternalError } from "../../utils/apiErrors";
+import { FileStorageError } from "../../services/fileStorage";
+import { requireStorageConfigured } from "../fileStorageAccess/service";
+import * as service from "./service";
+import { parseId } from "./validators";
+function studentId(req: Request) { return (req as any).authUser.id as string; }
+function tutorId(req: Request) { return (req as any).tutorId as string; }
+function domain(res: Response, err: service.PdfSubmissionError) { return res.status(err.status).json({ message: err.message }); }
+export async function upload(req: Request, res: Response) { try { if (!requireStorageConfigured(res)) return; const quizId = parseId(req.params.quizId); if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" }); return res.status(201).json(await service.upload(quizId, studentId(req), (req as any).file)); } catch (err: any) { if (err instanceof service.PdfSubmissionError) return domain(res, err); if (err instanceof FileStorageError) return res.status(502).json({ message: "Failed to store file" }); return sendInternalError(req, res, err, "quizzes.submissionUpload.create", "Failed to upload response."); } }
+export async function getOwn(req: Request, res: Response) { try { const quizId = parseId(req.params.quizId); if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" }); return res.json(await service.getOwn(quizId, studentId(req))); } catch (err: any) { if (err instanceof service.PdfSubmissionError) return domain(res, err); return sendInternalError(req, res, err, "quizzes.submissionUpload.get", "Failed to load submission."); } }
+export async function listForTutor(req: Request, res: Response) { try { const quizId = parseId(req.params.quizId); if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" }); return res.json(await service.listForTutor(quizId, tutorId(req))); } catch (err: any) { if (err instanceof service.PdfSubmissionError) return domain(res, err); return sendInternalError(req, res, err, "tutor.submissionUploads.list", "Failed to list submissions."); } }
+export async function downloadForTutor(req: Request, res: Response) { try { if (!requireStorageConfigured(res)) return; const id = parseId(req.params.id); if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" }); return res.json(await service.downloadForTutor(id, tutorId(req))); } catch (err: any) { if (err instanceof service.PdfSubmissionError) return domain(res, err); if (err instanceof FileStorageError) return res.status(502).json({ message: "Failed to sign download URL" }); return sendInternalError(req, res, err, "tutor.submissionUploads.download", "Failed to create download URL."); } }

@@ -54,17 +54,29 @@ async function discoverModuleFiles(root: string): Promise<string[]> {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
+function getRouterRouteSignatures(mod: DomainModuleDefinition): string[] {
+  if (!isRouterDomainModule(mod)) return [];
+  const stack = (mod.router as any).stack;
+  if (!Array.isArray(stack)) return [];
+  return stack
+    .filter((layer) => layer?.route?.path)
+    .flatMap((layer) => {
+      const methods = Object.keys(layer.route.methods || {}).filter((method) => layer.route.methods[method]);
+      return methods.map((method) => `${method.toUpperCase()} ${mod.basePath}${layer.route.path}`);
+    });
+}
+
 function validateNoDuplicates(modules: DomainModuleDefinition[]): void {
   const names = new Set<string>();
-  const basePaths = new Map<string, string>();
+  const routeSignatures = new Map<string, string>();
   for (const mod of modules) {
     if (mod.enabled === false) continue;
     if (names.has(mod.name)) throw new Error(`Duplicate domain module name '${mod.name}'.`);
     names.add(mod.name);
-    if (isRouterDomainModule(mod)) {
-      const prior = basePaths.get(mod.basePath);
-      if (prior) throw new Error(`Duplicate domain module basePath '${mod.basePath}' used by '${prior}' and '${mod.name}'.`);
-      basePaths.set(mod.basePath, mod.name);
+    for (const signature of getRouterRouteSignatures(mod)) {
+      const prior = routeSignatures.get(signature);
+      if (prior) throw new Error(`Duplicate domain route '${signature}' used by '${prior}' and '${mod.name}'.`);
+      routeSignatures.set(signature, mod.name);
     }
   }
 }

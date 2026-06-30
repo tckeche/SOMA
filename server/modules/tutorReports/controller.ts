@@ -1,0 +1,2 @@
+import type {Request,Response} from "express"; import {sendInternalError} from "../../utils/apiErrors"; import * as s from "./service";
+export async function quizReports(req:Request,res:Response){try{return res.json(await s.quizReports(parseInt(String(req.params.quizId),10),(req as any).tutorId));}catch(e:any){if(e instanceof s.TutorReportsError)return res.status(e.status).json({message:e.message});return sendInternalError(req,res,e,"routes.failed_to_fetch_reports","Failed to fetch reports");}}
