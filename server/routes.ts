@@ -2302,7 +2302,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Per-domain route modules (see server/routes/README.md). Registered
   // before the legacy inline handlers below so any future domain takeover
   // can shadow a route here without conflict.
-  registerDomainRoutes(app);
+  await registerDomainRoutes(app);
 
 
   app.post("/api/diagnostics/client-error", requireSupabaseAuth, async (req, res) => {
