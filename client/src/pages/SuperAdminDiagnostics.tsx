@@ -74,7 +74,7 @@ export default function SuperAdminDiagnostics() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const recentQuery = useQuery<{ events: DiagnosticsEvent[] }>({
@@ -88,7 +88,7 @@ export default function SuperAdminDiagnostics() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const refresh = () => {

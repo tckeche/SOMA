@@ -50,6 +50,8 @@ JWT_SECRET = "1ARBq1xysHxkLujZBNPUnFqYeG8N99+DkA0hZO2CMaTKjYq7x4pApRQnyoQS7/G8K8
 ADMIN_PASSWORD = "Chomukamba"
 ADMIN_USERNAME = "admin.soma@melaniacalvin.com"
 SUPABASE_DB_URL = "postgresql://postgres.lwjauxauqvwnwoyqezvu:kCbFtnqhfhzPIaBr@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+PDF_DUAL_MARKING_ENABLED = "false"
+PDF_MARKING_WORKER_ENABLED = "false"
 
 [postMerge]
 path = "scripts/post-merge.sh"

@@ -86,6 +86,86 @@ export function tryParseJson(raw: string): { ok: true; value: any } | { ok: fals
 }
 
 /**
+ * Escape raw control characters (U+0000–U+001F) that appear *inside* JSON
+ * string literals. LLMs (notably Gemini) emit literal newlines/tabs inside
+ * long explanation strings, which makes `JSON.parse` throw
+ * "Bad control character in string literal". Control chars OUTSIDE strings
+ * are valid JSON whitespace and are left untouched, so this is a safe no-op
+ * for already-valid JSON.
+ */
+export function escapeControlCharsInStrings(raw: string): string {
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (inStr) {
+      if (esc) { out += c; esc = false; continue; }
+      if (c === "\\") { out += c; esc = true; continue; }
+      if (c === '"') { out += c; inStr = false; continue; }
+      const code = raw.charCodeAt(i);
+      if (code < 0x20) {
+        switch (c) {
+          case "\n": out += "\\n"; break;
+          case "\r": out += "\\r"; break;
+          case "\t": out += "\\t"; break;
+          case "\f": out += "\\f"; break;
+          case "\b": out += "\\b"; break;
+          default: out += "\\u" + code.toString(16).padStart(4, "0");
+        }
+        continue;
+      }
+      out += c;
+    } else {
+      if (c === '"') inStr = true;
+      out += c;
+    }
+  }
+  return out;
+}
+
+/**
+ * Last-resort heuristic: escape unescaped double-quotes that appear *inside*
+ * JSON string values. The classic LLM failure
+ * ("Expected ',' or '}' after property value") happens when a model writes
+ * `"explanation": "He said "yes" to..."` — the inner quote terminates the
+ * string early. We treat a `"` as a string TERMINATOR only when the next
+ * non-whitespace character is a structural token (`,` `:` `}` `]`) or EOF;
+ * otherwise we assume it is content and escape it. This is heuristic and only
+ * runs after the strict repair attempts fail, so well-formed JSON is never
+ * touched.
+ */
+export function repairUnescapedInnerQuotes(raw: string): string {
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (!inStr) {
+      out += c;
+      if (c === '"') inStr = true;
+      continue;
+    }
+    if (esc) { out += c; esc = false; continue; }
+    if (c === "\\") { out += c; esc = true; continue; }
+    if (c === '"') {
+      let j = i + 1;
+      while (j < raw.length && /\s/.test(raw[j])) j++;
+      const next = j < raw.length ? raw[j] : "";
+      if (next === "" || next === "," || next === ":" || next === "}" || next === "]") {
+        out += c;
+        inStr = false;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/**
  * LLMs writing LaTeX inside JSON strings frequently forget to escape the
  * backslash — they emit `"\frac{1}{2}"` when they should have emitted
  * `"\\frac{1}{2}"`. When that gets through JSON.parse, the parser silently
@@ -182,11 +262,26 @@ export function validateAgainstSchema<T>(raw: string | unknown, schema: z.ZodSch
     if (first.ok) {
       parsed = first.value;
     } else if (repair) {
-      const second = tryParseJson(repairJsonString(presanitized));
-      if (!second.ok) {
-        return { ok: false, reason: `JSON parse failed: ${second.error}`, parseStatus: "failure", validationStatus: "fail" };
+      // Escalating repair ladder: each step is strictly more aggressive than
+      // the last. Earlier (safer) repairs are tried first so well-formed JSON
+      // is never mangled by the heuristic unescaped-quote pass.
+      const base = repairJsonString(presanitized);
+      const candidates = [
+        base,
+        escapeControlCharsInStrings(base),
+        repairUnescapedInnerQuotes(base),
+        repairUnescapedInnerQuotes(escapeControlCharsInStrings(base)),
+      ];
+      let recovered = false;
+      let lastError = "unknown";
+      for (const candidate of candidates) {
+        const attempt = tryParseJson(candidate);
+        if (attempt.ok) { parsed = attempt.value; recovered = true; break; }
+        lastError = attempt.error;
       }
-      parsed = second.value;
+      if (!recovered) {
+        return { ok: false, reason: `JSON parse failed: ${lastError}`, parseStatus: "failure", validationStatus: "fail" };
+      }
     } else {
       parseStatus = "failure";
       return { ok: false, reason: `JSON parse failed: ${first.error}`, parseStatus, validationStatus: "fail" };

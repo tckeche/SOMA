@@ -3,6 +3,16 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Paperclip, FileText, Upload, Loader2, Trash2 } from "lucide-react";
 
 interface QuizAttachment {
@@ -11,6 +21,7 @@ interface QuizAttachment {
   sizeBytes: number;
   mimeType: string;
   createdAt: string;
+  documentRole?: "worksheet" | "exam_paper" | "supporting_resource";
 }
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -26,10 +37,11 @@ function formatBytes(bytes: number) {
 // Tutor-facing worksheet attachment manager for a single quiz. Upload, list
 // and delete PDF worksheets. Used by the builder when the assessment format is
 // "pdf" — the worksheet IS the assessment that students download and respond to.
-export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
+export default function TutorWorksheetManager({ quizId, pdfMarkingMode = "manual" }: { quizId: number; pdfMarkingMode?: "manual" | "dual_ai" }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [deleteAttachmentId, setDeleteAttachmentId] = useState<number | null>(null);
 
   const attachmentsKey = ["/api/tutor/quizzes", quizId, "attachments"];
 
@@ -51,6 +63,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("documentRole", pdfMarkingMode === "dual_ai" ? "exam_paper" : "worksheet");
       const res = await authFetch(`/api/tutor/quizzes/${quizId}/attachments`, {
         method: "POST",
         body: formData,
@@ -62,7 +75,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: attachmentsKey });
       setSelectedFile(null);
-      toast({ title: "Worksheet uploaded" });
+      toast({ title: pdfMarkingMode === "dual_ai" ? "Exam paper uploaded" : "Worksheet uploaded" });
     },
     onError: (err: Error) => {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -106,13 +119,22 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
     <div className="glass-card p-4 md:p-5 space-y-4" data-testid="panel-worksheet-manager">
       <div className="flex items-center gap-2">
         <Paperclip className="w-4 h-4 text-primary" />
-        <h2 className="font-semibold text-foreground text-sm">Worksheets</h2>
+        <h2 className="font-semibold text-foreground text-sm">{pdfMarkingMode === "dual_ai" ? "Exam paper PDF" : "Worksheets"}</h2>
         <span className="text-[10px] text-muted-foreground ml-auto">{attachments.length} file{attachments.length === 1 ? "" : "s"}</span>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Upload the worksheet PDF(s) students will download and complete. Students submit a PDF response that you mark manually — there is no timer or multiple-choice engine for this assessment type.
+        {pdfMarkingMode === "dual_ai" ? "Upload the exam paper PDF students will complete. You can then prepare and approve a private marking rubric before AI-assisted marking begins." : "Upload the worksheet PDF(s) students will download and complete. Students submit a PDF response that you mark manually — there is no timer or multiple-choice engine for this assessment type."}
       </p>
+
+
+      {pdfMarkingMode === "dual_ai" && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground space-y-2">
+          <p><strong className="text-foreground">Optional marking scheme</strong> · Private — students cannot view this file.</p>
+          <p>Use the PDF marking setup panel after upload to prepare, review and approve the rubric. AI marks are never released until tutor approval.</p>
+          <Button type="button" variant="outline" size="sm" onClick={async () => { const res = await authFetch(`/api/tutor/quizzes/${quizId}/pdf-marking/prepare`, { method: "POST" }); if (!res.ok) throw new Error("Prepare failed"); toast({ title: "Rubric preparation queued" }); }}>Prepare marking rubric</Button>
+        </div>
+      )}
 
       {storageUnconfigured ? (
         <div className="rounded-xl bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">
@@ -137,7 +159,7 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
                   </div>
                   <button
                     data-testid={`worksheet-delete-${att.id}`}
-                    onClick={() => deleteMutation.mutate(att.id)}
+                    onClick={() => setDeleteAttachmentId(att.id)}
                     disabled={deleteMutation.isPending}
                     className="text-muted-foreground hover:text-danger shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
                     title="Remove worksheet"
@@ -179,6 +201,36 @@ export default function TutorWorksheetManager({ quizId }: { quizId: number }) {
           <p className="text-[11px] text-muted-foreground">PDF only, up to 20MB.</p>
         </>
       )}
+
+      <AlertDialog open={deleteAttachmentId !== null} onOpenChange={(open) => { if (!open) setDeleteAttachmentId(null); }}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-danger">Remove this file?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              {(() => {
+                const name = attachments.find((a) => a.id === deleteAttachmentId)?.filename;
+                return name
+                  ? `"${name}" will be permanently removed. Students will no longer be able to download it. This cannot be undone.`
+                  : "This file will be permanently removed and can't be recovered.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-danger text-white hover:bg-danger/90"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (deleteAttachmentId !== null) {
+                  deleteMutation.mutate(deleteAttachmentId, { onSettled: () => setDeleteAttachmentId(null) });
+                }
+              }}
+            >
+              {deleteMutation.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

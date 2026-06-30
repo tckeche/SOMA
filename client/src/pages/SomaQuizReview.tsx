@@ -203,6 +203,22 @@ function ReviewWorkflowStatus({
   );
 }
 
+// Whitespace-tolerant equality mirroring the server's grading helper
+// (`answersMatch` in mathValidator.ts): scoring trims both sides, so the review
+// screen must too — otherwise a stored answer that differs only by stray
+// whitespace would show the "Incorrect" badge or highlight no option as
+// correct (a blank correct indicator) on a question the server marked right.
+// An empty side never matches, so a skipped question stays "Skipped".
+function answersEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const s = (a ?? "").trim();
+  const c = (b ?? "").trim();
+  if (!s || !c) return false;
+  return s === c;
+}
+
 export default function SomaQuizReview() {
   const reportRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
@@ -476,7 +492,7 @@ export default function SomaQuizReview() {
     if (metaBits.length) lines.push(metaBits.join(" | "));
     lines.push(`Student: ${report.studentName}`);
     lines.push(`Score: ${report.score}/${totalMarks} (${pct}%) across ${questions.length} questions`);
-    const correctCount = questions.filter((q) => studentAnswers[String(q.id)] === q.correctAnswer).length;
+    const correctCount = questions.filter((q) => answersEqual(studentAnswers[String(q.id)], q.correctAnswer)).length;
     const skipped = questions.filter((q) => !studentAnswers[String(q.id)]).length;
     lines.push(`Correct: ${correctCount} | Skipped: ${skipped} | Incorrect: ${questions.length - correctCount - skipped}`);
     try {
@@ -644,7 +660,7 @@ export default function SomaQuizReview() {
             const isStructured = q.questionType === "structured";
             const sm = isStructured && structuredMarking ? structuredMarking[String(q.id)] : null;
             const effectiveStructuredMark = sm ? (sm.tutorMarks ?? sm.aiMarks) : 0;
-            const isCorrect = !isStructured && studentAnswer === q.correctAnswer;
+            const isCorrect = !isStructured && answersEqual(studentAnswer, q.correctAnswer);
 
             return (
               <div key={q.id} className="glass-card p-6" data-testid={`review-question-${idx + 1}`}>
@@ -750,8 +766,8 @@ export default function SomaQuizReview() {
                 <div className="grid gap-2.5">
                   {q.options.map((option, optIdx) => {
                     const letter = String.fromCharCode(65 + optIdx);
-                    const isCorrectOption = option === q.correctAnswer;
-                    const isStudentWrongPick = option === studentAnswer && !isCorrectOption;
+                    const isCorrectOption = answersEqual(option, q.correctAnswer);
+                    const isStudentWrongPick = answersEqual(option, studentAnswer) && !isCorrectOption;
 
                     let optionClasses = "bg-foreground/[0.04] border-border/50";
                     let ringClasses = "";
@@ -810,6 +826,24 @@ export default function SomaQuizReview() {
                         Cambridge examiners flagged this {yearLabel}
                       </p>
                       <p className="text-sm text-foreground">{m.misconception}</p>
+                      {m.studentError && (
+                        <p className="text-sm text-foreground/80 mt-2">
+                          <span className="font-semibold text-danger">What students often do: </span>
+                          {m.studentError}
+                        </p>
+                      )}
+                      {m.correctApproach && (
+                        <p className="text-sm text-foreground/80 mt-2">
+                          <span className="font-semibold text-success">Do this instead: </span>
+                          {m.correctApproach}
+                        </p>
+                      )}
+                      {m.sourceQuote && (
+                        <blockquote className="text-xs italic text-muted-foreground mt-3 pl-3 border-l-2 border-danger/40 break-words">
+                          “{m.sourceQuote}”
+                          {m.sourcePage ? <span className="not-italic"> — examiner report p.{m.sourcePage}</span> : null}
+                        </blockquote>
+                      )}
                     </div>
                   );
                 })()}

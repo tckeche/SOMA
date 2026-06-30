@@ -251,7 +251,7 @@ export default function TutorStudentDetail() {
       const res = await authFetch(`/api/tutor/students/${studentId}/ai/publish-suggested`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ suggestionIds: selectedSuggestionIds, questionCount: 30 }),
+        body: JSON.stringify({ suggestionIds: selectedSuggestionIds, questionCount: 15 }),
       });
       if (!res.ok) throw new Error((await res.json()).message || "Failed to publish");
       return res.json();

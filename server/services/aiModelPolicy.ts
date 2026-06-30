@@ -37,15 +37,17 @@ const POLICY: Record<RiskClass, ModelChoice[]> = {
   ],
   standard: [
     { provider: "openai", model: "gpt-4o" },
-    { provider: "anthropic", model: "claude-sonnet-4-6" },
+    { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
     { provider: "google", model: "gemini-2.5-flash" },
   ],
   high: [
-    // Strong models only. We pair Anthropic + OpenAI so an outage on one
-    // still leaves us a high-quality option without dropping to a flash
-    // model. We deliberately do NOT include the cheap tier in this chain.
-    { provider: "anthropic", model: "claude-sonnet-4-6" },
-    { provider: "openai", model: "gpt-4o" },
+    // Strong models only — kept in lockstep with the live quiz pipeline's
+    // MODEL_CLAUDE / MODEL_OPENAI (aiPipeline.ts): Opus 4.8 is the primary
+    // Maker, GPT-5 the primary Verifier. We pair Anthropic + OpenAI so an
+    // outage on one still leaves us a high-quality option without dropping to
+    // a flash model. We deliberately do NOT include the cheap tier here.
+    { provider: "anthropic", model: "claude-opus-4-8" },
+    { provider: "openai", model: "gpt-5" },
   ],
 };
 

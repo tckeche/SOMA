@@ -241,25 +241,54 @@ describe("generateAuditedQuiz: ChatGPT verifier fails → Gemini verifier", () =
   });
 });
 
-describe("generateAuditedQuiz: error handling", () => {
-  it("throws when both makers fail", async () => {
+describe("generateAuditedQuiz: error handling & resilience", () => {
+  it("falls back to the Gemini maker when both Claude and ChatGPT makers fail", async () => {
+    const geminiMaker = vi.fn().mockResolvedValue({ questions: [validDraftQuestion] });
+    const openAIVerifier = vi.fn().mockResolvedValue({ questions: [validQuestion], warnings: [] });
     stubStages({
       runClaudeMakerSimple: vi.fn().mockRejectedValue(new Error("Claude down")),
       runOpenAIMakerSimple: vi.fn().mockRejectedValue(new Error("OpenAI down")),
+      runGeminiMakerSimple: geminiMaker,
+      runOpenAIVerifier: openAIVerifier,
+      runGeminiVerifier: vi.fn(),
+    });
+    const result = await generateAuditedQuiz("Topic");
+    expect(geminiMaker).toHaveBeenCalledTimes(1);
+    // Gemini made the quiz → ChatGPT (a different provider) verifies it.
+    expect(openAIVerifier).toHaveBeenCalledTimes(1);
+    expect(result.questions).toHaveLength(1);
+    expect(result.telemetry.makerModel).toBe("google/gemini-2.5-flash");
+  });
+
+  it("throws only when EVERY maker provider is down", async () => {
+    stubStages({
+      runClaudeMakerSimple: vi.fn().mockRejectedValue(new Error("Claude down")),
+      runOpenAIMakerSimple: vi.fn().mockRejectedValue(new Error("OpenAI down")),
+      runGeminiMakerSimple: vi.fn().mockRejectedValue(new Error("Gemini down")),
       runOpenAIVerifier: vi.fn(),
       runGeminiVerifier: vi.fn(),
     });
-    await expect(generateAuditedQuiz("Topic")).rejects.toThrow("OpenAI down");
+    await expect(generateAuditedQuiz("Topic")).rejects.toThrow("Gemini down");
   });
 
-  it("throws when Claude makes but both verifiers fail", async () => {
+  it("still produces a quiz (routed to review) when Claude makes but EVERY verifier is down", async () => {
     stubStages({
       runClaudeMakerSimple: vi.fn().mockResolvedValue({ questions: [validDraftQuestion] }),
       runOpenAIMakerSimple: vi.fn(),
+      runGeminiMakerSimple: vi.fn(),
       runOpenAIVerifier: vi.fn().mockRejectedValue(new Error("OpenAI verifier down")),
       runGeminiVerifier: vi.fn().mockRejectedValue(new Error("Gemini verifier down")),
+      // No blind solver in degraded mode so the assertion is deterministic.
+      runBlindSolver: vi.fn().mockResolvedValue(new Map()),
     });
-    await expect(generateAuditedQuiz("Topic")).rejects.toThrow("Gemini verifier down");
+    const result = await generateAuditedQuiz("Topic");
+    // The quiz is STILL made — accuracy is protected by routing to review.
+    expect(result.questions.length).toBeGreaterThanOrEqual(1);
+    expect(result.telemetry.checkerModel).toMatch(/verifier unavailable/i);
+    expect(result.warnings.some((w) => /verifier unavailable/i.test(w.issue))).toBe(true);
+    // In degraded mode only the deterministic math prover may vouch for a key;
+    // nothing is confirmed on a (now-absent) LLM verifier's judgement alone.
+    expect(result.verification.every((v) => v.confirmed === false || v.method === "math_prover")).toBe(true);
   });
 });
 

@@ -3,7 +3,13 @@
  */
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { validateAgainstSchema, repairJsonString, tryParseJson } from "../server/services/aiContracts";
+import {
+  validateAgainstSchema,
+  repairJsonString,
+  tryParseJson,
+  escapeControlCharsInStrings,
+  repairUnescapedInnerQuotes,
+} from "../server/services/aiContracts";
 
 const schema = z.object({ question: z.string(), answer: z.number() });
 
@@ -68,6 +74,62 @@ describe("aiContracts: validateAgainstSchema", () => {
   it("accepts already-parsed objects", () => {
     const r = validateAgainstSchema({ question: "q", answer: 1 }, schema);
     expect(r.ok).toBe(true);
+  });
+
+  it("recovers JSON with unescaped inner quotes in a string value", () => {
+    // Mirrors the production Gemini-verifier failure:
+    // "Expected ',' or '}' after property value".
+    const broken = '{"question":"He said "yes" to all of it","answer":3}';
+    const r = validateAgainstSchema(broken, schema);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.answer).toBe(3);
+      expect(r.value.question).toContain("yes");
+    }
+  });
+
+  it("recovers JSON with a literal newline inside a string value", () => {
+    const broken = '{"question":"line one\nline two","answer":1}';
+    const r = validateAgainstSchema(broken, schema);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.question).toContain("line two");
+  });
+});
+
+describe("aiContracts: escapeControlCharsInStrings", () => {
+  it("escapes control chars inside strings but leaves structural whitespace", () => {
+    const out = escapeControlCharsInStrings('{\n  "a": "x\ty"\n}');
+    expect(JSON.parse(out)).toEqual({ a: "x\ty" });
+  });
+
+  it("is a no-op for already-valid JSON", () => {
+    const valid = '{"a":"b","c":1}';
+    expect(escapeControlCharsInStrings(valid)).toBe(valid);
+  });
+});
+
+describe("aiContracts: repairUnescapedInnerQuotes", () => {
+  it("escapes a quote in the middle of a value", () => {
+    const out = repairUnescapedInnerQuotes('{"a":"say "hi" now"}');
+    expect(JSON.parse(out)).toEqual({ a: 'say "hi" now' });
+  });
+
+  it("does not corrupt valid JSON with empty strings and structural quotes", () => {
+    const valid = '{"a":"","b":"v","c":["x","y"]}';
+    expect(JSON.parse(repairUnescapedInnerQuotes(valid))).toEqual({ a: "", b: "v", c: ["x", "y"] });
+  });
+
+  it("recovers a combined-fault payload: invalid LaTeX escapes AND inner quotes", () => {
+    // The realistic Claude-fallback copilot payload: under-escaped `\alpha`
+    // (invalid JSON escape) plus an unescaped inner quote. The extractor
+    // composes sanitizeLatexBackslashes then repairUnescapedInnerQuotes, so
+    // verify that composition recovers it.
+    const broken = '{"reply":"use \\alpha here and say "hi"","answer":1}';
+    const recovered = repairUnescapedInnerQuotes(sanitizeLatexBackslashes(broken));
+    const parsed = JSON.parse(recovered);
+    expect(parsed.answer).toBe(1);
+    expect(parsed.reply).toContain("alpha");
+    expect(parsed.reply).toContain("hi");
   });
 });
 

@@ -1,0 +1,14 @@
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { asyncHandler } from "../../lib/asyncHandler";
+import { requireTutor } from "../../middleware/roles";
+import * as controller from "./controller";
+const authApiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
+export const catalogueRouter = Router();
+catalogueRouter.get("/examining-bodies", requireTutor, asyncHandler(controller.examiningBodies));
+catalogueRouter.get("/levels", requireTutor, asyncHandler(controller.levels));
+catalogueRouter.get("/subjects", requireTutor, asyncHandler(controller.subjects));
+catalogueRouter.get("/topics", requireTutor, asyncHandler(controller.topics));
+catalogueRouter.get("/topic-context", requireTutor, asyncHandler(controller.topicContext));
+export const authCatalogueRouter = Router();
+authCatalogueRouter.get("/catalogue/subjects", authApiLimiter, asyncHandler(controller.authSubjects));

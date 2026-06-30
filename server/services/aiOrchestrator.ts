@@ -131,7 +131,12 @@ export async function callGoogle(
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  const generationConfig: any = { temperature: 0, topP: 0.1, topK: 1, candidateCount: 1 };
+  // maxOutputTokens defaults to a small value on some Gemini models (~8k),
+  // which silently TRUNCATES a 15-question verifier response (full questions +
+  // explanations + 4 per-option rationales each) → invalid JSON → schema gate
+  // failure → the whole quiz falls through to the next provider or fails. Give
+  // the model real headroom so the verifier fallback path can complete.
+  const generationConfig: any = { temperature: 0, topP: 0.1, topK: 1, candidateCount: 1, maxOutputTokens: 32768 };
   if (expectedSchema) {
     generationConfig.responseMimeType = "application/json";
     generationConfig.responseSchema = convertToGeminiSchema(expectedSchema);

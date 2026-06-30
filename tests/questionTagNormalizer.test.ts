@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeQuestionTag } from "../server/services/questionTagNormalizer";
+import { cleanTopicLabel, normalizeQuestionTag } from "../server/services/questionTagNormalizer";
 
 describe("normalizeQuestionTag", () => {
   it.each([
@@ -49,5 +49,40 @@ describe("normalizeQuestionTag", () => {
       const twice = normalizeQuestionTag(once);
       expect(twice).toBe(once);
     }
+  });
+});
+
+describe("cleanTopicLabel — topic names must never display as bare numbers", () => {
+  it.each([
+    // A leading catalogue number is stripped to expose the real title.
+    ["1 Algebra", "Algebra"],
+    ["2.3 Differentiation", "Differentiation"],
+    ["10.4 Probability distributions", "Probability distributions"],
+    ["E2.6 Inequalities", "Inequalities"],
+    ["1) Number", "Number"],
+    ["1. Number", "Number"],
+    // Clean catalogue titles survive intact — NON-destructive on commas/parens
+    // (unlike normalizeQuestionTag, which would mangle these).
+    ["Motion, forces and energy", "Motion, forces and energy"],
+    ["Functions (domain/range)", "Functions (domain/range)"],
+    ["Stoichiometry & moles", "Stoichiometry & moles"],
+    ["Algebra", "Algebra"],
+    ["General", "General"],
+  ])("cleanTopicLabel(%j) -> %j", (input, expected) => {
+    expect(cleanTopicLabel(input)).toBe(expected);
+  });
+
+  it("returns null for a bare catalogue number (not a real name)", () => {
+    expect(cleanTopicLabel("1")).toBeNull();
+    expect(cleanTopicLabel("2.3")).toBeNull();
+    expect(cleanTopicLabel("10.4.2")).toBeNull();
+    expect(cleanTopicLabel("7.")).toBeNull();
+  });
+
+  it("returns null for empty-like input", () => {
+    expect(cleanTopicLabel(null)).toBeNull();
+    expect(cleanTopicLabel(undefined)).toBeNull();
+    expect(cleanTopicLabel("")).toBeNull();
+    expect(cleanTopicLabel("   ")).toBeNull();
   });
 });

@@ -1,0 +1,12 @@
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { asyncHandler } from "../../lib/asyncHandler";
+import { requireSupabaseAuth, requireTutor } from "../../middleware/roles";
+import { pdfUploadField } from "../fileStorageAccess/service";
+import * as controller from "./controller";
+const studentApiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 240, standardHeaders: true, legacyHeaders: false });
+export const router = Router();
+router.post("/api/quizzes/:quizId/submission-upload", studentApiLimiter, requireSupabaseAuth, pdfUploadField("file"), asyncHandler(controller.upload));
+router.get("/api/quizzes/:quizId/submission-upload", studentApiLimiter, requireSupabaseAuth, asyncHandler(controller.getOwn));
+router.get("/api/tutor/quizzes/:quizId/submission-uploads", requireTutor, asyncHandler(controller.listForTutor));
+router.get("/api/tutor/submission-uploads/:id/download", requireTutor, asyncHandler(controller.downloadForTutor));

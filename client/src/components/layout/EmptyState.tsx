@@ -1,0 +1,2 @@
+import type { ReactNode } from "react";
+export function EmptyState({ title, description, action }: { title: ReactNode; description?: ReactNode; action?: ReactNode }) { return <div className="flex min-h-48 min-w-0 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-card/50 p-6 text-center"><h2 className="text-lg font-semibold">{title}</h2>{description && <p className="max-w-md text-sm text-muted-foreground">{description}</p>}{action}</div>; }

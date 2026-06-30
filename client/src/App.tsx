@@ -1,6 +1,5 @@
 import { Switch, Route, useLocation } from "wouter";
 import { useEffect, lazy, Suspense } from "react";
-import { Loader2 } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -21,6 +20,7 @@ const TutorStudents = lazy(() => import("@/pages/TutorStudents"));
 const TutorStudentDetail = lazy(() => import("@/pages/TutorStudentDetail"));
 const TutorAssessments = lazy(() => import("@/pages/TutorAssessments"));
 const TutorAssessmentDetails = lazy(() => import("@/pages/TutorAssessmentDetails"));
+const TutorPdfMarkingReview = lazy(() => import("@/pages/TutorPdfMarkingReview"));
 const TutorQuizReview = lazy(() => import("@/pages/TutorQuizReview"));
 const SuperAdminDashboard = lazy(() => import("@/pages/SuperAdminDashboard"));
 const SuperAdminTutorDetail = lazy(() => import("@/pages/SuperAdminTutorDetail"));
@@ -31,14 +31,21 @@ const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleRouter from "@/components/RoleRouter";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { AppShell, LoadingState } from "@/components/layout";
 import { Redirect } from "wouter";
 import { supabase } from "@/lib/supabase";
 
+// Role gates for ProtectedRoute. Tutor pages admit tutor + super_admin (super
+// admins can act as tutors); super-admin pages admit only super_admin. Student
+// routes stay auth-only (no allowedRoles) so they don't pay a role lookup.
+const TUTOR_ROLES = ["tutor", "super_admin"];
+const ADMIN_ROLES = ["super_admin"];
+
 function RouteFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <Loader2 className="w-8 h-8 text-primary animate-spin" />
-    </div>
+    <AppShell>
+      <LoadingState label="Loading SOMA" />
+    </AppShell>
   );
 }
 
@@ -55,6 +62,7 @@ function Router() {
       <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} />}</Route>
       <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>
       <Route path="/tutor/assessment/:quizId">{(params) => <ProtectedRoute component={TutorAssessmentDetails} params={params} />}</Route>
+      <Route path="/tutor/assessment/:quizId/submission/:submissionId/ai-review">{(params) => <ProtectedRoute component={TutorPdfMarkingReview} params={params} />}</Route>
       <Route path="/tutor/quizzes/:quizId/review">{(params) => <ProtectedRoute component={TutorQuizReview} params={params} />}</Route>
       <Route path="/tutor/students/:id">{(params) => <ProtectedRoute component={TutorStudentDetail} params={params} />}</Route>
       <Route path="/tutor/students">{() => <ProtectedRoute component={TutorStudents} />}</Route>
@@ -147,14 +155,16 @@ function App() {
   }, []);
 
   return (
-    <TooltipProvider>
-      <Toaster />
-      <ErrorBoundary title="Application error">
-        <Suspense fallback={<RouteFallback />}>
-          <Router />
-        </Suspense>
-      </ErrorBoundary>
-    </TooltipProvider>
+    <AppShell>
+      <TooltipProvider>
+        <Toaster />
+        <ErrorBoundary title="Application error">
+          <Suspense fallback={<RouteFallback />}>
+            <Router />
+          </Suspense>
+        </ErrorBoundary>
+      </TooltipProvider>
+    </AppShell>
   );
 }
 

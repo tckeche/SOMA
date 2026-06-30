@@ -15,8 +15,11 @@
     "db:migrate": "drizzle-kit push",
     "db:check": "drizzle-kit check",
     "db:backfill-soma-authors": "tsx script/backfillSomaQuizAuthors.ts",
+    "db:promote-domain-tutors": "tsx script/promoteDomainTutors.ts",
     "db:backfill-catalogue-fks": "tsx scripts/backfillCatalogueFks.ts",
-    "seed:syllabi": "tsx scripts/ingestSyllabi/index.ts"
+    "seed:syllabi": "tsx scripts/ingestSyllabi/index.ts",
+    "db:bootstrap": "tsx script/applyBootstrapMigrations.ts",
+    "db:verify-live": "tsx script/applyBootstrapMigrations.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

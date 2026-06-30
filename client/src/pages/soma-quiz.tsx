@@ -997,21 +997,32 @@ export default function SomaQuizEngine(props: SomaQuizEngineProps = {}) {
           className="hidden md:flex items-center justify-center gap-2 flex-wrap px-2"
           data-testid="nav-dots"
         >
-          {questions.map((q, idx) => (
-            <button
-              key={q.id}
-              onClick={() => handleDotClick(idx)}
-              className={`w-3 h-3 rounded-full transition-all duration-200 ${
-                idx === currentIndex
-                  ? "bg-primary shadow-[0_0_8px_rgba(139,92,246,0.6)] scale-125"
-                  : answers[q.id]
-                    ? "bg-success/60"
-                    : "bg-warning/60 hover:bg-warning/80 ring-1 ring-warning/40"
-              }`}
-              aria-label={`Go to question ${idx + 1}`}
-              data-testid={`dot-question-${idx}`}
-            />
-          ))}
+          {questions.map((q, idx) => {
+            const state = idx === currentIndex ? "current" : answers[q.id] ? "answered" : "not answered";
+            return (
+              <button
+                key={q.id}
+                onClick={() => handleDotClick(idx)}
+                // 24px hit target (the visual dot stays 12px) and state encoded
+                // in the accessible name + aria-current, not colour alone.
+                className="flex items-center justify-center w-6 h-6 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`Question ${idx + 1} (${state})`}
+                aria-current={idx === currentIndex ? "step" : undefined}
+                data-testid={`dot-question-${idx}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`block w-3 h-3 rounded-full transition-all duration-200 ${
+                    idx === currentIndex
+                      ? "bg-primary shadow-[0_0_8px_rgba(139,92,246,0.6)] scale-125"
+                      : answers[q.id]
+                        ? "bg-success/60"
+                        : "bg-warning/60 hover:bg-warning/80 ring-1 ring-warning/40"
+                  }`}
+                />
+              </button>
+            );
+          })}
         </div>
 
         <div className="hidden md:block text-center mt-4">

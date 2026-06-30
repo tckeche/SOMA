@@ -14,9 +14,13 @@ describe("aiCostGuards: caps by task type", () => {
     expect(maxTokensForTask("generation")).toBeGreaterThanOrEqual(20_000);
   });
 
-  it("verification stays well below the generation cap", () => {
+  it("verification has headroom for explanations + rationales but stays below the generation cap", () => {
     const v = maxTokensForTask("verification");
-    expect(v).toBeLessThanOrEqual(10_000);
+    // The verifier adds an explanation + 4 per-option rationales per question,
+    // so its output is larger than the draft — it needs real headroom (>=16k)
+    // to avoid truncating a full 15-question batch, while staying under the
+    // long-form generation cap.
+    expect(v).toBeGreaterThanOrEqual(16_384);
     expect(v).toBeLessThan(maxTokensForTask("generation"));
   });
 

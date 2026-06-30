@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
@@ -18,7 +18,13 @@ import { MarkLossPredictor } from "@/components/MarkLossPredictor";
 import { RevisionPlanCard } from "@/components/RevisionPlanCard";
 import { CommandWordCoach } from "@/components/CommandWordCoach";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
-import { SyllabusInsightsSection, type SubjectInsight } from "@/components/SyllabusInsightsSection";
+import { type SubjectInsight } from "@/components/SyllabusInsightsSection";
+// Lazy-loaded: this section pulls in recharts (the app's heaviest dependency,
+// isolated into its own "charts" chunk). Deferring it keeps the recharts bundle
+// off the dashboard's initial download — it only loads when this section paints.
+const SyllabusInsightsSection = lazy(() =>
+  import("@/components/SyllabusInsightsSection").then((m) => ({ default: m.SyllabusInsightsSection })),
+);
 import ExaminerInsightsCarousel, { type ExaminerInsightCard } from "@/components/student/ExaminerInsightsCarousel";
 import TopicCoverageExplorer from "@/components/student/TopicCoverageExplorer";
 import type {
@@ -226,7 +232,7 @@ function NextActions({
 
         {/* up next */}
         {upNext.length > 0 && (
-          <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8 }}>
             <div className="eyebrow" style={{ marginBottom: 2 }}>Up next</div>
             {upNext.map((a) => {
               const ad = daysUntil(a.dueDate);
@@ -551,10 +557,13 @@ export default function StudentDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 10_000,
+    // This is the page's heaviest aggregate. Local actions already refresh it
+    // instantly via subscribeToSomaMutations (above), so we only need a slow
+    // safety-net poll for server-originated changes (e.g. a tutor assigning new
+    // work) plus a focus refetch — not a 10s storm of full-dashboard rebuilds.
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    refetchOnMount: "always",
   });
 
   // Syllabus-insights query — drives the topic-coverage radar + paper-readiness
@@ -569,23 +578,34 @@ export default function StudentDashboard() {
     enabled: !!userId,
   });
 
-  // Examiner-driven study tips, fetched per subject.
+  // Examiner-driven study tips, fetched per subject. Source from the
+  // syllabus-insights subjects (which carry the student's real syllabusCode +
+  // examBody), NOT the dashboard's SubjectSummary which has no syllabusCode.
+  // Scoping by syllabusCode is essential: the examiner_misconceptions.board
+  // column is drift-prone ("Cambridge" vs "Cambridge IGCSE") so a hard-coded
+  // board="Cambridge" match silently missed most rows and could surface a
+  // different syllabus' insights under the same subject name (e.g. 9709 tips
+  // for a 0580 student).
   const subjectsForTips = useMemo(
-    () => (data?.subjects ?? []).slice(0, 4),
-    [data?.subjects],
+    () => (syllabusInsights?.subjects ?? []).slice(0, 4),
+    [syllabusInsights?.subjects],
   );
   const tipQueries = useQueries({
     queries: subjectsForTips.map((s) => ({
-      queryKey: ["/api/student/study-tips", s.subject],
+      queryKey: ["/api/student/study-tips", s.subject, s.syllabusCode],
       queryFn: async (): Promise<StudyTipResponse> => {
         // Pull a generous slice per subject so the examiner-insights carousel
         // can show many different points across all of the student's subjects.
-        const params = new URLSearchParams({ subject: s.subject, board: "Cambridge", top: "8" });
+        const params = new URLSearchParams({ subject: s.subject, top: "8" });
+        // Trust the syllabus code (precise scope); fall back to board only when
+        // a code is somehow absent so the endpoint's "code OR board" gate passes.
+        if (s.syllabusCode) params.set("syllabusCode", s.syllabusCode);
+        else if (s.examBody) params.set("board", s.examBody);
         const res = await authFetch(`/api/student/study-tips?${params.toString()}`);
         if (!res.ok) return { tips: [], cacheHit: false, elapsedMs: 0 };
         return res.json();
       },
-      enabled: !!userId && !!s.subject,
+      enabled: !!userId && !!s.subject && (!!s.syllabusCode || !!s.examBody),
       staleTime: 5 * 60 * 1000,
     })),
   });
@@ -596,7 +616,7 @@ export default function StudentDashboard() {
   const examinerInsights: ExaminerInsightCard[] = useMemo(() => {
     const perSubject = subjectsForTips.map((s, i) => {
       const subj = subjectsForTips[i]?.subject;
-      const level = (subjectsForTips[i] as any)?.level ?? null;
+      const level = subjectsForTips[i]?.level ?? null;
       return (tipQueries[i]?.data?.tips ?? []).map((t) => ({
         id: t.id,
         subject: subj,
@@ -675,16 +695,18 @@ export default function StudentDashboard() {
             </div>
 
             {view === "dashboard" && (
-              <div style={{ display: "grid", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 20, maxWidth: 880, margin: "0 auto", width: "100%" }}>
                 <NextActions assignments={data.assignments} onStart={launchQuiz} />
                 <PerformanceBlock data={data} />
                 <FocusBlock data={data} />
                 <ExaminerInsightsCarousel insights={examinerInsights} />
-                <SyllabusInsightsSection
-                  insights={syllabusInsights}
-                  isLoading={syllabusInsightsLoading}
-                  studentFirstName={(data.student.displayName || "").split(" ")[0]}
-                />
+                <Suspense fallback={null}>
+                  <SyllabusInsightsSection
+                    insights={syllabusInsights}
+                    isLoading={syllabusInsightsLoading}
+                    studentFirstName={(data.student.displayName || "").split(" ")[0]}
+                  />
+                </Suspense>
                 <WrittenFeedbackBlock data={data} />
                 <WinsBlock wins={data.recentWins} />
               </div>

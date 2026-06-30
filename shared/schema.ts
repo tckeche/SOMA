@@ -181,7 +181,12 @@ export const somaUsers = pgTable("soma_users", {
   role: text("role").notNull().default("student"),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Auth hot path looks users up by email on every request; role is filtered
+  // on every tutor/admin dashboard load (getAllStudents, tutor summaries).
+  index("soma_users_email_idx").on(table.email),
+  index("soma_users_role_idx").on(table.role),
+]);
 
 export const somaQuizzes = pgTable("soma_quizzes", {
   id: serial("id").primaryKey(),
@@ -202,6 +207,7 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   //  - "pdf": a worksheet the tutor attaches; students submit a PDF response
   //    that the tutor marks manually (no timer, no MCQ engine).
   format: text("format").notNull().default("mcq"),
+  pdfMarkingMode: text("pdf_marking_mode").notNull().default("manual"),
   // Sub-type of a quiz-engine assessment (only meaningful when format = "mcq",
   // i.e. NOT a PDF submission). Decides which question types the builder
   // generates and which answer UI students see:
@@ -220,7 +226,10 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   status: text("status").notNull().default("published"),
   isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Every tutor/admin dashboard load filters quizzes by their author.
+  index("soma_quizzes_author_id_idx").on(table.authorId),
+]);
 
 export const somaQuestions = pgTable("soma_questions", {
   id: serial("id").primaryKey(),
@@ -397,7 +406,10 @@ export const studentSubjects = pgTable("student_subjects", {
   level: text("level").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Filtered by student on the mastery map + student-detail + enrolment reads.
+  index("student_subjects_student_id_idx").on(table.studentId),
+]);
 
 export const studentTopicMastery = pgTable("student_topic_mastery", {
   id: serial("id").primaryKey(),
@@ -436,7 +448,10 @@ export const tutorNotifications = pgTable("tutor_notifications", {
   payload: jsonb("payload"),
   readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // The tutor notifications bell filters by tutor on every tutor screen.
+  index("tutor_notifications_tutor_id_idx").on(table.tutorId),
+]);
 
 export const suggestedAssessments = pgTable("suggested_assessments", {
   id: serial("id").primaryKey(),
@@ -542,6 +557,7 @@ export const assessmentAttachments = pgTable("assessment_attachments", {
   mimeType: text("mime_type").notNull(),
   sizeBytes: integer("size_bytes").notNull(),
   uploadedBy: uuid("uploaded_by").references(() => somaUsers.id, { onDelete: "set null" }),
+  documentRole: text("document_role").notNull().default("worksheet"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -563,9 +579,36 @@ export const submissionUploads = pgTable("submission_uploads", {
   status: text("status").notNull().default("submitted"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   markedAt: timestamp("marked_at"),
+  aiMarkingStatus: text("ai_marking_status"),
+  submissionVersion: integer("submission_version").notNull().default(1),
+  contentHash: text("content_hash"),
 }, (table) => [
   uniqueIndex("submission_upload_quiz_student_idx").on(table.quizId, table.studentId),
 ]);
+
+
+
+export const pdfAssessmentConfigs = pgTable("pdf_assessment_configs", {
+  id: serial("id").primaryKey(), quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }), primaryExamAttachmentId: integer("primary_exam_attachment_id").references(() => assessmentAttachments.id, { onDelete: "set null" }), preparationStatus: text("preparation_status").notNull().default("not_started"), activeRubricVersionId: integer("active_rubric_version_id"), lastErrorCode: text("last_error_code"), lastError: text("last_error"), preparedAt: timestamp("prepared_at"), approvedAt: timestamp("approved_at"), approvedBy: uuid("approved_by").references(() => somaUsers.id, { onDelete: "set null" }), createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("pdf_assessment_configs_quiz_id_idx").on(t.quizId), index("pdf_assessment_configs_status_idx").on(t.preparationStatus)]);
+export const pdfMarkingDocuments = pgTable("pdf_marking_documents", {
+  id: serial("id").primaryKey(), quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }), kind: text("kind").notNull().default("mark_scheme"), filename: text("filename").notNull(), storagePath: text("storage_path").notNull(), mimeType: text("mime_type").notNull(), sizeBytes: integer("size_bytes").notNull(), contentHash: text("content_hash").notNull(), pageCount: integer("page_count"), processingStatus: text("processing_status").notNull().default("uploaded"), extractedText: text("extracted_text"), extractionMetadata: jsonb("extraction_metadata"), processingError: text("processing_error"), uploadedBy: uuid("uploaded_by").references(() => somaUsers.id, { onDelete: "set null" }), createdAt: timestamp("created_at").defaultNow().notNull(), processedAt: timestamp("processed_at"),
+}, (t) => [index("pdf_marking_documents_quiz_id_idx").on(t.quizId)]);
+export const pdfRubricVersions = pgTable("pdf_rubric_versions", {
+  id: serial("id").primaryKey(), quizId: integer("quiz_id").notNull().references(() => somaQuizzes.id, { onDelete: "cascade" }), version: integer("version").notNull(), source: text("source").notNull(), status: text("status").notNull().default("draft"), totalMarks: integer("total_marks").notNull(), rubricJson: jsonb("rubric_json").notNull(), extractionJson: jsonb("extraction_json"), modelMetadata: jsonb("model_metadata"), createdBy: uuid("created_by").references(() => somaUsers.id, { onDelete: "set null" }), approvedBy: uuid("approved_by").references(() => somaUsers.id, { onDelete: "set null" }), createdAt: timestamp("created_at").defaultNow().notNull(), approvedAt: timestamp("approved_at"),
+}, (t) => [uniqueIndex("pdf_rubric_versions_quiz_version_idx").on(t.quizId, t.version), index("pdf_rubric_versions_quiz_id_idx").on(t.quizId)]);
+export const pdfMarkingJobs = pgTable("pdf_marking_jobs", {
+  id: serial("id").primaryKey(), jobType: text("job_type").notNull(), idempotencyKey: text("idempotency_key").notNull(), quizId: integer("quiz_id").references(() => somaQuizzes.id, { onDelete: "cascade" }), submissionUploadId: integer("submission_upload_id").references(() => submissionUploads.id, { onDelete: "cascade" }), rubricVersionId: integer("rubric_version_id").references(() => pdfRubricVersions.id, { onDelete: "set null" }), status: text("status").notNull().default("queued"), payload: jsonb("payload").notNull().default({}), attempts: integer("attempts").notNull().default(0), maxAttempts: integer("max_attempts").notNull().default(3), availableAt: timestamp("available_at").defaultNow().notNull(), lockedAt: timestamp("locked_at"), lockedBy: text("locked_by"), lastErrorCode: text("last_error_code"), lastError: text("last_error"), createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().notNull(), completedAt: timestamp("completed_at"),
+}, (t) => [uniqueIndex("pdf_marking_jobs_idempotency_key_idx").on(t.idempotencyKey), index("pdf_marking_jobs_poll_idx").on(t.status, t.availableAt), index("pdf_marking_jobs_submission_idx").on(t.submissionUploadId)]);
+export const pdfMarkingRuns = pgTable("pdf_marking_runs", {
+  id: serial("id").primaryKey(), submissionUploadId: integer("submission_upload_id").notNull().references(() => submissionUploads.id, { onDelete: "cascade" }), submissionVersion: integer("submission_version").notNull(), rubricVersionId: integer("rubric_version_id").notNull().references(() => pdfRubricVersions.id, { onDelete: "restrict" }), status: text("status").notNull(), inputHash: text("input_hash").notNull(), promptVersion: text("prompt_version").notNull(), markerAProvider: text("marker_a_provider").notNull(), markerAModel: text("marker_a_model").notNull(), markerBProvider: text("marker_b_provider").notNull(), markerBModel: text("marker_b_model").notNull(), markerAResult: jsonb("marker_a_result"), markerBResult: jsonb("marker_b_result"), verifierAResult: jsonb("verifier_a_result"), verifierBResult: jsonb("verifier_b_result"), reconciledResult: jsonb("reconciled_result"), proposedScore: integer("proposed_score"), maxScore: integer("max_score"), confidencePct: integer("confidence_pct"), requiresTutorReview: boolean("requires_tutor_review").notNull().default(true), annotatedStoragePath: text("annotated_storage_path"), failureCode: text("failure_code"), failureMessage: text("failure_message"), startedAt: timestamp("started_at").defaultNow().notNull(), finishedAt: timestamp("finished_at"), createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("pdf_marking_runs_submission_created_idx").on(t.submissionUploadId, t.createdAt)]);
+export const pdfMarkingReviewItems = pgTable("pdf_marking_review_items", {
+  id: serial("id").primaryKey(), runId: integer("run_id").notNull().references(() => pdfMarkingRuns.id, { onDelete: "cascade" }), questionLabel: text("question_label").notNull(), rubricItemId: text("rubric_item_id").notNull(), reasonCode: text("reason_code").notNull(), markerADecision: jsonb("marker_a_decision"), markerBDecision: jsonb("marker_b_decision"), verifierADecision: jsonb("verifier_a_decision"), verifierBDecision: jsonb("verifier_b_decision"), resolutionStatus: text("resolution_status").notNull().default("pending"), resolvedMarks: integer("resolved_marks"), resolutionNote: text("resolution_note"), resolvedBy: uuid("resolved_by").references(() => somaUsers.id, { onDelete: "set null" }), resolvedAt: timestamp("resolved_at"), createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("pdf_marking_review_items_run_id_idx").on(t.runId)]);
+export const pdfMarkingAnnotations = pgTable("pdf_marking_annotations", {
+  id: serial("id").primaryKey(), runId: integer("run_id").notNull().references(() => pdfMarkingRuns.id, { onDelete: "cascade" }), submissionUploadId: integer("submission_upload_id").notNull().references(() => submissionUploads.id, { onDelete: "cascade" }), pageNumber: integer("page_number").notNull(), annotationType: text("annotation_type").notNull(), xBp: integer("x_bp").notNull(), yBp: integer("y_bp").notNull(), widthBp: integer("width_bp").notNull(), heightBp: integer("height_bp").notNull(), questionLabel: text("question_label").notNull(), rubricItemId: text("rubric_item_id"), awardedMarks: integer("awarded_marks").notNull(), maxMarks: integer("max_marks").notNull(), explanation: text("explanation").notNull(), source: text("source").notNull(), status: text("status").notNull().default("proposed"), createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [index("pdf_marking_annotations_run_id_idx").on(t.runId), index("pdf_marking_annotations_submission_idx").on(t.submissionUploadId)]);
 
 // Structured topic inventory extracted from syllabus documents via AI
 export const syllabusTopicInventory = pgTable("syllabus_topic_inventory", {
@@ -1283,6 +1326,29 @@ export type InsertAssessmentAttachment = z.infer<typeof insertAssessmentAttachme
 export const insertSubmissionUploadSchema = createInsertSchema(submissionUploads).omit({ id: true, createdAt: true, markedAt: true });
 export type SubmissionUpload = typeof submissionUploads.$inferSelect;
 export type InsertSubmissionUpload = z.infer<typeof insertSubmissionUploadSchema>;
+
+
+export const insertPdfAssessmentConfigSchema = createInsertSchema(pdfAssessmentConfigs).omit({ id: true, createdAt: true, updatedAt: true });
+export type PdfAssessmentConfig = typeof pdfAssessmentConfigs.$inferSelect;
+export type InsertPdfAssessmentConfig = z.infer<typeof insertPdfAssessmentConfigSchema>;
+export const insertPdfMarkingDocumentSchema = createInsertSchema(pdfMarkingDocuments).omit({ id: true, createdAt: true, processedAt: true });
+export type PdfMarkingDocument = typeof pdfMarkingDocuments.$inferSelect;
+export type InsertPdfMarkingDocument = z.infer<typeof insertPdfMarkingDocumentSchema>;
+export const insertPdfRubricVersionSchema = createInsertSchema(pdfRubricVersions).omit({ id: true, createdAt: true, approvedAt: true });
+export type PdfRubricVersion = typeof pdfRubricVersions.$inferSelect;
+export type InsertPdfRubricVersion = z.infer<typeof insertPdfRubricVersionSchema>;
+export const insertPdfMarkingJobSchema = createInsertSchema(pdfMarkingJobs).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true });
+export type PdfMarkingJob = typeof pdfMarkingJobs.$inferSelect;
+export type InsertPdfMarkingJob = z.infer<typeof insertPdfMarkingJobSchema>;
+export const insertPdfMarkingRunSchema = createInsertSchema(pdfMarkingRuns).omit({ id: true, createdAt: true });
+export type PdfMarkingRun = typeof pdfMarkingRuns.$inferSelect;
+export type InsertPdfMarkingRun = z.infer<typeof insertPdfMarkingRunSchema>;
+export const insertPdfMarkingReviewItemSchema = createInsertSchema(pdfMarkingReviewItems).omit({ id: true, createdAt: true });
+export type PdfMarkingReviewItem = typeof pdfMarkingReviewItems.$inferSelect;
+export type InsertPdfMarkingReviewItem = z.infer<typeof insertPdfMarkingReviewItemSchema>;
+export const insertPdfMarkingAnnotationSchema = createInsertSchema(pdfMarkingAnnotations).omit({ id: true, createdAt: true, updatedAt: true });
+export type PdfMarkingAnnotation = typeof pdfMarkingAnnotations.$inferSelect;
+export type InsertPdfMarkingAnnotation = z.infer<typeof insertPdfMarkingAnnotationSchema>;
 
 // ── Syllabus intelligence: insert schemas & select types ────────────────────
 

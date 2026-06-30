@@ -87,4 +87,30 @@ describe("recomputeReportScore", () => {
     expect(r.newScore).toBe(3);
     expect(r.maxPossibleScore).toBe(3);
   });
+
+  it("preserves structured-answer marks instead of zeroing them via MCQ matching", () => {
+    const structured = { ...q(5, "", "approved", 6), questionType: "structured", options: [] } as SomaQuestion;
+    const questions = [q(1, "A", "approved", 1), structured];
+    const reportWithStructured = {
+      score: 5,
+      answersJson: { "1": "A", "5": "A long written answer" },
+      structuredMarking: { "5": { aiMarks: 4, tutorMarks: null, maxMarks: 6 } },
+    } as Pick<SomaReport, "score" | "answersJson"> & { structuredMarking: SomaReport["structuredMarking"] };
+    const r = recomputeReportScore(reportWithStructured, questions);
+    // 1 (MCQ correct) + 4 (AI structured mark) = 5, out of 1 + 6 = 7.
+    expect(r.newScore).toBe(5);
+    expect(r.maxPossibleScore).toBe(7);
+  });
+
+  it("prefers a tutor override over the AI mark for structured questions", () => {
+    const structured = { ...q(5, "", "approved", 6), questionType: "structured", options: [] } as SomaQuestion;
+    const reportWithStructured = {
+      score: 6,
+      answersJson: { "5": "Essay" },
+      structuredMarking: { "5": { aiMarks: 4, tutorMarks: 6, maxMarks: 6 } },
+    } as Pick<SomaReport, "score" | "answersJson"> & { structuredMarking: SomaReport["structuredMarking"] };
+    const r = recomputeReportScore(reportWithStructured, [structured]);
+    expect(r.newScore).toBe(6);
+    expect(r.maxPossibleScore).toBe(6);
+  });
 });

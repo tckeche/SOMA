@@ -31,8 +31,25 @@ export class FileStorageError extends Error {
 }
 
 /** Resolve the Supabase project URL, mirroring routes.ts (VITE_ first). */
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function normaliseTrustedSupabaseUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "https:" || (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname))) {
+      return parsed.origin;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 function getSupabaseUrl(): string | undefined {
-  return process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || undefined;
+  return normaliseTrustedSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || undefined);
 }
 
 function getServiceRoleKey(): string | undefined {
@@ -42,6 +59,19 @@ function getServiceRoleKey(): string | undefined {
 /** True iff both the project URL and the service-role key are present. */
 export function isStorageConfigured(): boolean {
   return Boolean(getSupabaseUrl() && getServiceRoleKey());
+}
+
+export function isSafeStoragePath(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 1024) return false;
+  if (value.startsWith("/") || value.includes("\\") || /[\0\r\n]/.test(value)) return false;
+  return value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function encodeStoragePath(path: string): string {
+  if (!isSafeStoragePath(path)) {
+    throw new FileStorageError("Invalid storage path", 400, "");
+  }
+  return path.split("/").map(encodeURIComponent).join("/");
 }
 
 type StorageConfig = { url: string; serviceRole: string };
@@ -68,7 +98,8 @@ async function storageFetch(
   pathname: string,
   init: { method: string; headers?: Record<string, string>; body?: BodyInit },
 ): Promise<Response> {
-  return fetch(`${config.url}/storage/v1${pathname}`, {
+  const url = new URL(`/storage/v1${pathname}`, config.url);
+  return fetch(url.toString(), {
     method: init.method,
     headers: {
       apikey: config.serviceRole,
@@ -111,7 +142,8 @@ export async function ensureUploadBucket(): Promise<void> {
 /** Upload a PDF buffer to `path` within the bucket (upsert). */
 export async function uploadPdf(path: string, data: Buffer): Promise<void> {
   const config = requireConfig("uploadPdf");
-  const resp = await storageFetch(config, `/object/${UPLOAD_BUCKET}/${path}`, {
+  const encodedPath = encodeStoragePath(path);
+  const resp = await storageFetch(config, `/object/${UPLOAD_BUCKET}/${encodedPath}`, {
     method: "POST",
     headers: { "Content-Type": PDF_MIME, "x-upsert": "true" },
     body: data as unknown as BodyInit,
@@ -135,7 +167,8 @@ export async function createSignedDownloadUrl(
   downloadName?: string,
 ): Promise<string> {
   const config = requireConfig("createSignedDownloadUrl");
-  const resp = await storageFetch(config, `/object/sign/${UPLOAD_BUCKET}/${path}`, {
+  const encodedPath = encodeStoragePath(path);
+  const resp = await storageFetch(config, `/object/sign/${UPLOAD_BUCKET}/${encodedPath}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn: expiresInSec }),
@@ -156,17 +189,26 @@ export async function createSignedDownloadUrl(
       JSON.stringify(json),
     );
   }
-  let url = `${config.url}/storage/v1${json.signedURL}`;
-  if (downloadName) {
-    url += `&download=${encodeURIComponent(downloadName)}`;
+  const signedPath = String(json.signedURL);
+  if (!signedPath.startsWith("/")) {
+    throw new FileStorageError(
+      `Sign response returned an invalid signedURL for ${path}`,
+      resp.status,
+      JSON.stringify(json),
+    );
   }
-  return url;
+  const signedUrl = new URL(`/storage/v1${signedPath}`, config.url);
+  if (downloadName) {
+    signedUrl.searchParams.set("download", downloadName);
+  }
+  return signedUrl.toString();
 }
 
 /** Delete an object from the bucket. 404 (already gone) is ignored. */
 export async function deleteObject(path: string): Promise<void> {
   const config = requireConfig("deleteObject");
-  const resp = await storageFetch(config, `/object/${UPLOAD_BUCKET}/${path}`, {
+  const encodedPath = encodeStoragePath(path);
+  const resp = await storageFetch(config, `/object/${UPLOAD_BUCKET}/${encodedPath}`, {
     method: "DELETE",
   });
   if (resp.ok || resp.status === 404) return;

@@ -212,6 +212,14 @@ export interface SomaGenerationContext {
    * prevents infinite recursion. Callers should not set this.
    */
   _disableReroll?: boolean;
+  /**
+   * Stems already produced earlier in the SAME quiz. For quizzes larger than
+   * one batch (>15 questions) the batches are generated in sequence and each
+   * subsequent batch receives the prior batches' stems here, so the maker is
+   * told not to repeat or paraphrase them — preventing duplicate questions
+   * across batches. Internal; callers don't set this.
+   */
+  avoidStems?: string[];
 }
 
 // ─── Soma tutor voice ───────────────────────────────────────────────────────
@@ -846,8 +854,8 @@ function buildMakerSystemPrompt(
   // gate (server/services/questionScope.ts) is the detection half that quarantines
   // anything that still drifts off the catalogue.
   const taggingRule = context.catalogueContext
-    ? `\n- TAGGING: set topic_tag and subtopic_tag on every question, copied VERBATIM from a topic/subtopic listed in the Catalogue context below. Do NOT invent a topic or subtopic that is not in that list; every question must stay within the selected catalogue topics.`
-    : `\n- TAGGING: set topic_tag (and subtopic_tag when known) to the topic this question actually tests, staying within the stated scope.`;
+    ? `\n- TAGGING: set topic_tag and subtopic_tag on every question, copied VERBATIM from a topic/subtopic TITLE in the Catalogue context below — that is the text AFTER the leading [number] tag (e.g. for "• [1] Algebra" the topic_tag is "Algebra", NOT "1" and NOT "1 Algebra"). NEVER put a bare number or the bracketed [number] in a tag. Do NOT invent a topic or subtopic that is not in that list; every question must stay within the selected catalogue topics.`
+    : `\n- TAGGING: set topic_tag (and subtopic_tag when known) to the topic this question actually tests, staying within the stated scope. Use the topic's NAME, never a bare syllabus number.`;
   // Make the two grounding sources explicit so the maker visibly anchors on the
   // syllabus catalogue and the examiner reports rather than improvising.
   const groundingSources = [
@@ -861,7 +869,13 @@ function buildMakerSystemPrompt(
   const groundingRule = groundingSources.length > 0
     ? `\n\nGROUND EVERY QUESTION IN:\n${groundingSources.map((s) => `- ${s}`).join("\n")}`
     : "";
-  return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.
+  // De-dup across batches: a quiz larger than one batch is built in sequence,
+  // and each later batch is told which stems already exist so it produces
+  // genuinely new questions rather than repeating earlier ones.
+  const avoidRule = context.avoidStems && context.avoidStems.length > 0
+    ? `\n\nDO NOT DUPLICATE: the following questions have ALREADY been generated for this same quiz. Produce entirely new questions — do not repeat or merely paraphrase any of them, and avoid testing the exact same fact with the same numbers:\n${context.avoidStems.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+    : "";
+  return `You are the SOMA question maker. Generate exactly ${questionCount} MCQ questions.${avoidRule}
 
 STRICT SCOPE: subject=${context.subject}, syllabus=${context.syllabus}, level=${context.level}, topic=${context.topic}${context.subtopic ? `, subtopic=${context.subtopic}` : ""}.
 Difficulty mix target: easy=${distribution.easy}%, medium=${distribution.medium}%, hard=${distribution.hard}%.${groundingRule}
@@ -1104,6 +1118,43 @@ export async function runOpenAIMakerSimple(
   );
 }
 
+/**
+ * Third maker fallback (Gemini). The pipeline's #1 rule is that a quiz must
+ * always be produced — so when BOTH the Claude and OpenAI makers are
+ * unavailable (outage, missing key, schema gate), we still draft the quiz on a
+ * provider-diverse third model rather than failing the whole request. The
+ * no-self-grading rule still holds: a Gemini-made draft is verified by OpenAI
+ * (the maker's provider is always excluded from the verifier chain).
+ */
+export async function runGeminiMakerSimple(
+  context: SomaGenerationContext,
+  questionCount: number,
+  distribution: { easy: number; medium: number; hard: number },
+): Promise<DraftQuiz> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
+
+  const schema = zodToJsonSchema(DraftQuizSchema, "DraftQuiz");
+  const systemPrompt = buildMakerSystemPrompt(context, questionCount, distribution);
+  const userPrompt = buildMakerUserPrompt(context);
+
+  return instrumentedCall<DraftQuiz>(
+    "google",
+    MODEL_GEMINI,
+    systemPrompt,
+    userPrompt,
+    PromptIds.SOMA_MAKER,
+    "generation",
+    newRequestId(),
+    async () => {
+      const raw = await callGoogle(MODEL_GEMINI, systemPrompt, userPrompt, schema);
+      const validated = validateAgainstSchema(raw, DraftQuizSchema);
+      if (!validated.ok) throw new Error(`Gemini maker schema gate failed: ${validated.reason}`);
+      return { raw, parsed: validated.value };
+    },
+  );
+}
+
 export async function runOpenAIVerifier(
   draftQuestions: DraftQuiz["questions"],
   context: SomaGenerationContext,
@@ -1306,6 +1357,7 @@ export async function runBlindSolver(
 export const pipelineStages = {
   runClaudeMakerSimple,
   runOpenAIMakerSimple,
+  runGeminiMakerSimple,
   runOpenAIVerifier,
   runGeminiVerifier,
   runBlueprintPlanner,
@@ -1359,7 +1411,7 @@ export async function generateAuditedQuiz(input: SomaGenerationContext | string)
   const maxAttempts = Math.max(0, context.maxRerollAttempts ?? 2);
   if (maxAttempts === 0) return initial;
 
-  const requestedCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+  const requestedCount = Math.max(1, Math.min(40, context.questionCount ?? 12));
   const initialBlockCount = initial.blockedQuestions.length;
   let kept = [...initial.questions];
   let verification = [...(initial.verification ?? [])];
@@ -1441,12 +1493,15 @@ async function runOnePassQuiz(
   context: SomaGenerationContext,
   overallStart: number,
 ): Promise<AuditedQuizResult> {
-  const questionCount = Math.max(1, Math.min(50, context.questionCount ?? 8));
+  const questionCount = Math.max(1, Math.min(40, context.questionCount ?? 12));
   const distribution = context.difficultyDistribution ?? { easy: 25, medium: 50, hard: 25 };
 
   // Batch quizzes > 15 into chunks of 15 so each stage stays within token budget.
-  // Batches are run in PARALLEL — they do not depend on each other, so a 30q
-  // quiz takes ~the same wall-clock as a 15q quiz instead of double.
+  // Batches run SEQUENTIALLY so each one can be told the stems already produced
+  // (`avoidStems`) and generate genuinely new questions instead of repeating
+  // earlier batches. The wall-clock cost is bounded — a 40-question quiz is at
+  // most 3 batches — and a duplicate-free exam is worth more than the time
+  // saved by parallelism. Quizzes ≤15 take the single-batch fast path below.
   if (questionCount > 15) {
     const batchSizes: number[] = [];
     let remaining = questionCount;
@@ -1456,9 +1511,13 @@ async function runOnePassQuiz(
       remaining -= size;
     }
 
-    const batchResults = await Promise.all(
-      batchSizes.map((size) => generateAuditedQuiz({ ...context, questionCount: size })),
-    );
+    const batchResults: AuditedQuizResult[] = [];
+    const seenStems: string[] = [...(context.avoidStems ?? [])];
+    for (const size of batchSizes) {
+      const batch = await generateAuditedQuiz({ ...context, questionCount: size, avoidStems: [...seenStems] });
+      batchResults.push(batch);
+      for (const q of batch.questions) seenStems.push(q.stem);
+    }
 
     const merged: QuizResult["questions"] = [];
     const mergedVerification: QuestionConfirmation[] = [];
@@ -1539,37 +1598,84 @@ async function runOnePassQuiz(
   const contextWithPlan: SomaGenerationContext = blueprint ? { ...context, blueprint } : context;
 
   // ── STAGE 1: MAKER ──────────────────────────────────────────────────────
+  // A quiz must ALWAYS be produced, so the maker walks a full provider chain
+  // (Claude → GPT-5 → Gemini) before giving up. Each provider is tried in turn;
+  // only a total three-provider outage aborts the request. `makerProvider`
+  // drives the verifier pairing below so the model that drafts never grades.
   let draft: DraftQuiz;
   let makerModel: string;
-  let claudeMadeTheQuiz = true;
+  let makerProvider: "anthropic" | "openai" | "google";
   try {
     draft = await pipelineStages.runClaudeMakerSimple(contextWithPlan, questionCount, distribution);
     makerModel = `anthropic/${MODEL_CLAUDE}`;
-  } catch (err: any) {
-    console.warn(`[SOMA_PIPELINE] Claude maker failed (${err?.message || "unknown"}); falling back to ChatGPT maker.`);
-    draft = await pipelineStages.runOpenAIMakerSimple(contextWithPlan, questionCount, distribution);
-    makerModel = `openai/${MODEL_OPENAI}`;
-    claudeMadeTheQuiz = false;
+    makerProvider = "anthropic";
+  } catch (claudeErr: any) {
+    console.warn(`[SOMA_PIPELINE] Claude maker failed (${claudeErr?.message || "unknown"}); falling back to ChatGPT maker.`);
+    try {
+      draft = await pipelineStages.runOpenAIMakerSimple(contextWithPlan, questionCount, distribution);
+      makerModel = `openai/${MODEL_OPENAI}`;
+      makerProvider = "openai";
+    } catch (openaiErr: any) {
+      console.warn(`[SOMA_PIPELINE] ChatGPT maker failed (${openaiErr?.message || "unknown"}); falling back to Gemini maker.`);
+      draft = await pipelineStages.runGeminiMakerSimple(contextWithPlan, questionCount, distribution);
+      makerModel = `google/${MODEL_GEMINI}`;
+      makerProvider = "google";
+    }
   }
 
   // ── STAGE 2: VERIFIER (checker + Soma tutor voice) ──────────────────────
-  // Pairing rule: the model that made the quiz must not verify its own work.
-  //   Claude maker → ChatGPT verifier (Gemini as fallback for availability).
-  //   ChatGPT maker → Gemini verifier only (no self-check).
-  let verified: { questions: QuizResult["questions"]; warnings: PipelineWarning[] };
-  let checkerModel: string;
-  if (claudeMadeTheQuiz) {
+  // Pairing rule: the model that made the quiz must NEVER verify its own work.
+  // We build the verifier chain by excluding the maker's provider, then try
+  // each in turn:
+  //   Claude maker  → ChatGPT verifier, Gemini fallback.
+  //   ChatGPT maker → Gemini verifier (only non-self verifier available).
+  //   Gemini maker  → ChatGPT verifier (only non-self verifier available).
+  // If EVERY eligible verifier is down we do not abort — accuracy is still
+  // protected because the questions are shipped UNVERIFIED and routed to tutor
+  // review (verifierDegraded), so a provider outage degrades quality gracefully
+  // instead of producing no quiz at all.
+  const verifierChain: Array<{
+    model: string;
+    run: () => Promise<{ questions: QuizResult["questions"]; warnings: PipelineWarning[] }>;
+  }> = [];
+  if (makerProvider !== "openai") {
+    verifierChain.push({ model: `openai/${MODEL_OPENAI}`, run: () => pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan) });
+  }
+  if (makerProvider !== "google") {
+    verifierChain.push({ model: `google/${MODEL_GEMINI}`, run: () => pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan) });
+  }
+
+  let verified: { questions: QuizResult["questions"]; warnings: PipelineWarning[] } | null = null;
+  let checkerModel = "none (verifier unavailable — routed to review)";
+  let verifierDegraded = false;
+  for (const link of verifierChain) {
     try {
-      verified = await pipelineStages.runOpenAIVerifier(draft.questions, contextWithPlan);
-      checkerModel = `openai/${MODEL_OPENAI}`;
+      verified = await link.run();
+      checkerModel = link.model;
+      break;
     } catch (err: any) {
-      console.warn(`[SOMA_PIPELINE] ChatGPT verifier failed (${err?.message || "unknown"}); falling back to Gemini verifier.`);
-      verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-      checkerModel = `google/${MODEL_GEMINI}`;
+      console.warn(`[SOMA_PIPELINE] Verifier ${link.model} failed (${err?.message || "unknown"}); trying next verifier.`);
     }
-  } else {
-    verified = await pipelineStages.runGeminiVerifier(draft.questions, contextWithPlan);
-    checkerModel = `google/${MODEL_GEMINI}`;
+  }
+  if (!verified) {
+    // Last-resort degradation: ship the maker's draft with a placeholder
+    // explanation. Deterministic guards + the math prover + the blind solver
+    // still run downstream, so math keys remain authoritative; everything the
+    // protocol cannot independently confirm is routed to tutor review.
+    console.warn(`[SOMA_PIPELINE] All verifiers unavailable; shipping unverified maker draft routed to tutor review.`);
+    verifierDegraded = true;
+    verified = {
+      questions: draft.questions.map((q) => ({
+        ...q,
+        explanation: "Automated verification was unavailable when this question was generated — a tutor should review the answer and explanation before publishing.",
+      })),
+      warnings: [{
+        questionIndex: 0,
+        field: "overall",
+        issue: "Verifier unavailable: every checker provider failed. Questions were shipped unverified and routed to tutor review. Accuracy is not guaranteed until reviewed.",
+        autoFixed: false,
+      }],
+    };
   }
 
   // ── STAGE 2b: stem-drift guard ──────────────────────────────────────────
@@ -1645,6 +1751,15 @@ async function runOnePassQuiz(
   const driftWarning = computeDifficultyDriftWarning(protocol.questions, distribution);
   if (driftWarning) finalWarnings.push(driftWarning);
 
+  // When the verifier was unavailable, accuracy is no longer LLM-cross-checked,
+  // so only the deterministic math prover is allowed to vouch for a key. Every
+  // other surviving question is forced to confirmed=false → tutor review.
+  const finalConfirmations = verifierDegraded
+    ? protocol.confirmations.map((c) =>
+        c.method === "math_prover" ? c : { confirmed: false, method: "none" as const },
+      )
+    : protocol.confirmations;
+
   return {
     questions: protocol.questions,
     warnings: finalWarnings,
@@ -1658,7 +1773,7 @@ async function runOnePassQuiz(
     seedMisconceptionIds: (context.examinerSeeds ?? []).map((s) => s.id),
     blueprint,
     blockedQuestions: protocol.blocked,
-    verification: protocol.confirmations,
+    verification: finalConfirmations,
   };
 }
 

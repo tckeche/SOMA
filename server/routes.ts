@@ -2,6 +2,8 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
 import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
+import { buildPdfMarkingIdempotencyKey } from "./services/pdfReconciliation";
+import { canUseDualAiMarking } from "./services/pdfMarkingConfig";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { computeDefaultDueDate } from "@shared/dueDate";
 import { z } from "zod";
@@ -9,18 +11,28 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
-import { getAdminSessionToken, getAuthorizedUserFromBearer, verifySupabaseToken } from "./auth";
+import { getAdminSessionToken, getAuthorizedUserFromBearer } from "./auth";
 import { requireTutor, requireSuperAdmin, requireSupabaseAuth } from "./middleware/roles";
 import { registerDomainRoutes } from "./routes/index";
+export { sanitizeQuestionForPreSubmission } from "./modules/studentQuizTaking/service";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
-import { sanitizeLatexBackslashes as aiContractsSanitize } from "./services/aiContracts";
+import {
+  sanitizeLatexBackslashes as aiContractsSanitize,
+  repairJsonString,
+  tryParseJson,
+  escapeControlCharsInStrings,
+  repairUnescapedInnerQuotes,
+  repairControlCharCorruption,
+} from "./services/aiContracts";
 import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
 import { assessTopicScope, resolveReviewStatus, narrowInventoryToSelection } from "./services/questionScope";
 import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
+import { resolveCatalogueLabelsForSubtopicIds } from "./services/subtopicResolver";
+import { cleanTopicLabel } from "./services/questionTagNormalizer";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -33,31 +45,14 @@ import { traceLog, newTraceId, countWithField } from "./services/quizTraceLog";
 import { buildAndPersistDiagnoses, renderDiagnosesForFeedback, type GradedAnswer } from "./services/answerDiagnosis";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { detectGraphIntent, validateWithAutoFix } from "./services/cambridgeGraphEngine";
-import { renderGraphSvgWithPython } from "./services/pythonGraphRenderer";
 import { buildStudentDashboard } from "./services/studentDashboard";
 import { buildSyllabusInsights } from "./services/syllabusInsights";
 import { buildStructuredFeedback } from "./services/structuredFeedback";
 import { logError, logInfo, logWarn, requestLogContext } from "./utils/logging";
-import {
-  MAX_PDF_BYTES,
-  PDF_MIME,
-  isStorageConfigured,
-  uploadPdf,
-  createSignedDownloadUrl,
-  deleteObject,
-  FileStorageError,
-} from "./services/fileStorage";
+import { MAX_PDF_BYTES, PDF_MIME } from "./services/fileStorage";
+import { collectQuizStoragePaths, publicSubmission, purgeStorageObjects } from "./modules/fileStorageAccess/service";
 import { composeReminders, getCurriculumTopics, pickEffectiveLevel } from "./services/curriculumContent";
 import { logInternalError, sendInternalError } from "./utils/apiErrors";
-import {
-  getTopicContext,
-  listExaminingBodies,
-  listLevelsForBody,
-  listAllSubjectNames,
-  listSubjectsForBodyLevel,
-  listTopics as listCatalogueTopics,
-  resolveSyllabus,
-} from "./services/syllabusCatalogue";
 
 /**
  * Attempt to repair a raw graph_spec from AI output into a valid GraphQuestionSpec.
@@ -333,6 +328,12 @@ function repairGraphSpec(raw: unknown): import("@shared/schema").GraphQuestionSp
   };
 }
 
+// Platform policy: a single quiz may contain at most this many questions.
+// Enforced at every user-facing write path — wizard metadata, AI generation,
+// the copilot draft-apply, and the manual draft / publish / add-questions
+// routes. (The maker/verifier pipeline keeps its own internal batching ceiling.)
+const MAX_QUESTIONS_PER_QUIZ = 15;
+
 /**
  * Normalise the quiz sub-type + parametric counts coming off the wizard.
  * Clamps the total to 1–15 (≥2 for hybrid), forces the structured/MCQ split to
@@ -349,8 +350,8 @@ function normalizeQuizModeFields(
   const mode = rawMode === "structured" || rawMode === "hybrid" ? rawMode : "mcq";
   const minCount = mode === "hybrid" ? 2 : 1;
   let count = Number(rawCount);
-  if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 5;
-  count = Math.max(minCount, Math.min(15, Math.round(count)));
+  if (!Number.isFinite(count)) count = mode === "hybrid" ? 2 : 12;
+  count = Math.max(minCount, Math.min(MAX_QUESTIONS_PER_QUIZ, Math.round(count)));
   let structured: number;
   if (mode === "mcq") structured = 0;
   else if (mode === "structured") structured = count;
@@ -386,17 +387,6 @@ const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
 // ---------------------------------------------------------------------------
 
 const draftStore = new Map<number, { questions: DraftQuestion[]; updatedAt: Date }>();
-const verificationResendAttempts = new Map<string, number>();
-const verificationCodeStore = new Map<string, {
-  id: string;
-  codeHash: string;
-  salt: string;
-  expiresAt: number;
-  usedAt: number | null;
-  sentAt: number;
-  attempts: number;
-}>();
-
 function getDraft(quizId: number): DraftQuestion[] {
   return draftStore.get(quizId)?.questions ?? [];
 }
@@ -407,14 +397,6 @@ function setDraft(quizId: number, questions: DraftQuestion[]): void {
 
 function canonicalEmail(email: string): string {
   return email.trim().toLowerCase();
-}
-
-function hashCode(code: string, salt: string): string {
-  return crypto.createHash("sha256").update(`${salt}:${code}`).digest("hex");
-}
-
-function make7DigitCode(): string {
-  return `${crypto.randomInt(1000000, 10000000)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +429,37 @@ function applyDraftActionServer(
     }
     default: return current;
   }
+}
+
+// Cap enforcement for the copilot draft-apply path. The client applies
+// `action` + `questions` locally, so we trim the RETURNED questions (not just
+// the simulated draft) to keep the resulting draft within MAX_QUESTIONS_PER_QUIZ:
+// ADD is bounded by the room left in the current draft, REPLACE_ALL by the cap
+// itself. REPLACE_SELECTED / DELETE / REORDER can't grow the draft, so they pass
+// through unchanged. Returns a tutor-facing warning when anything was dropped.
+export function enforceDraftCap(
+  action: CopilotActionType,
+  currentDraftCount: number,
+  questions: DraftQuestion[],
+  max: number = MAX_QUESTIONS_PER_QUIZ,
+): { questions: DraftQuestion[]; warning: string } {
+  if (action === "ADD") {
+    const room = Math.max(0, max - currentDraftCount);
+    if (questions.length > room) {
+      const dropped = questions.length - room;
+      return {
+        questions: questions.slice(0, room),
+        warning: `\n\n⚠️ A quiz can hold at most ${max} questions. I kept ${room} of the new question${room !== 1 ? "s" : ""} and dropped ${dropped} to stay within the limit.`,
+      };
+    }
+  } else if (action === "REPLACE_ALL" && questions.length > max) {
+    const dropped = questions.length - max;
+    return {
+      questions: questions.slice(0, max),
+      warning: `\n\n⚠️ A quiz can hold at most ${max} questions, so I trimmed the draft to ${max} (dropped ${dropped}).`,
+    };
+  }
+  return { questions, warning: "" };
 }
 
 // Detect whether the user's message is requesting graph questions
@@ -548,18 +561,56 @@ function shuffleOptions<T>(arr: T[]): T[] {
 
 /** Normalise a raw copilot draft object into a DraftQuestion */
 function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
-  const rawType = String(raw.question_type || raw.questionType || "").toLowerCase();
+  const rawType = String(raw.question_type || raw.questionType || "").toLowerCase().trim();
+  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "").trim();
 
-  // Structured / written answers have no options or single correct answer —
-  // they're marked by the AI against a mark scheme. Validate them separately
-  // so the 4-option gate below doesn't reject them.
-  if (rawType === "structured") {
-    const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
+  // Normalise the options shape up-front so the structured-vs-MCQ decision can
+  // tell a written-answer question apart from a multiple-choice one.
+  let opts = raw.options;
+  if (opts && !Array.isArray(opts) && typeof opts === "object") {
+    const keys = Object.keys(opts);
+    opts = keys.every((k) => /^[A-Z]$/i.test(k))
+      ? keys.sort().map((k) => opts[k])
+      : Object.values(opts);
+  }
+  const hasMcqOptions = Array.isArray(opts) && opts.length >= 4;
+  const hasGraphSpec = !!raw.graph_spec && typeof raw.graph_spec === "object";
+  const markSchemeText = String(
+    raw.mark_scheme || raw.markScheme || raw.marking_scheme || raw.markingScheme || raw.model_answer || raw.modelAnswer || "",
+  ).trim();
+
+  // Structured / written answers carry no options and are marked by the AI
+  // against a mark scheme. Accept the canonical "structured" token, the synonyms
+  // a fallback model (e.g. Gemini) commonly emits instead, OR infer the type
+  // when the shape is unmistakably written-answer (a stem with a mark scheme but
+  // no MCQ options and no graph). Inferring here is what stops a whole
+  // structured draft from being silently dropped when the model mislabels
+  // question_type — the failure that produced "Replaced draft with 0 questions"
+  // despite a 15-question success reply.
+  const STRUCTURED_TYPES = new Set([
+    "structured", "written", "written_answer", "writtenanswer", "short_answer", "shortanswer",
+    "long_answer", "longanswer", "free_response", "freeresponse", "free_text", "freetext",
+    "extended", "extended_response", "extendedresponse", "essay", "open", "open_response",
+    "open_ended", "openended", "short_response", "shortresponse", "text",
+  ]);
+  // A genuine written-answer question never carries MCQ options or a graph
+  // spec, so require that shape for BOTH the explicit-token and the inferred
+  // path. This stops a model that mislabels a real MCQ (e.g. question_type
+  // "text"/"open" but with four valid options) from being coerced to structured
+  // and losing its options.
+  const isStructured =
+    !hasMcqOptions && !hasGraphSpec && !!stem &&
+    (STRUCTURED_TYPES.has(rawType) ||
+      (rawType !== "graph" && rawType !== "multiple_choice" && rawType !== "mcq" && !!markSchemeText));
+
+  if (isStructured) {
     if (!stem) return null;
-    const markScheme = String(
-      raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || "",
-    );
-    if (!markScheme.trim()) return null;
+    // Fall back to the explanation for the mark scheme when no dedicated field
+    // was sent. We deliberately do NOT drop a structured question that lacks a
+    // mark scheme — it is kept (markScheme may be "") so the tutor still sees it;
+    // the publish gate surfaces the missing mark scheme rather than the whole
+    // question silently vanishing at draft time.
+    const markScheme = markSchemeText || String(raw.explanation || "").trim();
     const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
     return {
       draftId: `draft-${crypto.randomUUID()}`,
@@ -582,18 +633,9 @@ function normaliseToDraftQuestion(raw: any): DraftQuestion | null {
     };
   }
 
-  let opts = raw.options;
-  if (opts && !Array.isArray(opts) && typeof opts === "object") {
-    const keys = Object.keys(opts);
-    opts = keys.every((k) => /^[A-Z]$/i.test(k))
-      ? keys.sort().map((k) => opts[k])
-      : Object.values(opts);
-  }
-  if (!Array.isArray(opts) || opts.length < 4) return null;
-  opts = opts.map(String).slice(0, 4);
-
-  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "");
   if (!stem) return null;
+  if (!hasMcqOptions) return null;
+  opts = opts.map(String).slice(0, 4);
 
   const explanation = String(raw.explanation || "");
   const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
@@ -791,38 +833,6 @@ const authApiLimiter = rateLimit({
   handler: authRateLimitHandler("auth_api_window_exceeded"),
 });
 
-const authSyncLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: authRateLimitHandler("auth_sync_window_exceeded"),
-});
-
-const verificationResendLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: authRateLimitHandler("verification_resend_window_exceeded"),
-});
-
-const verificationCodeSendLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: authRateLimitHandler("verification_code_send_window_exceeded"),
-});
-
-const verificationCodeVerifyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: authRateLimitHandler("verification_code_verify_window_exceeded"),
-});
-
 const tutorApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -932,11 +942,10 @@ async function persistImageUpload(file: Express.Multer.File, extension: string):
   return filename;
 }
 
-const pdfUpload = multer({ storage: multer.memoryStorage() });
-
-// Dedicated multer instance for the PDF-uploads feature (worksheet attachments
-// and student responses): in-memory, 20MB cap, application/pdf only.
-const pdfFileUpload = multer({
+// Syllabus-document upload (tutor uploads a syllabus PDF for ingestion).
+// Bounded to 20MB + application/pdf only — previously unbounded, so a large
+// multipart body could be buffered entirely into memory before any handler ran.
+const pdfUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_PDF_BYTES, files: 1 },
   fileFilter: (_req, file, cb) => {
@@ -986,9 +995,9 @@ function publicAttachment<T extends { storagePath?: string }>(row: T) {
 }
 
 /** Strip the internal storage key from a submission row before returning it. */
-function publicSubmission<T extends { storagePath?: string }>(row: T) {
-  const { storagePath, ...rest } = row;
-  return rest;
+function publicSubmission<T extends { storagePath?: string; annotatedStoragePath?: string | null }>(row: T) {
+  const { storagePath, annotatedStoragePath, ...rest } = row;
+  return { ...rest, hasAnnotatedPdf: Boolean(annotatedStoragePath) };
 }
 
 
@@ -1057,42 +1066,6 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 }
 
 
-const clientErrorReportSchema = z.object({
-  timestamp: z.string().max(64),
-  route: z.string().max(2048),
-  boundaryTitle: z.string().max(256),
-  error: z.object({
-    name: z.string().max(256),
-    message: z.string().max(2000),
-    stack: z.string().max(4000).optional(),
-    componentStack: z.string().max(4000).optional(),
-  }),
-  user: z.object({
-    id: z.string().max(128).optional(),
-    role: z.string().max(64).optional(),
-  }).optional(),
-  requestId: z.string().max(128),
-});
-
-const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com";
-
-const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
-
-function determineRole(
-  email: string,
-  requestedRole?: string,
-): "tutor" | "student" | "super_admin" {
-  if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
-  const domain = email.split("@")[1]?.toLowerCase();
-  if (domain === TUTOR_EMAIL_DOMAIN.toLowerCase()) return "tutor";
-  // Honour the role the user picked at signup, but clamp it: a self-selected
-  // role can only ever be "tutor" or "student" — never "super_admin". This is
-  // only consulted for brand-new accounts (see auth/sync), so it cannot be used
-  // to escalate an existing account by mutating Supabase user_metadata.
-  if (requestedRole === "tutor") return "tutor";
-  return "student";
-}
-
 // Role middleware (requireTutor, requireSuperAdmin, requireSupabaseAuth) is
 // imported from `./middleware/roles` so the legacy monolith and the new
 // per-domain modules under `./routes/*` share the same middleware
@@ -1159,16 +1132,20 @@ function createAiRouteLimiter(options: {
   });
 }
 
+// Quiz generation must NEVER be blocked by a rate limit under normal use — a
+// tutor needing to build assessments should always succeed. These limits are
+// deliberately set high so they only ever trip on runaway/abusive automation
+// (a genuine DoS backstop), not on real teaching workloads.
 const legacyAdminAiLimiter = createAiRouteLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 3,
-  reason: "legacy/admin AI generation limit exceeded",
+  limit: 200,
+  reason: "legacy/admin AI generation abuse backstop exceeded",
 });
 
 const tutorGenerationAiLimiter = createAiRouteLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: 12,
-  reason: "tutor AI generation limit exceeded",
+  limit: 300,
+  reason: "tutor AI generation abuse backstop exceeded",
 });
 
 const tutorCopilotAiLimiter = createAiRouteLimiter({
@@ -1312,6 +1289,50 @@ function parseCopilotObject(parsed: any): ParsedCopilotResponse | null {
   return { reply: reply || "Here are your questions.", action, questions, positions };
 }
 
+/**
+ * JSON Schema for the copilot response, passed to generateWithFallback so every
+ * provider emits *structurally valid* JSON at the source — closing the failure
+ * class where a free-text reply (e.g. Claude Opus pseudocode with unescaped
+ * inner quotes like OUTPUT "x", or literal newlines) breaks JSON.parse and the
+ * tutor gets ZERO questions. With a schema: Anthropic returns via tool-use
+ * (guaranteed-valid JSON object), OpenAI/DeepSeek/gpt-4o use JSON mode, and
+ * Gemini uses responseSchema. Question items list the common fields explicitly
+ * (so Gemini's strict converter has non-empty properties) while leaving
+ * additionalProperties at its permissive default so richer fields (e.g.
+ * graph_spec) still pass through on the tool-use / JSON-mode providers.
+ */
+const COPILOT_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    action: {
+      type: "string",
+      enum: ["ADD", "REPLACE_ALL", "REPLACE_SELECTED", "DELETE", "REORDER", "NONE"],
+    },
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question_type: { type: "string" },
+          stem: { type: "string" },
+          prompt_text: { type: "string" },
+          options: { type: "array", items: { type: "string" } },
+          correct_answer: { type: "string" },
+          explanation: { type: "string" },
+          marks_worth: { type: "integer" },
+          mark_scheme: { type: "string" },
+          topic_tag: { type: "string" },
+          subtopic_tag: { type: "string" },
+          difficulty_tag: { type: "string" },
+        },
+      },
+    },
+    positions: { type: "array", items: { type: "integer" } },
+  },
+  required: ["reply", "action", "questions"],
+} as const;
+
 // `sanitizeLatexBackslashes` lives in aiContracts.ts so the maker/verifier
 // pipeline benefits from the same protection. Re-exported alias kept here so
 // the existing copilot extractor below reads the same.
@@ -1357,6 +1378,35 @@ function extractStructuredCopilotResponse(text: string): ParsedCopilotResponse {
       if (result) {
         console.log(`[COPILOT_DEBUG] Extracted JSON object from mixed text: action=${result.action}, questions=${result.questions.length}`);
         return result;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Attempt 2.6: shared escalating repair ladder (same recovery the maker/
+  // verifier pipeline uses). Critical for fallback providers: when GPT-5 is
+  // rate-limited the copilot falls back to Claude Opus, whose JSON often has
+  // unescaped LaTeX backslashes, inner quotes, or literal control chars that
+  // the attempts above can't recover — leaving the tutor with ZERO attached
+  // questions despite the model reporting success.
+  try {
+    // Run the ladder over BOTH the raw and the LaTeX-backslash-sanitized base
+    // so payloads with combined faults (e.g. `\alpha` invalid escapes AND
+    // unescaped inner quotes) are still recoverable.
+    const bases = [repairJsonString(cleaned), repairJsonString(sanitized)];
+    const candidates = bases.flatMap((base) => [
+      base,
+      escapeControlCharsInStrings(base),
+      repairUnescapedInnerQuotes(base),
+      repairUnescapedInnerQuotes(escapeControlCharsInStrings(base)),
+    ]);
+    for (const candidate of candidates) {
+      const attempt = tryParseJson(candidate);
+      if (attempt.ok) {
+        const result = parseCopilotObject(repairControlCharCorruption(attempt.value));
+        if (result) {
+          console.log(`[COPILOT_DEBUG] Parsed via shared repair ladder: action=${result.action}, questions=${result.questions.length}`);
+          return result;
+        }
       }
     }
   } catch { /* fall through */ }
@@ -1419,20 +1469,6 @@ function perQuestionMisconceptionIds(
     ? Array.from(new Set([...optionRatIds, ...planIds]))
     : (planIds.length > 0 ? planIds : (seedFallback ?? []));
   return ids.length > 0 ? ids : null;
-}
-
-/**
- * Returns only the student-safe fields of a question, deliberately omitting the
- * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
- * so it can be served to students before submission.
- */
-export function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
-  return {
-    id: q.id, quizId: q.quizId, stem: q.stem,
-    options: q.options, marks: q.marks,
-    questionType: q.questionType, graphSpec: q.graphSpec,
-    // omit: correctAnswer, explanation, optionRationales, targetMisconceptionIds
-  };
 }
 
 /**
@@ -1596,10 +1632,21 @@ async function updateMasteryFromSubmission(
     subtopicId: number | null;
     learningRequirementId: number | null;
   }
+  // Resolve human-readable catalogue titles for FK-linked questions so the
+  // stored mastery label is a real name ("Algebra"), never a bare catalogue
+  // number that the AI Maker may have copied into topic_tag. Batched (single
+  // query) to avoid an N+1 on the hot grading path. When there is no FK we
+  // fall back to a number-stripped tag, and only then to "General" — the read
+  // surfaces (insights radar, tutor cohort/detail) display this value directly.
+  const catalogueLabels = await resolveCatalogueLabelsForSubtopicIds(
+    questions.map((q) => q.subtopicId),
+  ).catch(() => new Map());
+
   const groups = new Map<string, Bucket>();
   for (const q of questions) {
-    const topic = q.topicTag || "General";
-    const subtopic = q.subtopicTag || "";
+    const labels = q.subtopicId ? catalogueLabels.get(q.subtopicId) : undefined;
+    const topic = labels?.topicTitle || cleanTopicLabel(q.topicTag) || "General";
+    const subtopic = labels?.subtopicTitle || cleanTopicLabel(q.subtopicTag) || "";
     const subtopicId = q.subtopicId ?? null;
     const learningRequirementId = q.learningRequirementId ?? null;
     const key = `${topic}|||${subtopic}|||${subtopicId ?? ""}|||${learningRequirementId ?? ""}`;
@@ -2128,398 +2175,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Per-domain route modules (see server/routes/README.md). Registered
   // before the legacy inline handlers below so any future domain takeover
   // can shadow a route here without conflict.
-  registerDomainRoutes(app);
+  await registerDomainRoutes(app);
 
-
-  app.post("/api/diagnostics/client-error", requireSupabaseAuth, async (req, res) => {
-    const parsed = clientErrorReportSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid client error report" });
-    }
-
-    const authUser = (req as any).authUser as { id?: string; role?: string } | undefined;
-    const report = parsed.data;
-
-    console.warn("[client-error]", {
-      timestamp: report.timestamp,
-      route: report.route,
-      boundaryTitle: report.boundaryTitle,
-      errorName: report.error.name,
-      errorMessage: report.error.message,
-      requestId: report.requestId,
-      userId: authUser?.id || report.user?.id,
-      role: authUser?.role || report.user?.role,
-      stack: report.error.stack,
-      componentStack: report.error.componentStack,
-    });
-
-    res.status(202).json({ ok: true, requestId: report.requestId });
-  });
-
-  app.post("/api/graph/render-svg", async (req, res) => {
-    const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
-    if (!parsed.success) {
-      return res.status(400).json({
-        message: "Invalid graph spec",
-        details: parsed.error.flatten(),
-      });
-    }
-
-    const svg = await renderGraphSvgWithPython(parsed.data);
-    if (!svg) {
-      return res.status(503).json({ message: "Python graph rendering unavailable" });
-    }
-
-    return res.json({ svg });
-  });
-
-  // ─── Display-name resolution ───────────────────────────────────────
-  // Students kept showing up as their email prefix ("tckeche") because both
-  // sync paths fell back to email.split("@")[0] and the upsert overwrote any
-  // real name on every login. Resolution order: a real name from the auth
-  // metadata wins; otherwise keep an existing real name; otherwise prettify
-  // the email prefix ("john.smith42" → "John Smith") as a last resort.
-  const isEmailDerivedName = (name: string | null | undefined, email: string): boolean => {
-    const n = (name || "").trim().toLowerCase();
-    if (!n) return true;
-    return n === email.toLowerCase() || n === email.split("@")[0].toLowerCase();
-  };
-  const humanizeEmailPrefix = (email: string): string => {
-    const words = email.split("@")[0].split(/[._\-+\d]+/).filter(Boolean);
-    if (words.length === 0) return "Student";
-    return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
-  };
-  const resolveDisplayName = (
-    metadataName: string | null | undefined,
-    existingName: string | null | undefined,
-    email: string,
-  ): string => {
-    const meta = (metadataName || "").trim();
-    if (meta && !isEmailDerivedName(meta, email)) return meta;
-    const existing = (existingName || "").trim();
-    if (existing && !isEmailDerivedName(existing, email)) return existing;
-    return humanizeEmailPrefix(email);
-  };
-
-  app.post("/api/auth/sync", authSyncLimiter, async (req, res) => {
-    try {
-      const user_metadata = req.body?.user_metadata as {
-        display_name?: string;
-        full_name?: string;
-        requested_role?: string;
-        subject?: string;
-        syllabus?: string;
-        syllabus_code?: string;
-        level?: string;
-        subjects?: Array<{ subject: string; examBody: string; syllabusCode: string; level: string }>;
-      } | undefined;
-      let id = "";
-      let email = "";
-      let tokenName: string | undefined;
-
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith("Bearer ")) {
-        const decoded = await verifySupabaseToken(authHeader.slice(7));
-        if (!decoded?.sub || !decoded?.email) {
-          return res.status(401).json({ message: "Invalid or expired token" });
-        }
-        id = decoded.sub;
-        email = decoded.email;
-        tokenName = decoded.metadataName;
-      } else if (process.env.NODE_ENV !== "production") {
-        // Legacy local/test fallback
-        id = String(req.body?.id || "");
-        email = String(req.body?.email || "");
-      } else {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
-      if (!id || !email) {
-        return res.status(400).json({ message: "Missing id or email" });
-      }
-      const existingUser = await storage.getSomaUserById(id);
-      // For a brand-new account, honour the role chosen at signup (clamped by
-      // determineRole). For a returning account, keep the role already stored
-      // in our DB — never recompute it from request metadata, so a student
-      // cannot escalate to tutor by editing their Supabase user_metadata.
-      const role = existingUser
-        ? existingUser.role
-        : determineRole(email, user_metadata?.requested_role);
-      console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
-      const parsed = insertSomaUserSchema.parse({
-        id,
-        email,
-        displayName: resolveDisplayName(
-          user_metadata?.display_name || user_metadata?.full_name || tokenName,
-          existingUser?.displayName,
-          email,
-        ),
-        role,
-      });
-      const user = await storage.upsertSomaUser(parsed);
-      const signupSubjects = Array.isArray(user_metadata?.subjects) && user_metadata?.subjects.length > 0
-        ? user_metadata!.subjects
-        : (user_metadata?.subject && user_metadata?.syllabus && user_metadata?.syllabus_code && user_metadata?.level)
-          ? [{
-            subject: user_metadata.subject,
-            examBody: user_metadata.syllabus,
-            syllabusCode: user_metadata.syllabus_code,
-            level: user_metadata.level,
-          }]
-          : [];
-      for (const item of signupSubjects) {
-        if (!item.subject || !item.examBody || !item.syllabusCode || !item.level) continue;
-        const existing = await storage.listStudentSubjects(user.id);
-        const already = existing.some((s) =>
-          s.subject.toLowerCase() === item.subject.toLowerCase()
-          && s.syllabusCode.toLowerCase() === item.syllabusCode.toLowerCase()
-        );
-        if (!already) {
-          await storage.addStudentSubject({
-            studentId: user.id,
-            subject: item.subject,
-            examBody: item.examBody,
-            syllabusCode: item.syllabusCode,
-            level: item.level,
-          });
-        }
-      }
-      res.json(user);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "auth.sync", "We could not sync your account. Please try again.");
-    }
-  });
-
-  // Get current user's role and info
-  app.get("/api/auth/me", async (req, res) => {
-    try {
-      let userId = "";
-      let email = "";
-      let tokenName: string | undefined;
-      let tokenRequestedRole: string | undefined;
-
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith("Bearer ")) {
-        const decoded = await verifySupabaseToken(authHeader.slice(7));
-        if (!decoded?.sub || !decoded?.email) return res.status(401).json({ message: "Invalid or expired token" });
-        userId = decoded.sub;
-        email = decoded.email;
-        tokenName = decoded.metadataName;
-        tokenRequestedRole = decoded.requestedRole;
-      } else if (process.env.NODE_ENV !== "production") {
-        // Legacy local/test fallback
-        userId = String(req.query.userId || "");
-        email = String(req.query.email || "");
-      } else {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
-      if (!userId || !email) return res.status(400).json({ message: "userId required" });
-      let user = await storage.getSomaUserById(userId);
-      if (!user) {
-        // First-create here mirrors /api/auth/sync: honour the role the user
-        // selected at signup (carried in the verified token's user_metadata,
-        // already clamped to tutor|student), so a tutor signup is not silently
-        // downgraded to student if this endpoint provisions the row first.
-        const role = determineRole(email, tokenRequestedRole);
-        logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req as any), module: "routes", component: "authMe", userId, role, email });
-        const parsed = insertSomaUserSchema.parse({
-          id: userId,
-          email,
-          displayName: resolveDisplayName(tokenName, null, email),
-          role,
-        });
-        user = await storage.upsertSomaUser(parsed);
-      } else if (tokenName && isEmailDerivedName(user.displayName, user.email)) {
-        // Self-heal: the row carries an email-prefix name (from the old
-        // fallback) but the auth token has the student's real name.
-        user = await storage.upsertSomaUser({
-          id: user.id,
-          email: user.email,
-          displayName: resolveDisplayName(tokenName, user.displayName, user.email),
-          role: user.role,
-        });
-      }
-      if (!user) return res.status(404).json({ message: "User not found" });
-      await storage.touchUserLastLogin(user.id);
-      res.json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role });
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "auth.me", "We could not load your account. Please try again.");
-    }
-  });
-
-  // ─── Password Reset Routes ─────────────────────────────────────────
-
-  const forgotPasswordLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "Too many reset requests. Please wait 15 minutes." },
-  });
-
-  app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email || typeof email !== "string") {
-        return res.status(400).json({ error: "Email is required" });
-      }
-      const normalised = email.trim().toLowerCase();
-
-      // Log the request for auditing only if the user exists.
-      // The browser sends the Supabase email directly (preserving the PKCE
-      // code-verifier in localStorage so the reset link works).
-      const user = await storage.getSomaUserByEmail(normalised);
-      if (user) {
-        await storage.logPasswordResetRequest(normalised);
-      }
-
-      // Always return 200 — never reveal whether the email exists.
-      res.json({ message: "If that email is registered, a reset link has been sent." });
-    } catch (err: any) {
-      logError("route.forgot_password_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "forgotPassword" });
-      res.status(500).json({ error: "Failed to process password reset request." });
-    }
-  });
-
-  app.post("/api/auth/resend-verification", verificationResendLimiter, async (req, res) => {
-    try {
-      const email = canonicalEmail(String(req.body?.email || ""));
-      if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
-      const supabaseUrl = process.env.VITE_SUPABASE_URL;
-      const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !anonKey) {
-        return res.status(500).json({ message: "Verification service unavailable", code: "VERIFICATION_CONFIG_MISSING" });
-      }
-
-      const resp = await fetch(`${supabaseUrl}/auth/v1/resend`, {
-        method: "POST",
-        signal: AbortSignal.timeout(12_000),
-        headers: { "Content-Type": "application/json", apikey: anonKey, Authorization: `Bearer ${anonKey}` },
-        body: JSON.stringify({ type: "signup", email }),
-      });
-      const body = await resp.text();
-      if (!resp.ok) {
-        logError("route.verification_resend_failed", undefined, { ...requestLogContext(req as any), severity: "medium", module: "routes", component: "verificationResend", email, status: resp.status, responseBody: body.slice(0, 220) });
-        return res.status(502).json({ message: "Could not resend verification email. Please try again shortly.", code: "VERIFICATION_RESEND_FAILED" });
-      }
-
-      const attemptCount = (verificationResendAttempts.get(email) ?? 0) + 1;
-      verificationResendAttempts.set(email, attemptCount);
-      return res.json({ ok: true, attemptCount, canUseCodeFallback: attemptCount >= 3 });
-    } catch (err: any) {
-      logError("route.verification_resend_error", err, { ...requestLogContext(req as any), severity: "medium", module: "routes", component: "verificationResend" });
-      return res.status(500).json({ message: "Verification resend failed", code: "VERIFICATION_RESEND_EXCEPTION" });
-    }
-  });
-
-  app.post("/api/auth/send-verification-code", verificationCodeSendLimiter, async (req, res) => {
-    try {
-      const email = canonicalEmail(String(req.body?.email || ""));
-      if (!email) return res.status(400).json({ message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
-      const resendAttempts = verificationResendAttempts.get(email) ?? 0;
-      if (resendAttempts < 3) {
-        return res.status(403).json({ message: "Fallback code unlocks after 3 failed resend attempts", code: "VERIFICATION_CODE_NOT_ELIGIBLE" });
-      }
-
-      const apiKey = process.env.RESEND_API_KEY;
-      if (!apiKey) return res.status(500).json({ message: "Code delivery unavailable", code: "VERIFICATION_CODE_DELIVERY_UNAVAILABLE" });
-
-      const now = Date.now();
-      const existing = verificationCodeStore.get(email);
-      if (existing && now - existing.sentAt < 60_000) {
-        return res.status(429).json({ message: "Please wait before requesting another code.", code: "VERIFICATION_CODE_RATE_LIMIT" });
-      }
-
-      const code = make7DigitCode();
-      const salt = crypto.randomBytes(16).toString("hex");
-      const id = crypto.randomUUID();
-      verificationCodeStore.set(email, {
-        id,
-        codeHash: hashCode(code, salt),
-        salt,
-        sentAt: now,
-        expiresAt: now + 10 * 60_000,
-        usedAt: null,
-        attempts: 0,
-      });
-
-      const sendResp = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        signal: AbortSignal.timeout(12_000),
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          from: process.env.RESEND_FROM_EMAIL || "SOMA <onboarding@resend.dev>",
-          to: [email],
-          subject: "Your SOMA verification code",
-          html: `<p>Your SOMA verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes and can be used once.</p>`,
-        }),
-      });
-      if (!sendResp.ok) {
-        verificationCodeStore.delete(email);
-        return res.status(502).json({ message: "Could not send verification code email.", code: "VERIFICATION_CODE_SEND_FAILED" });
-      }
-      return res.json({ ok: true, expiresInSeconds: 600 });
-    } catch (err: any) {
-      console.error("[verification-code-send-error]", err?.message || err);
-      return res.status(500).json({ message: "Could not send verification code", code: "VERIFICATION_CODE_SEND_EXCEPTION" });
-    }
-  });
-
-  app.post("/api/auth/verify-verification-code", verificationCodeVerifyLimiter, async (req, res) => {
-    try {
-      const email = canonicalEmail(String(req.body?.email || ""));
-      const code = String(req.body?.code || "").trim();
-      if (!email || !/^\d{7}$/.test(code)) return res.status(400).json({ message: "Valid email and 7-digit code required", code: "VERIFICATION_CODE_INVALID_INPUT" });
-
-      const record = verificationCodeStore.get(email);
-      if (!record) return res.status(404).json({ message: "No active code found. Request a new code.", code: "VERIFICATION_CODE_NOT_FOUND" });
-      if (record.usedAt) return res.status(409).json({ message: "This code has already been used.", code: "VERIFICATION_CODE_USED" });
-      if (Date.now() > record.expiresAt) return res.status(410).json({ message: "This code has expired. Request a new code.", code: "VERIFICATION_CODE_EXPIRED" });
-      if (record.attempts >= 5) return res.status(429).json({ message: "Too many invalid attempts. Request a new code.", code: "VERIFICATION_CODE_BRUTEFORCE_LOCK" });
-
-      record.attempts += 1;
-      if (hashCode(code, record.salt) !== record.codeHash) {
-        verificationCodeStore.set(email, record);
-        return res.status(401).json({ message: "Invalid code. Please check and try again.", code: "VERIFICATION_CODE_MISMATCH" });
-      }
-
-      const supabaseUrl = process.env.VITE_SUPABASE_URL;
-      const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!supabaseUrl || !serviceRole) return res.status(500).json({ message: "Server verification config missing", code: "VERIFICATION_ADMIN_CONFIG_MISSING" });
-
-      let targetUserId = "";
-      for (let page = 1; page <= 5 && !targetUserId; page += 1) {
-        const usersResp = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`, {
-          headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-        });
-        if (!usersResp.ok) break;
-        const usersData = await usersResp.json();
-        const users = Array.isArray(usersData?.users) ? usersData.users : [];
-        const matched = users.find((u: any) => canonicalEmail(String(u.email || "")) === email);
-        if (matched?.id) targetUserId = matched.id;
-      }
-      if (!targetUserId) return res.status(404).json({ message: "Account not found for this email", code: "VERIFICATION_USER_NOT_FOUND" });
-
-      const confirmResp = await fetch(`${supabaseUrl}/auth/v1/admin/users/${targetUserId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-        body: JSON.stringify({ email_confirm: true }),
-      });
-      if (!confirmResp.ok) {
-        const body = await confirmResp.text();
-        console.error("[verification-code-confirm-failed]", body.slice(0, 240));
-        return res.status(502).json({ message: "Could not confirm account from code.", code: "VERIFICATION_CONFIRM_FAILED" });
-      }
-
-      record.usedAt = Date.now();
-      verificationCodeStore.set(email, record);
-      return res.json({ ok: true, message: "Code accepted. Your email is now verified. You can log in." });
-    } catch (err: any) {
-      console.error("[verification-code-verify-error]", err?.message || err);
-      return res.status(500).json({ message: "Code verification failed", code: "VERIFICATION_CODE_VERIFY_EXCEPTION" });
-    }
-  });
 
   // ─── Tutor API Routes ──────────────────────────────────────────────
 
@@ -2530,7 +2187,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const students = await storage.getAdoptedStudentsWithProfile(tutorId);
       res.json(students);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch students" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_students", "Failed to fetch students");
     }
   });
 
@@ -2541,7 +2198,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const available = await storage.getAvailableStudents(tutorId);
       res.json(available);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch available students" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_available_students", "Failed to fetch available students");
     }
   });
 
@@ -2553,16 +2210,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!Array.isArray(studentIds) || studentIds.length === 0) {
         return res.status(400).json({ message: "studentIds array required" });
       }
-      const results = [];
-      for (const studentId of studentIds) {
-        const student = await storage.getSomaUserById(studentId);
-        if (!student || student.role !== "student") continue;
-        const record = await storage.adoptStudent(tutorId, studentId);
-        results.push(record);
-      }
+      // Validate all candidate ids in one query (was one getSomaUserById per id).
+      const users = await storage.getSomaUsersByIds(studentIds);
+      const validIds = users.filter((u) => u.role === "student").map((u) => u.id);
+      const results = await Promise.all(validIds.map((id) => storage.adoptStudent(tutorId, id)));
       res.json({ adopted: results.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to adopt students" });
+      return sendInternalError(req, res, err, "routes.failed_to_adopt_students", "Failed to adopt students");
     }
   });
 
@@ -2573,18 +2227,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.removeAdoptedStudent(tutorId, String(req.params.studentId));
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to remove student" });
-    }
-  });
-
-  // Get tutor's quizzes
-  app.get("/api/tutor/quizzes", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizzes = await storage.getSomaQuizzesByAuthor(tutorId);
-      res.json(quizzes.filter((q) => !q.isArchived));
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quizzes" });
+      return sendInternalError(req, res, err, "routes.failed_to_remove_student", "Failed to remove student");
     }
   });
 
@@ -2594,90 +2237,36 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const overview = await storage.getTutorAssessmentsOverview(tutorId);
       res.json(overview);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch overview" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_overview", "Failed to fetch overview");
     }
   });
 
-  // Assign quiz to students
-  app.post("/api/tutor/quizzes/:quizId/assign", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(String(req.params.quizId));
-      const studentIds = sanitizeStudentIds(req.body?.studentIds);
-      const rawDueDate = req.body?.dueDate;
-      let dueDate = rawDueDate ? new Date(rawDueDate) : null;
-      if (dueDate && isNaN(dueDate.getTime())) {
-        return res.status(400).json({ message: "Invalid dueDate format" });
-      }
-      if (studentIds.length === 0) {
-        return res.status(400).json({ message: "studentIds array required" });
-      }
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz || quiz.isArchived) {
-        return res.status(404).json({ message: "Quiz not found" });
-      }
+  // PDF upload routes now live in autoloaded pdfAttachments/pdfSubmissions modules.
 
-      // When the tutor didn't pick a due date, default it to 5 days after the
-      // assessment was created, floored to the hour (e.g. created 15:23 -> due
-      // in 5 days at 15:00). Tutors override this via the prefilled picker.
-      if (!dueDate) {
-        dueDate = computeDefaultDueDate(quiz.createdAt);
-      }
+  // (10) Tutor marks a student's submission upload.
+  app.post(
+    "/api/tutor/submission-uploads/:id/mark",
+    tutorApiLimiter,
+    requireTutor,
+    async (req, res) => {
+      try {
+        const tutorId = (req as any).tutorId;
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
 
-      // Force-publish quiz on every assign — guarantees it's visible to students
-      if (quiz.status !== "published") {
-        await storage.updateSomaQuiz(quizId, { status: "published" });
-        console.log(`[Assign] Force-published quiz ${quizId} (was "${quiz.status}")`);
-      }
-
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      const adoptedById = new Map(adopted.map((s) => [s.id, s]));
-      const notAdoptedIds = studentIds.filter((id: string) => !adoptedById.has(id));
-      const validIds = studentIds.filter((id: string) => adoptedById.has(id));
-      if (validIds.length === 0) {
-        return res.status(400).json({ message: "None of the provided students are adopted by you" });
-      }
-
-      const existing = await storage.getQuizAssignmentsForQuiz(quizId);
-      const existingIds = new Set(existing.map((a) => a.student.id));
-      const alreadyAssignedIds = validIds.filter((id) => existingIds.has(id));
-      const toCreateIds = validIds.filter((id) => !existingIds.has(id));
-
-      const newAssignments = toCreateIds.length > 0
-        ? await storage.createQuizAssignments(quizId, toCreateIds, dueDate)
-        : [];
-
-      const perStudent = studentIds.map((id: string) => {
-        const student = adoptedById.get(id);
-        const name = student?.displayName || student?.email || id;
-        const email = student?.email || null;
-        if (!adoptedById.has(id)) {
-          return { studentId: id, name, email, status: "not_adopted" as const };
+        const bodySchema = z.object({
+          score: z.number().int().min(0),
+          maxScore: z.number().int().positive().optional(),
+          feedback: z.string().max(5000).optional(),
+        });
+        const parsed = bodySchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten() });
         }
-        if (existingIds.has(id)) {
-          return { studentId: id, name, email, status: "already_assigned" as const };
+        const { score, maxScore, feedback } = parsed.data;
+        if (maxScore !== undefined && score > maxScore) {
+          return res.status(400).json({ message: "score cannot exceed maxScore" });
         }
-        const persisted = newAssignments.some((a: any) => a.studentId === id);
-        return {
-          studentId: id,
-          name,
-          email,
-          status: persisted ? ("assigned" as const) : ("failed" as const),
-        };
-      });
-
-      // Notify each student that a new quiz is waiting for them (new assignments only)
-      await Promise.all(toCreateIds.map((studentId) =>
-        storage.createStudentNotification({
-          studentId,
-          type: "assignment_new",
-          title: "New assessment assigned",
-          message: dueDate
-            ? `Your tutor assigned "${quiz.title}". It's due ${dueDate.toDateString()}.`
-            : `Your tutor assigned "${quiz.title}". Take it whenever you're ready.`,
-          payload: { quizId: quiz.id, quizTitle: quiz.title, dueDate: dueDate ? dueDate.toISOString() : null },
-        }).catch((err) => console.error("[Assign Notification] failed:", err)),
-      ));
 
       res.json({
         requested: studentIds.length,
@@ -3010,6 +2599,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           mimeType: PDF_MIME,
           sizeBytes: file.size,
           uploadedBy: tutorId,
+          documentRole: (req.body?.documentRole === "exam_paper" || req.body?.documentRole === "supporting_resource") ? req.body.documentRole : "worksheet",
         });
         return res.status(201).json(publicAttachment(row));
       } catch (err: any) {
@@ -3157,7 +2747,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           return res.status(400).json({ message: "This assessment does not accept PDF responses" });
         }
 
-        const storagePath = `submissions/${quizId}/${studentId}.pdf`;
+        const contentHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+        const config = quiz.pdfMarkingMode === "dual_ai" ? await storage.getPdfAssessmentConfig(quizId) : undefined;
+        const aiReady = quiz.pdfMarkingMode === "dual_ai" && canUseDualAiMarking() && config?.preparationStatus === "ready" && config.activeRubricVersionId;
+        const storagePath = quiz.pdfMarkingMode === "dual_ai"
+          ? `submissions/${quizId}/${studentId}/versions/${Date.now()}-${crypto.randomUUID()}.pdf`
+          : `submissions/${quizId}/${studentId}.pdf`;
         await uploadPdf(storagePath, file.buffer);
         const row = await storage.upsertSubmissionUpload({
           quizId,
@@ -3166,7 +2761,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           storagePath,
           mimeType: PDF_MIME,
           sizeBytes: file.size,
+          contentHash,
+          aiMarkingStatus: quiz.pdfMarkingMode === "dual_ai" ? (aiReady ? "queued" : "blocked_setup") : null,
         });
+        if (quiz.pdfMarkingMode === "dual_ai" && aiReady && config?.activeRubricVersionId) {
+          await storage.upsertPdfMarkingJob({
+            jobType: "mark_submission",
+            idempotencyKey: buildPdfMarkingIdempotencyKey({ submissionUploadId: row.id, submissionVersion: row.submissionVersion, contentHash, rubricVersionId: config.activeRubricVersionId }),
+            quizId,
+            submissionUploadId: row.id,
+            rubricVersionId: config.activeRubricVersionId,
+            payload: { submissionVersion: row.submissionVersion },
+            maxAttempts: Number(process.env.PDF_MARKING_MAX_ATTEMPTS || 3),
+          });
+        }
         return res.status(201).json(publicSubmission(row));
       } catch (err: any) {
         if (err instanceof FileStorageError) {
@@ -3287,382 +2895,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     },
   );
 
-  // Revoke a student's quiz assignment
-  app.delete("/api/tutor/quizzes/:quizId/assignments/:studentId", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(req.params.quizId as string);
-      const studentId = req.params.studentId as string;
-
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz || quiz.authorId !== tutorId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.deleteQuizAssignment(quizId, studentId);
-
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to revoke assignment" });
-    }
-  });
-
-  // Delete a quiz (tutor only)
-  app.delete("/api/tutor/quizzes/:quizId", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(req.params.quizId as string);
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
-      }
-      if (quiz.authorId !== tutorId) {
-        return res.status(403).json({ message: "You can only delete your own quizzes" });
-      }
-      const storagePaths = await collectQuizStoragePaths(quizId);
-      await storage.deleteSomaQuiz(quizId);
-      await purgeStorageObjects(storagePaths);
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete quiz" });
-    }
-  });
-
-  // Toggle archive status for a quiz
-  app.patch("/api/tutor/quizzes/:quizId/archive", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(String(req.params.quizId));
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-      if (quiz.authorId !== tutorId) return res.status(403).json({ message: "Access denied" });
-      const updated = await storage.updateSomaQuiz(quizId, { isArchived: !quiz.isArchived });
-      return res.json({ success: true, isArchived: updated?.isArchived });
-    } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to toggle archive" });
-    }
-  });
-
-  // Update due date for all assignments on a quiz
-  app.patch("/api/tutor/quizzes/:quizId/due-date", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(String(req.params.quizId));
-      const { dueDate } = req.body;
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-      if (quiz.authorId !== tutorId) return res.status(403).json({ message: "Access denied" });
-      const parsedDate = dueDate ? new Date(dueDate) : null;
-      if (parsedDate && isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ message: "Invalid date format" });
-      }
-      const updated = await storage.updateQuizAssignmentsDueDate(quizId, parsedDate);
-      return res.json({ success: true, updated });
-    } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to update due date" });
-    }
-  });
-
-  // Extend deadline by specified hours for all pending assignments on a quiz
-  app.patch("/api/tutor/quizzes/:quizId/assignments/extend", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(String(req.params.quizId));
-      const hours = Number(req.body.hours) || 24;
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
-      }
-      if (quiz.authorId !== tutorId) {
-        return res.status(403).json({ message: "Only the author can extend deadlines" });
-      }
-      const updated = await storage.extendQuizAssignmentDeadlines(quizId, hours);
-      return res.json({ success: true, message: `Extended deadline by ${hours}h for ${updated} assignment(s)`, updated });
-    } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to extend deadline" });
-    }
-  });
-
-  // Get assignments for a specific quiz
-  app.get("/api/tutor/quizzes/:quizId/assignments", requireTutor, async (req, res) => {
-    try {
-      const quizId = parseInt(String(req.params.quizId));
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
-      }
-      const assignments = await storage.getQuizAssignmentsForQuiz(quizId);
-      res.json(assignments);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch assignments" });
-    }
-  });
-
-  app.get("/api/tutor/quizzes/:quizId/reports", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(String(req.params.quizId));
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
-      }
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      const adoptedIds = new Set(adopted.map((s) => s.id));
-      const allReports = await storage.getSomaReportsByQuizId(quizId);
-      const reports = allReports.filter((r) => r.studentId && adoptedIds.has(r.studentId));
-      const questions = await storage.getSomaQuestionsByQuizId(quizId);
-      const maxScore = questions.reduce((s, q) => s + q.marks, 0);
-      res.json({ quiz, reports, questions, maxScore });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reports" });
-    }
-  });
-
-  app.get("/api/tutor/students/:studentId/comments", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const studentId = String(req.params.studentId);
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const comments = await storage.getTutorComments(tutorId, studentId);
-      res.json(comments);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch comments" });
-    }
-  });
-
-  app.post("/api/tutor/students/:studentId/comments", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const studentId = String(req.params.studentId);
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const { comment } = req.body;
-      if (!comment?.trim()) return res.status(400).json({ message: "Comment is required" });
-      const result = await storage.addTutorComment({ tutorId, studentId, comment: comment.trim() });
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to add comment" });
-    }
-  });
-
-  app.get("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const studentId = String(req.params.studentId);
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const rows = await storage.listStudentSubjects(studentId);
-      res.json(rows);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch student subjects" });
-    }
-  });
-
-  const studentSubjectPayloadSchema = z.object({
-    subject: z.string().min(1),
-    examBody: z.string().min(1),
-    syllabusCode: z.string().min(1),
-    level: z.string().min(1),
-  });
-
-  app.post("/api/tutor/students/:studentId/subjects", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const studentId = String(req.params.studentId);
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const payload = studentSubjectPayloadSchema.parse(req.body || {});
-      const row = await storage.addStudentSubject({ studentId, ...payload });
-      res.status(201).json(row);
-    } catch (err: any) {
-      res.status(400).json({ message: err.message || "Failed to add subject" });
-    }
-  });
-
-  app.put("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const studentId = String(req.params.studentId);
-      const subjectId = Number(req.params.subjectId);
-      if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      const payload = studentSubjectPayloadSchema.parse(req.body || {});
-      const row = await storage.updateStudentSubject(subjectId, studentId, payload);
-      if (!row) return res.status(404).json({ message: "Student subject not found" });
-      res.json(row);
-    } catch (err: any) {
-      res.status(400).json({ message: err.message || "Failed to update subject" });
-    }
-  });
-
-  app.delete("/api/tutor/students/:studentId/subjects/:subjectId", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const studentId = String(req.params.studentId);
-      const subjectId = Number(req.params.subjectId);
-      if (!Number.isFinite(subjectId)) return res.status(400).json({ message: "Invalid subject id" });
-      const adopted = await storage.getAdoptedStudents(tutorId);
-      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
-      await storage.deleteStudentSubject(subjectId, studentId);
-      res.json({ deleted: true });
-    } catch (err: any) {
-      res.status(400).json({ message: err.message || "Failed to delete subject" });
-    }
-  });
-
-  // DEPRECATED: replaced by /api/catalogue/topics (Phase 4). This endpoint
-  // reads the legacy Phase-1 syllabusTopicInventory table, which is kept live
-  // until the Phase 5 frontend cutover. New callers should use the catalogue
-  // endpoints; existing callers continue to work unchanged.
-  app.get("/api/tutor/syllabus-topics", requireTutor, async (req, res) => {
-    try {
-      res.setHeader("Deprecation", "true");
-      res.setHeader("Link", '</api/catalogue/topics>; rel="successor-version"');
-      const { board, syllabusCode, subject } = req.query;
-      const topics = await storage.listSyllabusTopicInventory({
-        board: board ? String(board) : undefined,
-        syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
-        subject: subject ? String(subject) : undefined,
-      });
-      res.json(topics);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topics" });
-    }
-  });
-
-  // ---------------------------------------------------------------------
-  // Syllabus catalogue (Phase 4). Tutor-scoped reads over the normalised
-  // Cambridge syllabus tables populated by scripts/ingestSyllabi.
-  // ---------------------------------------------------------------------
-  const catalogueQuerySchemas = {
-    levels: z.object({ body: z.string().min(1, "body is required") }),
-    subjects: z.object({
-      body: z.string().min(1, "body is required"),
-      level: z.string().min(1, "level is required"),
-    }),
-    topics: z.object({
-      body: z.string().min(1, "body is required"),
-      level: z.string().min(1, "level is required"),
-      subject: z.string().min(1, "subject is required"),
-    }),
-    topicContext: z.object({
-      topicIds: z
-        .string()
-        .min(1, "topicIds is required")
-        .transform((raw, ctx) => {
-          const ids = raw
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0)
-            .map((s) => Number(s));
-          if (ids.some((n) => !Number.isInteger(n) || n <= 0)) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "topicIds must be comma-separated positive integers" });
-            return z.NEVER;
-          }
-          return ids;
-        }),
-    }),
-  };
-
-  app.get("/api/catalogue/examining-bodies", requireTutor, async (_req, res) => {
-    try {
-      const bodies = await listExaminingBodies();
-      res.json(bodies);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list examining bodies" });
-    }
-  });
-
-  app.get("/api/catalogue/levels", requireTutor, async (req, res) => {
-    const parsed = catalogueQuerySchemas.levels.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
-    }
-    try {
-      const levels = await listLevelsForBody(parsed.data.body);
-      res.json(levels);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list levels" });
-    }
-  });
-
-  // Public (no-auth) subject-name list for the signup autocomplete. Returns
-  // catalogue subject names only — nothing sensitive — sourced from the same
-  // catalogue tables as the authed /api/catalogue/subjects endpoint.
-  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (_req, res) => {
-    try {
-      const names = await listAllSubjectNames();
-      res.json(names);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list subjects" });
-    }
-  });
-
-  app.get("/api/catalogue/subjects", requireTutor, async (req, res) => {
-    const parsed = catalogueQuerySchemas.subjects.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
-    }
-    try {
-      const subjects = await listSubjectsForBodyLevel(parsed.data.body, parsed.data.level);
-      res.json(subjects);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list subjects" });
-    }
-  });
-
-  app.get("/api/catalogue/topics", requireTutor, async (req, res) => {
-    const parsed = catalogueQuerySchemas.topics.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
-    }
-    try {
-      const { body, level, subject } = parsed.data;
-      const syllabus = await resolveSyllabus(body, level, subject);
-      if (!syllabus) {
-        return res.status(404).json({ message: "No syllabus matches the given body/level/subject" });
-      }
-      const topics = await listCatalogueTopics(body, level, subject);
-      res.json({ syllabus, topics });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list topics" });
-    }
-  });
-
-  app.get("/api/catalogue/topic-context", requireTutor, async (req, res) => {
-    const parsed = catalogueQuerySchemas.topicContext.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid query" });
-    }
-    try {
-      const context = await getTopicContext(parsed.data.topicIds);
-      res.json(context);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topic context" });
-    }
-  });
-
-  // Get examiner misconceptions for a syllabus. Only approved insights are
-  // exposed to tutors — pending / rejected stay in the super-admin review
-  // queue (see server/routes/examinerInsightsReview.ts).
-  app.get("/api/tutor/examiner-misconceptions", requireTutor, async (req, res) => {
-    try {
-      const { board, syllabusCode, topic } = req.query;
-      const misconceptions = await storage.listExaminerMisconceptions({
-        board: board ? String(board) : undefined,
-        syllabusCode: syllabusCode ? String(syllabusCode) : undefined,
-        topic: topic ? String(topic) : undefined,
-        status: "approved",
-      });
-      res.json(misconceptions);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch misconceptions" });
-    }
-  });
-
-  // Get student mastery data — filtered to subjects the tutor has assigned this student.
   app.get("/api/tutor/students/:studentId/mastery", requireTutor, async (req, res) => {
     try {
       const tutorId = (req as any).tutorId;
@@ -3681,7 +2913,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         : mastery.filter((m) => visible.has((m.subject || "").toLowerCase()));
       res.json(filtered);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_mastery_data", "Failed to fetch mastery data");
     }
   });
 
@@ -3711,10 +2943,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         studentNames: string[];
       }> = {};
 
+      // One batched query for the whole cohort instead of one per student.
+      const masteryByStudent = await storage.listStudentTopicMasteryForStudents(adopted.map((s) => s.id));
+
       for (const student of adopted) {
         const visible = visibleSubjectsPerStudent.get(student.id) || new Set<string>();
         if (visible.size === 0) continue; // tutor hasn't assigned this student anything yet
-        const mastery = await storage.listStudentTopicMastery(student.id);
+        const mastery = masteryByStudent[student.id] || [];
         const studentName = student.displayName || student.email?.split("@")[0] || "Student";
         for (const m of mastery) {
           if (!m.tested) continue;
@@ -3758,7 +2993,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ topics, studentCount: adopted.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch cohort data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_cohort_data", "Failed to fetch cohort data");
     }
   });
 
@@ -3772,7 +3007,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch syllabus insights" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_syllabus_insights", "Failed to fetch syllabus insights");
     }
   });
 
@@ -3816,7 +3051,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ dueForReview, upcoming });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch review schedule" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_review_schedule", "Failed to fetch review schedule");
     }
   });
 
@@ -3834,7 +3069,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ reports: reportsWithMax, submissions: [] });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_performance", "Failed to fetch performance");
     }
   });
 
@@ -3914,73 +3149,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         },
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch student report" });
-    }
-  });
-
-  app.get("/api/tutor/dashboard-stats", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const stats = await storage.getDashboardStatsForTutor(tutorId);
-      res.json(stats);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch stats" });
-    }
-  });
-
-  // Tutor view of question-level flags raised by students on the tutor's quizzes
-  app.get("/api/tutor/flagged-questions", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizIdRaw = req.query.quizId;
-      const studentIdRaw = req.query.studentId;
-      const unresolvedOnly = String(req.query.unresolvedOnly || "") === "true";
-      const filter: { quizId?: number; studentId?: string; unresolvedOnly?: boolean } = { unresolvedOnly };
-      if (quizIdRaw) {
-        const id = parseInt(String(quizIdRaw), 10);
-        if (Number.isInteger(id)) filter.quizId = id;
-      }
-      if (studentIdRaw) filter.studentId = String(studentIdRaw);
-      const flags = await storage.listFlaggedQuestionsForTutor(tutorId, filter);
-      res.json({ flags });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch flagged questions" });
-    }
-  });
-
-  app.post("/api/tutor/flagged-questions/:id/resolve", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const id = parseInt(String(req.params.id), 10);
-      if (!Number.isInteger(id)) return res.status(400).json({ message: "Invalid flag id" });
-      const updated = await storage.resolveFlaggedQuestion(id, tutorId);
-      if (!updated) return res.status(404).json({ message: "Flag not found" });
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to resolve flag" });
-    }
-  });
-
-  app.get("/api/tutor/notifications", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const rows = await storage.listTutorNotifications(tutorId);
-      const unreadCount = rows.filter((item) => !item.readAt).length;
-      res.json({ notifications: rows, unreadCount });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
-    }
-  });
-
-  app.post("/api/tutor/notifications/:id/read", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const id = Number(req.params.id);
-      const row = await storage.markTutorNotificationRead(id, tutorId);
-      if (!row) return res.status(404).json({ message: "Notification not found" });
-      res.json(row);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to update notification" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_student_report", "Failed to fetch student report");
     }
   });
 
@@ -4301,7 +3470,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         suggestions: created,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to generate suggestions" });
+      return sendInternalError(req, res, err, "routes.failed_to_generate_suggestions", "Failed to generate suggestions");
     }
   });
 
@@ -4309,7 +3478,13 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     try {
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
-      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(30).max(50).default(30) }).parse(req.body || {});
+      const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(1).max(MAX_QUESTIONS_PER_QUIZ).default(MAX_QUESTIONS_PER_QUIZ) }).parse(req.body || {});
+      // Adoption guard (parity with /ai/suggested-assessments): only a tutor who
+      // has adopted this student may publish for them. Without it, listStudentSubjects
+      // (which is not tutor-scoped) leaks whether an arbitrary student exists/has
+      // metadata and lets the route fire a notification referencing them.
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
       const subjects = await storage.listStudentSubjects(studentId);
       if (subjects.length === 0) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
@@ -4404,6 +3579,31 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             )
               ? (item.purpose as "struggling_areas" | "stretch_strengths" | "revision")
               : "general";
+            // Feed the maker FK-linked approved examiner seeds (parity with the
+            // /soma/generate and tutor-generate paths). Without this the prose
+            // in supportingDocText carries no ids, so generated.seedMisconceptionIds
+            // stays empty and every targetMisconceptionIds resolves to null —
+            // meaning these remediation quizzes could never produce answer
+            // diagnoses or feed the misconception heatmap/revision plan. Prefer
+            // the topic-scoped rows we already loaded; fall back to the
+            // syllabus-code seed set when this topic has no catalogue rows.
+            let examinerSeeds: ExaminerSeed[] = topicMisconceptions.slice(0, 6).map((m: any) => ({
+              id: m.id,
+              topic: m.topic,
+              subtopic: m.subtopic ?? null,
+              misconception: m.misconception,
+              studentError: m.studentError,
+              correctApproach: m.correctApproach,
+              frequency: m.frequency,
+              sourceQuote: m.sourceQuote ?? null,
+              sourcePage: m.sourcePage ?? null,
+            }));
+            if (examinerSeeds.length === 0) {
+              examinerSeeds = await listApprovedSeeds({
+                board: cached.examBody,
+                syllabusCode: cached.syllabusCode,
+              });
+            }
             const generated = await generateAuditedQuiz({
               topic: item.topic,
               subject: item.subject,
@@ -4415,6 +3615,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               purpose: purposeForPlanner,
               copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
               supportingDocText: topicSyllabusContext + topicExaminerContext,
+              examinerSeeds,
             });
             if (generated.warnings.length > 0) {
               console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
@@ -4428,6 +3629,10 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               // reflects the number actually published.
               console.error(`[AI Publish] Quiz "${item.topic}" produced 0 usable questions after re-rolls — skipping publish.`);
               continue;
+            }
+            if (generated.questions.length > MAX_QUESTIONS_PER_QUIZ) {
+              console.warn(`[AI Publish] Quiz "${item.topic}" overproduced ${generated.questions.length} questions — trimming to cap of ${MAX_QUESTIONS_PER_QUIZ} before publish.`);
+              generated.questions = generated.questions.slice(0, MAX_QUESTIONS_PER_QUIZ);
             }
             const balancedGen = balanceAnswerOptions(generated.questions);
             const quiz = await storage.createSomaQuizBundle({
@@ -4987,15 +4192,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     }
   });
 
-  // Delete a question
-  app.delete("/api/tutor/questions/:questionId", requireTutor, async (req, res) => {
-    try {
-      await storage.deleteSomaQuestion(parseInt(String(req.params.questionId)));
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete question" });
-    }
-  });
+  // Manual question add/delete endpoints now live in the autoloaded questionManagement module.
 
   app.get("/api/tutor/syllabus-documents", requireTutor, async (req, res) => {
     try {
@@ -5009,7 +4206,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         uploadedAt: document.uploadedAt,
       })));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch syllabus documents" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_syllabus_documents", "Failed to fetch syllabus documents");
     }
   });
 
@@ -5033,7 +4230,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         filename: d.filename,
       })));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch curriculum syllabi" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_curriculum_syllabi", "Failed to fetch curriculum syllabi");
     }
   });
 
@@ -5110,12 +4307,23 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     // can show real progress instead of a frozen spinner. Non-streaming
     // clients still get the regular single JSON response at the end.
     const wantsStream = String(req.headers.accept || "").includes("text/event-stream");
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
     if (wantsStream) {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache, no-transform");
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders?.();
+      // Keep the SSE socket warm during long, silent pipeline phases (e.g. GPT-5
+      // verification can run for minutes without emitting a stage event). Without
+      // these pings the client's inactivity watchdog aborts a generation that is
+      // still progressing server-side, surfacing a false "Generation failed".
+      heartbeat = setInterval(() => {
+        try { res.write(": ping\n\n"); } catch { /* socket closed */ }
+      }, 10_000);
+      res.on("close", () => {
+        if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+      });
     }
     const sendEvent = (name: string, payload: unknown) => {
       if (!wantsStream) return;
@@ -5334,7 +4542,7 @@ Your job is to return a JSON object that describes what action to take on the dr
 }
 
 ## ACTION TYPES:
-- ADD: Append new questions to the end of the draft. Put new questions in "questions", leave "positions" empty.
+- ADD: Append new questions to the end of the draft. Put new questions in "questions", leave "positions" empty. A quiz may hold AT MOST ${MAX_QUESTIONS_PER_QUIZ} questions total — never let an ADD take the draft above ${MAX_QUESTIONS_PER_QUIZ}; if the request would exceed it, add only as many as fit and say so in "reply".
 - REPLACE_ALL: Replace the entire draft with new questions. Put all new questions in "questions", leave "positions" empty.
 - REPLACE_SELECTED: Replace specific questions. "positions[i]" (1-based) is replaced by "questions[i]". Both arrays must be the same length.
 - DELETE: Remove specific questions by position. Put 1-based positions in "positions", leave "questions" empty.
@@ -5476,7 +4684,8 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 ## CRITICAL RULES:
 - correct_answer must exactly match one of the 4 options (copy verbatim)
 - Do not regenerate unchanged questions — only return questions for ADD/REPLACE operations
-- For DELETE and REORDER, "questions" must be an empty array []`;
+- For DELETE and REORDER, "questions" must be an empty array []
+- NEVER claim in "reply" that you created, built, added, or replaced questions unless those exact question objects are present in the "questions" array. For ADD / REPLACE_ALL / REPLACE_SELECTED the "questions" array MUST contain one complete question object per question and MUST NOT be empty. The questions live ONLY in the "questions" array — "reply" is a short summary and must NEVER be used as a substitute for actually producing them.`;
 
       const userPrompt = [
         draftContextBlock || "(Draft is currently empty — no questions yet)",
@@ -5492,16 +4701,87 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       // may ask the same question twice intentionally). We still tag the
       // call with a route + userId so it shows up in the admin dashboard.
       const tutorIdForCopilot = (req as any).tutorId as string | undefined;
-      const { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, undefined, {
-        taskType: "chat",
+      // Authoring is a generation task — use the generation token budget. The
+      // legacy "chat" cap of 4096 is a separate latent risk: it can truncate a
+      // large/hybrid draft (quizzes now go up to 40 Qs) into invalid JSON. (It
+      // is NOT the cause of the empty-questions failure handled below, which is
+      // valid JSON with an empty array.) maxTokens is only a ceiling, so short
+      // conversational turns (DELETE/REORDER/NONE) cost nothing extra.
+      let { data, metadata } = await generateWithFallback(copilotSystemPrompt, userPrompt, COPILOT_RESPONSE_SCHEMA, {
+        taskType: "generation",
         route: "copilot.chat",
         promptVersion: "copilot.system:v1",
         userId: tutorIdForCopilot,
+        maxTokens: 20_000,
       });
 
-      const structured = extractStructuredCopilotResponse(data);
+      let structured = extractStructuredCopilotResponse(data);
 
       console.log(`[COPILOT_DEBUG] Structured response: action=${structured.action}, raw_questions=${structured.questions.length}, draftSize=${currentDraft.length}`);
+
+      // ── Empty-questions safety net ─────────────────────────────────────────
+      // Under Anthropic tool-use the maker (Claude Opus 4.8) intermittently
+      // returns a structurally-valid object whose "reply" narrates "I built your
+      // quiz" while "questions" is EMPTY — it describes the work in prose instead
+      // of producing it. This is NOT a parse failure (the JSON parses cleanly),
+      // so the repair ladder can't recover it. When a generating action comes
+      // back with zero questions, retry once with a forceful corrective prompt;
+      // if it still fails, replace the model's misleading success narrative with
+      // an honest one so the tutor is never told a quiz was built that wasn't.
+      const GENERATING_ACTIONS = ["ADD", "REPLACE_ALL", "REPLACE_SELECTED"];
+      let emptyQuestionsRetry: "none" | "succeeded" | "failed" = "none";
+      if (GENERATING_ACTIONS.includes(structured.action) && structured.questions.length === 0) {
+        // The tutor's intent (action + which slots to replace) lived in this
+        // original turn — the corrective retry's only job is to produce the
+        // questions, so preserve these for REPLACE_SELECTED.
+        const originalAction = structured.action;
+        const originalPositions = structured.positions;
+        console.warn(`[COPILOT_DEBUG] empty_questions_retry_attempted: action=${structured.action}, draftSize=${currentDraft.length}`);
+        sendEvent("stage", { stage: "drafting", label: "Regenerating questions" });
+        const correctiveUserPrompt = [
+          userPrompt,
+          `=== CRITICAL CORRECTION ===\nYour previous response set action="${structured.action}" but returned an EMPTY "questions" array — you described the questions in "reply" without actually producing them. This is invalid. Return the FULL question objects NOW: one complete object per question inside the "questions" array, honouring the PARAMETRIC REQUIREMENTS above (exact counts and the MCQ/structured split). The "questions" array MUST NOT be empty. Keep "reply" to a single short sentence.`,
+        ].join("\n\n");
+        try {
+          const retry = await generateWithFallback(copilotSystemPrompt, correctiveUserPrompt, COPILOT_RESPONSE_SCHEMA, {
+            taskType: "generation",
+            route: "copilot.chat_retry",
+            promptVersion: "copilot.system:v1",
+            userId: tutorIdForCopilot,
+            maxTokens: 20_000,
+          });
+          const retryStructured = extractStructuredCopilotResponse(retry.data);
+          if (retryStructured.questions.length > 0) {
+            // Carry the original replace-selected intent onto the retry result
+            // so a retry that produced questions but dropped/changed positions
+            // (or downgraded to REPLACE_ALL) doesn't wipe the wrong slots.
+            if (originalAction === "REPLACE_SELECTED") {
+              retryStructured.action = "REPLACE_SELECTED";
+              if (retryStructured.positions.length === 0) {
+                retryStructured.positions = originalPositions;
+              }
+            }
+            structured = retryStructured;
+            metadata = retry.metadata;
+            emptyQuestionsRetry = "succeeded";
+          } else {
+            emptyQuestionsRetry = "failed";
+          }
+        } catch (err: any) {
+          emptyQuestionsRetry = "failed";
+          console.warn(`[COPILOT_DEBUG] empty_questions_retry threw: ${err?.message || "unknown error"}`);
+        }
+        console.log(`[COPILOT_DEBUG] empty_questions_retry outcome=${emptyQuestionsRetry}, final_questions=${structured.questions.length}`);
+        // Still empty for a generating action → the "I built your quiz" reply is
+        // false. Replace it so the honest "no changes applied" suffix isn't
+        // contradicted by a success narrative.
+        if (structured.questions.length === 0) {
+          structured = {
+            ...structured,
+            reply: "I couldn't generate the questions this time — the model returned an empty draft. Please try again; if it keeps happening, try reducing the number of questions or simplifying the request.",
+          };
+        }
+      }
 
       // ── Step 1: Normalise raw question objects into DraftQuestion shape,
       //    tracking which attempted to be graph questions but failed validation
@@ -5523,6 +4803,22 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
       console.log(`[DRAFT_DEBUG] After normalization: total=${normalisedQuestions.length}, graphs=${normalisedQuestions.filter((q) => q.questionType === "graph").length}`);
 
+      // Surface silent normalisation drops: when the model claims questions but
+      // they fail to normalise (e.g. a fallback model mislabels question_type or
+      // omits the mark scheme), log a per-type breakdown so a "0 questions"
+      // outcome is diagnosable instead of mysterious.
+      const droppedDuringNorm = normResults.filter((r) => r.normalised === null).length;
+      if (droppedDuringNorm > 0) {
+        const droppedTypes = structured.questions.reduce((acc: Record<string, number>, q: any, i: number) => {
+          if (normResults[i]?.normalised === null) {
+            const t = String(q.question_type || q.questionType || "untyped").toLowerCase() || "untyped";
+            acc[t] = (acc[t] || 0) + 1;
+          }
+          return acc;
+        }, {});
+        console.warn(`[NORMALISE_DROP] ${droppedDuringNorm}/${structured.questions.length} question(s) dropped during normalisation. By question_type: ${JSON.stringify(droppedTypes)}`);
+      }
+
       // ── Step 2: Graph shortfall detection + targeted retry
       const requestedAsGraphCount = normResults.filter((r) => r.attemptedGraph).length;
       const validGraphAfterNorm = normalisedQuestions.filter((q) => q.questionType === "graph").length;
@@ -5537,7 +4833,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         // Some graph questions failed repairGraphSpec — retry with an explicit spec prompt
         const retryUserPrompt = `Generate exactly ${graphShortfall} graph question${graphShortfall !== 1 ? "s" : ""} on this topic: ${text}\n\nReturn a JSON object with key "questions" containing the graph questions.`;
         try {
-          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt, undefined, {
+          const { data: retryData } = await generateWithFallback(GRAPH_RETRY_SYSTEM_PROMPT, retryUserPrompt, COPILOT_RESPONSE_SCHEMA, {
             taskType: "generation",
             route: "copilot.graph_retry",
             promptVersion: "copilot.graph_retry:v1",
@@ -5572,6 +4868,14 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         }
       }
 
+      // ── Cap enforcement: never let the applied draft exceed the platform
+      //    maximum (see enforceDraftCap). Done BEFORE the preview emit and the
+      //    verifier audit so we only show/verify the questions that will
+      //    actually survive (no misleading over-count, no wasted audit work).
+      const capResult = enforceDraftCap(structured.action, currentDraft.length, normalisedQuestions);
+      normalisedQuestions = capResult.questions;
+      const draftCapWarning = capResult.warning;
+
       // ── Step 2.5: Verifier audit on NEW MCQ questions ──
       // Same ChatGPT → Gemini verifier chain as the main quiz pipeline: checks
       // each answer, fixes any that are wrong, and writes the Soma explanation.
@@ -5596,6 +4900,14 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
           });
         }
       });
+
+      // Stream a preview of the drafted questions so the tutor sees them forming
+      // while the (slow) verifier audit runs below. Display-only — the
+      // authoritative, verified set ships in the final "done" event.
+      if (wantsStream && newQuestionActions.includes(structured.action) && normalisedQuestions.length > 0) {
+        sendEvent("preview", { action: structured.action, questions: normalisedQuestions });
+      }
+
       if (newQuestionActions.includes(structured.action) && mcqToCheck.length > 0) {
         const meta = (assessmentContext as any)?.assessmentMeta || {};
         const checkerContext: SomaGenerationContext = {
@@ -5723,7 +5035,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       });
 
       const responsePayload = {
-        reply: `${structured.reply}${replySuffix}${graphVerificationBlock}`,
+        reply: `${structured.reply}${replySuffix}${graphVerificationBlock}${draftCapWarning}`,
         action: structured.action,
         questions: normalisedQuestions,
         positions: structured.positions,
@@ -5770,18 +5082,20 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       } else {
         return sendInternalError(req, res, err, "copilot.generate", "We could not generate the copilot response. Please try again.");
       }
+    } finally {
+      if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
     }
   });
 
 
   // ─── Super Admin Routes ──────────────────────────────────────────
 
-  app.get("/api/super-admin/users", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/users", requireSuperAdmin, async (req, res) => {
     try {
       const users = await storage.getAllSomaUsers();
       res.json(users);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch users" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_users", "Failed to fetch users");
     }
   });
 
@@ -5794,16 +5108,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await storage.deleteSomaUser(userId);
       res.json({ message: "User deleted" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete user" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_user", "Failed to delete user");
     }
   });
 
-  app.get("/api/super-admin/quizzes", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/quizzes", requireSuperAdmin, async (req, res) => {
     try {
       const quizzes = await storage.getAllSomaQuizzes();
       res.json(quizzes);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quizzes" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quizzes", "Failed to fetch quizzes");
     }
   });
 
@@ -5816,7 +5130,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await purgeStorageObjects(storagePaths);
       res.json({ message: "Quiz deleted" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_quiz", "Failed to delete quiz");
     }
   });
 
@@ -5837,7 +5151,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     });
   });
 
-  app.get("/api/super-admin/stats", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/stats", requireSuperAdmin, async (req, res) => {
     try {
       const [users, quizzes] = await Promise.all([
         storage.getAllSomaUsers(),
@@ -5853,16 +5167,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         publishedQuizzes: quizzes.filter((q) => q.status === "published").length,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch stats" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_stats", "Failed to fetch stats");
     }
   });
 
-  app.get("/api/super-admin/tutors", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/tutors", requireSuperAdmin, async (req, res) => {
     try {
       const tutors = await storage.getTutorDashboardSummaries();
       res.json(tutors);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch tutor dashboard data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_tutor_dashboard_data", "Failed to fetch tutor dashboard data");
     }
   });
 
@@ -5874,7 +5188,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!detail) return res.status(404).json({ message: "Tutor not found" });
       res.json(detail);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch tutor detail" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_tutor_detail", "Failed to fetch tutor detail");
     }
   });
 
@@ -5898,7 +5212,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       }));
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reports" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reports", "Failed to fetch reports");
     }
   });
 
@@ -5906,7 +5220,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     try {
       res.json([]);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch submissions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_submissions", "Failed to fetch submissions");
     }
   });
 
@@ -5926,7 +5240,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json({ ...payload, structuredFeedback });
     } catch (err: any) {
       console.error("[Student Dashboard] Error:", err);
-      res.status(500).json({ message: err.message || "Failed to load dashboard" });
+      return sendInternalError(req, res, err, "routes.failed_to_load_dashboard", "Failed to load dashboard");
     }
   });
 
@@ -5937,7 +5251,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const unreadCount = items.filter((n) => !n.readAt).length;
       res.json({ items, unreadCount });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_notifications", "Failed to fetch notifications");
     }
   });
 
@@ -5950,7 +5264,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!updated) return res.status(404).json({ message: "Notification not found" });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to mark notification read" });
+      return sendInternalError(req, res, err, "routes.failed_to_mark_notification_read", "Failed to mark notification read");
     }
   });
 
@@ -5960,7 +5274,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const count = await storage.markAllStudentNotificationsRead(studentId);
       res.json({ updated: count });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to mark notifications read" });
+      return sendInternalError(req, res, err, "routes.failed_to_mark_notifications_read", "Failed to mark notifications read");
     }
   });
 
@@ -5973,7 +5287,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!deleted) return res.status(404).json({ message: "Notification not found" });
       res.json({ deleted: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to dismiss notification" });
+      return sendInternalError(req, res, err, "routes.failed_to_dismiss_notification", "Failed to dismiss notification");
     }
   });
 
@@ -5983,7 +5297,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to load syllabus insights" });
+      return sendInternalError(req, res, err, "routes.failed_to_load_syllabus_insights", "Failed to load syllabus insights");
     }
   });
 
@@ -5995,7 +5309,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const dashboard = await buildStudentDashboard({ storage, student });
       res.json({ subjects: dashboard.subjects });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch coverage" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_coverage", "Failed to fetch coverage");
     }
   });
 
@@ -6018,7 +5332,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         })),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_performance", "Failed to fetch performance");
     }
   });
 
@@ -6087,7 +5401,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       );
       res.json({ tips, cacheHit, elapsedMs: Math.round(elapsed * 10) / 10 });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch study tips" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_study_tips", "Failed to fetch study tips");
     }
   });
 
@@ -6107,7 +5421,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const reminders = composeReminders(subjectLevels, { max: 8 });
       res.json({ reminders });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reminders" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reminders", "Failed to fetch reminders");
     }
   });
 
@@ -6120,7 +5434,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const topics = getCurriculumTopics(subject, pickEffectiveLevel([level]));
       res.json({ subject, level, topics });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topics", "Failed to fetch topics");
     }
   });
 
@@ -6149,7 +5463,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json(flag);
     } catch (err: any) {
       console.error("[Student Flag] Error:", err);
-      res.status(500).json({ message: err.message || "Failed to flag question" });
+      return sendInternalError(req, res, err, "routes.failed_to_flag_question", "Failed to flag question");
     }
   });
 
@@ -6161,7 +5475,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await storage.unflagQuestion(studentId, questionId);
       res.json({ ok: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to remove flag" });
+      return sendInternalError(req, res, err, "routes.failed_to_remove_flag", "Failed to remove flag");
     }
   });
 
@@ -6171,61 +5485,31 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const flags = await storage.listFlaggedQuestionsForStudent(studentId);
       res.json({ flags });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list flags" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_flags", "Failed to list flags");
     }
   });
 
   app.get("/api/quizzes/available", requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
-      const allQuizzes = await storage.getSomaQuizzes();
+      // getQuizAssignmentsForStudent is already WHERE-scoped to this student and
+      // joins the quiz row, so we build the response straight from it. The old
+      // path also fetched getSomaQuizzes() (a full-table scan across every
+      // tutor's quizzes) just to intersect — unnecessary and O(all quizzes).
       const assignments = await storage.getQuizAssignmentsForStudent(studentId);
 
-      console.log(`[Available] Fetching for Student: ${studentId}, Found Assignments: ${assignments.length}`);
-
-      // X-ray: log every raw assignment before any filtering
-      for (const a of assignments) {
-        console.log(`[Available]   Assignment quizId=${a.quizId} status="${a.status}" dueDate=${a.dueDate || "null"} quizStatus="${a.quiz?.status}" quizTitle="${a.quiz?.title}"`);
-      }
-
-      const assignmentMap = new Map<number, any>();
-      for (const a of assignments) {
-        if (a.status === "pending") {
-          assignmentMap.set(a.quizId, a);
-        }
-      }
-
-      const pendingCount = assignmentMap.size;
-      const publishedQuizzes = allQuizzes.filter(q => !q.isArchived && q.status === "published");
-
-      console.log(`[Available] Student ${studentId}: ${assignments.length} total assignments, ${pendingCount} pending, ${publishedQuizzes.length} published quizzes, ${allQuizzes.length} total quizzes`);
-
-      // Log any quiz that has a pending assignment but is NOT published (ghost assignment root cause)
-      for (const quizId of Array.from(assignmentMap.keys())) {
-        const matchingQuiz = allQuizzes.find(q => q.id === quizId);
-        if (!matchingQuiz) {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz not found in DB!`);
-        } else if (matchingQuiz.status !== "published") {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz status="${matchingQuiz.status}" (not published) — title="${matchingQuiz.title}"`);
-        } else if (matchingQuiz.isArchived) {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz is archived — title="${matchingQuiz.title}"`);
-        }
-      }
-
-      const available = publishedQuizzes
-        .filter(q => assignmentMap.has(q.id))
-        .map(q => ({
-          ...q,
+      const available = assignments
+        .filter((a) => a.status === "pending" && a.quiz && !a.quiz.isArchived && a.quiz.status === "published")
+        .map((a) => ({
+          ...a.quiz,
           isAssigned: true,
-          assignmentStatus: "pending",
-          dueDate: assignmentMap.get(q.id)?.dueDate || null,
+          assignmentStatus: "pending" as const,
+          dueDate: a.dueDate || null,
         }));
-
-      console.log(`[Available] Returning ${available.length} available quizzes for student ${studentId}`);
 
       return res.json(available);
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to fetch available quizzes" });
+      return sendInternalError(req, res, err, "quizzes.available", "Failed to fetch available quizzes");
     }
   });
 
@@ -6322,7 +5606,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
             questionStats[key] = { prompt: meta.stem, correct: 0, wrong: 0, commonMistakes: {} };
           }
 
-          if (answer === meta.correctAnswer) {
+          // Use the canonical whitespace-tolerant comparison (same as submit /
+          // regrade). `meta.correctAnswer` is the raw effectiveCorrectAnswer and
+          // is NOT trimmed, so a strict === here mis-counts correct answers as
+          // wrong whenever the stored option carries stray whitespace.
+          if (answersMatch(answer, meta.correctAnswer)) {
             questionStats[key].correct += 1;
           } else {
             questionStats[key].wrong += 1;
@@ -6358,7 +5646,7 @@ ${JSON.stringify({
 
       return res.json({ analysis: data, submissionCount: reports.length, metadata, questionStats });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to analyze class" });
+      return sendInternalError(req, res, err, "routes.failed_to_analyze_class", "Failed to analyze class");
     }
   });
 
@@ -6417,8 +5705,8 @@ ${JSON.stringify({
     questionCount: z.number()
       .int("Question count must be a whole number")
       .min(1, "Generate at least 1 question")
-      .max(50, "You can generate at most 50 questions at once")
-      .default(8),
+      .max(MAX_QUESTIONS_PER_QUIZ, `You can generate at most ${MAX_QUESTIONS_PER_QUIZ} questions at once`)
+      .default(12),
     difficultyDistribution: z.object({
       // 0 is valid — a tutor may want an exam with no easy (or no hard) questions.
       easy: z.number().min(0, "Easy percentage cannot be negative").max(100, "Easy percentage cannot exceed 100"),
@@ -6659,6 +5947,10 @@ ${JSON.stringify({
           warnings: result.warnings,
         });
       }
+      if (result.questions.length > MAX_QUESTIONS_PER_QUIZ) {
+        console.warn(`[SOMA] Quiz "${quizTitle}" overproduced ${result.questions.length} questions — trimming to cap of ${MAX_QUESTIONS_PER_QUIZ} before persist.`);
+        result.questions = result.questions.slice(0, MAX_QUESTIONS_PER_QUIZ);
+      }
 
       const quiz = await storage.createSomaQuiz({
         title: quizTitle,
@@ -6835,6 +6127,10 @@ ${JSON.stringify({
           warnings: result.warnings,
         });
       }
+      if (result.questions.length > MAX_QUESTIONS_PER_QUIZ) {
+        console.warn(`[SOMA] Tutor quiz "${quizTitle}" overproduced ${result.questions.length} questions — trimming to cap of ${MAX_QUESTIONS_PER_QUIZ} before persist.`);
+        result.questions = result.questions.slice(0, MAX_QUESTIONS_PER_QUIZ);
+      }
 
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
@@ -6943,95 +6239,7 @@ ${JSON.stringify({
     }
   });
 
-  type SomaReadAuthUser = { id: string | string[]; role?: string | null; email?: string | null };
-
-  function logSomaPermissionDenied(params: {
-    route: string;
-    quizId?: number;
-    userId?: string;
-    role?: string | null;
-    reason: string;
-  }) {
-    console.warn(JSON.stringify({ event: "permission_denied", resource: "soma_quiz", ...params }));
-  }
-
-  async function canReadSomaQuiz(quiz: any, authUser: SomaReadAuthUser): Promise<boolean> {
-    const userId = String(authUser.id);
-    if (authUser.role === "super_admin") return true;
-    if (authUser.role === "tutor") return quiz.authorId === userId;
-    const assignments = await storage.getQuizAssignmentsForStudent(userId);
-    return assignments.some((assignment) => assignment.quizId === quiz.id);
-  }
-
-  async function requireSomaQuizReadAccess(req: Request, res: Response, quiz: any): Promise<boolean> {
-    const authUser = (req as any).authUser as SomaReadAuthUser;
-    const allowed = await canReadSomaQuiz(quiz, authUser);
-    if (!allowed) {
-      logSomaPermissionDenied({
-        route: req.path,
-        quizId: quiz.id,
-        userId: String(authUser.id),
-        role: authUser.role,
-        reason: "soma_quiz_not_assigned_or_not_owned",
-      });
-      res.status(403).json({ message: "Forbidden: you do not have access to this quiz" });
-      return false;
-    }
-    return true;
-  }
-
-  app.get("/api/soma/quizzes", requireSupabaseAuth, async (req, res) => {
-    try {
-      const authUser = (req as any).authUser as SomaReadAuthUser;
-      const authUserId = String(authUser.id);
-      const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
-
-      if (authUser.role === "super_admin") {
-        return res.json(allQuizzes);
-      }
-
-      if (authUser.role === "tutor") {
-        return res.json(allQuizzes.filter((q) => q.authorId === authUserId));
-      }
-
-      const assignments = await storage.getQuizAssignmentsForStudent(authUserId);
-      const assignedQuizIds = new Set(assignments.map((assignment) => assignment.quizId));
-      return res.json(allQuizzes.filter((q) => assignedQuizIds.has(q.id)));
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.list", "Something went wrong while loading quizzes. Please try again.");
-    }
-  });
-
-  app.get("/api/soma/quizzes/:id", requireSupabaseAuth, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
-
-      const quiz = await storage.getSomaQuiz(id);
-      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
-      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
-      res.json(quiz);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.get", "Something went wrong while loading this quiz. Please try again.");
-    }
-  });
-
-  app.get("/api/soma/quizzes/:id/questions", requireSupabaseAuth, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
-
-      const quiz = await storage.getSomaQuiz(id);
-      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
-      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
-
-      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter(isServableToStudent);
-      const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
-      res.json(sanitized);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.questions", "Something went wrong while loading this quiz. Please try again.");
-    }
-  });
+  // Student quiz list/detail/question/check-submission reads now live in the autoloaded studentQuizTaking module.
 
   app.post("/api/soma/quizzes/:id/submit", requireSupabaseAuth, async (req, res) => {
     try {
@@ -7101,18 +6309,23 @@ ${JSON.stringify({
         throw dbErr;
       }
 
+      // Resolve everything that can throw BEFORE responding. Previously the
+      // quiz lookup ran after res.json(), so a failure there hit the outer
+      // catch and attempted a second response on an already-sent stream. The
+      // quiz is needed by the notification + background grading below anyway.
+      const requestId = getRequestId(req);
+      const quiz = await storage.getSomaQuiz(quizId);
+
       // `hasStructured` tells the client to show a "being marked" screen rather
       // than a (still-incomplete) score, since structured marking runs async.
       res.json({ ...report, hasStructured });
 
       // Mark quiz assignment as completed
-      const requestId = getRequestId(req);
       storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch((err) => logBackgroundTaskFailure("quiz-assignment.update-status-completed", "warning", err, {
         requestId,
         quizId,
         studentId,
       }));
-      const quiz = await storage.getSomaQuiz(quizId);
       if (quiz?.authorId) {
         const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
         const durationText = durationMs && durationMs > 0 ? `${Math.floor(durationMs / 60000)}m` : "unknown duration";
@@ -7215,20 +6428,6 @@ ${JSON.stringify({
     }
   });
 
-  app.get("/api/soma/quizzes/:id/check-submission", requireSupabaseAuth, async (req, res) => {
-    try {
-      const quizId = parseInt(String(req.params.id));
-      if (isNaN(quizId)) {
-        return res.status(400).json({ message: "quizId required" });
-      }
-      const studentId = String((req as any).authUser.id);
-      const exists = await storage.checkSomaSubmission(quizId, studentId);
-      res.json({ submitted: exists });
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.checkSubmission", "Something went wrong while checking your submission. Please try again.");
-    }
-  });
-
   app.get("/api/soma/reports/:reportId/review", requireSupabaseAuth, async (req, res) => {
     try {
       const reportId = parseInt(String(req.params.reportId));
@@ -7256,11 +6455,18 @@ ${JSON.stringify({
         }
       }
 
-      const [questions, diagnoses, quiz] = await Promise.all([
+      const [allQuestions, diagnoses, quiz] = await Promise.all([
         storage.getSomaQuestionsByQuizId(report.quizId),
         (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
         storage.getSomaQuiz(report.quizId),
       ]);
+
+      // Only the SERVED questions count toward the review. The score numerator
+      // was computed over isServableToStudent questions at submit time, and the
+      // student only ever saw those — so the review must use the same set, else
+      // the page sums marks over excluded/blocked/needs_review questions and
+      // reports a lower percentage than the student actually achieved.
+      const questions = allQuestions.filter(isServableToStudent);
 
       // The tutor who authored the quiz (or a super admin) may confirm the
       // AI-suggested marks on structured answers.
@@ -7339,6 +6545,13 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
       const authUserId = String(authUser.id);
       if (report.studentId !== authUserId) {
         return res.status(403).json({ message: "You can only request a review of your own assessment." });
+      }
+
+      // structuredMarking is seeded at submit time (before AI marking finishes),
+      // so a non-empty map does NOT mean marking is done. Require a completed
+      // report so a student can't request a review of an in-flight/failed mark.
+      if (report.status !== "completed") {
+        return res.status(409).json({ message: "This assessment is still being marked. Please try again once your results are ready." });
       }
 
       const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;
@@ -7484,7 +6697,12 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
 
       await storage.updateSomaReport(reportId, { status: "pending", aiFeedbackHtml: null });
 
-      const questions = await storage.getSomaQuestionsByQuizId(report.quizId);
+      // Grade over the SAME served set the submit path uses
+      // (.filter(isServableToStudent)). Without this, retry feeds
+      // excluded/blocked/needs_review questions into the grader, inflating
+      // maxPossibleScore and producing a lower percentage + wrong feedback than
+      // the original submission would have.
+      const questions = (await storage.getSomaQuestionsByQuizId(report.quizId)).filter(isServableToStudent);
       const answers = (report.answersJson as Record<string, string>) || {};
       const maxPossibleScore = questions.reduce((s, q) => s + q.marks, 0);
 
