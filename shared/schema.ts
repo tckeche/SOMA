@@ -181,7 +181,12 @@ export const somaUsers = pgTable("soma_users", {
   role: text("role").notNull().default("student"),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Auth hot path looks users up by email on every request; role is filtered
+  // on every tutor/admin dashboard load (getAllStudents, tutor summaries).
+  index("soma_users_email_idx").on(table.email),
+  index("soma_users_role_idx").on(table.role),
+]);
 
 export const somaQuizzes = pgTable("soma_quizzes", {
   id: serial("id").primaryKey(),
@@ -221,7 +226,10 @@ export const somaQuizzes = pgTable("soma_quizzes", {
   status: text("status").notNull().default("published"),
   isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Every tutor/admin dashboard load filters quizzes by their author.
+  index("soma_quizzes_author_id_idx").on(table.authorId),
+]);
 
 export const somaQuestions = pgTable("soma_questions", {
   id: serial("id").primaryKey(),
@@ -398,7 +406,10 @@ export const studentSubjects = pgTable("student_subjects", {
   level: text("level").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Filtered by student on the mastery map + student-detail + enrolment reads.
+  index("student_subjects_student_id_idx").on(table.studentId),
+]);
 
 export const studentTopicMastery = pgTable("student_topic_mastery", {
   id: serial("id").primaryKey(),
@@ -437,7 +448,10 @@ export const tutorNotifications = pgTable("tutor_notifications", {
   payload: jsonb("payload"),
   readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // The tutor notifications bell filters by tutor on every tutor screen.
+  index("tutor_notifications_tutor_id_idx").on(table.tutorId),
+]);
 
 export const suggestedAssessments = pgTable("suggested_assessments", {
   id: serial("id").primaryKey(),

@@ -29,6 +29,8 @@ import { validateQuestionQuality, isServableToStudent } from "./services/questio
 import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
 import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
+import { resolveCatalogueLabelsForSubtopicIds } from "./services/subtopicResolver";
+import { cleanTopicLabel } from "./services/questionTagNormalizer";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -1586,10 +1588,21 @@ async function updateMasteryFromSubmission(
     subtopicId: number | null;
     learningRequirementId: number | null;
   }
+  // Resolve human-readable catalogue titles for FK-linked questions so the
+  // stored mastery label is a real name ("Algebra"), never a bare catalogue
+  // number that the AI Maker may have copied into topic_tag. Batched (single
+  // query) to avoid an N+1 on the hot grading path. When there is no FK we
+  // fall back to a number-stripped tag, and only then to "General" — the read
+  // surfaces (insights radar, tutor cohort/detail) display this value directly.
+  const catalogueLabels = await resolveCatalogueLabelsForSubtopicIds(
+    questions.map((q) => q.subtopicId),
+  ).catch(() => new Map());
+
   const groups = new Map<string, Bucket>();
   for (const q of questions) {
-    const topic = q.topicTag || "General";
-    const subtopic = q.subtopicTag || "";
+    const labels = q.subtopicId ? catalogueLabels.get(q.subtopicId) : undefined;
+    const topic = labels?.topicTitle || cleanTopicLabel(q.topicTag) || "General";
+    const subtopic = labels?.subtopicTitle || cleanTopicLabel(q.subtopicTag) || "";
     const subtopicId = q.subtopicId ?? null;
     const learningRequirementId = q.learningRequirementId ?? null;
     const key = `${topic}|||${subtopic}|||${subtopicId ?? ""}|||${learningRequirementId ?? ""}`;
@@ -2817,6 +2830,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
       const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(1).max(MAX_QUESTIONS_PER_QUIZ).default(MAX_QUESTIONS_PER_QUIZ) }).parse(req.body || {});
+      // Adoption guard (parity with /ai/suggested-assessments): only a tutor who
+      // has adopted this student may publish for them. Without it, listStudentSubjects
+      // (which is not tutor-scoped) leaks whether an arbitrary student exists/has
+      // metadata and lets the route fire a notification referencing them.
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
       const subjects = await storage.listStudentSubjects(studentId);
       if (subjects.length === 0) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
@@ -2911,6 +2930,31 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             )
               ? (item.purpose as "struggling_areas" | "stretch_strengths" | "revision")
               : "general";
+            // Feed the maker FK-linked approved examiner seeds (parity with the
+            // /soma/generate and tutor-generate paths). Without this the prose
+            // in supportingDocText carries no ids, so generated.seedMisconceptionIds
+            // stays empty and every targetMisconceptionIds resolves to null —
+            // meaning these remediation quizzes could never produce answer
+            // diagnoses or feed the misconception heatmap/revision plan. Prefer
+            // the topic-scoped rows we already loaded; fall back to the
+            // syllabus-code seed set when this topic has no catalogue rows.
+            let examinerSeeds: ExaminerSeed[] = topicMisconceptions.slice(0, 6).map((m: any) => ({
+              id: m.id,
+              topic: m.topic,
+              subtopic: m.subtopic ?? null,
+              misconception: m.misconception,
+              studentError: m.studentError,
+              correctApproach: m.correctApproach,
+              frequency: m.frequency,
+              sourceQuote: m.sourceQuote ?? null,
+              sourcePage: m.sourcePage ?? null,
+            }));
+            if (examinerSeeds.length === 0) {
+              examinerSeeds = await listApprovedSeeds({
+                board: cached.examBody,
+                syllabusCode: cached.syllabusCode,
+              });
+            }
             const generated = await generateAuditedQuiz({
               topic: item.topic,
               subject: item.subject,
@@ -2922,6 +2966,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               purpose: purposeForPlanner,
               copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
               supportingDocText: topicSyllabusContext + topicExaminerContext,
+              examinerSeeds,
             });
             if (generated.warnings.length > 0) {
               console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
@@ -5367,6 +5412,13 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
       const authUserId = String(authUser.id);
       if (report.studentId !== authUserId) {
         return res.status(403).json({ message: "You can only request a review of your own assessment." });
+      }
+
+      // structuredMarking is seeded at submit time (before AI marking finishes),
+      // so a non-empty map does NOT mean marking is done. Require a completed
+      // report so a student can't request a review of an in-flight/failed mark.
+      if (report.status !== "completed") {
+        return res.status(409).json({ message: "This assessment is still being marked. Please try again once your results are ready." });
       }
 
       const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;

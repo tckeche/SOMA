@@ -151,6 +151,18 @@ const BOOTSTRAP_QUERIES = [
   `CREATE INDEX IF NOT EXISTS soma_reports_quiz_id_idx ON soma_reports (quiz_id)`,
   `CREATE INDEX IF NOT EXISTS quiz_assignments_student_id_idx ON quiz_assignments (student_id)`,
   `CREATE INDEX IF NOT EXISTS student_notifications_student_id_created_at_idx ON student_notifications (student_id, created_at)`,
+  // Additional hot-path indexes (audit perf H3). Every tutor/admin dashboard
+  // load filters soma_quizzes by author_id and soma_users by role; the auth
+  // hot path looks users up by email; the mastery map / student detail filter
+  // student_subjects by student_id; the bell filters tutor_notifications by
+  // tutor_id. These columns were unindexed → sequential scans. (board+code on
+  // examiner_misconceptions is already covered by the (board,syllabus_code,topic)
+  // composite above, so no separate index is needed there.)
+  `CREATE INDEX IF NOT EXISTS soma_quizzes_author_id_idx ON soma_quizzes (author_id)`,
+  `CREATE INDEX IF NOT EXISTS soma_users_role_idx ON soma_users (role)`,
+  `CREATE INDEX IF NOT EXISTS soma_users_email_idx ON soma_users (email)`,
+  `CREATE INDEX IF NOT EXISTS student_subjects_student_id_idx ON student_subjects (student_id)`,
+  `CREATE INDEX IF NOT EXISTS tutor_notifications_tutor_id_idx ON tutor_notifications (tutor_id)`,
   `ALTER TABLE soma_quizzes ADD COLUMN IF NOT EXISTS pdf_marking_mode TEXT NOT NULL DEFAULT 'manual'`,
   `ALTER TABLE assessment_attachments ADD COLUMN IF NOT EXISTS document_role TEXT NOT NULL DEFAULT 'worksheet'`,
   `ALTER TABLE submission_uploads ADD COLUMN IF NOT EXISTS ai_marking_status TEXT`,

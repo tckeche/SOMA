@@ -158,7 +158,7 @@ function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
         code({ className: codeClassName, children, ...props }) {
           return (
             <code
-              className="bg-foreground/10 text-violet-300 px-1.5 py-0.5 rounded text-[0.85em] font-mono border border-border/30"
+              className="bg-foreground/10 text-primary px-1.5 py-0.5 rounded text-[0.85em] font-mono border border-border/30 break-words"
               {...props}
             >
               {children}
@@ -190,7 +190,7 @@ function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
           return <td className="border border-border/50 px-3 py-2">{children}</td>;
         },
         blockquote({ children }) {
-          return <blockquote className="border-l-2 border-violet-500/50 pl-4 my-2 text-muted-foreground italic">{children}</blockquote>;
+          return <blockquote className="border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic">{children}</blockquote>;
         },
         strong({ children }) {
           return <strong className="font-semibold text-foreground">{children}</strong>;

@@ -86,6 +86,47 @@ type ExactOutcome =
  * empty list when nothing matches (the caller then falls back to an
  * un-scoped lookup which is more permissive but rarely needed).
  */
+export interface CatalogueLabel {
+  topicTitle: string;
+  subtopicTitle: string;
+}
+
+/**
+ * Batch-resolve the canonical catalogue titles for a set of subtopic ids.
+ *
+ * This is the authoritative source for human-readable topic/subtopic names
+ * when a row already carries the `subtopicId` FK (e.g. `soma_questions`,
+ * `student_topic_mastery`). It is the reverse of {@link resolveSubtopicId}:
+ * given the FK, return the real `topics.title` / `subtopics.title` so callers
+ * never have to fall back to the free-text tag (which can be a bare number).
+ *
+ * Single query, deduped — safe to call once per request batch (no N+1).
+ * Returns an empty map when db is unavailable or no ids resolve.
+ */
+export async function resolveCatalogueLabelsForSubtopicIds(
+  subtopicIds: Array<number | null | undefined>,
+): Promise<Map<number, CatalogueLabel>> {
+  const out = new Map<number, CatalogueLabel>();
+  if (!db) return out;
+  const uniq = Array.from(
+    new Set(subtopicIds.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0)),
+  );
+  if (uniq.length === 0) return out;
+  const rows = await db
+    .select({
+      subtopicId: subtopics.id,
+      subtopicTitle: subtopics.title,
+      topicTitle: topics.title,
+    })
+    .from(subtopics)
+    .innerJoin(topics, eq(topics.id, subtopics.topicId))
+    .where(inArray(subtopics.id, uniq));
+  for (const r of rows) {
+    out.set(r.subtopicId, { topicTitle: r.topicTitle, subtopicTitle: r.subtopicTitle });
+  }
+  return out;
+}
+
 export async function resolveSyllabusIdsForCode(syllabusCode: string | null | undefined): Promise<number[]> {
   if (!db) return [];
   const code = (syllabusCode ?? "").trim();

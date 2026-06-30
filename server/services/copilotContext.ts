@@ -434,12 +434,16 @@ export function formatCopilotContextAsText(ctx: CatalogueCopilotContext): string
     }
     lines.push(`Selected topics (${ctx.selectedTopics.length}):`);
     for (const t of ctx.selectedTopics) {
-      lines.push(`  • ${t.topic.topicNumber} ${t.topic.title}`);
+      // The syllabus number is rendered as a leading [tag] so the TITLE is the
+      // unambiguous copy-target for topic_tag/subtopic_tag (see TAGGING rule in
+      // aiPipeline.ts). The scope gate (questionScope.ts → lookupInInventory)
+      // matches tags by title only, so a tag must never carry the number.
+      lines.push(`  • [${t.topic.topicNumber}] ${t.topic.title}`);
       if (t.subtopics.length > 0) {
         lines.push(`    Subtopics:`);
         for (const sub of t.subtopics) {
           const tier = sub.coreOrExtended ? ` [${sub.levelTier}/${sub.coreOrExtended}]` : ` [${sub.levelTier}]`;
-          lines.push(`      - ${sub.subtopicNumber} ${sub.title}${tier}`);
+          lines.push(`      - [${sub.subtopicNumber}] ${sub.title}${tier}`);
         }
       }
       if (t.learningRequirements.length > 0) {
@@ -469,7 +473,7 @@ export function formatCopilotContextAsText(ctx: CatalogueCopilotContext): string
     lines.push(`Subject-level digest (no specific topic picked):`);
     lines.push(`  Topics (${ctx.subjectDigest.topics.length}):`);
     for (const t of ctx.subjectDigest.topics) {
-      lines.push(`    • ${t.topicNumber} ${t.title}`);
+      lines.push(`    • [${t.topicNumber}] ${t.title}`);
     }
     if (ctx.subjectDigest.papers.length > 0) {
       const papers = ctx.subjectDigest.papers

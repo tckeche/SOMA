@@ -826,6 +826,24 @@ export default function SomaQuizReview() {
                         Cambridge examiners flagged this {yearLabel}
                       </p>
                       <p className="text-sm text-foreground">{m.misconception}</p>
+                      {m.studentError && (
+                        <p className="text-sm text-foreground/80 mt-2">
+                          <span className="font-semibold text-danger">What students often do: </span>
+                          {m.studentError}
+                        </p>
+                      )}
+                      {m.correctApproach && (
+                        <p className="text-sm text-foreground/80 mt-2">
+                          <span className="font-semibold text-success">Do this instead: </span>
+                          {m.correctApproach}
+                        </p>
+                      )}
+                      {m.sourceQuote && (
+                        <blockquote className="text-xs italic text-muted-foreground mt-3 pl-3 border-l-2 border-danger/40 break-words">
+                          “{m.sourceQuote}”
+                          {m.sourcePage ? <span className="not-italic"> — examiner report p.{m.sourcePage}</span> : null}
+                        </blockquote>
+                      )}
                     </div>
                   );
                 })()}
