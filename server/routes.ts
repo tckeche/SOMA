@@ -12,6 +12,7 @@ import jwt from "jsonwebtoken";
 import { getAdminSessionToken, getAuthorizedUserFromBearer } from "./auth";
 import { requireTutor, requireSuperAdmin, requireSupabaseAuth } from "./middleware/roles";
 import { registerDomainRoutes } from "./routes/index";
+export { sanitizeQuestionForPreSubmission } from "./modules/studentQuizTaking/service";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import crypto from "crypto";
 import { fetchPaperContext, generateAuditedQuiz, parsePdfTextFromBuffer, validateAndCorrectMcqAnswers, runQuestionAudit, type PipelineWarning, type SomaGenerationContext } from "./services/aiPipeline";
@@ -1424,20 +1425,6 @@ function perQuestionMisconceptionIds(
     ? Array.from(new Set([...optionRatIds, ...planIds]))
     : (planIds.length > 0 ? planIds : (seedFallback ?? []));
   return ids.length > 0 ? ids : null;
-}
-
-/**
- * Returns only the student-safe fields of a question, deliberately omitting the
- * answer key (correctAnswer, explanation, optionRationales, targetMisconceptionIds)
- * so it can be served to students before submission.
- */
-export function sanitizeQuestionForPreSubmission(q: SomaQuestion) {
-  return {
-    id: q.id, quizId: q.quizId, stem: q.stem,
-    options: q.options, marks: q.marks,
-    questionType: q.questionType, graphSpec: q.graphSpec,
-    // omit: correctAnswer, explanation, optionRationales, targetMisconceptionIds
-  };
 }
 
 /**
@@ -3091,157 +3078,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   // Draft and publish endpoints now live in autoloaded quizDrafts/quizPublish modules.
 
-  // Add questions to a quiz
-  app.post("/api/tutor/quizzes/:quizId/questions", requireTutor, async (req, res) => {
-    const traceId = newTraceId();
-    try {
-      const tutorId = (req as any).tutorId;
-      const quizId = parseInt(String(req.params.quizId));
-      const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-      // Ownership gate: only the author may append questions to a quiz.
-      if (quiz.authorId !== tutorId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { questions } = req.body;
-      if (!Array.isArray(questions) || questions.length === 0) {
-        return res.status(400).json({ message: "questions array required" });
-      }
-      traceLog("route.addQuestions.entry", {
-        route: "/api/tutor/quizzes/:quizId/questions",
-        quizId,
-        quizSyllabus: quiz.syllabus,
-        questionsIn: questions.length,
-        clientSentTargetMisconceptionIds: questions.filter((q: any) => Array.isArray(q?.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0).length,
-      }, traceId);
-      for (const q of questions) {
-        if (!q.prompt_text && !q.stem) {
-          return res.status(400).json({ message: "Each question must have a prompt_text" });
-        }
-        if (!Array.isArray(q.options) || q.options.length !== 4) {
-          return res.status(400).json({ message: "Each question must have exactly 4 options" });
-        }
-      }
-      const existingForCap = await storage.getSomaQuestionsByQuizId(quizId);
-      if (existingForCap.length + questions.length > MAX_QUESTIONS_PER_QUIZ) {
-        return res.status(400).json({ message: `A quiz can have at most ${MAX_QUESTIONS_PER_QUIZ} questions (already has ${existingForCap.length}, tried to add ${questions.length}).` });
-      }
-
-      // Look up approved examiner-misconception seeds for this quiz's
-      // scope so the questions we're about to write carry the FK link.
-      // Without this, the /questions route silently produces unseeded
-      // rows even after the storage layer was fixed to persist the
-      // column — same root cause as the publish path's missing FK
-      // pass-through. Use the quiz row's parsed syllabus as the scope
-      // since this route doesn't receive selectedSubtopicIds.
-      const { board, syllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
-      const examinerSeeds = await listApprovedSeeds({ board, syllabusCode });
-      const seedIds = examinerSeeds.map((s) => s.id);
-      const targetMisconceptionIds = seedIds.length > 0 ? seedIds : null;
-      traceLog("route.addQuestions.seedsLoaded", {
-        quizId,
-        parsedBoard: board,
-        parsedSyllabusCode: syllabusCode,
-        seedCount: examinerSeeds.length,
-        sampleSeedIds: seedIds.slice(0, 5),
-      }, traceId);
-
-      const rawMapped = questions.map((q: any) => {
-        // Validate and repair graph_spec — reject broken specs, downgrade type if needed
-        let questionType = String(q.question_type || (q.graph_spec ? "graph" : "multiple_choice"));
-        let graphSpec: GraphQuestionSpec | null = null;
-        if (q.graph_spec) {
-          const repaired = repairGraphSpec(q.graph_spec);
-          if (repaired) {
-            graphSpec = repaired;
-            questionType = "graph";
-          } else {
-            // Cannot repair — downgrade to MCQ so it still saves as a usable question
-            questionType = "multiple_choice";
-          }
-        }
-        return {
-          stem: q.prompt_text || q.stem || "",
-          options: Array.isArray(q.options) ? [...q.options] : [],
-          correct_answer: String(q.correct_answer || q.correctAnswer || ""),
-          explanation: String(q.explanation || ""),
-          marks: Number(q.marks_worth || q.marks || 1) || 1,
-          question_type: questionType,
-          graph_spec: graphSpec,
-          topic_tag: q.topic_tag ? String(q.topic_tag) : null,
-          subtopic_tag: q.subtopic_tag ? String(q.subtopic_tag) : null,
-          difficulty_tag: q.difficulty_tag ? String(q.difficulty_tag) : null,
-        };
-      });
-      const balanced = balanceAnswerOptions(rawMapped);
-      const validatedResult = validateAndCorrectMcqAnswers(balanced);
-      const validated = validatedResult.questions;
-      if (validatedResult.warnings.length > 0) {
-        const critical = validatedResult.warnings.filter((w) => !w.autoFixed);
-        console.warn(
-          `[ADD_QUESTIONS] quizId=${quizId} validator emitted ${validatedResult.warnings.length} warning(s)` +
-            (critical.length > 0 ? ` (${critical.length} CRITICAL)` : ""),
-          validatedResult.warnings.map((w) => `Q${w.questionIndex} ${w.field}: ${w.issue}`),
-        );
-      }
-      const mapped = validated.map((q, index) => ({
-        quizId,
-        stem: q.stem,
-        options: q.options,
-        correctAnswer: q.correct_answer,
-        explanation: q.explanation,
-        marks: q.marks,
-        questionType: rawMapped[index].question_type || "multiple_choice",
-        graphSpec: rawMapped[index].graph_spec,
-        topicTag: rawMapped[index].topic_tag,
-        subtopicTag: rawMapped[index].subtopic_tag,
-        difficultyTag: rawMapped[index].difficulty_tag,
-        // Seed every newly-added question with the approved-misconception
-        // ids for this quiz's scope. Without this, this route writes
-        // unseeded questions to soma_questions even though the storage
-        // layer is correctly persisting the column when the caller
-        // supplies it. This was the missing fourth piece of the
-        // examiner-loop fix — see EXAMINER_LOOP_BRIEFING.md.
-        targetMisconceptionIds,
-      }));
-      traceLog("route.addQuestions.beforeCreate", {
-        quizId,
-        mappedCount: mapped.length,
-        rowsWithSeeds: countWithField(mapped as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
-      }, traceId);
-      const saved = await storage.createSomaQuestions(mapped);
-      traceLog("route.addQuestions.afterCreate", {
-        quizId,
-        savedCount: saved.length,
-        savedRowsWithSeeds: countWithField(saved as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
-      }, traceId);
-      res.json(saved);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "routes.failed_to_add_questions", "Failed to add questions");
-    }
-  });
-
-  // Delete a question
-  app.delete("/api/tutor/questions/:questionId", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const questionId = parseInt(String(req.params.questionId));
-      if (isNaN(questionId)) return res.status(400).json({ message: "Invalid question ID" });
-      // Ownership gate: resolve the question's quiz and verify authorship so a
-      // tutor cannot delete questions from another tutor's live assessment.
-      const question = await storage.getSomaQuestionById(questionId);
-      if (!question) return res.status(404).json({ message: "Question not found" });
-      const quiz = await storage.getSomaQuiz(question.quizId);
-      if (!quiz || quiz.authorId !== tutorId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      await storage.deleteSomaQuestion(questionId);
-      res.json({ success: true });
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "routes.failed_to_delete_question", "Failed to delete question");
-    }
-  });
+  // Manual question add/delete endpoints now live in the autoloaded questionManagement module.
 
   app.get("/api/tutor/syllabus-documents", requireTutor, async (req, res) => {
     try {
@@ -5269,104 +5106,7 @@ ${JSON.stringify({
     }
   });
 
-  type SomaReadAuthUser = { id: string | string[]; role?: string | null; email?: string | null };
-
-  function logSomaPermissionDenied(params: {
-    route: string;
-    quizId?: number;
-    userId?: string;
-    role?: string | null;
-    reason: string;
-  }) {
-    console.warn(JSON.stringify({ event: "permission_denied", resource: "soma_quiz", ...params }));
-  }
-
-  async function canReadSomaQuiz(quiz: any, authUser: SomaReadAuthUser): Promise<boolean> {
-    const userId = String(authUser.id);
-    if (authUser.role === "super_admin") return true;
-    if (authUser.role === "tutor") return quiz.authorId === userId;
-    const assignments = await storage.getQuizAssignmentsForStudent(userId);
-    return assignments.some((assignment) => assignment.quizId === quiz.id);
-  }
-
-  async function requireSomaQuizReadAccess(req: Request, res: Response, quiz: any): Promise<boolean> {
-    const authUser = (req as any).authUser as SomaReadAuthUser;
-    const allowed = await canReadSomaQuiz(quiz, authUser);
-    if (!allowed) {
-      logSomaPermissionDenied({
-        route: req.path,
-        quizId: quiz.id,
-        userId: String(authUser.id),
-        role: authUser.role,
-        reason: "soma_quiz_not_assigned_or_not_owned",
-      });
-      res.status(403).json({ message: "Forbidden: you do not have access to this quiz" });
-      return false;
-    }
-    return true;
-  }
-
-  app.get("/api/soma/quizzes", requireSupabaseAuth, async (req, res) => {
-    try {
-      const authUser = (req as any).authUser as SomaReadAuthUser;
-      const authUserId = String(authUser.id);
-
-      // Admin/tutor legitimately need the full set (all, or all-by-author).
-      if (authUser.role === "super_admin" || authUser.role === "tutor") {
-        const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
-        return res.json(
-          authUser.role === "super_admin"
-            ? allQuizzes
-            : allQuizzes.filter((q) => q.authorId === authUserId),
-        );
-      }
-
-      // Student: build from the scoped, quiz-joined assignment rows instead of
-      // scanning every quiz on the platform and intersecting.
-      const assignments = await storage.getQuizAssignmentsForStudent(authUserId);
-      const seen = new Set<number>();
-      const assigned: SomaQuiz[] = [];
-      for (const a of assignments) {
-        if (!a.quiz || a.quiz.isArchived || seen.has(a.quiz.id)) continue;
-        seen.add(a.quiz.id);
-        assigned.push(a.quiz);
-      }
-      return res.json(assigned);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.list", "Something went wrong while loading quizzes. Please try again.");
-    }
-  });
-
-  app.get("/api/soma/quizzes/:id", requireSupabaseAuth, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
-
-      const quiz = await storage.getSomaQuiz(id);
-      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
-      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
-      res.json(quiz);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.get", "Something went wrong while loading this quiz. Please try again.");
-    }
-  });
-
-  app.get("/api/soma/quizzes/:id/questions", requireSupabaseAuth, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid quiz ID" });
-
-      const quiz = await storage.getSomaQuiz(id);
-      if (!quiz || quiz.isArchived) return res.status(404).json({ message: "Quiz not found" });
-      if (!(await requireSomaQuizReadAccess(req, res, quiz))) return;
-
-      const allQuestions = (await storage.getSomaQuestionsByQuizId(id)).filter(isServableToStudent);
-      const sanitized = allQuestions.map(sanitizeQuestionForPreSubmission);
-      res.json(sanitized);
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.questions", "Something went wrong while loading this quiz. Please try again.");
-    }
-  });
+  // Student quiz list/detail/question/check-submission reads now live in the autoloaded studentQuizTaking module.
 
   app.post("/api/soma/quizzes/:id/submit", requireSupabaseAuth, async (req, res) => {
     try {
@@ -5552,20 +5292,6 @@ ${JSON.stringify({
       ).catch((e) => console.error("[Mastery Update] Failed:", e.message));
     } catch (err: any) {
       return sendInternalError(req, res, err, "soma.quizzes.submit", "We could not submit your answers. Please retry.");
-    }
-  });
-
-  app.get("/api/soma/quizzes/:id/check-submission", requireSupabaseAuth, async (req, res) => {
-    try {
-      const quizId = parseInt(String(req.params.id));
-      if (isNaN(quizId)) {
-        return res.status(400).json({ message: "quizId required" });
-      }
-      const studentId = String((req as any).authUser.id);
-      const exists = await storage.checkSomaSubmission(quizId, studentId);
-      res.json({ submitted: exists });
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "soma.quizzes.checkSubmission", "Something went wrong while checking your submission. Please try again.");
     }
   });
 

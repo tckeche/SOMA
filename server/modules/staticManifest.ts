@@ -7,6 +7,7 @@ import { moduleDefinition as flaggedQuestions } from "./flaggedQuestions";
 import { moduleDefinition as quizAssignments } from "./quizAssignments";
 import { moduleDefinition as quizDrafts } from "./quizDrafts";
 import { moduleDefinition as quizPublish } from "./quizPublish";
+import { moduleDefinition as questionManagement } from "./questionManagement";
 import { moduleDefinition as tutorDashboard } from "./tutorDashboard";
 import { moduleDefinition as tutorQuizzes } from "./tutorQuizzes";
 import { moduleDefinition as tutorReports } from "./tutorReports";
@@ -22,6 +23,7 @@ import { moduleDefinition as revisionPlan } from "./revisionPlan";
 import { moduleDefinition as superAdminAiUsage } from "./superAdminAiUsage";
 import { moduleDefinition as superAdminDiagnostics } from "./superAdminDiagnostics";
 import { moduleDefinition as tutorExaminerInsights } from "./tutorExaminerInsights";
+import { moduleDefinition as studentQuizTaking } from "./studentQuizTaking";
 import { moduleDefinition as studentSubjects } from "./studentSubjects";
 import { moduleDefinition as syllabusCatalogue } from "./syllabusCatalogue";
 import { moduleDefinition as tutorNotifications } from "./tutorNotifications";
@@ -44,7 +46,9 @@ export const staticDomainModules: DomainModuleDefinition[] = [
   quizAssignments,
   quizDrafts,
   quizPublish,
+  questionManagement,
   revisionPlan,
+  studentQuizTaking,
   studentSubjects,
   superAdminAiUsage,
   superAdminDiagnostics,
