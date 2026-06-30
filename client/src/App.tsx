@@ -35,6 +35,12 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Redirect } from "wouter";
 import { supabase } from "@/lib/supabase";
 
+// Role gates for ProtectedRoute. Tutor pages admit tutor + super_admin (super
+// admins can act as tutors); super-admin pages admit only super_admin. Student
+// routes stay auth-only (no allowedRoles) so they don't pay a role lookup.
+const TUTOR_ROLES = ["tutor", "super_admin"];
+const ADMIN_ROLES = ["super_admin"];
+
 function RouteFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -51,19 +57,19 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/portal">{() => <RoleRouter studentComponent={StudentDashboard} tutorComponent={TutorDashboard} />}</Route>
-      <Route path="/super-admin/diagnostics">{() => <ProtectedRoute component={SuperAdminDiagnostics} />}</Route>
-      <Route path="/super-admin">{() => <ProtectedRoute component={SuperAdminDashboard} />}</Route>
-      <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} />}</Route>
-      <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} />}</Route>
-      <Route path="/tutor/assessment/:quizId">{(params) => <ProtectedRoute component={TutorAssessmentDetails} params={params} />}</Route>
-      <Route path="/tutor/assessment/:quizId/submission/:submissionId/ai-review">{(params) => <ProtectedRoute component={TutorPdfMarkingReview} params={params} />}</Route>
-      <Route path="/tutor/quizzes/:quizId/review">{(params) => <ProtectedRoute component={TutorQuizReview} params={params} />}</Route>
-      <Route path="/tutor/students/:id">{(params) => <ProtectedRoute component={TutorStudentDetail} params={params} />}</Route>
-      <Route path="/tutor/students">{() => <ProtectedRoute component={TutorStudents} />}</Route>
-      <Route path="/tutor/assessments/edit/:id">{(params) => <ProtectedRoute component={BuilderPage} params={params} />}</Route>
-      <Route path="/tutor/assessments/new">{() => <ProtectedRoute component={BuilderPage} />}</Route>
-      <Route path="/tutor/assessments">{() => <ProtectedRoute component={TutorAssessments} />}</Route>
-      <Route path="/tutor/:rest*">{() => <ProtectedRoute component={NotFound} />}</Route>
+      <Route path="/super-admin/diagnostics">{() => <ProtectedRoute component={SuperAdminDiagnostics} allowedRoles={ADMIN_ROLES} />}</Route>
+      <Route path="/super-admin">{() => <ProtectedRoute component={SuperAdminDashboard} allowedRoles={ADMIN_ROLES} />}</Route>
+      <Route path="/super-admin/tutors/:tutorId">{(params) => <ProtectedRoute component={SuperAdminTutorDetail} params={params} allowedRoles={ADMIN_ROLES} />}</Route>
+      <Route path="/tutor">{() => <ProtectedRoute component={TutorDashboard} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/assessment/:quizId">{(params) => <ProtectedRoute component={TutorAssessmentDetails} params={params} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/assessment/:quizId/submission/:submissionId/ai-review">{(params) => <ProtectedRoute component={TutorPdfMarkingReview} params={params} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/quizzes/:quizId/review">{(params) => <ProtectedRoute component={TutorQuizReview} params={params} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/students/:id">{(params) => <ProtectedRoute component={TutorStudentDetail} params={params} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/students">{() => <ProtectedRoute component={TutorStudents} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/assessments/edit/:id">{(params) => <ProtectedRoute component={BuilderPage} params={params} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/assessments/new">{() => <ProtectedRoute component={BuilderPage} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/assessments">{() => <ProtectedRoute component={TutorAssessments} allowedRoles={TUTOR_ROLES} />}</Route>
+      <Route path="/tutor/:rest*">{() => <ProtectedRoute component={NotFound} allowedRoles={TUTOR_ROLES} />}</Route>
       <Route path="/admin/:rest*">{() => <Redirect to="/login" />}</Route>
       <Route path="/admin">{() => <Redirect to="/login" />}</Route>
       <Route path="/soma/quiz/:id">{(params) => <ProtectedRoute component={SomaQuizEngine} params={params} />}</Route>

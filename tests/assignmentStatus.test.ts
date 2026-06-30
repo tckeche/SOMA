@@ -95,6 +95,38 @@ describe("computeAssignmentStatus", () => {
     ).toBe("feedback_ready");
   });
 
+  it("returns feedback_ready when completed with structuredMarking but no aiFeedbackHtml", () => {
+    expect(
+      computeAssignmentStatus({
+        dueDate: TOMORROW,
+        report: {
+          status: "completed",
+          answersJson: { "1": "An essay answer" },
+          aiFeedbackHtml: null,
+          structuredMarking: { "1": { aiMarks: 4, maxMarks: 6, aiFeedback: "Good structure" } },
+          completedAt: NOW,
+        },
+        now: NOW,
+      }),
+    ).toBe("feedback_ready");
+  });
+
+  it("returns submitted when structuredMarking is an empty object", () => {
+    expect(
+      computeAssignmentStatus({
+        dueDate: TOMORROW,
+        report: {
+          status: "completed",
+          answersJson: [{}],
+          aiFeedbackHtml: null,
+          structuredMarking: {},
+          completedAt: NOW,
+        },
+        now: NOW,
+      }),
+    ).toBe("submitted");
+  });
+
   it("returns overdue when dueDate has passed and not submitted", () => {
     expect(
       computeAssignmentStatus({

@@ -306,6 +306,11 @@ export default function StudentAuth() {
     const nextErrors: { email?: string; password?: string } = {};
     if (!email.trim()) nextErrors.email = "Please enter your email address.";
     if (!password.trim()) nextErrors.password = "Please create a password.";
+    // Reflect field-level errors inline immediately. Without this, an early
+    // return below (missing name / missing subject) would skip setFormErrors,
+    // so a user missing BOTH their name and email/password never saw the
+    // email/password field errors highlighted.
+    setFormErrors(nextErrors);
     if (!firstName.trim() || !surname.trim()) {
       toast({
         title: "Name required",

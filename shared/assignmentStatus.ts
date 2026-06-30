@@ -37,6 +37,11 @@ export interface AssignmentStatusInputs {
     status: string | null | undefined;
     answersJson: unknown;
     aiFeedbackHtml: string | null | undefined;
+    // Structured/written-answer marking, keyed by question id. The structured
+    // path populates this (not aiFeedbackHtml), so it must also count as
+    // "feedback ready" — otherwise a fully AI-marked written assessment is
+    // stuck on "Submitted" forever.
+    structuredMarking?: unknown;
     completedAt: Date | string | null | undefined;
   } | null | undefined;
   now?: Date;
@@ -55,7 +60,10 @@ export function computeAssignmentStatus(inputs: AssignmentStatusInputs): Assignm
   }
 
   if (isCompleted) {
-    if (report?.aiFeedbackHtml && report.aiFeedbackHtml.trim().length > 0) {
+    const hasHtmlFeedback = !!report?.aiFeedbackHtml && report.aiFeedbackHtml.trim().length > 0;
+    const sm = report?.structuredMarking;
+    const hasStructuredFeedback = !!sm && typeof sm === "object" && Object.keys(sm as object).length > 0;
+    if (hasHtmlFeedback || hasStructuredFeedback) {
       return "feedback_ready";
     }
     return "submitted";

@@ -1,7 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type SomaQuiz, type StructuredAnswerMark } from "@shared/schema";
 import { buildPdfMarkingIdempotencyKey } from "./services/pdfReconciliation";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { computeDefaultDueDate } from "@shared/dueDate";
@@ -925,6 +925,16 @@ const uploadImageLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Each call spawns a python3 child (matplotlib) — an expensive, unbounded
+// resource if left open. Cap it per IP so a single client cannot fork a
+// process storm. A quiz page renders a handful of graphs, so this is generous.
+const graphRenderLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
@@ -1006,7 +1016,20 @@ async function persistImageUpload(file: Express.Multer.File, extension: string):
   return filename;
 }
 
-const pdfUpload = multer({ storage: multer.memoryStorage() });
+// Syllabus-document upload (tutor uploads a syllabus PDF for ingestion).
+// Bounded to 20MB + application/pdf only — previously unbounded, so a large
+// multipart body could be buffered entirely into memory before any handler ran.
+const pdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_PDF_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype !== PDF_MIME) {
+      cb(new Error("PDF required"));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 // Dedicated multer instance for the PDF-uploads feature (worksheet attachments
 // and student responses): in-memory, 20MB cap, application/pdf only.
@@ -2307,7 +2330,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.status(202).json({ ok: true, requestId: report.requestId });
   });
 
-  app.post("/api/graph/render-svg", async (req, res) => {
+  app.post("/api/graph/render-svg", graphRenderLimiter, requireSupabaseAuth, async (req, res) => {
     const parsed = graphQuestionSpecSchema.safeParse(req.body?.spec);
     if (!parsed.success) {
       return res.status(400).json({
@@ -2681,7 +2704,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const students = await storage.getAdoptedStudentsWithProfile(tutorId);
       res.json(students);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch students" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_students", "Failed to fetch students");
     }
   });
 
@@ -2692,7 +2715,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const available = await storage.getAvailableStudents(tutorId);
       res.json(available);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch available students" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_available_students", "Failed to fetch available students");
     }
   });
 
@@ -2704,16 +2727,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!Array.isArray(studentIds) || studentIds.length === 0) {
         return res.status(400).json({ message: "studentIds array required" });
       }
-      const results = [];
-      for (const studentId of studentIds) {
-        const student = await storage.getSomaUserById(studentId);
-        if (!student || student.role !== "student") continue;
-        const record = await storage.adoptStudent(tutorId, studentId);
-        results.push(record);
-      }
+      // Validate all candidate ids in one query (was one getSomaUserById per id).
+      const users = await storage.getSomaUsersByIds(studentIds);
+      const validIds = users.filter((u) => u.role === "student").map((u) => u.id);
+      const results = await Promise.all(validIds.map((id) => storage.adoptStudent(tutorId, id)));
       res.json({ adopted: results.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to adopt students" });
+      return sendInternalError(req, res, err, "routes.failed_to_adopt_students", "Failed to adopt students");
     }
   });
 
@@ -2724,7 +2744,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.removeAdoptedStudent(tutorId, String(req.params.studentId));
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to remove student" });
+      return sendInternalError(req, res, err, "routes.failed_to_remove_student", "Failed to remove student");
     }
   });
 
@@ -2735,7 +2755,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const quizzes = await storage.getSomaQuizzesByAuthor(tutorId);
       res.json(quizzes.filter((q) => !q.isArchived));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quizzes" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quizzes", "Failed to fetch quizzes");
     }
   });
 
@@ -2745,7 +2765,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const overview = await storage.getTutorAssessmentsOverview(tutorId);
       res.json(overview);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch overview" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_overview", "Failed to fetch overview");
     }
   });
 
@@ -2766,6 +2786,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz || quiz.isArchived) {
         return res.status(404).json({ message: "Quiz not found" });
+      }
+      // Ownership gate: a tutor may only assign (and force-publish) their own
+      // quiz. Without this, any tutor could assign another tutor's draft to
+      // their students and silently publish it. Mirrors the sibling routes.
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       // When the tutor didn't pick a due date, default it to 5 days after the
@@ -2840,7 +2866,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         perStudent,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to assign quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_assign_quiz", "Failed to assign quiz");
     }
   });
 
@@ -2883,7 +2909,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.deleteQuizAssignment(quizId, studentId);
       return res.json({ success: true, message: "Student unassigned" });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to unassign student" });
+      return sendInternalError(req, res, err, "routes.failed_to_unassign_student", "Failed to unassign student");
     }
   });
 
@@ -2916,6 +2942,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
                 status: report.status,
                 answersJson: report.answersJson,
                 aiFeedbackHtml: report.aiFeedbackHtml,
+                structuredMarking: report.structuredMarking,
                 completedAt: report.completedAt,
               }
             : null,
@@ -2950,7 +2977,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
     } catch (err: any) {
       logError("route.quiz_details_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "quizDetails", quizId: req.params.quizId });
-      res.status(500).json({ message: err.message || "Failed to fetch quiz details" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quiz_details", "Failed to fetch quiz details");
     }
   });
 
@@ -3473,7 +3500,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to revoke assignment" });
+      return sendInternalError(req, res, err, "routes.failed_to_revoke_assignment", "Failed to revoke assignment");
     }
   });
 
@@ -3494,7 +3521,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await purgeStorageObjects(storagePaths);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_quiz", "Failed to delete quiz");
     }
   });
 
@@ -3509,7 +3536,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updated = await storage.updateSomaQuiz(quizId, { isArchived: !quiz.isArchived });
       return res.json({ success: true, isArchived: updated?.isArchived });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to toggle archive" });
+      return sendInternalError(req, res, err, "routes.failed_to_toggle_archive", "Failed to toggle archive");
     }
   });
 
@@ -3529,7 +3556,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updated = await storage.updateQuizAssignmentsDueDate(quizId, parsedDate);
       return res.json({ success: true, updated });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to update due date" });
+      return sendInternalError(req, res, err, "routes.failed_to_update_due_date", "Failed to update due date");
     }
   });
 
@@ -3549,22 +3576,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updated = await storage.extendQuizAssignmentDeadlines(quizId, hours);
       return res.json({ success: true, message: `Extended deadline by ${hours}h for ${updated} assignment(s)`, updated });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to extend deadline" });
+      return sendInternalError(req, res, err, "routes.failed_to_extend_deadline", "Failed to extend deadline");
     }
   });
 
   // Get assignments for a specific quiz
   app.get("/api/tutor/quizzes/:quizId/assignments", requireTutor, async (req, res) => {
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: the roster (student names + emails) must only be
+      // readable by the quiz's author. Mirrors every sibling quiz route.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
       }
       const assignments = await storage.getQuizAssignmentsForQuiz(quizId);
       res.json(assignments);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch assignments" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_assignments", "Failed to fetch assignments");
     }
   });
 
@@ -3573,8 +3603,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) {
-        return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: the response returns the full quiz + questions
+      // (including correctAnswer/marking) and per-student reports, so it must
+      // be restricted to the quiz's author. Mirrors the sibling routes.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
       }
       const adopted = await storage.getAdoptedStudents(tutorId);
       const adoptedIds = new Set(adopted.map((s) => s.id));
@@ -3584,7 +3617,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const maxScore = questions.reduce((s, q) => s + q.marks, 0);
       res.json({ quiz, reports, questions, maxScore });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reports" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reports", "Failed to fetch reports");
     }
   });
 
@@ -3597,7 +3630,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const comments = await storage.getTutorComments(tutorId, studentId);
       res.json(comments);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch comments" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_comments", "Failed to fetch comments");
     }
   });
 
@@ -3612,7 +3645,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const result = await storage.addTutorComment({ tutorId, studentId, comment: comment.trim() });
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to add comment" });
+      return sendInternalError(req, res, err, "routes.failed_to_add_comment", "Failed to add comment");
     }
   });
 
@@ -3625,7 +3658,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const rows = await storage.listStudentSubjects(studentId);
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch student subjects" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_student_subjects", "Failed to fetch student subjects");
     }
   });
 
@@ -3698,7 +3731,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       res.json(topics);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topics", "Failed to fetch topics");
     }
   });
 
@@ -3736,12 +3769,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }),
   };
 
-  app.get("/api/catalogue/examining-bodies", requireTutor, async (_req, res) => {
+  app.get("/api/catalogue/examining-bodies", requireTutor, async (req, res) => {
     try {
       const bodies = await listExaminingBodies();
       res.json(bodies);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list examining bodies" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_examining_bodies", "Failed to list examining bodies");
     }
   });
 
@@ -3754,19 +3787,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const levels = await listLevelsForBody(parsed.data.body);
       res.json(levels);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list levels" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_levels", "Failed to list levels");
     }
   });
 
   // Public (no-auth) subject-name list for the signup autocomplete. Returns
   // catalogue subject names only — nothing sensitive — sourced from the same
   // catalogue tables as the authed /api/catalogue/subjects endpoint.
-  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (_req, res) => {
+  app.get("/api/auth/catalogue/subjects", authApiLimiter, async (req, res) => {
     try {
       const names = await listAllSubjectNames();
       res.json(names);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list subjects" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_subjects", "Failed to list subjects");
     }
   });
 
@@ -3779,7 +3812,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const subjects = await listSubjectsForBodyLevel(parsed.data.body, parsed.data.level);
       res.json(subjects);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list subjects" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_subjects", "Failed to list subjects");
     }
   });
 
@@ -3797,7 +3830,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const topics = await listCatalogueTopics(body, level, subject);
       res.json({ syllabus, topics });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_topics", "Failed to list topics");
     }
   });
 
@@ -3810,7 +3843,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const context = await getTopicContext(parsed.data.topicIds);
       res.json(context);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topic context" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topic_context", "Failed to fetch topic context");
     }
   });
 
@@ -3828,7 +3861,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       res.json(misconceptions);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch misconceptions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_misconceptions", "Failed to fetch misconceptions");
     }
   });
 
@@ -3851,7 +3884,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         : mastery.filter((m) => visible.has((m.subject || "").toLowerCase()));
       res.json(filtered);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch mastery data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_mastery_data", "Failed to fetch mastery data");
     }
   });
 
@@ -3881,10 +3914,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         studentNames: string[];
       }> = {};
 
+      // One batched query for the whole cohort instead of one per student.
+      const masteryByStudent = await storage.listStudentTopicMasteryForStudents(adopted.map((s) => s.id));
+
       for (const student of adopted) {
         const visible = visibleSubjectsPerStudent.get(student.id) || new Set<string>();
         if (visible.size === 0) continue; // tutor hasn't assigned this student anything yet
-        const mastery = await storage.listStudentTopicMastery(student.id);
+        const mastery = masteryByStudent[student.id] || [];
         const studentName = student.displayName || student.email?.split("@")[0] || "Student";
         for (const m of mastery) {
           if (!m.tested) continue;
@@ -3928,7 +3964,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ topics, studentCount: adopted.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch cohort data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_cohort_data", "Failed to fetch cohort data");
     }
   });
 
@@ -3942,7 +3978,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch syllabus insights" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_syllabus_insights", "Failed to fetch syllabus insights");
     }
   });
 
@@ -3986,7 +4022,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ dueForReview, upcoming });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch review schedule" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_review_schedule", "Failed to fetch review schedule");
     }
   });
 
@@ -4004,7 +4040,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       res.json({ reports: reportsWithMax, submissions: [] });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_performance", "Failed to fetch performance");
     }
   });
 
@@ -4084,7 +4120,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         },
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch student report" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_student_report", "Failed to fetch student report");
     }
   });
 
@@ -4094,7 +4130,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const stats = await storage.getDashboardStatsForTutor(tutorId);
       res.json(stats);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch stats" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_stats", "Failed to fetch stats");
     }
   });
 
@@ -4114,7 +4150,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const flags = await storage.listFlaggedQuestionsForTutor(tutorId, filter);
       res.json({ flags });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch flagged questions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_flagged_questions", "Failed to fetch flagged questions");
     }
   });
 
@@ -4127,7 +4163,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!updated) return res.status(404).json({ message: "Flag not found" });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to resolve flag" });
+      return sendInternalError(req, res, err, "routes.failed_to_resolve_flag", "Failed to resolve flag");
     }
   });
 
@@ -4138,7 +4174,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const unreadCount = rows.filter((item) => !item.readAt).length;
       res.json({ notifications: rows, unreadCount });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_notifications", "Failed to fetch notifications");
     }
   });
 
@@ -4150,7 +4186,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!row) return res.status(404).json({ message: "Notification not found" });
       res.json(row);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to update notification" });
+      return sendInternalError(req, res, err, "routes.failed_to_update_notification", "Failed to update notification");
     }
   });
 
@@ -4471,7 +4507,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         suggestions: created,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to generate suggestions" });
+      return sendInternalError(req, res, err, "routes.failed_to_generate_suggestions", "Failed to generate suggestions");
     }
   });
 
@@ -4726,20 +4762,26 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       });
       res.json(quiz);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to create quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_create_quiz", "Failed to create quiz");
     }
   });
 
   // Get a specific quiz with its questions
   app.get("/api/tutor/quizzes/:quizId/detail", requireTutor, async (req, res) => {
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: this returns the full question set including
+      // correctAnswer/explanation (unlike the sanitized student route), so it
+      // must be restricted to the author. Mirrors the sibling routes.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
+      }
       const questions = await storage.getSomaQuestionsByQuizId(quiz.id);
       res.json({ ...quiz, questions });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quiz", "Failed to fetch quiz");
     }
   });
 
@@ -4753,7 +4795,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const questions = getDraft(quizId);
       res.json({ quizId, questions });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch draft" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_draft", "Failed to fetch draft");
     }
   });
 
@@ -4761,10 +4803,15 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.put("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
     const traceId = newTraceId();
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
       const quiz = await storage.getSomaQuiz(quizId);
-      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: the draft store is keyed by quizId; without this a
+      // tutor could overwrite another tutor's working draft.
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(quiz ? 403 : 404).json({ message: quiz ? "Access denied" : "Quiz not found" });
+      }
       const { questions } = req.body;
       if (!Array.isArray(questions)) return res.status(400).json({ message: "questions array required" });
       if (questions.length > MAX_QUESTIONS_PER_QUIZ) {
@@ -4784,7 +4831,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       setDraft(quizId, questions as DraftQuestion[]);
       res.json({ quizId, questions, updatedAt: new Date() });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to save draft" });
+      return sendInternalError(req, res, err, "routes.failed_to_save_draft", "Failed to save draft");
     }
   });
 
@@ -4792,9 +4839,16 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes/:quizId/publish", requireTutor, async (req, res) => {
     const traceId = newTraceId();
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: publish atomically deletes+replaces the quiz's entire
+      // question bank and flips it to published. Restrict to the author so a
+      // tutor cannot wipe/overwrite another tutor's live assessment.
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       traceLog("route.publish.entry", {
         route: "/api/tutor/quizzes/:quizId/publish",
         quizId,
@@ -4961,7 +5015,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         reviewSummary: summarizeReviewStatuses(saved),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to publish" });
+      return sendInternalError(req, res, err, "routes.failed_to_publish", "Failed to publish");
     }
   });
 
@@ -4970,9 +5024,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   // Update quiz metadata
   app.put("/api/tutor/quizzes/:quizId", requireTutor, async (req, res) => {
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const existing = await storage.getSomaQuiz(quizId);
       if (!existing) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: only the author may rename/reconfigure a quiz.
+      if (existing.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const { title, syllabus, level, subject, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
       const updates: Record<string, string | number | string[] | null> = {};
@@ -5025,7 +5084,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const updated = await storage.updateSomaQuiz(quizId, updates);
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to update quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_update_quiz", "Failed to update quiz");
     }
   });
 
@@ -5033,9 +5092,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
   app.post("/api/tutor/quizzes/:quizId/questions", requireTutor, async (req, res) => {
     const traceId = newTraceId();
     try {
+      const tutorId = (req as any).tutorId;
       const quizId = parseInt(String(req.params.quizId));
       const quiz = await storage.getSomaQuiz(quizId);
       if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      // Ownership gate: only the author may append questions to a quiz.
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const { questions } = req.body;
       if (!Array.isArray(questions) || questions.length === 0) {
@@ -5151,17 +5215,28 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       }, traceId);
       res.json(saved);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to add questions" });
+      return sendInternalError(req, res, err, "routes.failed_to_add_questions", "Failed to add questions");
     }
   });
 
   // Delete a question
   app.delete("/api/tutor/questions/:questionId", requireTutor, async (req, res) => {
     try {
-      await storage.deleteSomaQuestion(parseInt(String(req.params.questionId)));
+      const tutorId = (req as any).tutorId;
+      const questionId = parseInt(String(req.params.questionId));
+      if (isNaN(questionId)) return res.status(400).json({ message: "Invalid question ID" });
+      // Ownership gate: resolve the question's quiz and verify authorship so a
+      // tutor cannot delete questions from another tutor's live assessment.
+      const question = await storage.getSomaQuestionById(questionId);
+      if (!question) return res.status(404).json({ message: "Question not found" });
+      const quiz = await storage.getSomaQuiz(question.quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      await storage.deleteSomaQuestion(questionId);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete question" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_question", "Failed to delete question");
     }
   });
 
@@ -5177,7 +5252,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         uploadedAt: document.uploadedAt,
       })));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch syllabus documents" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_syllabus_documents", "Failed to fetch syllabus documents");
     }
   });
 
@@ -5201,7 +5276,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         filename: d.filename,
       })));
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch curriculum syllabi" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_curriculum_syllabi", "Failed to fetch curriculum syllabi");
     }
   });
 
@@ -6061,12 +6136,12 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
 
   // ─── Super Admin Routes ──────────────────────────────────────────
 
-  app.get("/api/super-admin/users", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/users", requireSuperAdmin, async (req, res) => {
     try {
       const users = await storage.getAllSomaUsers();
       res.json(users);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch users" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_users", "Failed to fetch users");
     }
   });
 
@@ -6079,16 +6154,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await storage.deleteSomaUser(userId);
       res.json({ message: "User deleted" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete user" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_user", "Failed to delete user");
     }
   });
 
-  app.get("/api/super-admin/quizzes", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/quizzes", requireSuperAdmin, async (req, res) => {
     try {
       const quizzes = await storage.getAllSomaQuizzes();
       res.json(quizzes);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch quizzes" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_quizzes", "Failed to fetch quizzes");
     }
   });
 
@@ -6101,7 +6176,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await purgeStorageObjects(storagePaths);
       res.json({ message: "Quiz deleted" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to delete quiz" });
+      return sendInternalError(req, res, err, "routes.failed_to_delete_quiz", "Failed to delete quiz");
     }
   });
 
@@ -6122,7 +6197,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     });
   });
 
-  app.get("/api/super-admin/stats", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/stats", requireSuperAdmin, async (req, res) => {
     try {
       const [users, quizzes] = await Promise.all([
         storage.getAllSomaUsers(),
@@ -6138,16 +6213,16 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         publishedQuizzes: quizzes.filter((q) => q.status === "published").length,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch stats" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_stats", "Failed to fetch stats");
     }
   });
 
-  app.get("/api/super-admin/tutors", requireSuperAdmin, async (_req, res) => {
+  app.get("/api/super-admin/tutors", requireSuperAdmin, async (req, res) => {
     try {
       const tutors = await storage.getTutorDashboardSummaries();
       res.json(tutors);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch tutor dashboard data" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_tutor_dashboard_data", "Failed to fetch tutor dashboard data");
     }
   });
 
@@ -6159,7 +6234,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!detail) return res.status(404).json({ message: "Tutor not found" });
       res.json(detail);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch tutor detail" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_tutor_detail", "Failed to fetch tutor detail");
     }
   });
 
@@ -6183,7 +6258,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       }));
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reports" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reports", "Failed to fetch reports");
     }
   });
 
@@ -6191,7 +6266,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
     try {
       res.json([]);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch submissions" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_submissions", "Failed to fetch submissions");
     }
   });
 
@@ -6211,7 +6286,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json({ ...payload, structuredFeedback });
     } catch (err: any) {
       console.error("[Student Dashboard] Error:", err);
-      res.status(500).json({ message: err.message || "Failed to load dashboard" });
+      return sendInternalError(req, res, err, "routes.failed_to_load_dashboard", "Failed to load dashboard");
     }
   });
 
@@ -6222,7 +6297,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const unreadCount = items.filter((n) => !n.readAt).length;
       res.json({ items, unreadCount });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch notifications" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_notifications", "Failed to fetch notifications");
     }
   });
 
@@ -6235,7 +6310,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!updated) return res.status(404).json({ message: "Notification not found" });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to mark notification read" });
+      return sendInternalError(req, res, err, "routes.failed_to_mark_notification_read", "Failed to mark notification read");
     }
   });
 
@@ -6245,7 +6320,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const count = await storage.markAllStudentNotificationsRead(studentId);
       res.json({ updated: count });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to mark notifications read" });
+      return sendInternalError(req, res, err, "routes.failed_to_mark_notifications_read", "Failed to mark notifications read");
     }
   });
 
@@ -6258,7 +6333,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       if (!deleted) return res.status(404).json({ message: "Notification not found" });
       res.json({ deleted: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to dismiss notification" });
+      return sendInternalError(req, res, err, "routes.failed_to_dismiss_notification", "Failed to dismiss notification");
     }
   });
 
@@ -6268,7 +6343,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const insights = await buildSyllabusInsights(storage, studentId);
       res.json(insights);
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to load syllabus insights" });
+      return sendInternalError(req, res, err, "routes.failed_to_load_syllabus_insights", "Failed to load syllabus insights");
     }
   });
 
@@ -6280,7 +6355,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const dashboard = await buildStudentDashboard({ storage, student });
       res.json({ subjects: dashboard.subjects });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch coverage" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_coverage", "Failed to fetch coverage");
     }
   });
 
@@ -6303,7 +6378,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
         })),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch performance" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_performance", "Failed to fetch performance");
     }
   });
 
@@ -6372,7 +6447,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       );
       res.json({ tips, cacheHit, elapsedMs: Math.round(elapsed * 10) / 10 });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch study tips" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_study_tips", "Failed to fetch study tips");
     }
   });
 
@@ -6392,7 +6467,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const reminders = composeReminders(subjectLevels, { max: 8 });
       res.json({ reminders });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch reminders" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_reminders", "Failed to fetch reminders");
     }
   });
 
@@ -6405,7 +6480,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const topics = getCurriculumTopics(subject, pickEffectiveLevel([level]));
       res.json({ subject, level, topics });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to fetch topics" });
+      return sendInternalError(req, res, err, "routes.failed_to_fetch_topics", "Failed to fetch topics");
     }
   });
 
@@ -6434,7 +6509,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       res.json(flag);
     } catch (err: any) {
       console.error("[Student Flag] Error:", err);
-      res.status(500).json({ message: err.message || "Failed to flag question" });
+      return sendInternalError(req, res, err, "routes.failed_to_flag_question", "Failed to flag question");
     }
   });
 
@@ -6446,7 +6521,7 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       await storage.unflagQuestion(studentId, questionId);
       res.json({ ok: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to remove flag" });
+      return sendInternalError(req, res, err, "routes.failed_to_remove_flag", "Failed to remove flag");
     }
   });
 
@@ -6456,61 +6531,31 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
       const flags = await storage.listFlaggedQuestionsForStudent(studentId);
       res.json({ flags });
     } catch (err: any) {
-      res.status(500).json({ message: err.message || "Failed to list flags" });
+      return sendInternalError(req, res, err, "routes.failed_to_list_flags", "Failed to list flags");
     }
   });
 
   app.get("/api/quizzes/available", requireSupabaseAuth, async (req, res) => {
     try {
       const studentId = (req as any).authUser.id;
-      const allQuizzes = await storage.getSomaQuizzes();
+      // getQuizAssignmentsForStudent is already WHERE-scoped to this student and
+      // joins the quiz row, so we build the response straight from it. The old
+      // path also fetched getSomaQuizzes() (a full-table scan across every
+      // tutor's quizzes) just to intersect — unnecessary and O(all quizzes).
       const assignments = await storage.getQuizAssignmentsForStudent(studentId);
 
-      console.log(`[Available] Fetching for Student: ${studentId}, Found Assignments: ${assignments.length}`);
-
-      // X-ray: log every raw assignment before any filtering
-      for (const a of assignments) {
-        console.log(`[Available]   Assignment quizId=${a.quizId} status="${a.status}" dueDate=${a.dueDate || "null"} quizStatus="${a.quiz?.status}" quizTitle="${a.quiz?.title}"`);
-      }
-
-      const assignmentMap = new Map<number, any>();
-      for (const a of assignments) {
-        if (a.status === "pending") {
-          assignmentMap.set(a.quizId, a);
-        }
-      }
-
-      const pendingCount = assignmentMap.size;
-      const publishedQuizzes = allQuizzes.filter(q => !q.isArchived && q.status === "published");
-
-      console.log(`[Available] Student ${studentId}: ${assignments.length} total assignments, ${pendingCount} pending, ${publishedQuizzes.length} published quizzes, ${allQuizzes.length} total quizzes`);
-
-      // Log any quiz that has a pending assignment but is NOT published (ghost assignment root cause)
-      for (const quizId of Array.from(assignmentMap.keys())) {
-        const matchingQuiz = allQuizzes.find(q => q.id === quizId);
-        if (!matchingQuiz) {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz not found in DB!`);
-        } else if (matchingQuiz.status !== "published") {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz status="${matchingQuiz.status}" (not published) — title="${matchingQuiz.title}"`);
-        } else if (matchingQuiz.isArchived) {
-          console.log(`[Available] WARNING: Assignment for quizId=${quizId} but quiz is archived — title="${matchingQuiz.title}"`);
-        }
-      }
-
-      const available = publishedQuizzes
-        .filter(q => assignmentMap.has(q.id))
-        .map(q => ({
-          ...q,
+      const available = assignments
+        .filter((a) => a.status === "pending" && a.quiz && !a.quiz.isArchived && a.quiz.status === "published")
+        .map((a) => ({
+          ...a.quiz,
           isAssigned: true,
-          assignmentStatus: "pending",
-          dueDate: assignmentMap.get(q.id)?.dueDate || null,
+          assignmentStatus: "pending" as const,
+          dueDate: a.dueDate || null,
         }));
-
-      console.log(`[Available] Returning ${available.length} available quizzes for student ${studentId}`);
 
       return res.json(available);
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to fetch available quizzes" });
+      return sendInternalError(req, res, err, "quizzes.available", "Failed to fetch available quizzes");
     }
   });
 
@@ -6607,7 +6652,11 @@ ALL mathematical content in prompt_text, options, and explanation MUST use LaTeX
             questionStats[key] = { prompt: meta.stem, correct: 0, wrong: 0, commonMistakes: {} };
           }
 
-          if (answer === meta.correctAnswer) {
+          // Use the canonical whitespace-tolerant comparison (same as submit /
+          // regrade). `meta.correctAnswer` is the raw effectiveCorrectAnswer and
+          // is NOT trimmed, so a strict === here mis-counts correct answers as
+          // wrong whenever the stored option carries stray whitespace.
+          if (answersMatch(answer, meta.correctAnswer)) {
             questionStats[key].correct += 1;
           } else {
             questionStats[key].wrong += 1;
@@ -6643,7 +6692,7 @@ ${JSON.stringify({
 
       return res.json({ analysis: data, submissionCount: reports.length, metadata, questionStats });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message || "Failed to analyze class" });
+      return sendInternalError(req, res, err, "routes.failed_to_analyze_class", "Failed to analyze class");
     }
   });
 
@@ -7258,19 +7307,28 @@ ${JSON.stringify({
     try {
       const authUser = (req as any).authUser as SomaReadAuthUser;
       const authUserId = String(authUser.id);
-      const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
 
-      if (authUser.role === "super_admin") {
-        return res.json(allQuizzes);
+      // Admin/tutor legitimately need the full set (all, or all-by-author).
+      if (authUser.role === "super_admin" || authUser.role === "tutor") {
+        const allQuizzes = (await storage.getSomaQuizzes()).filter((q) => !q.isArchived);
+        return res.json(
+          authUser.role === "super_admin"
+            ? allQuizzes
+            : allQuizzes.filter((q) => q.authorId === authUserId),
+        );
       }
 
-      if (authUser.role === "tutor") {
-        return res.json(allQuizzes.filter((q) => q.authorId === authUserId));
-      }
-
+      // Student: build from the scoped, quiz-joined assignment rows instead of
+      // scanning every quiz on the platform and intersecting.
       const assignments = await storage.getQuizAssignmentsForStudent(authUserId);
-      const assignedQuizIds = new Set(assignments.map((assignment) => assignment.quizId));
-      return res.json(allQuizzes.filter((q) => assignedQuizIds.has(q.id)));
+      const seen = new Set<number>();
+      const assigned: SomaQuiz[] = [];
+      for (const a of assignments) {
+        if (!a.quiz || a.quiz.isArchived || seen.has(a.quiz.id)) continue;
+        seen.add(a.quiz.id);
+        assigned.push(a.quiz);
+      }
+      return res.json(assigned);
     } catch (err: any) {
       return sendInternalError(req, res, err, "soma.quizzes.list", "Something went wrong while loading quizzes. Please try again.");
     }
@@ -7375,18 +7433,23 @@ ${JSON.stringify({
         throw dbErr;
       }
 
+      // Resolve everything that can throw BEFORE responding. Previously the
+      // quiz lookup ran after res.json(), so a failure there hit the outer
+      // catch and attempted a second response on an already-sent stream. The
+      // quiz is needed by the notification + background grading below anyway.
+      const requestId = getRequestId(req);
+      const quiz = await storage.getSomaQuiz(quizId);
+
       // `hasStructured` tells the client to show a "being marked" screen rather
       // than a (still-incomplete) score, since structured marking runs async.
       res.json({ ...report, hasStructured });
 
       // Mark quiz assignment as completed
-      const requestId = getRequestId(req);
       storage.updateQuizAssignmentStatus(quizId, studentId, "completed").catch((err) => logBackgroundTaskFailure("quiz-assignment.update-status-completed", "warning", err, {
         requestId,
         quizId,
         studentId,
       }));
-      const quiz = await storage.getSomaQuiz(quizId);
       if (quiz?.authorId) {
         const durationMs = parsedStartedAt && !isNaN(parsedStartedAt.getTime()) ? now.getTime() - parsedStartedAt.getTime() : null;
         const durationText = durationMs && durationMs > 0 ? `${Math.floor(durationMs / 60000)}m` : "unknown duration";
@@ -7530,11 +7593,18 @@ ${JSON.stringify({
         }
       }
 
-      const [questions, diagnoses, quiz] = await Promise.all([
+      const [allQuestions, diagnoses, quiz] = await Promise.all([
         storage.getSomaQuestionsByQuizId(report.quizId),
         (await import("./services/reportDiagnoses")).getDiagnosesForReport(reportId),
         storage.getSomaQuiz(report.quizId),
       ]);
+
+      // Only the SERVED questions count toward the review. The score numerator
+      // was computed over isServableToStudent questions at submit time, and the
+      // student only ever saw those — so the review must use the same set, else
+      // the page sums marks over excluded/blocked/needs_review questions and
+      // reports a lower percentage than the student actually achieved.
+      const questions = allQuestions.filter(isServableToStudent);
 
       // The tutor who authored the quiz (or a super admin) may confirm the
       // AI-suggested marks on structured answers.
@@ -7758,7 +7828,12 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
 
       await storage.updateSomaReport(reportId, { status: "pending", aiFeedbackHtml: null });
 
-      const questions = await storage.getSomaQuestionsByQuizId(report.quizId);
+      // Grade over the SAME served set the submit path uses
+      // (.filter(isServableToStudent)). Without this, retry feeds
+      // excluded/blocked/needs_review questions into the grader, inflating
+      // maxPossibleScore and producing a lower percentage + wrong feedback than
+      // the original submission would have.
+      const questions = (await storage.getSomaQuestionsByQuizId(report.quizId)).filter(isServableToStudent);
       const answers = (report.answersJson as Record<string, string>) || {};
       const maxPossibleScore = questions.reduce((s, q) => s + q.marks, 0);
 

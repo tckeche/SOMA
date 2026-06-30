@@ -79,7 +79,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
     refetchOnWindowFocus: true,
   });
 
@@ -91,7 +91,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
     refetchOnWindowFocus: true,
   });
 
@@ -103,7 +103,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
     refetchOnWindowFocus: true,
   });
 
@@ -115,7 +115,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
     refetchOnWindowFocus: true,
   });
 

@@ -85,46 +85,50 @@ export async function buildSyllabusInsights(
     }
   }
 
-  const subjectInsights: SubjectInsight[] = [];
+  // Each enrolment's insight is independent, so run them concurrently rather
+  // than chaining one inventory + paper-insight query set after another.
+  // Promise.all preserves enrolment order. Students have only a handful of
+  // subjects, so concurrency stays well within the pool.
+  const subjectInsights: SubjectInsight[] = await Promise.all(
+    studentSubjects.map(async (enrollment) => {
+      const inventory = await storage.listSyllabusTopicInventory({
+        board: enrollment.examBody,
+        syllabusCode: enrollment.syllabusCode,
+        subject: enrollment.subject,
+      });
 
-  for (const enrollment of studentSubjects) {
-    const inventory = await storage.listSyllabusTopicInventory({
-      board: enrollment.examBody,
-      syllabusCode: enrollment.syllabusCode,
-      subject: enrollment.subject,
-    });
+      const topicNames = new Set<string>();
+      for (const row of inventory) topicNames.add(row.topic);
 
-    const topicNames = new Set<string>();
-    for (const row of inventory) topicNames.add(row.topic);
+      // Also surface any mastery topics that aren't in the inventory so tested
+      // topics never disappear from the radar.
+      for (const m of mastery) {
+        if (m.subject.toLowerCase() === enrollment.subject.toLowerCase()) topicNames.add(m.topic);
+      }
 
-    // Also surface any mastery topics that aren't in the inventory so tested
-    // topics never disappear from the radar.
-    for (const m of mastery) {
-      if (m.subject.toLowerCase() === enrollment.subject.toLowerCase()) topicNames.add(m.topic);
-    }
+      const topicInsights: TopicInsight[] = Array.from(topicNames).map((topic) => {
+        const hit = masteryByKey.get(`${enrollment.subject.toLowerCase()}|${topic.toLowerCase()}`);
+        return {
+          topic,
+          understandingPercent: hit?.understandingPercent ?? 0,
+          masteryAchieved: hit?.masteryAchieved ?? false,
+          attempted: (hit?.totalQuestions ?? 0) > 0,
+          totalQuestions: hit?.totalQuestions ?? 0,
+        };
+      }).sort((a, b) => a.topic.localeCompare(b.topic));
 
-    const topicInsights: TopicInsight[] = Array.from(topicNames).map((topic) => {
-      const hit = masteryByKey.get(`${enrollment.subject.toLowerCase()}|${topic.toLowerCase()}`);
+      const paperInsights = await buildPaperInsights(enrollment, masteryByKey);
+
       return {
-        topic,
-        understandingPercent: hit?.understandingPercent ?? 0,
-        masteryAchieved: hit?.masteryAchieved ?? false,
-        attempted: (hit?.totalQuestions ?? 0) > 0,
-        totalQuestions: hit?.totalQuestions ?? 0,
+        subject: enrollment.subject,
+        examBody: enrollment.examBody,
+        syllabusCode: enrollment.syllabusCode,
+        level: enrollment.level,
+        topics: topicInsights,
+        papers: paperInsights,
       };
-    }).sort((a, b) => a.topic.localeCompare(b.topic));
-
-    const paperInsights = await buildPaperInsights(enrollment, masteryByKey);
-
-    subjectInsights.push({
-      subject: enrollment.subject,
-      examBody: enrollment.examBody,
-      syllabusCode: enrollment.syllabusCode,
-      level: enrollment.level,
-      topics: topicInsights,
-      papers: paperInsights,
-    });
-  }
+    }),
+  );
 
   return { subjects: subjectInsights };
 }

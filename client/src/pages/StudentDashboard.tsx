@@ -557,10 +557,13 @@ export default function StudentDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 10_000,
+    // This is the page's heaviest aggregate. Local actions already refresh it
+    // instantly via subscribeToSomaMutations (above), so we only need a slow
+    // safety-net poll for server-originated changes (e.g. a tutor assigning new
+    // work) plus a focus refetch — not a 10s storm of full-dashboard rebuilds.
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    refetchOnMount: "always",
   });
 
   // Syllabus-insights query — drives the topic-coverage radar + paper-readiness
