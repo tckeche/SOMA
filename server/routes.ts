@@ -1148,18 +1148,34 @@ const TUTOR_EMAIL_DOMAIN = process.env.TUTOR_EMAIL_DOMAIN || "melaniacalvin.com"
 
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "tckeche@gmail.com";
 
+// Optional comma-separated allowlist of individual emails that may be
+// provisioned as tutors at signup without being on TUTOR_EMAIL_DOMAIN.
+// Server-side only — a client cannot influence this set.
+const TUTOR_EMAIL_ALLOWLIST = new Set(
+  (process.env.TUTOR_EMAIL_ALLOWLIST || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
+
 function determineRole(
   email: string,
   requestedRole?: string,
 ): "tutor" | "student" | "super_admin" {
-  if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
+  const lc = email.toLowerCase();
+  if (lc === SUPER_ADMIN_EMAIL.toLowerCase()) return "super_admin";
   const domain = email.split("@")[1]?.toLowerCase();
   if (domain === TUTOR_EMAIL_DOMAIN.toLowerCase()) return "tutor";
-  // Honour the role the user picked at signup, but clamp it: a self-selected
-  // role can only ever be "tutor" or "student" — never "super_admin". This is
-  // only consulted for brand-new accounts (see auth/sync), so it cannot be used
-  // to escalate an existing account by mutating Supabase user_metadata.
-  if (requestedRole === "tutor") return "tutor";
+  // SECURITY: a client-supplied requested_role must NEVER by itself grant the
+  // tutor role — doing so let anyone signing up self-provision the entire
+  // tutor API surface (adopt students, author/assign/publish assessments,
+  // read rosters, mark, regrade). Honour a requested "tutor" ONLY when the
+  // email is on the server-side allowlist (or the tutor domain, handled
+  // above); otherwise default to student. A super_admin can promote later.
+  // super_admin is never self-selectable. This is only consulted for
+  // brand-new accounts (see auth/sync), so it cannot escalate an existing
+  // account via mutated Supabase user_metadata.
+  if (requestedRole === "tutor" && TUTOR_EMAIL_ALLOWLIST.has(lc)) return "tutor";
   return "student";
 }
 
@@ -2997,6 +3013,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Regrade every completed submission for a quiz against the CURRENT question
+  // set (no AI) — used after a tutor excludes/edits a question. The client
+  // "Regrade submissions" button (TutorQuizReview) called this endpoint, but it
+  // was never registered, so the action always 404'd. recomputeReportScore is
+  // the same marking function used at submission time, so a regrade can never
+  // diverge from the original grading. Pending/failed reports are left untouched.
+  app.post("/api/tutor/quizzes/:quizId/regrade", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const questions = await storage.getSomaQuestionsByQuizId(quizId);
+      const reports = await storage.getSomaReportsByQuizId(quizId);
+      const completed = reports.filter((r) => r.status === "completed");
+      const details: Array<{ reportId: number; studentName: string; oldScore: number; newScore: number; maxPossibleScore: number }> = [];
+      let changed = 0;
+      for (const r of completed) {
+        const { oldScore, newScore, maxPossibleScore } = recomputeReportScore(r, questions);
+        if (newScore !== oldScore) {
+          await storage.updateSomaReport(r.id, { score: newScore });
+          changed += 1;
+        }
+        details.push({ reportId: r.id, studentName: r.studentName, oldScore, newScore, maxPossibleScore });
+      }
+      res.json({ regraded: completed.length, changed, details });
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.regrade", "Failed to regrade submissions");
+    }
+  });
+
   // Tutor pre-publish review action: approve / reject, or edit (which re-gates).
   app.patch("/api/tutor/quizzes/:quizId/questions/:questionId/review", requireTutor, async (req, res) => {
     try {
@@ -4500,6 +4550,12 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
       const tutorId = (req as any).tutorId;
       const studentId = String(req.params.studentId);
       const parsed = z.object({ suggestionIds: z.array(z.number()).min(1), questionCount: z.number().min(1).max(MAX_QUESTIONS_PER_QUIZ).default(MAX_QUESTIONS_PER_QUIZ) }).parse(req.body || {});
+      // Adoption guard (parity with /ai/suggested-assessments): only a tutor who
+      // has adopted this student may publish for them. Without it, listStudentSubjects
+      // (which is not tutor-scoped) leaks whether an arbitrary student exists/has
+      // metadata and lets the route fire a notification referencing them.
+      const adopted = await storage.getAdoptedStudents(tutorId);
+      if (!adopted.some((s) => s.id === studentId)) return res.status(403).json({ message: "Access denied" });
       const subjects = await storage.listStudentSubjects(studentId);
       if (subjects.length === 0) return res.status(400).json({ message: "Student curriculum metadata is incomplete. Update profile first." });
       const all = await storage.listSuggestedAssessments(tutorId, studentId);
@@ -4745,9 +4801,14 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     try {
       const tutorId = (req as any).tutorId;
       const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
-      if (!title) return res.status(400).json({ message: "title is required" });
-      if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
-        return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
+      const titleStr = String(title ?? "").trim();
+      if (!titleStr) return res.status(400).json({ message: "title is required" });
+      if (titleStr.length > 200) return res.status(400).json({ message: "title must be 200 characters or fewer" });
+      // Bound the time limit: previously any value (negative, NaN-coerced, or huge)
+      // passed straight through to the DB.
+      const tlm = Number(timeLimitMinutes);
+      if (!Number.isInteger(tlm) || tlm < 1 || tlm > 600) {
+        return res.status(400).json({ message: "timeLimitMinutes must be an integer between 1 and 600" });
       }
       const normalizedFormat = format === "pdf" ? "pdf" : "mcq";
       const { mode: normMode, count: normCount, structured: normStructured } =
@@ -4756,13 +4817,13 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
         ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
         : [];
       const quiz = await storage.createSomaQuiz({
-        title,
-        topic: cleanTopics[0] || topic || title,
+        title: titleStr,
+        topic: cleanTopics[0] || topic || titleStr,
         topics: cleanTopics,
         syllabus: normalizeQuizSyllabusForWrite(syllabus),
         level: level ?? null,
         subject: subject ?? null,
-        timeLimitMinutes: Number(timeLimitMinutes),
+        timeLimitMinutes: tlm,
         authorId: tutorId,
         format: normalizedFormat,
         quizMode: normMode,
@@ -7677,6 +7738,13 @@ List ONLY clearly misspelt words from the text, lowercased, de-duplicated.
       const authUserId = String(authUser.id);
       if (report.studentId !== authUserId) {
         return res.status(403).json({ message: "You can only request a review of your own assessment." });
+      }
+
+      // structuredMarking is seeded at submit time (before AI marking finishes),
+      // so a non-empty map does NOT mean marking is done. Require a completed
+      // report so a student can't request a review of an in-flight/failed mark.
+      if (report.status !== "completed") {
+        return res.status(409).json({ message: "This assessment is still being marked. Please try again once your results are ready." });
       }
 
       const marking = (report.structuredMarking ?? {}) as Record<string, StructuredAnswerMark>;
