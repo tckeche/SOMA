@@ -167,6 +167,7 @@ export interface IStorage {
 
   getSomaUserByEmail(email: string): Promise<SomaUser | undefined>;
   getSomaUserById(id: string): Promise<SomaUser | undefined>;
+  getSomaUsersByIds(ids: string[]): Promise<SomaUser[]>;
   getAllStudents(): Promise<SomaUser[]>;
   adoptStudent(tutorId: string, studentId: string): Promise<TutorStudent>;
   removeAdoptedStudent(tutorId: string, studentId: string): Promise<void>;
@@ -1014,6 +1015,11 @@ class DatabaseStorage implements IStorage {
   async getSomaUserById(id: string): Promise<SomaUser | undefined> {
     const [result] = await this.database.select().from(somaUsers).where(eq(somaUsers.id, id));
     return result;
+  }
+
+  async getSomaUsersByIds(ids: string[]): Promise<SomaUser[]> {
+    if (ids.length === 0) return [];
+    return this.database.select().from(somaUsers).where(inArray(somaUsers.id, ids));
   }
 
   async getAllStudents(): Promise<SomaUser[]> {
@@ -2039,6 +2045,11 @@ export class MemoryStorage implements IStorage {
 
   async getSomaUserById(id: string): Promise<SomaUser | undefined> {
     return this.somaUsersList.find((u) => u.id === id);
+  }
+
+  async getSomaUsersByIds(ids: string[]): Promise<SomaUser[]> {
+    const idSet = new Set(ids);
+    return this.somaUsersList.filter((u) => idSet.has(u.id));
   }
 
   async getAllStudents(): Promise<SomaUser[]> {

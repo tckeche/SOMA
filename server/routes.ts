@@ -2698,13 +2698,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!Array.isArray(studentIds) || studentIds.length === 0) {
         return res.status(400).json({ message: "studentIds array required" });
       }
-      const results = [];
-      for (const studentId of studentIds) {
-        const student = await storage.getSomaUserById(studentId);
-        if (!student || student.role !== "student") continue;
-        const record = await storage.adoptStudent(tutorId, studentId);
-        results.push(record);
-      }
+      // Validate all candidate ids in one query (was one getSomaUserById per id).
+      const users = await storage.getSomaUsersByIds(studentIds);
+      const validIds = users.filter((u) => u.role === "student").map((u) => u.id);
+      const results = await Promise.all(validIds.map((id) => storage.adoptStudent(tutorId, id)));
       res.json({ adopted: results.length });
     } catch (err: any) {
       return sendInternalError(req, res, err, "routes.failed_to_adopt_students", "Failed to adopt students");
