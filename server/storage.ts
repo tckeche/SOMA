@@ -1553,68 +1553,77 @@ class DatabaseStorage implements IStorage {
     await this.database.update(somaUsers).set({ lastLoginAt: new Date() }).where(eq(somaUsers.id, userId));
   }
 
+  // Compute one tutor's summary card. Extracted so getTutorDashboardDetail can
+  // build a single summary instead of recomputing every tutor's (the old
+  // detail path ran the full per-tutor loop and then discarded all but one).
+  private async buildTutorSummary(tutor: SomaUser): Promise<TutorDashboardSummary> {
+    const adoptedStudents = await this.database
+      .select({ studentId: tutorStudents.studentId })
+      .from(tutorStudents)
+      .where(eq(tutorStudents.tutorId, tutor.id));
+    const adoptedStudentIds = adoptedStudents.map((row) => row.studentId);
+
+    const reportRows = adoptedStudentIds.length === 0
+      ? []
+      : await this.database
+        .select({
+          reportId: somaReports.id,
+          quizId: somaReports.quizId,
+          score: somaReports.score,
+          subject: somaQuizzes.subject,
+        })
+        .from(somaReports)
+        .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+        .where(inArray(somaReports.studentId, adoptedStudentIds));
+
+    const authoredSubjects = await this.database
+      .select({ subject: somaQuizzes.subject })
+      .from(somaQuizzes)
+      .where(eq(somaQuizzes.authorId, tutor.id));
+
+    const maxScoresByQuiz = await this.getSomaQuestionTotalsByQuizIds(
+      Array.from(new Set(reportRows.map((row) => row.quizId))),
+    );
+    const averageStudentGrade = reportRows.length === 0
+      ? null
+      : Math.round((reportRows.reduce((acc, row) => {
+        const max = maxScoresByQuiz[row.quizId] || 0;
+        return acc + (max > 0 ? (row.score / max) * 100 : 0);
+      }, 0) / reportRows.length) * 10) / 10;
+
+    const subjects = Array.from(new Set([
+      ...authoredSubjects.map((s) => s.subject).filter((s): s is string => Boolean(s)),
+      ...reportRows.map((r) => r.subject).filter((s): s is string => Boolean(s)),
+    ])).sort((a, b) => a.localeCompare(b));
+
+    return {
+      tutorId: tutor.id,
+      tutorEmail: tutor.email,
+      tutorName: tutor.displayName,
+      adoptedStudentsCount: adoptedStudentIds.length,
+      assessmentsCompletedCount: reportRows.length,
+      averageStudentGrade,
+      subjects,
+      lastLoginAt: tutor.lastLoginAt ? tutor.lastLoginAt.toISOString() : null,
+    };
+  }
+
   async getTutorDashboardSummaries(): Promise<TutorDashboardSummary[]> {
     const tutors = await this.database.select().from(somaUsers).where(eq(somaUsers.role, "tutor"));
     const summaries: TutorDashboardSummary[] = [];
-
     for (const tutor of tutors) {
-      const adoptedStudents = await this.database
-        .select({ studentId: tutorStudents.studentId })
-        .from(tutorStudents)
-        .where(eq(tutorStudents.tutorId, tutor.id));
-      const adoptedStudentIds = adoptedStudents.map((row) => row.studentId);
-
-      const reportRows = adoptedStudentIds.length === 0
-        ? []
-        : await this.database
-          .select({
-            reportId: somaReports.id,
-            quizId: somaReports.quizId,
-            score: somaReports.score,
-            subject: somaQuizzes.subject,
-          })
-          .from(somaReports)
-          .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
-          .where(inArray(somaReports.studentId, adoptedStudentIds));
-
-      const authoredSubjects = await this.database
-        .select({ subject: somaQuizzes.subject })
-        .from(somaQuizzes)
-        .where(eq(somaQuizzes.authorId, tutor.id));
-
-      const maxScoresByQuiz = await this.getSomaQuestionTotalsByQuizIds(
-        Array.from(new Set(reportRows.map((row) => row.quizId))),
-      );
-      const averageStudentGrade = reportRows.length === 0
-        ? null
-        : Math.round((reportRows.reduce((acc, row) => {
-          const max = maxScoresByQuiz[row.quizId] || 0;
-          return acc + (max > 0 ? (row.score / max) * 100 : 0);
-        }, 0) / reportRows.length) * 10) / 10;
-
-      const subjects = Array.from(new Set([
-        ...authoredSubjects.map((s) => s.subject).filter((s): s is string => Boolean(s)),
-        ...reportRows.map((r) => r.subject).filter((s): s is string => Boolean(s)),
-      ])).sort((a, b) => a.localeCompare(b));
-
-      summaries.push({
-        tutorId: tutor.id,
-        tutorEmail: tutor.email,
-        tutorName: tutor.displayName,
-        adoptedStudentsCount: adoptedStudentIds.length,
-        assessmentsCompletedCount: reportRows.length,
-        averageStudentGrade,
-        subjects,
-        lastLoginAt: tutor.lastLoginAt ? tutor.lastLoginAt.toISOString() : null,
-      });
+      summaries.push(await this.buildTutorSummary(tutor));
     }
-
     return summaries.sort((a, b) => b.assessmentsCompletedCount - a.assessmentsCompletedCount);
   }
 
   async getTutorDashboardDetail(tutorId: string): Promise<TutorDashboardDetail | undefined> {
-    const summary = (await this.getTutorDashboardSummaries()).find((row) => row.tutorId === tutorId);
-    if (!summary) return undefined;
+    const [tutor] = await this.database
+      .select()
+      .from(somaUsers)
+      .where(and(eq(somaUsers.id, tutorId), eq(somaUsers.role, "tutor")));
+    if (!tutor) return undefined;
+    const summary = await this.buildTutorSummary(tutor);
 
     const students = await this.getAdoptedStudents(tutorId);
     const studentIds = students.map((s) => s.id);
