@@ -578,23 +578,34 @@ export default function StudentDashboard() {
     enabled: !!userId,
   });
 
-  // Examiner-driven study tips, fetched per subject.
+  // Examiner-driven study tips, fetched per subject. Source from the
+  // syllabus-insights subjects (which carry the student's real syllabusCode +
+  // examBody), NOT the dashboard's SubjectSummary which has no syllabusCode.
+  // Scoping by syllabusCode is essential: the examiner_misconceptions.board
+  // column is drift-prone ("Cambridge" vs "Cambridge IGCSE") so a hard-coded
+  // board="Cambridge" match silently missed most rows and could surface a
+  // different syllabus' insights under the same subject name (e.g. 9709 tips
+  // for a 0580 student).
   const subjectsForTips = useMemo(
-    () => (data?.subjects ?? []).slice(0, 4),
-    [data?.subjects],
+    () => (syllabusInsights?.subjects ?? []).slice(0, 4),
+    [syllabusInsights?.subjects],
   );
   const tipQueries = useQueries({
     queries: subjectsForTips.map((s) => ({
-      queryKey: ["/api/student/study-tips", s.subject],
+      queryKey: ["/api/student/study-tips", s.subject, s.syllabusCode],
       queryFn: async (): Promise<StudyTipResponse> => {
         // Pull a generous slice per subject so the examiner-insights carousel
         // can show many different points across all of the student's subjects.
-        const params = new URLSearchParams({ subject: s.subject, board: "Cambridge", top: "8" });
+        const params = new URLSearchParams({ subject: s.subject, top: "8" });
+        // Trust the syllabus code (precise scope); fall back to board only when
+        // a code is somehow absent so the endpoint's "code OR board" gate passes.
+        if (s.syllabusCode) params.set("syllabusCode", s.syllabusCode);
+        else if (s.examBody) params.set("board", s.examBody);
         const res = await authFetch(`/api/student/study-tips?${params.toString()}`);
         if (!res.ok) return { tips: [], cacheHit: false, elapsedMs: 0 };
         return res.json();
       },
-      enabled: !!userId && !!s.subject,
+      enabled: !!userId && !!s.subject && (!!s.syllabusCode || !!s.examBody),
       staleTime: 5 * 60 * 1000,
     })),
   });
@@ -605,7 +616,7 @@ export default function StudentDashboard() {
   const examinerInsights: ExaminerInsightCard[] = useMemo(() => {
     const perSubject = subjectsForTips.map((s, i) => {
       const subj = subjectsForTips[i]?.subject;
-      const level = (subjectsForTips[i] as any)?.level ?? null;
+      const level = subjectsForTips[i]?.level ?? null;
       return (tipQueries[i]?.data?.tips ?? []).map((t) => ({
         id: t.id,
         subject: subj,

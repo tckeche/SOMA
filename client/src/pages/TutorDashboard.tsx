@@ -102,7 +102,7 @@ export default function TutorDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     refetchOnWindowFocus: true,
   });
 
@@ -118,7 +118,7 @@ export default function TutorDashboard() {
     // Event-driven freshness via subscribeToSomaMutations covers local actions;
     // a 30s safety-net poll + focus refetch is plenty. staleTime:0 +
     // refetchOnMount:"always" forced a full refetch on every remount/tab-switch.
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     refetchOnWindowFocus: true,
   });
 
@@ -131,7 +131,7 @@ export default function TutorDashboard() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     refetchOnWindowFocus: true,
   });
 
