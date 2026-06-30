@@ -6,7 +6,7 @@ import { listApprovedSeeds } from "../../services/examinerDistractorSeeds";
 import { detectGraphIntent, validateWithAutoFix } from "../../services/cambridgeGraphEngine";
 import { countWithField, newTraceId, traceLog } from "../../services/quizTraceLog";
 import { MAX_QUESTIONS_PER_QUIZ } from "../questionValidation/service";
-import { getQuizForQuestionWrite } from "./policies";
+import { getQuestionForDelete, getQuizForQuestionWrite } from "./policies";
 import type { NormalizedQuestionForInsert, RawQuestionInput } from "./types";
 
 export class QuestionManagementError extends Error { constructor(public status: number, message: string) { super(message); } }
@@ -233,4 +233,11 @@ export async function addQuestions(quizId: number, tutorId: string, questions: u
   const saved = await storage.createSomaQuestions(mapped as any);
   traceLog("route.addQuestions.afterCreate", { quizId, savedCount: saved.length, savedRowsWithSeeds: countWithField(saved as unknown as Record<string, unknown>[], "targetMisconceptionIds") }, traceId);
   return saved;
+}
+
+export async function deleteQuestion(questionId: number, tutorId: string) {
+  const owned = await getQuestionForDelete(questionId, tutorId);
+  if (!owned.ok) throw new QuestionManagementError(owned.status, owned.message);
+  await storage.deleteSomaQuestion(questionId);
+  return { success: true };
 }

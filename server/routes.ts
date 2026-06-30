@@ -3046,28 +3046,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
 
   // Draft and publish endpoints now live in autoloaded quizDrafts/quizPublish modules.
 
-  // Add-question endpoint now lives in autoloaded questionManagement module.
-
-  // Delete a question
-  app.delete("/api/tutor/questions/:questionId", requireTutor, async (req, res) => {
-    try {
-      const tutorId = (req as any).tutorId;
-      const questionId = parseInt(String(req.params.questionId));
-      if (isNaN(questionId)) return res.status(400).json({ message: "Invalid question ID" });
-      // Ownership gate: resolve the question's quiz and verify authorship so a
-      // tutor cannot delete questions from another tutor's live assessment.
-      const question = await storage.getSomaQuestionById(questionId);
-      if (!question) return res.status(404).json({ message: "Question not found" });
-      const quiz = await storage.getSomaQuiz(question.quizId);
-      if (!quiz || quiz.authorId !== tutorId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      await storage.deleteSomaQuestion(questionId);
-      res.json({ success: true });
-    } catch (err: any) {
-      return sendInternalError(req, res, err, "routes.failed_to_delete_question", "Failed to delete question");
-    }
-  });
+  // Manual question add/delete endpoints now live in the autoloaded questionManagement module.
 
   app.get("/api/tutor/syllabus-documents", requireTutor, async (req, res) => {
     try {
