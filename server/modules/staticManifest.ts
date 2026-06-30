@@ -23,6 +23,7 @@ import { moduleDefinition as revisionPlan } from "./revisionPlan";
 import { moduleDefinition as superAdminAiUsage } from "./superAdminAiUsage";
 import { moduleDefinition as superAdminDiagnostics } from "./superAdminDiagnostics";
 import { moduleDefinition as tutorExaminerInsights } from "./tutorExaminerInsights";
+import { moduleDefinition as studentQuizTaking } from "./studentQuizTaking";
 import { moduleDefinition as studentSubjects } from "./studentSubjects";
 import { moduleDefinition as syllabusCatalogue } from "./syllabusCatalogue";
 import { moduleDefinition as tutorNotifications } from "./tutorNotifications";
@@ -47,6 +48,7 @@ export const staticDomainModules: DomainModuleDefinition[] = [
   quizPublish,
   questionManagement,
   revisionPlan,
+  studentQuizTaking,
   studentSubjects,
   superAdminAiUsage,
   superAdminDiagnostics,
