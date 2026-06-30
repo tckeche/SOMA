@@ -2,12 +2,35 @@ import crypto from "node:crypto";
 import { storage } from "../../storage";
 import { logError, requestLogContext } from "../../utils/logging";
 import { canonicalEmail, hashCode, make7DigitCode } from "./validators";
+import { hashEmailForLog } from "../authAccount/validators";
 
 const verificationResendAttempts = new Map<string, number>();
 const verificationCodeStore = new Map<string, { id: string; codeHash: string; salt: string; expiresAt: number; usedAt: number | null; sentAt: number; attempts: number }>();
 
 export class VerificationHttpError extends Error {
   constructor(public status: number, message: string, public body: Record<string, unknown>) { super(message); }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function trustedSupabaseAuthUrl(): string | undefined {
+  const raw = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "https:" || (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname))) return parsed.origin;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function supabaseAuthEndpoint(baseUrl: string, pathname: string, searchParams?: Record<string, string | number>): string {
+  const url = new URL(pathname, baseUrl);
+  for (const [key, value] of Object.entries(searchParams ?? {})) url.searchParams.set(key, String(value));
+  return url.toString();
 }
 
 export async function requestPasswordReset(rawEmail: unknown) {
@@ -21,13 +44,13 @@ export async function requestPasswordReset(rawEmail: unknown) {
 export async function resendVerification(req: any) {
   const email = canonicalEmail(String(req.body?.email || ""));
   if (!email) throw new VerificationHttpError(400, "Email is required", { message: "Email is required", code: "VERIFICATION_EMAIL_REQUIRED" });
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseUrl = trustedSupabaseAuthUrl();
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) throw new VerificationHttpError(500, "Verification service unavailable", { message: "Verification service unavailable", code: "VERIFICATION_CONFIG_MISSING" });
-  const resp = await fetch(`${supabaseUrl}/auth/v1/resend`, { method: "POST", signal: AbortSignal.timeout(12_000), headers: { "Content-Type": "application/json", apikey: anonKey, Authorization: `Bearer ${anonKey}` }, body: JSON.stringify({ type: "signup", email }) });
+  const resp = await fetch(supabaseAuthEndpoint(supabaseUrl, "/auth/v1/resend"), { method: "POST", signal: AbortSignal.timeout(12_000), headers: { "Content-Type": "application/json", apikey: anonKey, Authorization: `Bearer ${anonKey}` }, body: JSON.stringify({ type: "signup", email }) });
   const body = await resp.text();
   if (!resp.ok) {
-    logError("route.verification_resend_failed", undefined, { ...requestLogContext(req), severity: "medium", module: "routes", component: "verificationResend", email, status: resp.status, responseBody: body.slice(0, 220) });
+    logError("route.verification_resend_failed", undefined, { ...requestLogContext(req), severity: "medium", module: "routes", component: "verificationResend", emailHash: hashEmailForLog(email), status: resp.status, responseBody: body.slice(0, 220) });
     throw new VerificationHttpError(502, "Could not resend verification email. Please try again shortly.", { message: "Could not resend verification email. Please try again shortly.", code: "VERIFICATION_RESEND_FAILED" });
   }
   const attemptCount = (verificationResendAttempts.get(email) ?? 0) + 1;
@@ -71,12 +94,12 @@ export async function verifyCode(rawEmail: unknown, rawCode: unknown) {
     verificationCodeStore.set(email, record);
     throw new VerificationHttpError(401, "Invalid code. Please check and try again.", { message: "Invalid code. Please check and try again.", code: "VERIFICATION_CODE_MISMATCH" });
   }
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseUrl = trustedSupabaseAuthUrl();
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRole) throw new VerificationHttpError(500, "Server verification config missing", { message: "Server verification config missing", code: "VERIFICATION_ADMIN_CONFIG_MISSING" });
   let targetUserId = "";
   for (let page = 1; page <= 5 && !targetUserId; page += 1) {
-    const usersResp = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`, { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } });
+    const usersResp = await fetch(supabaseAuthEndpoint(supabaseUrl, "/auth/v1/admin/users", { page, per_page: 200 }), { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } });
     if (!usersResp.ok) break;
     const usersData = await usersResp.json();
     const users = Array.isArray(usersData?.users) ? usersData.users : [];
@@ -84,7 +107,8 @@ export async function verifyCode(rawEmail: unknown, rawCode: unknown) {
     if (matched?.id) targetUserId = matched.id;
   }
   if (!targetUserId) throw new VerificationHttpError(404, "Account not found for this email", { message: "Account not found for this email", code: "VERIFICATION_USER_NOT_FOUND" });
-  const confirmResp = await fetch(`${supabaseUrl}/auth/v1/admin/users/${targetUserId}`, { method: "PUT", headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` }, body: JSON.stringify({ email_confirm: true }) });
+  const encodedUserId = encodeURIComponent(targetUserId);
+  const confirmResp = await fetch(supabaseAuthEndpoint(supabaseUrl, `/auth/v1/admin/users/${encodedUserId}`), { method: "PUT", headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` }, body: JSON.stringify({ email_confirm: true }) });
   if (!confirmResp.ok) throw new VerificationHttpError(502, "Could not confirm account from code.", { message: "Could not confirm account from code.", code: "VERIFICATION_CONFIRM_FAILED" });
   record.usedAt = Date.now();
   verificationCodeStore.set(email, record);

@@ -1,7 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
+import path from "node:path";
 import { storage } from "../../storage";
-import { deleteObject, isStorageConfigured, MAX_PDF_BYTES, PDF_MIME } from "../../services/fileStorage";
+import { deleteObject, isSafeStoragePath, isStorageConfigured, MAX_PDF_BYTES, PDF_MIME } from "../../services/fileStorage";
 import { logWarn } from "../../utils/logging";
 
 const pdfFileUpload = multer({
@@ -39,6 +40,14 @@ export function looksLikePdf(buf: Buffer | undefined): boolean {
   return Boolean(buf && buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-");
 }
 
+export function sanitizePdfFilename(value: unknown): string {
+  const raw = typeof value === "string" ? value : "";
+  const basename = path.basename(raw).replace(/[\0\r\n]/g, "").trim();
+  const cleaned = basename.replace(/[^\w .()\-]/g, "_").slice(0, 180).trim();
+  const fallback = cleaned || "document.pdf";
+  return fallback.toLowerCase().endsWith(".pdf") ? fallback : `${fallback}.pdf`;
+}
+
 export function requireStorageConfigured(res: Response): boolean {
   if (!isStorageConfigured()) {
     res.status(503).json({ message: "File storage is not configured" });
@@ -64,7 +73,7 @@ export async function collectQuizStoragePaths(quizId: number): Promise<string[]>
       storage.getAssessmentAttachmentsByQuiz(quizId),
       storage.getSubmissionUploadsByQuiz(quizId),
     ]);
-    return [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)];
+    return [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)].filter(isSafeStoragePath);
   } catch (err) {
     logWarn("quiz_storage_collect_failed", { quizId, error: (err as Error)?.message });
     return [];
@@ -74,7 +83,7 @@ export async function collectQuizStoragePaths(quizId: number): Promise<string[]>
 export async function purgeStorageObjects(paths: string[]): Promise<void> {
   if (paths.length === 0 || !isStorageConfigured()) return;
   try {
-    await Promise.all(paths.map((p) => deleteObject(p).catch(() => {})));
+    await Promise.all(paths.filter(isSafeStoragePath).map((p) => deleteObject(p).catch(() => {})));
   } catch (err) {
     logWarn("quiz_storage_purge_failed", { error: (err as Error)?.message });
   }

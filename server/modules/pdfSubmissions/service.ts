@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { storage } from "../../storage";
 import { createSignedDownloadUrl, FileStorageError, PDF_MIME, uploadPdf } from "../../services/fileStorage";
 import { buildPdfMarkingIdempotencyKey } from "../../services/pdfReconciliation";
-import { looksLikePdf, publicSubmission } from "../fileStorageAccess/service";
+import { looksLikePdf, publicSubmission, sanitizePdfFilename } from "../fileStorageAccess/service";
 import { requireTutorOwnsQuiz } from "./policies";
 
 export class PdfSubmissionError extends Error { constructor(public status: number, message: string) { super(message); } }
@@ -18,7 +18,7 @@ export async function upload(quizId: number, studentId: string, file: Express.Mu
   const aiReady = quiz.pdfMarkingMode === "dual_ai" && config?.preparationStatus === "ready" && config.activeRubricVersionId;
   const storagePath = quiz.pdfMarkingMode === "dual_ai" ? `submissions/${quizId}/${studentId}/versions/${Date.now()}-${crypto.randomUUID()}.pdf` : `submissions/${quizId}/${studentId}.pdf`;
   await uploadPdf(storagePath, file.buffer);
-  const row = await storage.upsertSubmissionUpload({ quizId, studentId, filename: file.originalname, storagePath, mimeType: PDF_MIME, sizeBytes: file.size, contentHash, aiMarkingStatus: quiz.pdfMarkingMode === "dual_ai" ? (aiReady ? "queued" : "blocked_setup") : null });
+  const row = await storage.upsertSubmissionUpload({ quizId, studentId, filename: sanitizePdfFilename(file.originalname), storagePath, mimeType: PDF_MIME, sizeBytes: file.size, contentHash, aiMarkingStatus: quiz.pdfMarkingMode === "dual_ai" ? (aiReady ? "queued" : "blocked_setup") : null });
   if (quiz.pdfMarkingMode === "dual_ai" && aiReady && config?.activeRubricVersionId) {
     await storage.upsertPdfMarkingJob({ jobType: "mark_submission", idempotencyKey: buildPdfMarkingIdempotencyKey({ submissionUploadId: row.id, submissionVersion: row.submissionVersion, contentHash, rubricVersionId: config.activeRubricVersionId }), quizId, submissionUploadId: row.id, rubricVersionId: config.activeRubricVersionId, payload: { submissionVersion: row.submissionVersion }, maxAttempts: Number(process.env.PDF_MARKING_MAX_ATTEMPTS || 3) });
   }
@@ -46,7 +46,7 @@ export async function downloadForTutor(id: number, tutorId: string) {
   if (!upload) throw new PdfSubmissionError(404, "Submission not found");
   const quiz = await storage.getSomaQuiz(upload.quizId);
   if (!quiz || quiz.authorId !== tutorId) throw new PdfSubmissionError(403, "Access denied");
-  return { url: await createSignedDownloadUrl(upload.storagePath, 300, upload.filename) };
+  return { url: await createSignedDownloadUrl(upload.storagePath, 300, sanitizePdfFilename(upload.filename)) };
 }
 
 export { FileStorageError };

@@ -1,6 +1,6 @@
 import type { Express, Router } from "express";
 import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { log } from "../utils/logging";
@@ -8,13 +8,21 @@ import { staticDomainModules } from "./staticManifest";
 import { isRouterDomainModule, type DomainModuleDefinition } from "./routerTypes";
 
 const MODULE_EXPORT_NAME = "moduleDefinition";
+const MODULE_DIRECTORY_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 function moduleRoot(): string {
   return path.resolve(process.cwd(), "server/modules");
 }
 
 function isCandidateDirectory(entryName: string): boolean {
-  return !entryName.startsWith(".") && !entryName.endsWith(".test") && entryName !== "tests";
+  return MODULE_DIRECTORY_PATTERN.test(entryName) && !entryName.endsWith(".test") && entryName !== "tests";
+}
+
+function assertPathInsideRoot(root: string, candidate: string): void {
+  const relative = path.relative(root, candidate);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Refusing to load domain module outside module root: ${candidate}`);
+  }
 }
 
 function validateModuleDefinition(value: unknown, source: string): DomainModuleDefinition {
@@ -41,15 +49,19 @@ function validateModuleDefinition(value: unknown, source: string): DomainModuleD
 
 async function discoverModuleFiles(root: string): Promise<string[]> {
   if (!existsSync(root)) return [];
-  const entries = await readdir(root, { withFileTypes: true });
+  const canonicalRoot = await realpath(root);
+  const entries = await readdir(canonicalRoot, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || !isCandidateDirectory(entry.name)) continue;
-    const moduleDir = path.join(root, entry.name);
+    const moduleDir = path.join(canonicalRoot, entry.name);
     const indexTs = path.join(moduleDir, "index.ts");
     const indexJs = path.join(moduleDir, "index.js");
-    if (existsSync(indexTs)) files.push(indexTs);
-    else if (existsSync(indexJs)) files.push(indexJs);
+    const selected = existsSync(indexTs) ? indexTs : existsSync(indexJs) ? indexJs : undefined;
+    if (!selected) continue;
+    const canonicalFile = await realpath(selected);
+    assertPathInsideRoot(canonicalRoot, canonicalFile);
+    files.push(canonicalFile);
   }
   return files.sort((a, b) => a.localeCompare(b));
 }
@@ -82,7 +94,7 @@ function validateNoDuplicates(modules: DomainModuleDefinition[]): void {
 }
 
 export async function discoverDomainModules(options: { rootDir?: string; useStaticFallback?: boolean } = {}): Promise<DomainModuleDefinition[]> {
-  const root = options.rootDir ?? moduleRoot();
+  const root = path.resolve(options.rootDir ?? moduleRoot());
   const useStaticFallback = options.useStaticFallback ?? true;
   const files = await discoverModuleFiles(root);
 

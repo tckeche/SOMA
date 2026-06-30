@@ -219,6 +219,17 @@ describe("tutor worksheet attachments", () => {
     expect(res.status).toBe(503);
     expect(res.body.error?.message ?? res.body.message).toBe("File storage is not configured");
   });
+
+  it("sanitizes unsafe original filenames before storing public metadata", async () => {
+    const quizId = await createQuizWithAssignedStudent();
+    const res = await request
+      .post(`/api/tutor/quizzes/${quizId}/attachments`)
+      .set("Authorization", `Bearer ${tutorAToken}`)
+      .attach("file", PDF, { filename: "../worksheet<script>.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(201);
+    expect(res.body.filename).not.toMatch(/[\\/<>\r\n]/);
+    expect(res.body.filename).toMatch(/\.pdf$/);
+  });
 });
 
 describe("format enforcement (mcq assessments reject PDF flows)", () => {

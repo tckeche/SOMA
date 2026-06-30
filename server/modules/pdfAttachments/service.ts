@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { storage } from "../../storage";
 import { createSignedDownloadUrl, deleteObject, FileStorageError, PDF_MIME, uploadPdf, isStorageConfigured } from "../../services/fileStorage";
-import { looksLikePdf, publicAttachment } from "../fileStorageAccess/service";
+import { looksLikePdf, publicAttachment, sanitizePdfFilename } from "../fileStorageAccess/service";
 import { canAccessQuizAttachments, requireTutorOwnsQuiz } from "./policies";
 import { documentRole } from "./validators";
 
@@ -15,7 +15,7 @@ export async function upload(quizId: number, tutorId: string, file: Express.Mult
   if (quiz.format !== "pdf") throw new PdfAttachmentError(400, "Worksheets can only be added to PDF-format assessments");
   const storagePath = `assessments/${quizId}/${crypto.randomUUID()}.pdf`;
   await uploadPdf(storagePath, file.buffer);
-  const row = await storage.createAssessmentAttachment({ quizId, filename: file.originalname, storagePath, mimeType: PDF_MIME, sizeBytes: file.size, uploadedBy: tutorId, documentRole: documentRole(body?.documentRole) });
+  const row = await storage.createAssessmentAttachment({ quizId, filename: sanitizePdfFilename(file.originalname), storagePath, mimeType: PDF_MIME, sizeBytes: file.size, uploadedBy: tutorId, documentRole: documentRole(body?.documentRole) });
   return publicAttachment(row);
 }
 
@@ -44,7 +44,7 @@ export async function download(quizId: number, attachmentId: number, userId: str
   if (!(await canAccessQuizAttachments(quizId, userId))) throw new PdfAttachmentError(403, "Access denied");
   const attachment = await storage.getAssessmentAttachment(attachmentId);
   if (!attachment || attachment.quizId !== quizId) throw new PdfAttachmentError(404, "Attachment not found");
-  return { url: await createSignedDownloadUrl(attachment.storagePath, 300, attachment.filename) };
+  return { url: await createSignedDownloadUrl(attachment.storagePath, 300, sanitizePdfFilename(attachment.filename)) };
 }
 
 export { FileStorageError };

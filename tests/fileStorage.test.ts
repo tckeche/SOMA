@@ -17,6 +17,7 @@ import {
   uploadPdf,
   createSignedDownloadUrl,
   isStorageConfigured,
+  isSafeStoragePath,
   UPLOAD_BUCKET,
   PDF_MIME,
 } from "../server/services/fileStorage";
@@ -73,6 +74,23 @@ describe("isStorageConfigured", () => {
   it("is false when unconfigured", () => {
     unconfigure();
     expect(isStorageConfigured()).toBe(false);
+  });
+
+  it("is false for untrusted Supabase URL protocols", () => {
+    process.env.VITE_SUPABASE_URL = "file:///tmp/not-supabase";
+    expect(isStorageConfigured()).toBe(false);
+  });
+});
+
+describe("storage path validation", () => {
+  it("rejects traversal and absolute object paths before network calls", async () => {
+    const spy = vi.fn();
+    global.fetch = spy as any;
+    expect(isSafeStoragePath("quiz/42/file.pdf")).toBe(true);
+    expect(isSafeStoragePath("../secret.pdf")).toBe(false);
+    expect(isSafeStoragePath("/secret.pdf")).toBe(false);
+    await expect(uploadPdf("../secret.pdf", Buffer.from("%PDF-1.4"))).rejects.toMatchObject({ status: 400 });
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

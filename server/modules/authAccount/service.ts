@@ -58,7 +58,7 @@ export async function syncAccount(req: any, metadata?: AuthMetadata) {
 
   const existingUser = await storage.getSomaUserById(id);
   const role = existingUser ? existingUser.role : determineRole(email, metadata?.requested_role);
-  console.log("[auth-sync]", { emailHash: hashEmailForLog(email), domain: email.split("@")[1], role });
+  console.log("[auth-sync]", { emailHash: hashEmailForLog(email), role });
   const parsed = insertSomaUserSchema.parse({
     id,
     email,
@@ -86,7 +86,7 @@ export async function getCurrentAccount(req: any) {
   let user = await storage.getSomaUserById(userId);
   if (!user) {
     const role = determineRole(email, tokenRequestedRole);
-    logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req), module: "routes", component: "authMe", userId, role, email });
+    logInfo("auth.auto_sync_missing_user", { ...requestLogContext(req), module: "routes", component: "authMe", userIdHash: hashEmailForLog(userId), role, emailHash: hashEmailForLog(email) });
     const parsed = insertSomaUserSchema.parse({ id: userId, email, displayName: resolveDisplayName(tokenName, null, email), role });
     user = await storage.upsertSomaUser(parsed);
   } else if (tokenName && isEmailDerivedName(user.displayName, user.email)) {
