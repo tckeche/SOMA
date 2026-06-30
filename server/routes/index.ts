@@ -7,8 +7,26 @@
  * a central manual import list.
  */
 import type { Express } from "express";
-import { registerDomainModules } from "../modules";
+import { registerSuperAdminAiUsageRoutes } from "./superAdminAiUsage";
+import { registerExaminerInsightsReviewRoutes } from "./examinerInsightsReview";
+import { registerTutorExaminerInsightsRoutes } from "./tutorExaminerInsights";
+import { registerMasteryMapRoutes } from "./masteryMap";
+import { registerMarkLossPredictorRoutes } from "./markLossPredictor";
+import { registerRevisionPlanRoutes } from "./revisionPlan";
+import { registerCohortHeatmapRoutes } from "./cohortHeatmap";
+import { registerCommandWordsRoutes } from "./commandWords";
+import { registerSuperAdminDiagnosticsRoutes } from "./superAdminDiagnostics";
+import { registerPdfAiMarkingRoutes } from "./pdfAiMarking";
 
-export async function registerDomainRoutes(app: Express): Promise<void> {
-  await registerDomainModules(app);
+export function registerDomainRoutes(app: Express): void {
+  registerSuperAdminAiUsageRoutes(app);
+  registerExaminerInsightsReviewRoutes(app);
+  registerTutorExaminerInsightsRoutes(app);
+  registerMasteryMapRoutes(app);
+  registerMarkLossPredictorRoutes(app);
+  registerRevisionPlanRoutes(app);
+  registerCohortHeatmapRoutes(app);
+  registerCommandWordsRoutes(app);
+  registerSuperAdminDiagnosticsRoutes(app);
+  registerPdfAiMarkingRoutes(app);
 }

@@ -20,7 +20,7 @@ Coordinates are integer basis points from 0 to 10,000. `server/services/pdfAnnot
 Mark schemes live in `pdf_marking_documents`, not student-visible attachments. Storage paths, raw provider responses, prompts, and provider diagnostics are not returned to student DTOs. System prompts treat PDF content as evidence, never instructions.
 
 ## Environment variables
-See `.env.example` for `PDF_DUAL_MARKING_ENABLED`, marker providers/models, worker enablement, attempt/page/timeout limits, and tutor-approval requirements.
+See `.env.example` for `PDF_DUAL_MARKING_ENABLED`, `PDF_MARKING_ADAPTER_ENABLED`, marker providers/models, worker runtime, attempt/page/timeout limits, and tutor-approval requirements. Keep both `PDF_DUAL_MARKING_ENABLED=false` and `PDF_MARKING_ADAPTER_ENABLED=false` in production until the adapter is ready.
 
 ## Known limitations
-Provider adapters fail closed until deployment config supplies independent multimodal providers. Tutor approval is always required in this release.
+Dual-AI marking must remain disabled in production until the real multimodal adapter is implemented and `PDF_MARKING_ADAPTER_ENABLED=true` is deliberately set. Autoscale deployments must not run the in-process worker; use a VM or external scheduled worker. Tutor approval is always required in this release.

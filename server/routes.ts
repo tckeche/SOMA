@@ -1,7 +1,9 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type SomaQuiz, type StructuredAnswerMark } from "@shared/schema";
+import { insertSomaUserSchema, graphQuestionSpecSchema, type DraftQuestion, type SomaQuestion, type StructuredAnswerMark } from "@shared/schema";
+import { buildPdfMarkingIdempotencyKey } from "./services/pdfReconciliation";
+import { canUseDualAiMarking } from "./services/pdfMarkingConfig";
 import { computeAssignmentStatus, ASSIGNMENT_STATUS_META, type AssignmentStatus } from "@shared/assignmentStatus";
 import { computeDefaultDueDate } from "@shared/dueDate";
 import { z } from "zod";
@@ -955,6 +957,48 @@ const pdfUpload = multer({
   },
 });
 
+/**
+ * Wrap a multer single-file middleware so its size/type errors become a clean
+ * 400 instead of bubbling to the generic error handler (CodeQL-friendly).
+ */
+function pdfUploadField(field: string) {
+  const mw = pdfFileUpload.single(field);
+  return (req: Request, res: Response, next: NextFunction) => {
+    mw(req, res, (err: unknown) => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ error: "File too large (max 20MB)" });
+        }
+        return res.status(400).json({ error: "Invalid upload" });
+      }
+      if (err instanceof Error && err.message === "PDF required") {
+        return res.status(400).json({ error: "PDF required" });
+      }
+      return res.status(400).json({ error: "Invalid upload" });
+    });
+  };
+}
+
+/**
+ * Server-side PDF magic-byte check. The client-supplied Content-Type is
+ * spoofable, so verify the first 5 bytes are the "%PDF-" signature.
+ */
+function looksLikePdf(buf: Buffer | undefined): boolean {
+  return Boolean(buf && buf.length >= 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-");
+}
+
+/** Strip the internal storage key from an attachment row before returning it. */
+function publicAttachment<T extends { storagePath?: string }>(row: T) {
+  const { storagePath, ...rest } = row;
+  return rest;
+}
+
+/** Strip the internal storage key from a submission row before returning it. */
+function publicSubmission<T extends { storagePath?: string; annotatedStoragePath?: string | null }>(row: T) {
+  const { storagePath, annotatedStoragePath, ...rest } = row;
+  return { ...rest, hasAnnotatedPdf: Boolean(annotatedStoragePath) };
+}
 
 
 const ADMIN_COOKIE_NAME = "admin_session";
@@ -2198,6 +2242,611 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // PDF upload routes now live in autoloaded pdfAttachments/pdfSubmissions modules.
+
+  // (10) Tutor marks a student's submission upload.
+  app.post(
+    "/api/tutor/submission-uploads/:id/mark",
+    tutorApiLimiter,
+    requireTutor,
+    async (req, res) => {
+      try {
+        const tutorId = (req as any).tutorId;
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+        const bodySchema = z.object({
+          score: z.number().int().min(0),
+          maxScore: z.number().int().positive().optional(),
+          feedback: z.string().max(5000).optional(),
+        });
+        const parsed = bodySchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten() });
+        }
+        const { score, maxScore, feedback } = parsed.data;
+        if (maxScore !== undefined && score > maxScore) {
+          return res.status(400).json({ message: "score cannot exceed maxScore" });
+        }
+
+      res.json({
+        requested: studentIds.length,
+        assigned: newAssignments.length,
+        alreadyAssigned: alreadyAssignedIds.length,
+        notAdopted: notAdoptedIds.length,
+        failed: perStudent.filter((p) => p.status === "failed").length,
+        assignments: newAssignments,
+        perStudent,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to assign quiz" });
+    }
+  });
+
+  // Unassign a student from a quiz
+  // Duplicate (clone) an assessment — Assignment Bank backend. Creates a new
+  // draft quiz owned by the tutor with all questions copied and no assignments.
+  app.post("/api/tutor/quizzes/:quizId/clone", requireTutor, tutorApiLimiter, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(String(req.params.quizId));
+      const source = await storage.getSomaQuiz(quizId);
+      // Treat "not yours" the same as "not found" to avoid leaking existence.
+      if (!source || source.authorId !== tutorId) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      const clone = await storage.cloneSomaQuiz(quizId, tutorId);
+      if (!clone) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      return res.status(201).json(clone);
+    } catch (err) {
+      return sendInternalError(req, res, err, "tutor.quizzes.clone", "Failed to duplicate assessment.");
+    }
+  });
+
+  app.delete("/api/tutor/quizzes/:quizId/unassign/:studentId", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(String(req.params.quizId));
+      const studentId = String(req.params.studentId);
+
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) {
+        return res.status(404).json({ message: "Quiz not found" });
+      }
+      if (quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteQuizAssignment(quizId, studentId);
+      return res.json({ success: true, message: "Student unassigned" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message || "Failed to unassign student" });
+    }
+  });
+
+  // Get comprehensive details for quiz management (including student progress)
+  app.get("/api/tutor/quizzes/:quizId/details", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const assignments = await storage.getQuizAssignmentsForQuiz(quizId);
+      const allReports = await storage.getSomaReportsByQuizId(quizId);
+
+      // Calculate actual max grade from question marks (0 if no questions — do not fallback to 100)
+      const questions = await storage.getSomaQuestionsByQuizId(quizId);
+      const maxGrade = questions.reduce((sum, q) => sum + q.marks, 0);
+
+      const now = new Date();
+
+      // Map assignments with their submission status and grades
+      const studentDetails = assignments.map((assignment) => {
+        const report = (allReports as any[]).find((r) => r.studentId === assignment.student.id);
+        const detailedStatus: AssignmentStatus = computeAssignmentStatus({
+          dueDate: assignment.dueDate ?? null,
+          report: report
+            ? {
+                status: report.status,
+                answersJson: report.answersJson,
+                aiFeedbackHtml: report.aiFeedbackHtml,
+                completedAt: report.completedAt,
+              }
+            : null,
+          now,
+        });
+        return {
+          assignmentId: assignment.id,
+          studentId: assignment.student.id,
+          studentName: assignment.student.displayName || assignment.student.email,
+          studentEmail: assignment.student.email,
+          assignmentStatus: assignment.status,
+          // Legacy coarse status — kept for backwards compatibility with
+          // existing client code that hasn't migrated yet.
+          status: report ? (report.status === "completed" ? "Submitted" : report.status === "failed" ? "Failed" : "In Progress") : "Not Started",
+          // New 8-value canonical status (PRD-aligned).
+          detailedStatus,
+          detailedStatusLabel: ASSIGNMENT_STATUS_META[detailedStatus].label,
+          startTime: report?.startedAt || report?.createdAt || null,
+          submissionTime: report?.completedAt || null,
+          finalGrade: report?.score ?? null,
+          maxGrade,
+          reportId: report?.id || null,
+          dueDate: assignment.dueDate || null,
+        };
+      });
+
+      res.json({
+        quiz,
+        assignments: studentDetails,
+        totalAssigned: studentDetails.length,
+        totalSubmitted: studentDetails.filter((s) => s.detailedStatus === "submitted" || s.detailedStatus === "feedback_ready").length,
+      });
+    } catch (err: any) {
+      logError("route.quiz_details_failed", err, { ...requestLogContext(req as any), severity: "high", module: "routes", component: "quizDetails", quizId: req.params.quizId });
+      res.status(500).json({ message: err.message || "Failed to fetch quiz details" });
+    }
+  });
+
+  // Tutor pre-publish review: list the quiz's questions WITH the answer key.
+  app.get("/api/tutor/quizzes/:quizId/review", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const questions = (await storage.getSomaQuestionsByQuizId(quizId))
+        .slice()
+        .sort((a, b) => a.id - b.id)
+        .map((q) => ({
+          id: q.id,
+          stem: q.stem,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          marks: q.marks,
+          reviewStatus: q.reviewStatus,
+          difficultyTag: q.difficultyTag,
+          topicTag: q.topicTag,
+          subtopicTag: q.subtopicTag,
+          generationMeta: q.generationMeta,
+        }));
+      res.json(questions);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.review", "Failed to load questions for review.");
+    }
+  });
+
+  // Tutor pre-publish review action: approve / reject, or edit (which re-gates).
+  app.patch("/api/tutor/quizzes/:quizId/questions/:questionId/review", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      const questionId = parseInt(req.params.questionId as string);
+      if (isNaN(quizId) || isNaN(questionId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const bodySchema = z
+        .object({
+          action: z.enum(["approve", "reject", "exclude", "restore"]).optional(),
+          stem: z.string().min(1).optional(),
+          options: z.array(z.string()).length(4).optional(),
+          correctAnswer: z.string().min(1).optional(),
+          explanation: z.string().min(1).optional(),
+        })
+        .refine(
+          (b) =>
+            b.action !== undefined ||
+            b.stem !== undefined ||
+            b.options !== undefined ||
+            b.correctAnswer !== undefined ||
+            b.explanation !== undefined,
+          { message: "Provide an action or at least one field to edit" },
+        );
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request", errors: parsed.error.flatten() });
+      }
+      const body = parsed.data;
+
+      const questions = await storage.getSomaQuestionsByQuizId(quizId);
+      const existing = questions.find((q) => q.id === questionId);
+      if (!existing) return res.status(404).json({ message: "Question not found" });
+
+      if (body.action === "approve") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "approved" });
+        return res.json(updated);
+      }
+      if (body.action === "reject") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "auto_blocked" });
+        return res.json(updated);
+      }
+      if (body.action === "restore") {
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "approved" });
+        return res.json(updated);
+      }
+      if (body.action === "exclude") {
+        // Count submissions whose stored answer for this question matched the
+        // (currently) correct answer — i.e. reports whose score would drop if
+        // regraded after this question is excluded. Computed from stored data
+        // only; the actual regrade remains an explicit, separate call.
+        const correct = effectiveCorrectAnswer(existing.stem, existing.options as string[], existing.correctAnswer);
+        const reports = await storage.getSomaReportsByQuizId(quizId);
+        const affectedSubmissionCount = reports.filter((r) => {
+          if (r.status !== "completed") return false;
+          const answers = (r.answersJson ?? {}) as Record<string, string>;
+          return answersMatch(answers[String(questionId)], correct);
+        }).length;
+        const updated = await storage.updateSomaQuestionReview(questionId, { reviewStatus: "excluded" });
+        return res.json({ ...updated, affectedSubmissionCount });
+      }
+
+      // Edit path: apply edits, then re-run the quality gate on the edited
+      // question so a fixed question can become "approved" again.
+      const editPatch: { stem?: string; options?: string[]; correctAnswer?: string; explanation?: string } = {};
+      if (body.stem !== undefined) editPatch.stem = body.stem;
+      if (body.options !== undefined) editPatch.options = body.options;
+      if (body.correctAnswer !== undefined) editPatch.correctAnswer = body.correctAnswer;
+      if (body.explanation !== undefined) editPatch.explanation = body.explanation;
+
+      const merged = {
+        stem: editPatch.stem ?? existing.stem,
+        options: (editPatch.options ?? (existing.options as string[])) as string[],
+        correct_answer: editPatch.correctAnswer ?? existing.correctAnswer,
+        explanation: editPatch.explanation ?? existing.explanation,
+        difficulty_tag: existing.difficultyTag ?? undefined,
+      };
+      const quality = validateQuestionQuality(merged);
+      const updated = await storage.updateSomaQuestionReview(questionId, {
+        ...editPatch,
+        reviewStatus: quality.reviewStatus,
+      });
+      return res.json(updated);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.quizzes.review.patch", "Failed to update question.");
+    }
+  });
+
+  // ===========================================================================
+  // PDF UPLOADS — worksheet attachments (tutor) + student PDF responses
+  // ===========================================================================
+  //
+  // All upload routes require Supabase Storage to be configured; otherwise they
+  // return 503. Ownership/auth is enforced per-route. The shared multer config
+  // (`pdfUploadField`) caps at 20MB and rejects non-PDF uploads with a 400.
+
+  function requireStorageConfigured(res: Response): boolean {
+    if (!isStorageConfigured()) {
+      res.status(503).json({ message: "File storage is not configured" });
+      return false;
+    }
+    return true;
+  }
+
+  // Remove a quiz's Supabase Storage objects so deleting the quiz (which
+  // cascades the DB rows) does not leave orphaned bucket files behind.
+  // Collect a quiz's storage object paths BEFORE the rows are deleted. Must run
+  // before deleteSomaQuiz (the rows cascade away), but the actual object
+  // deletion must run AFTER the DB delete succeeds — otherwise a failed
+  // deleteSomaQuiz would leave quiz rows pointing at already-deleted files.
+  async function collectQuizStoragePaths(quizId: number): Promise<string[]> {
+    if (!isStorageConfigured()) return [];
+    try {
+      const [attachments, submissions] = await Promise.all([
+        storage.getAssessmentAttachmentsByQuiz(quizId),
+        storage.getSubmissionUploadsByQuiz(quizId),
+      ]);
+      return [...attachments.map((a) => a.storagePath), ...submissions.map((s) => s.storagePath)];
+    } catch (err) {
+      logWarn("quiz_storage_collect_failed", { quizId, error: (err as Error)?.message });
+      return [];
+    }
+  }
+
+  // Best-effort deletion of already-collected storage objects. Safe to call
+  // after the quiz rows are gone; failures only leave orphaned files (logged),
+  // never dangling DB records.
+  async function purgeStorageObjects(paths: string[]): Promise<void> {
+    if (paths.length === 0 || !isStorageConfigured()) return;
+    try {
+      await Promise.all(paths.map((p) => deleteObject(p).catch(() => {})));
+    } catch (err) {
+      logWarn("quiz_storage_purge_failed", { error: (err as Error)?.message });
+    }
+  }
+
+  // (1) Tutor uploads a worksheet attachment to one of their quizzes.
+  app.post(
+    "/api/tutor/quizzes/:quizId/attachments",
+    tutorApiLimiter,
+    requireTutor,
+    pdfUploadField("file"),
+    async (req, res) => {
+      try {
+        if (!requireStorageConfigured(res)) return;
+        const tutorId = (req as any).tutorId;
+        const quizId = parseInt(req.params.quizId as string);
+        if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+        const file = (req as any).file as Express.Multer.File | undefined;
+        if (!file) return res.status(400).json({ message: "PDF required" });
+        if (!looksLikePdf(file.buffer)) return res.status(400).json({ message: "File is not a valid PDF" });
+
+        const quiz = await storage.getSomaQuiz(quizId);
+        if (!quiz || quiz.authorId !== tutorId) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        if (quiz.format !== "pdf") {
+          return res.status(400).json({ message: "Worksheets can only be added to PDF-format assessments" });
+        }
+
+        const storagePath = `assessments/${quizId}/${crypto.randomUUID()}.pdf`;
+        await uploadPdf(storagePath, file.buffer);
+        const row = await storage.createAssessmentAttachment({
+          quizId,
+          filename: file.originalname,
+          storagePath,
+          mimeType: PDF_MIME,
+          sizeBytes: file.size,
+          uploadedBy: tutorId,
+          documentRole: (req.body?.documentRole === "exam_paper" || req.body?.documentRole === "supporting_resource") ? req.body.documentRole : "worksheet",
+        });
+        return res.status(201).json(publicAttachment(row));
+      } catch (err: any) {
+        if (err instanceof FileStorageError) {
+          return res.status(502).json({ message: "Failed to store file" });
+        }
+        return sendInternalError(req, res, err, "tutor.attachments.create", "Failed to upload attachment.");
+      }
+    },
+  );
+
+  // (2) Tutor lists attachments for one of their quizzes (metadata only).
+  app.get("/api/tutor/quizzes/:quizId/attachments", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const rows = await storage.getAssessmentAttachmentsByQuiz(quizId);
+      return res.json(rows.map(publicAttachment));
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.attachments.list", "Failed to list attachments.");
+    }
+  });
+
+  // (3) Tutor deletes an attachment from one of their quizzes.
+  app.delete(
+    "/api/tutor/quizzes/:quizId/attachments/:attachmentId",
+    tutorApiLimiter,
+    requireTutor,
+    async (req, res) => {
+      try {
+        const tutorId = (req as any).tutorId;
+        const quizId = parseInt(req.params.quizId as string);
+        const attachmentId = parseInt(req.params.attachmentId as string);
+        if (isNaN(quizId) || isNaN(attachmentId)) {
+          return res.status(400).json({ message: "Invalid ID" });
+        }
+        const quiz = await storage.getSomaQuiz(quizId);
+        if (!quiz || quiz.authorId !== tutorId) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        const attachment = await storage.getAssessmentAttachment(attachmentId);
+        if (!attachment || attachment.quizId !== quizId) {
+          return res.status(404).json({ message: "Attachment not found" });
+        }
+        if (isStorageConfigured()) {
+          await deleteObject(attachment.storagePath);
+        }
+        await storage.deleteAssessmentAttachment(attachmentId);
+        return res.json({ success: true });
+      } catch (err: any) {
+        if (err instanceof FileStorageError) {
+          return res.status(502).json({ message: "Failed to delete file" });
+        }
+        return sendInternalError(req, res, err, "tutor.attachments.delete", "Failed to delete attachment.");
+      }
+    },
+  );
+
+  // Shared access check: author of the quiz OR an assigned student.
+  async function canAccessQuizAttachments(quizId: number, userId: string): Promise<boolean> {
+    const quiz = await storage.getSomaQuiz(quizId);
+    if (!quiz) return false;
+    if (quiz.authorId === userId) return true;
+    const assignment = await storage.getQuizAssignment(quizId, userId);
+    return Boolean(assignment);
+  }
+
+  // (4) Worksheet attachment list for students (and tutor author).
+  app.get("/api/quizzes/:quizId/attachments", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
+    try {
+      const userId = (req as any).authUser.id as string;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      if (!(await canAccessQuizAttachments(quizId, userId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const rows = await storage.getAssessmentAttachmentsByQuiz(quizId);
+      return res.json(rows.map(publicAttachment));
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "quizzes.attachments.list", "Failed to list attachments.");
+    }
+  });
+
+  // (5) Signed download URL for a worksheet attachment (student or author).
+  app.get(
+    "/api/quizzes/:quizId/attachments/:attachmentId/download",
+    studentApiLimiter,
+    requireSupabaseAuth,
+    async (req, res) => {
+      try {
+        if (!requireStorageConfigured(res)) return;
+        const userId = (req as any).authUser.id as string;
+        const quizId = parseInt(req.params.quizId as string);
+        const attachmentId = parseInt(req.params.attachmentId as string);
+        if (isNaN(quizId) || isNaN(attachmentId)) {
+          return res.status(400).json({ message: "Invalid ID" });
+        }
+        if (!(await canAccessQuizAttachments(quizId, userId))) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        const attachment = await storage.getAssessmentAttachment(attachmentId);
+        if (!attachment || attachment.quizId !== quizId) {
+          return res.status(404).json({ message: "Attachment not found" });
+        }
+        const url = await createSignedDownloadUrl(attachment.storagePath, 300, attachment.filename);
+        return res.json({ url });
+      } catch (err: any) {
+        if (err instanceof FileStorageError) {
+          return res.status(502).json({ message: "Failed to sign download URL" });
+        }
+        return sendInternalError(req, res, err, "quizzes.attachments.download", "Failed to create download URL.");
+      }
+    },
+  );
+
+  // (6) Student uploads (or replaces) their PDF response for a quiz.
+  app.post(
+    "/api/quizzes/:quizId/submission-upload",
+    studentApiLimiter,
+    requireSupabaseAuth,
+    pdfUploadField("file"),
+    async (req, res) => {
+      try {
+        if (!requireStorageConfigured(res)) return;
+        const studentId = (req as any).authUser.id as string;
+        const quizId = parseInt(req.params.quizId as string);
+        if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+        const file = (req as any).file as Express.Multer.File | undefined;
+        if (!file) return res.status(400).json({ message: "PDF required" });
+        if (!looksLikePdf(file.buffer)) return res.status(400).json({ message: "File is not a valid PDF" });
+
+        const [assignment, quiz] = await Promise.all([
+          storage.getQuizAssignment(quizId, studentId),
+          storage.getSomaQuiz(quizId),
+        ]);
+        if (!assignment) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        if (!quiz || quiz.format !== "pdf") {
+          return res.status(400).json({ message: "This assessment does not accept PDF responses" });
+        }
+
+        const contentHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+        const config = quiz.pdfMarkingMode === "dual_ai" ? await storage.getPdfAssessmentConfig(quizId) : undefined;
+        const aiReady = quiz.pdfMarkingMode === "dual_ai" && canUseDualAiMarking() && config?.preparationStatus === "ready" && config.activeRubricVersionId;
+        const storagePath = quiz.pdfMarkingMode === "dual_ai"
+          ? `submissions/${quizId}/${studentId}/versions/${Date.now()}-${crypto.randomUUID()}.pdf`
+          : `submissions/${quizId}/${studentId}.pdf`;
+        await uploadPdf(storagePath, file.buffer);
+        const row = await storage.upsertSubmissionUpload({
+          quizId,
+          studentId,
+          filename: file.originalname,
+          storagePath,
+          mimeType: PDF_MIME,
+          sizeBytes: file.size,
+          contentHash,
+          aiMarkingStatus: quiz.pdfMarkingMode === "dual_ai" ? (aiReady ? "queued" : "blocked_setup") : null,
+        });
+        if (quiz.pdfMarkingMode === "dual_ai" && aiReady && config?.activeRubricVersionId) {
+          await storage.upsertPdfMarkingJob({
+            jobType: "mark_submission",
+            idempotencyKey: buildPdfMarkingIdempotencyKey({ submissionUploadId: row.id, submissionVersion: row.submissionVersion, contentHash, rubricVersionId: config.activeRubricVersionId }),
+            quizId,
+            submissionUploadId: row.id,
+            rubricVersionId: config.activeRubricVersionId,
+            payload: { submissionVersion: row.submissionVersion },
+            maxAttempts: Number(process.env.PDF_MARKING_MAX_ATTEMPTS || 3),
+          });
+        }
+        return res.status(201).json(publicSubmission(row));
+      } catch (err: any) {
+        if (err instanceof FileStorageError) {
+          return res.status(502).json({ message: "Failed to store file" });
+        }
+        return sendInternalError(req, res, err, "quizzes.submissionUpload.create", "Failed to upload response.");
+      }
+    },
+  );
+
+  // (7) Student fetches their own submission upload (status + score/feedback).
+  app.get("/api/quizzes/:quizId/submission-upload", studentApiLimiter, requireSupabaseAuth, async (req, res) => {
+    try {
+      const studentId = (req as any).authUser.id as string;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const row = await storage.getSubmissionUploadByStudent(quizId, studentId);
+      if (!row) return res.status(404).json({ message: "No submission found" });
+      return res.json(publicSubmission(row));
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "quizzes.submissionUpload.get", "Failed to load submission.");
+    }
+  });
+
+  // (8) Tutor lists all student submission uploads for one of their quizzes.
+  app.get("/api/tutor/quizzes/:quizId/submission-uploads", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const quizId = parseInt(req.params.quizId as string);
+      if (isNaN(quizId)) return res.status(400).json({ message: "Invalid quiz ID" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const rows = await storage.getSubmissionUploadsByQuiz(quizId);
+      const enriched = await Promise.all(
+        rows.map(async (row) => {
+          const student = await storage.getSomaUserById(row.studentId);
+          return {
+            ...publicSubmission(row),
+            studentName: student?.displayName || student?.email || row.studentId,
+          };
+        }),
+      );
+      return res.json(enriched);
+    } catch (err: any) {
+      return sendInternalError(req, res, err, "tutor.submissionUploads.list", "Failed to list submissions.");
+    }
+  });
+
+  // (9) Tutor downloads a student's submission (signed URL); ownership via quiz.
+  app.get("/api/tutor/submission-uploads/:id/download", requireTutor, async (req, res) => {
+    try {
+      if (!requireStorageConfigured(res)) return;
+      const tutorId = (req as any).tutorId;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const upload = await storage.getSubmissionUpload(id);
+      if (!upload) return res.status(404).json({ message: "Submission not found" });
+      const quiz = await storage.getSomaQuiz(upload.quizId);
+      if (!quiz || quiz.authorId !== tutorId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const url = await createSignedDownloadUrl(upload.storagePath, 300, upload.filename);
+      return res.json({ url });
+    } catch (err: any) {
+      if (err instanceof FileStorageError) {
+        return res.status(502).json({ message: "Failed to sign download URL" });
+      }
+      return sendInternalError(req, res, err, "tutor.submissionUploads.download", "Failed to create download URL.");
+    }
+  });
 
   // (10) Tutor marks a student's submission upload.
   app.post(

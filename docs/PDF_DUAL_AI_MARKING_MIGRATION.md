@@ -31,8 +31,9 @@ Existing PDF assessments resolve to manual. Existing attachments resolve to work
 ## Rollout
 1. Deploy code with `PDF_DUAL_MARKING_ENABLED=false`.
 2. Run `npm run db:bootstrap` in Replit against the production database.
-3. Set two independent providers and models.
-4. Enable `PDF_DUAL_MARKING_ENABLED=true`; enable worker only after provider health is confirmed.
+3. Keep `PDF_DUAL_MARKING_ENABLED=false` and `PDF_MARKING_ADAPTER_ENABLED=false` until the real multimodal adapter is built.
+4. When the adapter is ready, set two independent providers/models and use `PDF_MARKING_WORKER_RUNTIME=external` or a reserved-VM `in_process` worker; do not run the in-process worker on autoscale.
+5. Enable `PDF_DUAL_MARKING_ENABLED=true` only after provider health and worker runtime are confirmed.
 
 ## Non-destructive rollback
-Set `PDF_DUAL_MARKING_ENABLED=false` and `PDF_MARKING_WORKER_ENABLED=false`. Manual PDF flow remains available. Do not drop tables; retain audit data and generated object references.
+Set `PDF_DUAL_MARKING_ENABLED=false`, `PDF_MARKING_ADAPTER_ENABLED=false`, and `PDF_MARKING_WORKER_ENABLED=false`. Manual PDF flow remains available. Do not drop tables; retain audit data and generated object references.
