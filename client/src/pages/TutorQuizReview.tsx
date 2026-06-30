@@ -318,7 +318,7 @@ export default function TutorQuizReview() {
   const queryClient = useQueryClient();
   const queryKey = [`/api/tutor/quizzes/${quizId}/review`, userId];
 
-  const { data: questions = [], isLoading } = useQuery<ReviewQuestion[]>({
+  const { data: questions = [], isLoading, isError, refetch } = useQuery<ReviewQuestion[]>({
     queryKey,
     queryFn: async () => {
       if (!userId) throw new Error("Not authenticated");
@@ -490,6 +490,11 @@ export default function TutorQuizReview() {
         {isLoading ? (
           <div className="flex items-center justify-center py-20 text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        ) : isError ? (
+          <div className="text-center py-20 space-y-3">
+            <p className="text-muted-foreground">Couldn't load these questions. Please try again.</p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
           </div>
         ) : questions.length === 0 ? (
           <p className="text-muted-foreground text-center py-20">No questions to review.</p>

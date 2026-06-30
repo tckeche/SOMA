@@ -854,8 +854,8 @@ function buildMakerSystemPrompt(
   // gate (server/services/questionScope.ts) is the detection half that quarantines
   // anything that still drifts off the catalogue.
   const taggingRule = context.catalogueContext
-    ? `\n- TAGGING: set topic_tag and subtopic_tag on every question, copied VERBATIM from a topic/subtopic listed in the Catalogue context below. Do NOT invent a topic or subtopic that is not in that list; every question must stay within the selected catalogue topics.`
-    : `\n- TAGGING: set topic_tag (and subtopic_tag when known) to the topic this question actually tests, staying within the stated scope.`;
+    ? `\n- TAGGING: set topic_tag and subtopic_tag on every question, copied VERBATIM from a topic/subtopic TITLE in the Catalogue context below — that is the text AFTER the leading [number] tag (e.g. for "• [1] Algebra" the topic_tag is "Algebra", NOT "1" and NOT "1 Algebra"). NEVER put a bare number or the bracketed [number] in a tag. Do NOT invent a topic or subtopic that is not in that list; every question must stay within the selected catalogue topics.`
+    : `\n- TAGGING: set topic_tag (and subtopic_tag when known) to the topic this question actually tests, staying within the stated scope. Use the topic's NAME, never a bare syllabus number.`;
   // Make the two grounding sources explicit so the maker visibly anchors on the
   // syllabus catalogue and the examiner reports rather than improvising.
   const groundingSources = [
