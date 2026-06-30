@@ -487,8 +487,8 @@ export default function TutorAssessmentDetails() {
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="p-2 hover:bg-muted/50 rounded-lg transition-colors">
-                  <MoreVertical className="w-5 h-5 text-muted-foreground" />
+                <button aria-label="Assessment options" className="p-2 hover:bg-muted/50 rounded-lg transition-colors">
+                  <MoreVertical className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="bg-muted border-border">
@@ -993,7 +993,7 @@ export default function TutorAssessmentDetails() {
                 <CalendarDays className="w-5 h-5 text-primary" />
                 Change Due Date
               </h3>
-              <button onClick={() => setShowDueDatePicker(false)} className="text-muted-foreground hover:text-foreground/80 p-1">
+              <button onClick={() => setShowDueDatePicker(false)} aria-label="Close dialog" className="text-muted-foreground hover:text-foreground/80 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>

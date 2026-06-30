@@ -1,11 +1,10 @@
 /**
- * Domain-route registration entry point.
+ * Domain-route registration compatibility entry point.
  *
- * The legacy `server/routes.ts` calls `registerDomainRoutes(app)` once at
- * the start of `registerRoutes()`. Add new domain modules here as they are
- * peeled out of the monolith.
- *
- * See `server/routes/README.md` for conventions.
+ * The legacy `server/routes.ts` still calls `registerDomainRoutes(app)` once at
+ * the start of `registerRoutes()`. This file now delegates to the autoloaded
+ * `server/modules` domain loader so newly extracted domains do not need to edit
+ * a central manual import list.
  */
 import type { Express } from "express";
 import { registerSuperAdminAiUsageRoutes } from "./superAdminAiUsage";

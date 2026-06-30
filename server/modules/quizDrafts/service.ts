@@ -1,0 +1,8 @@
+import type { DraftQuestion } from "@shared/schema";
+import { traceLog } from "../../services/quizTraceLog";
+import { MAX_QUESTIONS_PER_QUIZ } from "../questionValidation/service";
+import { getDraft, setDraft } from "./store";
+import { requireOwnedQuiz } from "./policies";
+export class QuizDraftError extends Error { constructor(public status: number, message: string) { super(message); } }
+export async function fetchDraft(quizId: number, tutorId: string) { const owned = await requireOwnedQuiz(quizId, tutorId); if (!owned.ok) throw new QuizDraftError(owned.status, owned.message); return { quizId, questions: getDraft(quizId) }; }
+export async function saveDraft(quizId: number, tutorId: string, questions: DraftQuestion[], traceId: string) { const owned = await requireOwnedQuiz(quizId, tutorId); if (!owned.ok) throw new QuizDraftError(owned.status, owned.message); if (questions.length > MAX_QUESTIONS_PER_QUIZ) throw new QuizDraftError(400, `A quiz can have at most ${MAX_QUESTIONS_PER_QUIZ} questions (received ${questions.length}).`); traceLog("route.putDraft.entry", { route: "/api/tutor/quizzes/:quizId/draft", quizId, questionsIn: questions.length, clientSentTargetMisconceptionIds: questions.filter((q: any) => Array.isArray(q?.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0).length, sampleQuestion: questions[0] ? { stem: String(questions[0].stem ?? "").slice(0, 50), targetMisconceptionIds: (questions[0] as any).targetMisconceptionIds ?? null, subtopicId: (questions[0] as any).subtopicId ?? null } : null }, traceId); const updatedAt = setDraft(quizId, questions); return { quizId, questions, updatedAt }; }

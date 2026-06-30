@@ -1,0 +1,1 @@
+import type {DomainModuleDefinition} from "../routerTypes"; import {router} from "./routes"; export const moduleDefinition:DomainModuleDefinition={name:"flaggedQuestions",basePath:"/api/tutor/flagged-questions",router};

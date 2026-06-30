@@ -270,9 +270,9 @@ describe("formatCopilotContextAsText — snapshot of payload shape", () => {
       Time limit: 90 minutes
 
       Selected topics (1):
-        • PM Pure Mathematics
+        • [PM] Pure Mathematics
           Subtopics:
-            - 2.1 Functions (domain/range) [AS]
+            - [2.1] Functions (domain/range) [AS]
           Learning requirements:
             - (define) Define domain and range of a function.
           Competencies: AO2 Application (w=60), AO1 Knowledge and understanding (w=40)
@@ -291,7 +291,7 @@ describe("formatCopilotContextAsText — snapshot of payload shape", () => {
     const text = formatCopilotContextAsText(ctx);
     expect(text).toContain("Syllabus: 9702");
     expect(text).toContain("Level: A2 Level (A2)");
-    expect(text).toContain("4.3 Centripetal force and motion in a circle [A2]");
+    expect(text).toContain("[4.3] Centripetal force and motion in a circle [A2]");
     expect(text).not.toContain("Newton's laws");
   });
 
@@ -309,8 +309,8 @@ describe("formatCopilotContextAsText — snapshot of payload shape", () => {
     });
     const text = formatCopilotContextAsText(ctx);
     expect(text).toContain("Subject-level digest (no specific topic picked)");
-    expect(text).toContain("• 1 Number");
-    expect(text).toContain("• 2 Algebra and graphs");
+    expect(text).toContain("• [1] Number");
+    expect(text).toContain("• [2] Algebra and graphs");
     expect(text).toContain("P2 (0580/2) [IGCSE]");
   });
 

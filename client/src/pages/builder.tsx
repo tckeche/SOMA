@@ -61,7 +61,9 @@ function somaQuestionToDraft(q: SomaQuestion): DraftQuestion {
 }
 
 function rawToDraftQuestion(raw: any): DraftQuestion | null {
-  const stem = String(raw.prompt_text || raw.promptText || raw.stem || raw.question || "");
+  // Field precedence and trimming kept identical to the server normaliser
+  // (server/routes.ts normaliseToDraftQuestion) to avoid preview-vs-persisted drift.
+  const stem = String(raw.prompt_text || raw.promptText || raw.question || raw.stem || "").trim();
   if (!stem) return null;
   // Tags are shared across every question type.
   const tags = {
@@ -70,11 +72,44 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
     difficultyTag: raw.difficulty_tag ? String(raw.difficulty_tag) : raw.difficultyTag ? String(raw.difficultyTag) : null,
   };
   const marks = Number(raw.marks_worth || raw.marksWorth || raw.marks || 1) || 1;
-  const qtype = String(raw.question_type || raw.questionType || "").toLowerCase();
+  const qtype = String(raw.question_type || raw.questionType || "").toLowerCase().trim();
 
-  // Structured / written answers carry no options or single correct answer —
-  // they're marked by the AI against a mark scheme, so validate them separately.
-  if (qtype === "structured") {
+  // Normalise the options shape up-front so the structured-vs-MCQ decision can
+  // tell a written-answer question apart from a multiple-choice one.
+  let opts = raw.options;
+  if (opts && !Array.isArray(opts) && typeof opts === "object") {
+    const keys = Object.keys(opts);
+    opts = keys.every((k) => /^[A-Z]$/i.test(k))
+      ? keys.sort().map((k) => opts[k])
+      : Object.values(opts);
+  }
+  const hasMcqOptions = Array.isArray(opts) && opts.length >= 4;
+  const hasGraphSpec = !!(raw.graphSpec ?? raw.graph_spec) && typeof (raw.graphSpec ?? raw.graph_spec) === "object";
+  const markSchemeText = String(
+    raw.mark_scheme || raw.markScheme || raw.marking_scheme || raw.markingScheme || raw.model_answer || raw.modelAnswer || "",
+  ).trim();
+
+  // Structured / written answers carry no options and are marked by the AI
+  // against a mark scheme. Mirror the server normaliser (server/routes.ts
+  // normaliseToDraftQuestion): accept the canonical token, the synonyms a
+  // fallback model commonly emits, OR infer the type from the written-answer
+  // shape (a stem with a mark scheme but no MCQ options and no graph). Both
+  // paths require the no-options/no-graph shape so a mislabeled real MCQ keeps
+  // its options instead of being coerced to structured. Keeping these two
+  // normalisers in lockstep is what stops a structured draft from rendering as
+  // empty/0-question in the preview while the server persists it fine.
+  const STRUCTURED_TYPES = new Set([
+    "structured", "written", "written_answer", "writtenanswer", "short_answer", "shortanswer",
+    "long_answer", "longanswer", "free_response", "freeresponse", "free_text", "freetext",
+    "extended", "extended_response", "extendedresponse", "essay", "open", "open_response",
+    "open_ended", "openended", "short_response", "shortresponse", "text",
+  ]);
+  const isStructured =
+    !hasMcqOptions && !hasGraphSpec &&
+    (STRUCTURED_TYPES.has(qtype) ||
+      (qtype !== "graph" && qtype !== "multiple_choice" && qtype !== "mcq" && !!markSchemeText));
+
+  if (isStructured) {
     return {
       draftId: raw.draftId || makeDraftId(),
       stem,
@@ -83,20 +118,15 @@ function rawToDraftQuestion(raw: any): DraftQuestion | null {
       explanation: String(raw.explanation || ""),
       marks,
       questionType: "structured",
-      markScheme: String(raw.mark_scheme || raw.markScheme || raw.model_answer || raw.modelAnswer || raw.explanation || ""),
+      // Keep the question even when the mark scheme is empty — the draft
+      // validation surfaces the gap rather than the question silently vanishing.
+      markScheme: markSchemeText || String(raw.explanation || "").trim(),
       graphSpec: null,
       ...tags,
     };
   }
 
-  let opts = raw.options;
-  if (opts && !Array.isArray(opts) && typeof opts === "object") {
-    const keys = Object.keys(opts);
-    opts = keys.every((k) => /^[A-Z]$/i.test(k))
-      ? keys.sort().map((k) => opts[k])
-      : Object.values(opts);
-  }
-  if (!Array.isArray(opts) || opts.length < 4) return null;
+  if (!hasMcqOptions) return null;
   opts = (opts as any[]).map(String).slice(0, 4);
   return {
     draftId: raw.draftId || makeDraftId(),
@@ -207,7 +237,7 @@ export default function BuilderPage() {
   //   "structured" — written / structured answers only
   //   "hybrid"     — a mix of both
   const [quizMode, setQuizMode] = useState<"mcq" | "structured" | "hybrid">("mcq");
-  // Authoritative number of questions (1–40; hybrid needs ≥2). The Co-Pilot
+  // Authoritative number of questions (1–15; hybrid needs ≥2). The Co-Pilot
   // must generate exactly this many — it's no longer inferred from the prompt.
   const [questionCount, setQuestionCount] = useState<number>(12);
   // For hybrid quizzes: percentage of the total that should be structured.
@@ -241,6 +271,7 @@ export default function BuilderPage() {
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState<{ role: "user" | "ai"; text: string; metadata?: { provider: string; model: string; durationMs: number }; warnings?: { questionIndex: number; field: string; issue: string; autoFixed: boolean }[] }[]>([]);
   const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([]);
+  const [formingQuestions, setFormingQuestions] = useState<DraftQuestion[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -255,6 +286,9 @@ export default function BuilderPage() {
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [lastAttemptMessage, setLastAttemptMessage] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Inactivity window (ms): abort generation only after this long with NO bytes
+  // from the server. The server emits stage events plus ~10s SSE heartbeats, so a
+  // legitimate long-running generation stays alive; a truly dead stream still bails.
   const GENERATION_TIMEOUT_MS = 90_000;
 
   const [includeGraphQuestions, setIncludeGraphQuestions] = useState(false);
@@ -624,7 +658,7 @@ export default function BuilderPage() {
         setQuizMode(savedMode);
       }
       const savedCount = Number((quizData as any).questionCount);
-      if (Number.isFinite(savedCount) && savedCount >= 1 && savedCount <= 40) {
+      if (Number.isFinite(savedCount) && savedCount >= 1 && savedCount <= 15) {
         setQuestionCount(savedCount);
         const savedStructured = Number((quizData as any).structuredCount);
         if (savedMode === "hybrid" && Number.isFinite(savedStructured) && savedStructured > 0) {
@@ -793,6 +827,7 @@ export default function BuilderPage() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setPipelineActive(false);
+    setFormingQuestions([]);
     setGenerationStartedAt(null);
   }, []);
 
@@ -842,10 +877,18 @@ export default function BuilderPage() {
 
       animatePipeline(1);
       setGenerationState("generation_in_progress");
+      setFormingQuestions([]);
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      // Timeout bounds the *entire* request including stream consumption.
-      const timeoutId = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+      // Inactivity watchdog: abort only if the server goes completely silent for
+      // GENERATION_TIMEOUT_MS. Reset on every byte received (stage events + SSE
+      // heartbeats) so a long-but-progressing generation is never killed mid-flight.
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      const armIdleWatchdog = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+      };
+      armIdleWatchdog();
       let data: any;
       try {
         let res: Response;
@@ -901,6 +944,11 @@ export default function BuilderPage() {
               if (payload?.stage === "drafting") animatePipeline(1);
               else if (payload?.stage === "verifying") animatePipeline(2);
               else if (payload?.stage === "saving") animatePipeline(3);
+            } else if (eventName === "preview") {
+              const previews: DraftQuestion[] = (Array.isArray(payload?.questions) ? payload.questions : [])
+                .map((q: any) => rawToDraftQuestion(q))
+                .filter((p: DraftQuestion | null): p is DraftQuestion => p !== null);
+              if (previews.length > 0) setFormingQuestions(previews);
             } else if (eventName === "done") {
               donePayload = payload;
             } else if (eventName === "error") {
@@ -912,6 +960,9 @@ export default function BuilderPage() {
             while (true) {
               const { value, done } = await reader.read();
               if (value) {
+                // Any byte from the server (stage event or heartbeat) proves it's
+                // still alive — reset the inactivity watchdog.
+                armIdleWatchdog();
                 // Normalise CRLF framing to LF before splitting on the SSE delimiter.
                 buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
               }
@@ -942,12 +993,13 @@ export default function BuilderPage() {
           data = await res.json();
         }
       } finally {
-        clearTimeout(timeoutId);
+        if (idleTimer) clearTimeout(idleTimer);
         abortControllerRef.current = null;
       }
 
       if (data.needsClarification) {
         setPipelineActive(false);
+        setFormingQuestions([]);
         setGenerationState("generation_failed");
         return { action: "NONE" as CopilotAction, questions: [], positions: [], reply: data.reply, metadata: data.metadata, warnings: data.warnings };
       }
@@ -977,6 +1029,7 @@ export default function BuilderPage() {
 
         // Update local React state now that server is authoritative
         setDraftQuestions(newDraft);
+        setFormingQuestions([]); // verified draft is in — drop the forming preview
         setIsDraftDirty(false); // draft is clean — just synced
 
         // Update the browser URL without triggering a route change or component remount.
@@ -992,6 +1045,7 @@ export default function BuilderPage() {
       }
 
       setPipelineActive(false);
+      setFormingQuestions([]);
       return { action, questions, positions, reply: data.reply, metadata: data.metadata, verification: data.verification, warnings: data.warnings };
     },
     onSuccess: (data, message) => {
@@ -1028,6 +1082,7 @@ export default function BuilderPage() {
     },
     onError: (err: Error) => {
       setPipelineActive(false);
+      setFormingQuestions([]);
       setGenerationStartedAt(null);
       setGenerationState(err.message.toLowerCase().includes("draft") ? "persistence_failed" : "generation_failed");
       const friendly = err.message.includes("stopped")
@@ -1777,6 +1832,32 @@ export default function BuilderPage() {
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Live preview — questions forming while the verifier runs */}
+            {pipelineActive && formingQuestions.length > 0 && (
+              <div className="space-y-2 max-h-[40vh] overflow-auto pr-1 border-t border-border/30 pt-3" data-testid="list-preview-questions">
+                <div className="flex items-center gap-1.5 text-[10px] text-primary font-medium">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Verifying answers &amp; explanations… ({formingQuestions.length} forming)
+                </div>
+                {formingQuestions.map((q, idx) => (
+                  <div
+                    key={`preview-${q.draftId}`}
+                    className="bg-primary/[0.04] border border-primary/20 rounded-lg p-3 flex items-start gap-2"
+                    data-testid={`card-preview-q-${idx}`}
+                  >
+                    <span className="text-xs font-mono text-primary font-medium mt-0.5 shrink-0 w-6">Q{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-foreground/80 line-clamp-2"><MarkdownRenderer content={q.stem} /></div>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <Badge className="bg-foreground/5 text-muted-foreground border-border/50 text-[10px]">{q.marks}m</Badge>
+                        <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">verifying…</Badge>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

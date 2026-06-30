@@ -3,6 +3,16 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Paperclip, FileText, Download, Upload, Loader2, FileCheck,
   CheckCircle2, Clock, AlertTriangle,
 } from "lucide-react";
@@ -51,6 +61,7 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [confirmReupload, setConfirmReupload] = useState(false);
 
   const attachmentsKey = ["/api/quizzes", quizId, "attachments"];
   const submissionKey = ["/api/quizzes", quizId, "submission-upload"];
@@ -273,7 +284,13 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
           />
           <button
             data-testid="student-response-upload"
-            onClick={() => selectedFile && uploadMutation.mutate(selectedFile)}
+            onClick={() => {
+              if (!selectedFile) return;
+              // Re-uploading over a marked submission discards the existing
+              // score/feedback — confirm before destroying it.
+              if (isMarked) { setConfirmReupload(true); return; }
+              uploadMutation.mutate(selectedFile);
+            }}
             disabled={!selectedFile || uploadMutation.isPending}
             className="inline-flex items-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium border border-primary/40 bg-primary/20 text-primary hover:bg-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -295,6 +312,33 @@ export default function StudentAssessmentPdfSection({ quizId }: { quizId: number
         )}
       </div>
       )}
+
+      <AlertDialog open={confirmReupload} onOpenChange={setConfirmReupload}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-warning">Replace your marked submission?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              You've already been marked on this assessment. Re-uploading replaces
+              your submission and clears the existing score and feedback. This can't
+              be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={uploadMutation.isPending}>Keep my mark</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-danger text-white hover:bg-danger/90"
+              disabled={uploadMutation.isPending}
+              onClick={() => {
+                if (selectedFile) {
+                  uploadMutation.mutate(selectedFile, { onSettled: () => setConfirmReupload(false) });
+                }
+              }}
+            >
+              {uploadMutation.isPending ? "Replacing…" : "Replace submission"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

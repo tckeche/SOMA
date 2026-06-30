@@ -1,3 +1,4 @@
-- [Background processes & /tmp in this repl](background-procs.md) — detached jobs get SIGKILLed at tool-call end / on deploy events; /tmp files vanish. Run long tsc synchronously with `timeout 115`.
-- [AI structured-output policy](ai-json-repair-fallback.md) — JSON-returning LLM calls MUST pass expectedSchema to generateWithFallback (provider-native structured output); repair ladder is fallback only, can't fix unescaped inner quotes.
-- [Index-based UI needs stable DB order](index-based-ui-needs-stable-order.md) — list queries feeding `arr[index]` UIs MUST ORDER BY a stable key, or refetch/resume reorders blank/swap selections; grading & review equality must match (both trim).
+- [Supabase DB access](supabase-db-access.md) — the `executeSql` callback hits Replit's built-in Postgres, NOT the app's Supabase DB; query Supabase via the connection-string secret with `pg`.
+- [Copilot SSE generation timing](copilot-sse-timing.md) — tutor quiz generation legitimately runs 2–4 min; the client must use activity/heartbeat-based timeouts, never a hard wall-clock abort.
+- [PDF dual-AI marking rollout](pdf-dual-ai-marking.md) — keep it disabled: marking is a fail-closed stub; its in-process worker needs vm/scheduled, not autoscale.
+- [Draft normalisation must not silently drop](draft-normalisation-must-not-silently-drop.md) — detect structured by shape (no options/graph + stem), keep empty-mark-scheme questions, log drops; never let "15 generated" become "0 persisted".

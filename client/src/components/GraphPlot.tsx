@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useState } from "react";
 import type { GraphQuestionSpec } from "@shared/schema";
 import { applyGraphPreset } from "@/lib/graphPresets";
+import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "next-themes";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -523,15 +524,10 @@ export default function GraphPlot({ spec }: { spec: GraphQuestionSpec }) {
     setPythonSvg(null);
     setPythonUnavailable(false);
 
-    fetch("/api/graph/render-svg", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ spec: resolvedSpec }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`render-failed-${res.status}`);
-        return res.json();
-      })
+    // Routed through apiRequest so the Supabase bearer token is attached — the
+    // endpoint is auth-gated + rate-limited to stop anonymous process-spawn abuse.
+    apiRequest("POST", "/api/graph/render-svg", { spec: resolvedSpec })
+      .then(async (res) => res.json())
       .then((data: { svg?: string }) => {
         if (cancelled) return;
         if (typeof data.svg === "string" && data.svg.trim().length > 0) {

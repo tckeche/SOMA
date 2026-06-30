@@ -78,6 +78,45 @@ function stripOnce(input: string): string {
   return collapseSpaces(out);
 }
 
+/** A bare catalogue reference number: "1", "2.3", "10.4.2", optionally with a
+ *  trailing dot. These are not human-readable topic names. */
+const BARE_NUMBER_RE = /^\d+(?:\.\d+)*\.?$/;
+
+/**
+ * Turn a free-text topic/subtopic tag into a human-readable display label,
+ * or `null` when the tag carries no real name. This is the read-side guard
+ * that stops a topic from ever surfacing as a bare number ("1", "2.3") —
+ * which used to happen when the AI Maker copied the numbered catalogue line
+ * ("1 Algebra") into `topic_tag`, or copied just the "1".
+ *
+ * Unlike {@link normalizeQuestionTag}, this is **non-destructive on commas**:
+ * it only strips a single leading catalogue-number prefix, so clean catalogue
+ * titles that legitimately contain commas ("Motion, forces and energy") and
+ * parentheses ("Functions (domain/range)") survive intact. Callers should
+ * prefer a resolved catalogue title (via the FK) and use this only as the
+ * fallback for legacy free-text tags — never to hide a number in the UI.
+ *
+ *   cleanTopicLabel("1 Algebra")                 -> "Algebra"
+ *   cleanTopicLabel("2.3 Differentiation")       -> "Differentiation"
+ *   cleanTopicLabel("E2.6 Inequalities")         -> "Inequalities"
+ *   cleanTopicLabel("Motion, forces and energy") -> "Motion, forces and energy"
+ *   cleanTopicLabel("1")                          -> null
+ *   cleanTopicLabel("2.3")                        -> null
+ *   cleanTopicLabel("")                           -> null
+ */
+export function cleanTopicLabel(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null;
+  let out = raw.trim();
+  if (!out) return null;
+  if (BARE_NUMBER_RE.test(out)) return null;
+  // Strip a single leading catalogue-number prefix: "1 Algebra", "2.3 Foo",
+  // "E2.6 Bar", "1) Baz", "1. Qux" → the title. Requires whitespace after the
+  // number so a clean title is never mangled.
+  out = out.replace(/^[A-Za-z]?\d+(?:\.\d+)*[)\.:]?\s+/, "").trim();
+  if (!out || BARE_NUMBER_RE.test(out)) return null;
+  return out;
+}
+
 export function normalizeQuestionTag(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
   let out = raw.trim();

@@ -37,13 +37,15 @@ data-drift case (assignment still `pending` but report `completed` on an archive
 quiz) the row renders as a *pending* link and 404s again. Fix status drift at the
 source instead.
 
-## Pending assignments with no due date are hidden from the student dashboard
-`AssignmentsList` (client) intentionally keeps only `status === "overdue"` or
-`status === "pending" && !!dueDate`. A **pending assignment with a null due date is
-returned by the API but never rendered** on the student Home — it is invisible to the
-student even though `GET /api/student/dashboard` includes it in `data.assignments`.
-**Why:** the filter treats "no due date" as "not actually due yet". This is by design,
-not a bug — confirmed by the inline comment in `AssignmentsList.tsx`.
-**How to apply:** when seeding/testing student-visible assignments, always set a due
-date or the work won't surface. If a tutor reports "I assigned a quiz but the student
-can't see it", check the assignment's `due_date` first.
+## The student "Pending assessments" tab must show ALL pending work (due date or not)
+`AssignmentsList` (client) must keep every `status === "overdue"` or `status === "pending"`
+row regardless of `dueDate`. It previously kept only `pending && !!dueDate`, so a pending
+assignment with a null due date was returned by the API and shown on the dashboard hero
+(`NextActions`) yet rendered the "Nothing pending right now" empty state on the dedicated
+Assignments tab — a contradictory, broken experience for students.
+**Why:** the tab header literally says "Pending assessments", so it must list all pending
+work; "no due date" is NOT "not pending". The rendering already supports null due dates
+("No due date" label; `Infinity` sort pushes undated rows last). Completed items stay excluded.
+**How to apply:** keep the filter as `overdue || pending`. If a tutor reports "I assigned a
+quiz but the student can't see it" and the API includes it in `data.assignments`, the bug is
+a client-side filter, not the data — do not blame a missing `due_date`.
