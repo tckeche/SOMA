@@ -31,7 +31,10 @@ export function TutorNotificationsBell({ userId }: { userId: string | null | und
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 10000,
+    // Mounted on every tutor screen — a 10s poll was the fastest in the app.
+    // 30s is plenty for a notifications bell and cuts the request rate 3x.
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const markReadMutation = useMutation({

@@ -79,10 +79,15 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 60000,
-    refetchOnWindowFocus: true,
+    // Lightweight summary the admin watches live — gentle poll, no focus storm.
+    refetchInterval: 120000,
+    refetchOnWindowFocus: false,
   });
 
+  // The users/quizzes/tutors endpoints return whole tables, so polling them
+  // every 60s + on every window focus dumped the full platform dataset
+  // repeatedly. They change rarely; rely on the 5-min staleTime + navigation /
+  // mutation invalidation to revalidate instead of a fixed interval.
   const { data: users = [], isLoading: usersLoading } = useQuery<SomaUser[]>({
     queryKey: ["/api/super-admin/users", userId],
     queryFn: async () => {
@@ -91,8 +96,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 60000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const { data: quizzes = [], isLoading: quizzesLoading } = useQuery<SomaQuiz[]>({
@@ -103,8 +107,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 60000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const { data: tutors = [], isLoading: tutorsLoading } = useQuery<TutorSummary[]>({
@@ -115,8 +118,7 @@ export default function SuperAdminDashboard() {
       return res.json();
     },
     enabled: !!userId && roleVerified,
-    refetchInterval: 60000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const deleteUserMutation = useMutation({

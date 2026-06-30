@@ -3433,15 +3433,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(403).json({ message: "Access denied" });
       }
       const rows = await storage.getSubmissionUploadsByQuiz(quizId);
-      const enriched = await Promise.all(
-        rows.map(async (row) => {
-          const student = await storage.getSomaUserById(row.studentId);
-          return {
-            ...publicSubmission(row),
-            studentName: student?.displayName || student?.email || row.studentId,
-          };
-        }),
-      );
+      // Batch the student lookups instead of one getSomaUserById per row (N+1).
+      const students = await storage.getSomaUsersByIds(rows.map((r) => r.studentId));
+      const studentById = new Map(students.map((s) => [s.id, s]));
+      const enriched = rows.map((row) => {
+        const student = studentById.get(row.studentId);
+        return {
+          ...publicSubmission(row),
+          studentName: student?.displayName || student?.email || row.studentId,
+        };
+      });
       return res.json(enriched);
     } catch (err: any) {
       return sendInternalError(req, res, err, "tutor.submissionUploads.list", "Failed to list submissions.");

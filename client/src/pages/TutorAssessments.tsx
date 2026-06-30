@@ -536,7 +536,7 @@ export default function TutorAssessments() {
     enabled: !!userId,
     // A 30s poll + focus refetch is enough; staleTime:0 + refetchOnMount:"always"
     // forced a network refetch on every mount/remount, defeating the cache.
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     refetchOnWindowFocus: true,
   });
 
@@ -549,7 +549,7 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     refetchOnWindowFocus: true,
   });
 
@@ -610,7 +610,7 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     refetchOnWindowFocus: true,
   });
 
