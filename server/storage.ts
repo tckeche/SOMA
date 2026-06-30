@@ -149,6 +149,7 @@ export interface IStorage {
   getSomaQuiz(id: number): Promise<SomaQuiz | undefined>;
   updateSomaQuiz(id: number, data: Partial<InsertSomaQuiz>): Promise<SomaQuiz | undefined>;
   createSomaQuestions(questionList: InsertSomaQuestion[]): Promise<SomaQuestion[]>;
+  getSomaQuestionById(id: number): Promise<SomaQuestion | undefined>;
   getSomaQuestionsByQuizId(quizId: number): Promise<SomaQuestion[]>;
   updateSomaQuestionReview(id: number, patch: { reviewStatus?: string; stem?: string; options?: string[]; correctAnswer?: string; explanation?: string }): Promise<SomaQuestion | undefined>;
   getSomaQuestionTotalsByQuizIds(quizIds: number[]): Promise<Record<number, number>>;
@@ -166,6 +167,7 @@ export interface IStorage {
 
   getSomaUserByEmail(email: string): Promise<SomaUser | undefined>;
   getSomaUserById(id: string): Promise<SomaUser | undefined>;
+  getSomaUsersByIds(ids: string[]): Promise<SomaUser[]>;
   getAllStudents(): Promise<SomaUser[]>;
   adoptStudent(tutorId: string, studentId: string): Promise<TutorStudent>;
   removeAdoptedStudent(tutorId: string, studentId: string): Promise<void>;
@@ -247,6 +249,7 @@ export interface IStorage {
     correctQuestions?: number;
   }): Promise<StudentTopicMastery>;
   listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]>;
+  listStudentTopicMasteryForStudents(studentIds: string[]): Promise<Record<string, StudentTopicMastery[]>>;
   createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification>;
   listTutorNotifications(tutorId: string): Promise<TutorNotification[]>;
   markTutorNotificationRead(notificationId: number, tutorId: string): Promise<TutorNotification | undefined>;
@@ -613,6 +616,23 @@ class DatabaseStorage implements IStorage {
     return this.database.select().from(studentTopicMastery).where(eq(studentTopicMastery.studentId, studentId)).orderBy(studentTopicMastery.updatedAt);
   }
 
+  // Batched variant: one query for many students instead of N round-trips in a
+  // loop (used by the cohort-weaknesses rollup). Returns a map keyed by
+  // studentId; ids with no rows are simply absent.
+  async listStudentTopicMasteryForStudents(studentIds: string[]): Promise<Record<string, StudentTopicMastery[]>> {
+    if (studentIds.length === 0) return {};
+    const rows = await this.database
+      .select()
+      .from(studentTopicMastery)
+      .where(inArray(studentTopicMastery.studentId, studentIds))
+      .orderBy(studentTopicMastery.updatedAt);
+    const byStudent: Record<string, StudentTopicMastery[]> = {};
+    for (const row of rows) {
+      (byStudent[row.studentId] ??= []).push(row);
+    }
+    return byStudent;
+  }
+
   async createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification> {
     const [row] = await this.database.insert(tutorNotifications).values(notification).returning();
     return row;
@@ -850,6 +870,11 @@ class DatabaseStorage implements IStorage {
     return grouped;
   }
 
+  async getSomaQuestionById(id: number): Promise<SomaQuestion | undefined> {
+    const [q] = await this.database.select().from(somaQuestions).where(eq(somaQuestions.id, id));
+    return q;
+  }
+
   async deleteSomaQuestion(id: number): Promise<void> {
     await this.database.delete(somaQuestions).where(eq(somaQuestions.id, id));
   }
@@ -990,6 +1015,11 @@ class DatabaseStorage implements IStorage {
   async getSomaUserById(id: string): Promise<SomaUser | undefined> {
     const [result] = await this.database.select().from(somaUsers).where(eq(somaUsers.id, id));
     return result;
+  }
+
+  async getSomaUsersByIds(ids: string[]): Promise<SomaUser[]> {
+    if (ids.length === 0) return [];
+    return this.database.select().from(somaUsers).where(inArray(somaUsers.id, ids));
   }
 
   async getAllStudents(): Promise<SomaUser[]> {
@@ -1529,68 +1559,77 @@ class DatabaseStorage implements IStorage {
     await this.database.update(somaUsers).set({ lastLoginAt: new Date() }).where(eq(somaUsers.id, userId));
   }
 
+  // Compute one tutor's summary card. Extracted so getTutorDashboardDetail can
+  // build a single summary instead of recomputing every tutor's (the old
+  // detail path ran the full per-tutor loop and then discarded all but one).
+  private async buildTutorSummary(tutor: SomaUser): Promise<TutorDashboardSummary> {
+    const adoptedStudents = await this.database
+      .select({ studentId: tutorStudents.studentId })
+      .from(tutorStudents)
+      .where(eq(tutorStudents.tutorId, tutor.id));
+    const adoptedStudentIds = adoptedStudents.map((row) => row.studentId);
+
+    const reportRows = adoptedStudentIds.length === 0
+      ? []
+      : await this.database
+        .select({
+          reportId: somaReports.id,
+          quizId: somaReports.quizId,
+          score: somaReports.score,
+          subject: somaQuizzes.subject,
+        })
+        .from(somaReports)
+        .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
+        .where(inArray(somaReports.studentId, adoptedStudentIds));
+
+    const authoredSubjects = await this.database
+      .select({ subject: somaQuizzes.subject })
+      .from(somaQuizzes)
+      .where(eq(somaQuizzes.authorId, tutor.id));
+
+    const maxScoresByQuiz = await this.getSomaQuestionTotalsByQuizIds(
+      Array.from(new Set(reportRows.map((row) => row.quizId))),
+    );
+    const averageStudentGrade = reportRows.length === 0
+      ? null
+      : Math.round((reportRows.reduce((acc, row) => {
+        const max = maxScoresByQuiz[row.quizId] || 0;
+        return acc + (max > 0 ? (row.score / max) * 100 : 0);
+      }, 0) / reportRows.length) * 10) / 10;
+
+    const subjects = Array.from(new Set([
+      ...authoredSubjects.map((s) => s.subject).filter((s): s is string => Boolean(s)),
+      ...reportRows.map((r) => r.subject).filter((s): s is string => Boolean(s)),
+    ])).sort((a, b) => a.localeCompare(b));
+
+    return {
+      tutorId: tutor.id,
+      tutorEmail: tutor.email,
+      tutorName: tutor.displayName,
+      adoptedStudentsCount: adoptedStudentIds.length,
+      assessmentsCompletedCount: reportRows.length,
+      averageStudentGrade,
+      subjects,
+      lastLoginAt: tutor.lastLoginAt ? tutor.lastLoginAt.toISOString() : null,
+    };
+  }
+
   async getTutorDashboardSummaries(): Promise<TutorDashboardSummary[]> {
     const tutors = await this.database.select().from(somaUsers).where(eq(somaUsers.role, "tutor"));
     const summaries: TutorDashboardSummary[] = [];
-
     for (const tutor of tutors) {
-      const adoptedStudents = await this.database
-        .select({ studentId: tutorStudents.studentId })
-        .from(tutorStudents)
-        .where(eq(tutorStudents.tutorId, tutor.id));
-      const adoptedStudentIds = adoptedStudents.map((row) => row.studentId);
-
-      const reportRows = adoptedStudentIds.length === 0
-        ? []
-        : await this.database
-          .select({
-            reportId: somaReports.id,
-            quizId: somaReports.quizId,
-            score: somaReports.score,
-            subject: somaQuizzes.subject,
-          })
-          .from(somaReports)
-          .innerJoin(somaQuizzes, eq(somaReports.quizId, somaQuizzes.id))
-          .where(inArray(somaReports.studentId, adoptedStudentIds));
-
-      const authoredSubjects = await this.database
-        .select({ subject: somaQuizzes.subject })
-        .from(somaQuizzes)
-        .where(eq(somaQuizzes.authorId, tutor.id));
-
-      const maxScoresByQuiz = await this.getSomaQuestionTotalsByQuizIds(
-        Array.from(new Set(reportRows.map((row) => row.quizId))),
-      );
-      const averageStudentGrade = reportRows.length === 0
-        ? null
-        : Math.round((reportRows.reduce((acc, row) => {
-          const max = maxScoresByQuiz[row.quizId] || 0;
-          return acc + (max > 0 ? (row.score / max) * 100 : 0);
-        }, 0) / reportRows.length) * 10) / 10;
-
-      const subjects = Array.from(new Set([
-        ...authoredSubjects.map((s) => s.subject).filter((s): s is string => Boolean(s)),
-        ...reportRows.map((r) => r.subject).filter((s): s is string => Boolean(s)),
-      ])).sort((a, b) => a.localeCompare(b));
-
-      summaries.push({
-        tutorId: tutor.id,
-        tutorEmail: tutor.email,
-        tutorName: tutor.displayName,
-        adoptedStudentsCount: adoptedStudentIds.length,
-        assessmentsCompletedCount: reportRows.length,
-        averageStudentGrade,
-        subjects,
-        lastLoginAt: tutor.lastLoginAt ? tutor.lastLoginAt.toISOString() : null,
-      });
+      summaries.push(await this.buildTutorSummary(tutor));
     }
-
     return summaries.sort((a, b) => b.assessmentsCompletedCount - a.assessmentsCompletedCount);
   }
 
   async getTutorDashboardDetail(tutorId: string): Promise<TutorDashboardDetail | undefined> {
-    const summary = (await this.getTutorDashboardSummaries()).find((row) => row.tutorId === tutorId);
-    if (!summary) return undefined;
+    const [tutor] = await this.database
+      .select()
+      .from(somaUsers)
+      .where(and(eq(somaUsers.id, tutorId), eq(somaUsers.role, "tutor")));
+    if (!tutor) return undefined;
+    const summary = await this.buildTutorSummary(tutor);
 
     const students = await this.getAdoptedStudents(tutorId);
     const studentIds = students.map((s) => s.id);
@@ -1932,6 +1971,10 @@ export class MemoryStorage implements IStorage {
     return grouped;
   }
 
+  async getSomaQuestionById(id: number): Promise<SomaQuestion | undefined> {
+    return this.somaQuestionsList.find((q) => q.id === id);
+  }
+
   async deleteSomaQuestion(id: number): Promise<void> {
     this.somaQuestionsList = this.somaQuestionsList.filter((q) => q.id !== id);
   }
@@ -2002,6 +2045,11 @@ export class MemoryStorage implements IStorage {
 
   async getSomaUserById(id: string): Promise<SomaUser | undefined> {
     return this.somaUsersList.find((u) => u.id === id);
+  }
+
+  async getSomaUsersByIds(ids: string[]): Promise<SomaUser[]> {
+    const idSet = new Set(ids);
+    return this.somaUsersList.filter((u) => idSet.has(u.id));
   }
 
   async getAllStudents(): Promise<SomaUser[]> {
@@ -2417,6 +2465,16 @@ export class MemoryStorage implements IStorage {
 
   async listStudentTopicMastery(studentId: string): Promise<StudentTopicMastery[]> {
     return this.studentTopicMasteryList.filter((m) => m.studentId === studentId);
+  }
+
+  async listStudentTopicMasteryForStudents(studentIds: string[]): Promise<Record<string, StudentTopicMastery[]>> {
+    const ids = new Set(studentIds);
+    const byStudent: Record<string, StudentTopicMastery[]> = {};
+    for (const m of this.studentTopicMasteryList) {
+      if (!ids.has(m.studentId)) continue;
+      (byStudent[m.studentId] ??= []).push(m);
+    }
+    return byStudent;
   }
 
   async createTutorNotification(notification: InsertTutorNotification): Promise<TutorNotification> {

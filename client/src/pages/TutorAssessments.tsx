@@ -534,10 +534,10 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    // A 30s poll + focus refetch is enough; staleTime:0 + refetchOnMount:"always"
+    // forced a network refetch on every mount/remount, defeating the cache.
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
-    refetchOnMount: "always",
-    staleTime: 0,
   });
 
   const { data: assessmentsOverview = [], isError: overviewError, refetch: refetchOverview } = useQuery<Array<{ quizId: number; assignedStudentIds: string[]; latestSubmissionAt: string | null }>>({
@@ -549,7 +549,7 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
 
@@ -610,7 +610,7 @@ export default function TutorAssessments() {
       return res.json();
     },
     enabled: !!userId,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
   });
 
@@ -1081,8 +1081,19 @@ export default function TutorAssessments() {
               return (
                 <div key={quiz.id} className="bg-card/60 backdrop-blur-md border border-card-border rounded-xl overflow-hidden" data-testid={`quiz-card-${quiz.id}`}>
                   <div
-                    className="px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    className="px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                     onClick={() => toggleExpand(quiz.id)}
+                    onKeyDown={(e) => {
+                      // The header nests its own buttons; only toggle when the
+                      // header itself is focused so nested controls stay usable.
+                      if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                        e.preventDefault();
+                        toggleExpand(quiz.id);
+                      }
+                    }}
                     data-testid={`quiz-tile-${quiz.id}`}
                   >
                     <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -1318,7 +1329,7 @@ export default function TutorAssessments() {
           <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-5">
               <h3 className="text-lg font-bold text-foreground">Assign Assessment to Students</h3>
-              <button onClick={() => setShowAssignModal(null)} className="text-muted-foreground hover:text-foreground/80 p-1">
+              <button onClick={() => setShowAssignModal(null)} aria-label="Close" className="text-muted-foreground hover:text-foreground/80 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>

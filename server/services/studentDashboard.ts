@@ -233,8 +233,13 @@ function buildAssignmentRow(
   now: Date,
 ): AssignmentRow {
   const dueDate = a.dueDate ? new Date(a.dueDate) : null;
-  const overdue = dueDate ? dueDate.getTime() < now.getTime() && a.status !== "completed" : false;
-  const status: AssignmentRow["status"] = a.status === "completed" ? "completed" : overdue ? "overdue" : "pending";
+  // A submitted report (completedAt set) means the student finished this
+  // assignment, even if the fire-and-forget quiz_assignments.status update
+  // failed. Derive completion from the report too, so a dropped status write
+  // never nags the student to re-take work they already submitted.
+  const isDone = a.status === "completed" || (!!report && !!report.completedAt);
+  const overdue = dueDate ? dueDate.getTime() < now.getTime() && !isDone : false;
+  const status: AssignmentRow["status"] = isDone ? "completed" : overdue ? "overdue" : "pending";
   const scorePercent = report && maxScore > 0 ? Math.round((report.score / maxScore) * 100) : null;
   return {
     assignmentId: a.id,
@@ -458,7 +463,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
       title: `Catch up on "${a.quizTitle}"`,
       detail: a.quizSubject ? `${a.quizSubject} — overdue, but the sooner the better.` : "Overdue — the sooner the better.",
       quizId: a.quizId,
-      href: `/quiz/${a.quizId}`,
+      href: `/soma/quiz/${a.quizId}`,
     });
   }
   for (const a of dueToday.slice(0, 2)) {
@@ -467,7 +472,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
       title: `Today: ${a.quizTitle}`,
       detail: a.quizSubject ? `Lock in ${a.quizSubject} before the day ends.` : "Lock this in before the day ends.",
       quizId: a.quizId,
-      href: `/quiz/${a.quizId}`,
+      href: `/soma/quiz/${a.quizId}`,
     });
   }
   if (actions.length < 3) {
@@ -477,7 +482,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
         title: `Tomorrow: ${a.quizTitle}`,
         detail: a.quizSubject ? `Tomorrow's ${a.quizSubject} task — start early to leave room for review.` : "Start early to leave room for review.",
         quizId: a.quizId,
-        href: `/quiz/${a.quizId}`,
+        href: `/soma/quiz/${a.quizId}`,
       });
     }
   }
@@ -493,7 +498,7 @@ function buildNextActions(assignments: AssignmentRow[], subjects: SubjectSummary
         title: `Revisit "${a.quizTitle}"`,
         detail: `You scored ${a.scorePercent}%. A short review session here could lift your overall average noticeably.`,
         quizId: a.quizId,
-        href: a.reportId ? `/report/${a.reportId}` : undefined,
+        href: a.reportId ? `/soma/review/${a.reportId}` : undefined,
       });
     }
   }
@@ -622,7 +627,11 @@ export async function buildStudentDashboard({ storage, student }: BuildDashboard
     ...storedNotifications,
   ];
   merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const unreadCount = merged.filter((n) => !n.readAt).length;
+  // Only stored notifications are dismissible — "mark all read" writes readAt on
+  // them. Derived/ambient items (overdue / due-today) always carry readAt:null
+  // and have synthetic ids the read endpoint can't persist, so counting them
+  // would pin the unread badge permanently. The badge reflects stored unread.
+  const unreadCount = storedNotifications.filter((n) => !n.readAt).length;
 
   const completed = assignmentRows
     .filter((a) => a.status === "completed")

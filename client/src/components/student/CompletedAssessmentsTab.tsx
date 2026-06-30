@@ -96,7 +96,7 @@ export default function CompletedAssessmentsTab({ completed }: Props) {
               </div>
               <div className="text-right">
                 <div className={`flex items-center justify-end gap-1 text-lg font-semibold ${tone}`}>
-                  <TrendIcon className="w-4 h-4" />
+                  {scoreReady && <TrendIcon className="w-4 h-4" />}
                   {scoreReady ? `${row.scorePercent}%` : "—"}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
