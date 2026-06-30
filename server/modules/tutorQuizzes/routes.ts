@@ -1,0 +1,17 @@
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { asyncHandler } from "../../lib/asyncHandler";
+import { requireTutor } from "../../middleware/roles";
+import * as controller from "./controller";
+const tutorApiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
+export const router = Router();
+router.get("/", requireTutor, asyncHandler(controller.list));
+router.post("/", requireTutor, asyncHandler(controller.create));
+router.post("/:quizId/clone", requireTutor, tutorApiLimiter, asyncHandler(controller.clone));
+router.get("/:quizId/detail", requireTutor, asyncHandler(controller.detail));
+router.get("/:quizId/details", requireTutor, asyncHandler(controller.managementDetails));
+router.get("/:quizId/review", requireTutor, asyncHandler(controller.review));
+router.patch("/:quizId/questions/:questionId/review", requireTutor, asyncHandler(controller.updateReview));
+router.put("/:quizId", requireTutor, asyncHandler(controller.update));
+router.patch("/:quizId/archive", requireTutor, asyncHandler(controller.archive));
+router.delete("/:quizId", requireTutor, asyncHandler(controller.remove));
