@@ -7,6 +7,7 @@ import { moduleDefinition as flaggedQuestions } from "./flaggedQuestions";
 import { moduleDefinition as quizAssignments } from "./quizAssignments";
 import { moduleDefinition as quizDrafts } from "./quizDrafts";
 import { moduleDefinition as quizPublish } from "./quizPublish";
+import { moduleDefinition as questionManagement } from "./questionManagement";
 import { moduleDefinition as tutorDashboard } from "./tutorDashboard";
 import { moduleDefinition as tutorQuizzes } from "./tutorQuizzes";
 import { moduleDefinition as tutorReports } from "./tutorReports";
@@ -44,6 +45,7 @@ export const staticDomainModules: DomainModuleDefinition[] = [
   quizAssignments,
   quizDrafts,
   quizPublish,
+  questionManagement,
   revisionPlan,
   studentSubjects,
   superAdminAiUsage,

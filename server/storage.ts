@@ -435,6 +435,7 @@ class DatabaseStorage implements IStorage {
         : null,
       commandWord: q.commandWord ?? null,
       assessmentObjective: q.assessmentObjective ?? null,
+      optionRationales: (q as { optionRationales?: unknown }).optionRationales as any ?? null,
       reviewStatus: q.reviewStatus ?? "approved",
       generationMeta: (q.generationMeta ?? null) as any,
     }));
