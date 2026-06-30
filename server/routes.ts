@@ -29,6 +29,8 @@ import { validateQuestionQuality, isServableToStudent } from "./services/questio
 import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
 import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
+import { resolveCatalogueLabelsForSubtopicIds } from "./services/subtopicResolver";
+import { cleanTopicLabel } from "./services/questionTagNormalizer";
 import { balanceAnswerOptions, buildCopilotSummary, buildSyllabusChunks, copilotResponseSchema, scoreSyllabusChunks } from "./services/assessmentGeneration";
 import { formatCopilotContextAsText, loadCopilotContext } from "./services/copilotContext";
 import { semanticTopicSearch } from "./services/semanticTopicSearch";
@@ -1741,10 +1743,21 @@ async function updateMasteryFromSubmission(
     subtopicId: number | null;
     learningRequirementId: number | null;
   }
+  // Resolve human-readable catalogue titles for FK-linked questions so the
+  // stored mastery label is a real name ("Algebra"), never a bare catalogue
+  // number that the AI Maker may have copied into topic_tag. Batched (single
+  // query) to avoid an N+1 on the hot grading path. When there is no FK we
+  // fall back to a number-stripped tag, and only then to "General" — the read
+  // surfaces (insights radar, tutor cohort/detail) display this value directly.
+  const catalogueLabels = await resolveCatalogueLabelsForSubtopicIds(
+    questions.map((q) => q.subtopicId),
+  ).catch(() => new Map());
+
   const groups = new Map<string, Bucket>();
   for (const q of questions) {
-    const topic = q.topicTag || "General";
-    const subtopic = q.subtopicTag || "";
+    const labels = q.subtopicId ? catalogueLabels.get(q.subtopicId) : undefined;
+    const topic = labels?.topicTitle || cleanTopicLabel(q.topicTag) || "General";
+    const subtopic = labels?.subtopicTitle || cleanTopicLabel(q.subtopicTag) || "";
     const subtopicId = q.subtopicId ?? null;
     const learningRequirementId = q.learningRequirementId ?? null;
     const key = `${topic}|||${subtopic}|||${subtopicId ?? ""}|||${learningRequirementId ?? ""}`;
