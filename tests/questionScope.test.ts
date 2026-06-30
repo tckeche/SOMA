@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import {
   assessTopicScope,
   resolveReviewStatus,
+  narrowInventoryToSelection,
 } from "../server/services/questionScope";
 import type { AllowedTopic } from "../server/services/catalogueInventory";
 
@@ -59,6 +60,38 @@ describe("assessTopicScope", () => {
     const r = assessTopicScope("Algebra", "Vectors", inventory);
     expect(r.status).toBe("off_subtopic");
     expect(r.reason).toMatch(/Vectors/);
+  });
+});
+
+describe("narrowInventoryToSelection", () => {
+  it("returns the full inventory when no topic selection is supplied", () => {
+    expect(narrowInventoryToSelection(inventory, [], [])).toEqual(inventory);
+    expect(narrowInventoryToSelection(inventory, null, null)).toEqual(inventory);
+    expect(narrowInventoryToSelection(inventory, undefined, undefined)).toEqual(inventory);
+  });
+
+  it("keeps only the selected topic so an in-syllabus but off-topic tag is caught", () => {
+    const narrowed = narrowInventoryToSelection(inventory, [1]); // Algebra only
+    expect(narrowed.map((t) => t.topicTitle)).toEqual(["Algebra"]);
+    // Calculus is in the syllabus but not requested → now flagged off_topic.
+    expect(assessTopicScope("Calculus", "Differentiation", narrowed).status).toBe("off_topic");
+    expect(assessTopicScope("Algebra", "Polynomials", narrowed).status).toBe("in_scope");
+  });
+
+  it("narrows subtopics when specific subtopic ids are selected", () => {
+    const narrowed = narrowInventoryToSelection(inventory, [1], [11]); // Algebra / Polynomials
+    expect(narrowed[0].subtopics.map((s) => s.title)).toEqual(["Polynomials"]);
+    // Partial fractions is under Algebra but not selected → off_subtopic (warn only).
+    expect(assessTopicScope("Algebra", "Partial fractions", narrowed).status).toBe("off_subtopic");
+  });
+
+  it("falls back to the full inventory when the selection matches no topic (never disables the gate)", () => {
+    const narrowed = narrowInventoryToSelection(inventory, [9999]);
+    expect(narrowed).toEqual(inventory);
+  });
+
+  it("ignores invalid ids", () => {
+    expect(narrowInventoryToSelection(inventory, [0, -1, NaN])).toEqual(inventory);
   });
 });
 

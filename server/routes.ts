@@ -28,7 +28,7 @@ import {
 } from "./services/aiContracts";
 import { answersMatch, effectiveCorrectAnswer, explanationFinalAnswerMismatch } from "./services/mathValidator";
 import { validateQuestionQuality, isServableToStudent } from "./services/questionQuality";
-import { assessTopicScope, resolveReviewStatus } from "./services/questionScope";
+import { assessTopicScope, resolveReviewStatus, narrowInventoryToSelection } from "./services/questionScope";
 import { listAllowedTopicsForSyllabusCode } from "./services/catalogueInventory";
 import { recomputeReportScore } from "./services/regrade";
 import { resolveCatalogueLabelsForSubtopicIds } from "./services/subtopicResolver";
@@ -3725,7 +3725,472 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
     res.json({ authenticated: true });
   });
 
-  // Draft and publish endpoints now live in autoloaded quizDrafts/quizPublish modules.
+  // Create a new quiz (sets authorId = tutorId)
+  app.post("/api/tutor/quizzes", requireTutor, async (req, res) => {
+    try {
+      const tutorId = (req as any).tutorId;
+      const { title, syllabus, level, subject, topic, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
+      if (!title) return res.status(400).json({ message: "title is required" });
+      if (!timeLimitMinutes || isNaN(Number(timeLimitMinutes))) {
+        return res.status(400).json({ message: "timeLimitMinutes is required and must be a number" });
+      }
+      const normalizedFormat = format === "pdf" ? "pdf" : "mcq";
+      const { mode: normMode, count: normCount, structured: normStructured } =
+        normalizeQuizModeFields(normalizedFormat, quizMode, questionCount, structuredCount);
+      const cleanTopics = Array.isArray(topics)
+        ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
+        : [];
+      const quiz = await storage.createSomaQuiz({
+        title,
+        topic: cleanTopics[0] || topic || title,
+        topics: cleanTopics,
+        syllabus: normalizeQuizSyllabusForWrite(syllabus),
+        level: level ?? null,
+        subject: subject ?? null,
+        timeLimitMinutes: Number(timeLimitMinutes),
+        authorId: tutorId,
+        format: normalizedFormat,
+        quizMode: normMode,
+        questionCount: normCount,
+        structuredCount: normStructured,
+        status: "published",
+      });
+      res.json(quiz);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create quiz" });
+    }
+  });
+
+  // Get a specific quiz with its questions
+  app.get("/api/tutor/quizzes/:quizId/detail", requireTutor, async (req, res) => {
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      const questions = await storage.getSomaQuestionsByQuizId(quiz.id);
+      res.json({ ...quiz, questions });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch quiz" });
+    }
+  });
+
+  // ── Draft endpoints ────────────────────────────────────────────────────────
+
+  // GET current draft for a quiz (returns [] if no draft exists)
+  app.get("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
+      const questions = getDraft(quizId);
+      res.json({ quizId, questions });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch draft" });
+    }
+  });
+
+  // PUT replace entire draft (client sends full DraftQuestion[])
+  app.put("/api/tutor/quizzes/:quizId/draft", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      if (!quizId) return res.status(400).json({ message: "Invalid quizId" });
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      const { questions } = req.body;
+      if (!Array.isArray(questions)) return res.status(400).json({ message: "questions array required" });
+      traceLog("route.putDraft.entry", {
+        route: "/api/tutor/quizzes/:quizId/draft",
+        quizId,
+        questionsIn: questions.length,
+        clientSentTargetMisconceptionIds: questions.filter((q: any) => Array.isArray(q?.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0).length,
+        sampleQuestion: questions[0] ? {
+          stem: String(questions[0].stem ?? "").slice(0, 50),
+          targetMisconceptionIds: questions[0].targetMisconceptionIds ?? null,
+          subtopicId: questions[0].subtopicId ?? null,
+        } : null,
+      }, traceId);
+      setDraft(quizId, questions as DraftQuestion[]);
+      res.json({ quizId, questions, updatedAt: new Date() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to save draft" });
+    }
+  });
+
+  // POST publish draft → write to soma_questions (replaces all existing questions)
+  app.post("/api/tutor/quizzes/:quizId/publish", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+      traceLog("route.publish.entry", {
+        route: "/api/tutor/quizzes/:quizId/publish",
+        quizId,
+        quizSyllabus: quiz.syllabus,
+        clientBodyHasQuestions: Array.isArray(req.body?.questions),
+        clientBodyQuestionCount: Array.isArray(req.body?.questions) ? req.body.questions.length : 0,
+      }, traceId);
+
+      // Prefer the server-side in-memory draft (most authoritative).
+      // Fall back to client-sent questions in the request body — this handles the case
+      // where the server was restarted (in-memory draft lost) or an earlier syncDraft
+      // call failed silently. The client always sends its local draft for safety.
+      let draft = getDraft(quizId);
+      if (draft.length === 0 && Array.isArray(req.body?.questions) && req.body.questions.length > 0) {
+        console.log(`[PUBLISH] Server draftStore empty for quiz ${quizId} — using ${req.body.questions.length} client-sent questions as fallback`);
+        draft = req.body.questions as DraftQuestion[];
+        // Persist the client draft to the server store so it's canonical
+        setDraft(quizId, draft);
+      }
+      // PDF-submission assessments carry no MCQ questions — the worksheet
+      // attachment IS the assessment and students submit a PDF response that
+      // the tutor marks manually. Skip the MCQ-only "draft empty" gate and the
+      // per-question validation below for that format.
+      const isPdfFormat = quiz.format === "pdf";
+      if (isPdfFormat) {
+        await storage.updateSomaQuiz(quizId, { status: "published" });
+        draftStore.delete(quizId);
+        return res.json({ quizId, publishedCount: 0, questions: [], format: "pdf" });
+      }
+      if (draft.length === 0) return res.status(400).json({ message: "Draft is empty — add questions before publishing" });
+      traceLog("route.publish.draftLoaded", {
+        quizId,
+        draftSource: getDraft(quizId).length > 0 && draft === getDraft(quizId) ? "serverStore" : "clientBody",
+        draftCount: draft.length,
+        draftRowsWithSeeds: countWithField(draft as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+        sampleDraft: draft.slice(0, 1).map((q) => ({
+          stem: q.stem.slice(0, 50),
+          targetMisconceptionIds: (q as any).targetMisconceptionIds ?? null,
+          subtopicId: (q as any).subtopicId ?? null,
+          learningRequirementId: (q as any).learningRequirementId ?? null,
+        })),
+      }, traceId);
+
+      // Scope gate at publish: classify each draft question's tag against the
+      // catalogue and persist the resulting reviewStatus, so the builder→publish
+      // flow withholds off-syllabus / flagged questions exactly like the
+      // direct-generate flow. Previously this path persisted no reviewStatus, so
+      // a question that would be needs_review slipped through as "approved" and
+      // reached students. (Empty inventory = syllabus not catalogued = no-op.)
+      const { syllabusCode: publishSyllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
+      const publishAllowedTopics = await listAllowedTopicsForSyllabusCode(publishSyllabusCode);
+      const reviewStatusByIndex: Array<"approved" | "needs_review" | "auto_blocked"> = [];
+
+      // Validate each draft question before write
+      for (let i = 0; i < draft.length; i++) {
+        const q = draft[i];
+        if (!q.stem) {
+          return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
+        }
+        if (q.questionType === "structured") {
+          // Structured answers carry no options; they need a mark scheme so the
+          // AI marker has something to grade understanding against.
+          if (!q.markScheme || !String(q.markScheme).trim()) {
+            return res.status(400).json({ message: `Structured question "${String(q.stem).slice(0, 40)}" is missing a mark scheme` });
+          }
+          // Structured drafts carry topic tags and ARE served to students, so
+          // they still go through the scope gate — we only skip the MCQ-only
+          // quality checks (options/answer-key), not the syllabus-scope check.
+          const structuredScope = assessTopicScope(q.topicTag, q.subtopicTag, publishAllowedTopics);
+          reviewStatusByIndex[i] = resolveReviewStatus({ baseStatus: "approved", scope: structuredScope }).reviewStatus;
+          continue;
+        }
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
+          return res.status(400).json({ message: `Question "${String(q.stem || "").slice(0, 40)}" is missing required fields` });
+        }
+        if (q.questionType === "graph" && q.graphSpec) {
+          const check = repairGraphSpec(q.graphSpec);
+          if (!check) return res.status(400).json({ message: "A graph question has an invalid graph spec" });
+        }
+        const quality = validateQuestionQuality({
+          stem: q.stem,
+          options: q.options,
+          correct_answer: q.correctAnswer,
+          explanation: q.explanation ?? undefined,
+          difficulty_tag: q.difficultyTag ?? undefined,
+        });
+        if (quality.reviewStatus === "auto_blocked") {
+          return res.status(422).json({
+            message: `Cannot publish: question ${i + 1} failed quality checks (${quality.blocking.join("; ")}). Fix or regenerate it before publishing.`,
+            questionIndex: i + 1,
+            blocking: quality.blocking,
+          });
+        }
+        const scope = assessTopicScope(q.topicTag, q.subtopicTag, publishAllowedTopics);
+        reviewStatusByIndex[i] = resolveReviewStatus({ baseStatus: quality.reviewStatus, scope }).reviewStatus;
+      }
+
+      // Never publish a quiz with zero servable questions. Only "approved"
+      // questions reach students (isServableToStudent); if every question is
+      // held for review, publishing would assign students a quiz that shows
+      // "No questions found". Refuse and tell the tutor to review first.
+      const publishServable = reviewStatusByIndex.filter((s) => (s ?? "approved") === "approved").length;
+      if (draft.length > 0 && publishServable === 0) {
+        return res.status(422).json({
+          message: `Cannot publish: none of the ${draft.length} question(s) passed review — every one is held for tutor review or blocked. Review and approve at least one question before publishing.`,
+          reviewSummary: { total: draft.length, servable: 0, needsReview: reviewStatusByIndex.filter((s) => s === "needs_review").length, autoBlocked: reviewStatusByIndex.filter((s) => s === "auto_blocked").length },
+        });
+      }
+
+      // Assessment-integrity hard gate: never publish a complex-number question
+      // whose worked explanation contradicts the marked correct option. The
+      // Copilot audit only warns (advisory) so the tutor can keep editing, but
+      // publish is the irreversible step that reaches students — so we enforce
+      // the high-confidence complex check here and refuse to persist a question
+      // that would teach incorrect working.
+      for (let i = 0; i < draft.length; i++) {
+        const q = draft[i];
+        if (!q.explanation || !q.correctAnswer) continue;
+        const exMismatch = explanationFinalAnswerMismatch(q.stem, q.options, q.correctAnswer, q.explanation);
+        if (exMismatch.mismatch && exMismatch.complex) {
+          return res.status(422).json({
+            message: `Cannot publish: question ${i + 1} has an explanation that contradicts its marked answer "${q.correctAnswer}" (the correct value "${exMismatch.expected}" never appears in the worked steps). Fix the explanation or answer key, then publish again.`,
+            questionIndex: i + 1,
+          });
+        }
+      }
+
+      // Atomically replace all questions in a DB transaction (delete + insert as one unit)
+      // so a failed insert cannot leave the quiz without any questions.
+      const mapped = draft.map((q, idx) => ({
+        quizId,
+        stem: q.stem,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        marks: q.marks,
+        questionType: q.questionType,
+        graphSpec: (q.graphSpec ?? null) as import("@shared/schema").GraphQuestionSpec | null,
+        markScheme: q.markScheme ?? null,
+        reviewStatus: reviewStatusByIndex[idx] ?? "approved",
+        topicTag: q.topicTag ?? null,
+        subtopicTag: q.subtopicTag ?? null,
+        difficultyTag: q.difficultyTag ?? null,
+        // Pass through the examiner-loop and catalogue FK columns the
+        // Maker computed. Without these, the publish step silently
+        // destroys all the attribution data created at generation time
+        // — that was the root cause of the dashboards-look-empty
+        // problem. The schema columns are nullable so unset values are
+        // safe; storage.publishSomaQuestionsTransactional handles them.
+        subtopicId: q.subtopicId ?? null,
+        learningRequirementId: q.learningRequirementId ?? null,
+        targetMisconceptionIds: q.targetMisconceptionIds ?? null,
+        commandWord: q.commandWord ?? null,
+        assessmentObjective: q.assessmentObjective ?? null,
+      }));
+      traceLog("route.publish.beforePublishTransactional", {
+        quizId,
+        mappedCount: mapped.length,
+        rowsWithTargetMisconceptionIds: countWithField(mapped as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+        rowsWithSubtopicId: countWithField(mapped as unknown as Record<string, unknown>[], "subtopicId"),
+      }, traceId);
+
+      const saved = await storage.publishSomaQuestionsTransactional(quizId, mapped);
+      traceLog("route.publish.afterPublishTransactional", {
+        quizId,
+        savedCount: saved.length,
+        savedRowsWithSeeds: countWithField(saved as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
+
+      // Clear in-memory draft only after DB commit succeeded
+      draftStore.delete(quizId);
+
+      res.json({
+        quizId,
+        publishedCount: saved.length,
+        questions: saved,
+        reviewSummary: summarizeReviewStatuses(saved),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to publish" });
+    }
+  });
+
+  // ── End draft endpoints ────────────────────────────────────────────────────
+
+  // Update quiz metadata
+  app.put("/api/tutor/quizzes/:quizId", requireTutor, async (req, res) => {
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      const existing = await storage.getSomaQuiz(quizId);
+      if (!existing) return res.status(404).json({ message: "Quiz not found" });
+
+      const { title, syllabus, level, subject, topics, timeLimitMinutes, format, quizMode, questionCount, structuredCount } = req.body;
+      const updates: Record<string, string | number | string[] | null> = {};
+      if (title !== undefined) updates.title = title;
+      if (syllabus !== undefined) updates.syllabus = syllabus || null;
+      if (level !== undefined) updates.level = level || null;
+      if (subject !== undefined) updates.subject = subject || null;
+      // Format is chosen up front and locked once the quiz row exists — questions
+      // / worksheets are tied to one delivery model. Accept the field only when it
+      // matches the existing value (idempotent no-op); reject any actual change.
+      const currentFormat = (existing as any).format === "pdf" ? "pdf" : "mcq";
+      if (format !== undefined) {
+        const requested = format === "pdf" ? "pdf" : "mcq";
+        if (requested !== currentFormat) {
+          return res.status(409).json({ message: "Assessment type cannot be changed after creation." });
+        }
+      }
+      // Quiz sub-type is likewise locked once the quiz exists (questions are
+      // tied to it). Question count / structured split stay adjustable so the
+      // tutor can re-balance before generating. Reject a mode change outright.
+      const currentMode = (existing as any).quizMode ?? "mcq";
+      if (quizMode !== undefined && currentFormat !== "pdf") {
+        const requestedMode = ["mcq", "structured", "hybrid"].includes(quizMode) ? quizMode : "mcq";
+        if (requestedMode !== currentMode) {
+          return res.status(409).json({ message: "Question style cannot be changed after creation." });
+        }
+      }
+      if (currentFormat !== "pdf" && (questionCount !== undefined || structuredCount !== undefined)) {
+        const norm = normalizeQuizModeFields(
+          currentFormat,
+          currentMode,
+          questionCount ?? (existing as any).questionCount,
+          structuredCount ?? (existing as any).structuredCount,
+        );
+        updates.questionCount = norm.count;
+        updates.structuredCount = norm.structured;
+      }
+      if (topics !== undefined) {
+        const clean = Array.isArray(topics)
+          ? topics.map((t: unknown) => String(t || "").trim()).filter(Boolean)
+          : [];
+        updates.topics = clean;
+        // Keep the legacy `topic` text column in sync so code paths that still
+        // read `quiz.topic` as a single string see the first selected topic
+        // (or fall back to the title).
+        updates.topic = clean[0] || (title ?? existing.title);
+      }
+      if (timeLimitMinutes !== undefined) updates.timeLimitMinutes = Number(timeLimitMinutes) || 60;
+
+      const updated = await storage.updateSomaQuiz(quizId, updates);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to update quiz" });
+    }
+  });
+
+  // Add questions to a quiz
+  app.post("/api/tutor/quizzes/:quizId/questions", requireTutor, async (req, res) => {
+    const traceId = newTraceId();
+    try {
+      const quizId = parseInt(String(req.params.quizId));
+      const quiz = await storage.getSomaQuiz(quizId);
+      if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+
+      const { questions } = req.body;
+      if (!Array.isArray(questions) || questions.length === 0) {
+        return res.status(400).json({ message: "questions array required" });
+      }
+      traceLog("route.addQuestions.entry", {
+        route: "/api/tutor/quizzes/:quizId/questions",
+        quizId,
+        quizSyllabus: quiz.syllabus,
+        questionsIn: questions.length,
+        clientSentTargetMisconceptionIds: questions.filter((q: any) => Array.isArray(q?.targetMisconceptionIds) && q.targetMisconceptionIds.length > 0).length,
+      }, traceId);
+      for (const q of questions) {
+        if (!q.prompt_text && !q.stem) {
+          return res.status(400).json({ message: "Each question must have a prompt_text" });
+        }
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
+          return res.status(400).json({ message: "Each question must have exactly 4 options" });
+        }
+      }
+
+      // Look up approved examiner-misconception seeds for this quiz's
+      // scope so the questions we're about to write carry the FK link.
+      // Without this, the /questions route silently produces unseeded
+      // rows even after the storage layer was fixed to persist the
+      // column — same root cause as the publish path's missing FK
+      // pass-through. Use the quiz row's parsed syllabus as the scope
+      // since this route doesn't receive selectedSubtopicIds.
+      const { board, syllabusCode } = parseBoardAndSyllabusCode(quiz.syllabus ?? "");
+      const examinerSeeds = await listApprovedSeeds({ board, syllabusCode });
+      const seedIds = examinerSeeds.map((s) => s.id);
+      const targetMisconceptionIds = seedIds.length > 0 ? seedIds : null;
+      traceLog("route.addQuestions.seedsLoaded", {
+        quizId,
+        parsedBoard: board,
+        parsedSyllabusCode: syllabusCode,
+        seedCount: examinerSeeds.length,
+        sampleSeedIds: seedIds.slice(0, 5),
+      }, traceId);
+
+      const rawMapped = questions.map((q: any) => {
+        // Validate and repair graph_spec — reject broken specs, downgrade type if needed
+        let questionType = String(q.question_type || (q.graph_spec ? "graph" : "multiple_choice"));
+        let graphSpec: GraphQuestionSpec | null = null;
+        if (q.graph_spec) {
+          const repaired = repairGraphSpec(q.graph_spec);
+          if (repaired) {
+            graphSpec = repaired;
+            questionType = "graph";
+          } else {
+            // Cannot repair — downgrade to MCQ so it still saves as a usable question
+            questionType = "multiple_choice";
+          }
+        }
+        return {
+          stem: q.prompt_text || q.stem || "",
+          options: Array.isArray(q.options) ? [...q.options] : [],
+          correct_answer: String(q.correct_answer || q.correctAnswer || ""),
+          explanation: String(q.explanation || ""),
+          marks: Number(q.marks_worth || q.marks || 1) || 1,
+          question_type: questionType,
+          graph_spec: graphSpec,
+          topic_tag: q.topic_tag ? String(q.topic_tag) : null,
+          subtopic_tag: q.subtopic_tag ? String(q.subtopic_tag) : null,
+          difficulty_tag: q.difficulty_tag ? String(q.difficulty_tag) : null,
+        };
+      });
+      const balanced = balanceAnswerOptions(rawMapped);
+      const validatedResult = validateAndCorrectMcqAnswers(balanced);
+      const validated = validatedResult.questions;
+      if (validatedResult.warnings.length > 0) {
+        const critical = validatedResult.warnings.filter((w) => !w.autoFixed);
+        console.warn(
+          `[ADD_QUESTIONS] quizId=${quizId} validator emitted ${validatedResult.warnings.length} warning(s)` +
+            (critical.length > 0 ? ` (${critical.length} CRITICAL)` : ""),
+          validatedResult.warnings.map((w) => `Q${w.questionIndex} ${w.field}: ${w.issue}`),
+        );
+      }
+      const mapped = validated.map((q, index) => ({
+        quizId,
+        stem: q.stem,
+        options: q.options,
+        correctAnswer: q.correct_answer,
+        explanation: q.explanation,
+        marks: q.marks,
+        questionType: rawMapped[index].question_type || "multiple_choice",
+        graphSpec: rawMapped[index].graph_spec,
+        topicTag: rawMapped[index].topic_tag,
+        subtopicTag: rawMapped[index].subtopic_tag,
+        difficultyTag: rawMapped[index].difficulty_tag,
+        // Seed every newly-added question with the approved-misconception
+        // ids for this quiz's scope. Without this, this route writes
+        // unseeded questions to soma_questions even though the storage
+        // layer is correctly persisting the column when the caller
+        // supplies it. This was the missing fourth piece of the
+        // examiner-loop fix — see EXAMINER_LOOP_BRIEFING.md.
+        targetMisconceptionIds,
+      }));
+      traceLog("route.addQuestions.beforeCreate", {
+        quizId,
+        mappedCount: mapped.length,
+        rowsWithSeeds: countWithField(mapped as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
+      const saved = await storage.createSomaQuestions(mapped);
+      traceLog("route.addQuestions.afterCreate", {
+        quizId,
+        savedCount: saved.length,
+        savedRowsWithSeeds: countWithField(saved as unknown as Record<string, unknown>[], "targetMisconceptionIds"),
+      }, traceId);
+      res.json(saved);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to add questions" });
+    }
+  });
 
   // Manual question add/delete endpoints now live in the autoloaded questionManagement module.
 
@@ -5503,7 +5968,11 @@ ${JSON.stringify({
         : null;
       // Closed-set scope gate (see tutor-generate route): off-syllabus drift →
       // needs_review. Empty inventory = syllabus not catalogued = no-op.
-      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
+      const allowedTopics = narrowInventoryToSelection(
+        await listAllowedTopicsForSyllabusCode(syllabusCode),
+        selectedTopicIds,
+        selectedSubtopicIds,
+      );
       traceLog("route.somaGenerate.beforeCreateSomaQuestions", {
         quizId: quiz.id,
         questionCount: result.questions.length,
@@ -5673,25 +6142,17 @@ ${JSON.stringify({
       // Closed-set scope gate: classify each question's topic/subtopic tag
       // against the catalogue so off-syllabus drift is caught post-generation
       // (empty inventory = syllabus not catalogued = no-op).
-      const allowedTopics = await listAllowedTopicsForSyllabusCode(syllabusCode);
+      const allowedTopics = narrowInventoryToSelection(
+        await listAllowedTopicsForSyllabusCode(syllabusCode),
+        selectedTopicIds,
+        selectedSubtopicIds,
+      );
       traceLog("route.tutorGenerate.beforeCreateBundle", {
         questionCount: result.questions.length,
         targetMisconceptionIds,
         targetMisconceptionIdsType: targetMisconceptionIds === null ? "null" : `array[${targetMisconceptionIds.length}]`,
       }, traceId);
-      const bundle = await storage.createSomaQuizBundle({
-        quiz: {
-          title: quizTitle,
-          topic,
-          subject,
-          syllabus,
-          level,
-          curriculumContext: curriculumContext || null,
-          authorId: tutorId,
-          status: "published",
-          isArchived: false,
-        },
-        questions: balanceAnswerOptions(result.questions).map((q, i) => {
+      const bundleQuestions = balanceAnswerOptions(result.questions).map((q, i) => {
           const quality = validateQuestionQuality(
             { stem: q.stem, options: q.options, correct_answer: q.correct_answer, explanation: q.explanation, difficulty_tag: q.difficulty_tag },
             { subject, syllabus, level, topic, subtopic },
@@ -5725,8 +6186,27 @@ ${JSON.stringify({
             qualityWarnings: [...quality.warnings, ...resolved.reasons],
           },
         };
-        }),
-        assignedStudentIds: validAssignedStudentIds,
+        });
+      // If nothing is servable (e.g. every question was held for review or
+      // blocked), do NOT assign students — they would open a published quiz
+      // with zero questions ("No questions found"). The quiz is still created
+      // so the tutor can review/fix it in the assessment bank first.
+      const generatedServable = bundleQuestions.filter((x) => (x.reviewStatus ?? "approved") === "approved").length;
+      const effectiveAssignedStudentIds = generatedServable > 0 ? validAssignedStudentIds : [];
+      const bundle = await storage.createSomaQuizBundle({
+        quiz: {
+          title: quizTitle,
+          topic,
+          subject,
+          syllabus,
+          level,
+          curriculumContext: curriculumContext || null,
+          authorId: tutorId,
+          status: "published",
+          isArchived: false,
+        },
+        questions: bundleQuestions,
+        assignedStudentIds: effectiveAssignedStudentIds,
       });
       traceLog("route.tutorGenerate.afterCreateBundle", {
         quizId: bundle.quiz.id,
@@ -5738,7 +6218,11 @@ ${JSON.stringify({
         quiz: bundle.quiz,
         questions: bundle.questions,
         assignments: bundle.assignments.length,
-        assignedStudentIds: validAssignedStudentIds,
+        assignedStudentIds: effectiveAssignedStudentIds,
+        heldForReview: generatedServable === 0 && validAssignedStudentIds.length > 0,
+        message: generatedServable === 0 && validAssignedStudentIds.length > 0
+          ? "No question passed review, so this quiz was saved for your review but not assigned to students yet. Approve at least one question, then assign it."
+          : undefined,
         warnings: result.warnings,
         reviewSummary: summarizeReviewStatuses(bundle.questions),
         pipeline: {
