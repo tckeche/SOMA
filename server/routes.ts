@@ -4594,6 +4594,31 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
             )
               ? (item.purpose as "struggling_areas" | "stretch_strengths" | "revision")
               : "general";
+            // Feed the maker FK-linked approved examiner seeds (parity with the
+            // /soma/generate and tutor-generate paths). Without this the prose
+            // in supportingDocText carries no ids, so generated.seedMisconceptionIds
+            // stays empty and every targetMisconceptionIds resolves to null —
+            // meaning these remediation quizzes could never produce answer
+            // diagnoses or feed the misconception heatmap/revision plan. Prefer
+            // the topic-scoped rows we already loaded; fall back to the
+            // syllabus-code seed set when this topic has no catalogue rows.
+            let examinerSeeds: ExaminerSeed[] = topicMisconceptions.slice(0, 6).map((m: any) => ({
+              id: m.id,
+              topic: m.topic,
+              subtopic: m.subtopic ?? null,
+              misconception: m.misconception,
+              studentError: m.studentError,
+              correctApproach: m.correctApproach,
+              frequency: m.frequency,
+              sourceQuote: m.sourceQuote ?? null,
+              sourcePage: m.sourcePage ?? null,
+            }));
+            if (examinerSeeds.length === 0) {
+              examinerSeeds = await listApprovedSeeds({
+                board: cached.examBody,
+                syllabusCode: cached.syllabusCode,
+              });
+            }
             const generated = await generateAuditedQuiz({
               topic: item.topic,
               subject: item.subject,
@@ -4605,6 +4630,7 @@ Return JSON object with fields: narrative, weaknesses, improvements, focusAreas,
               purpose: purposeForPlanner,
               copilotPrompt: `Purpose: ${item.purpose}. Rationale: ${item.rationale}. Use syllabus code ${cached.syllabusCode}.`,
               supportingDocText: topicSyllabusContext + topicExaminerContext,
+              examinerSeeds,
             });
             if (generated.warnings.length > 0) {
               console.log(`[AI Publish] Quiz "${item.topic}" generated with ${generated.warnings.length} warning(s):`, generated.warnings.map((w) => `Q${w.questionIndex}/${w.field}: ${w.issue}`).join("; "));
