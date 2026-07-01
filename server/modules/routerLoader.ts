@@ -96,16 +96,33 @@ function validateNoDuplicates(modules: DomainModuleDefinition[]): void {
 export async function discoverDomainModules(options: { rootDir?: string; useStaticFallback?: boolean } = {}): Promise<DomainModuleDefinition[]> {
   const root = path.resolve(options.rootDir ?? moduleRoot());
   const useStaticFallback = options.useStaticFallback ?? true;
-  const files = await discoverModuleFiles(root);
+
+  // In the bundled production build (`NODE_ENV=production node dist/index.cjs`)
+  // the app is a single compiled CommonJS file, but the repo's
+  // server/modules/*/index.ts sources can still sit under process.cwd() (e.g.
+  // Replit deployments copy the source tree alongside dist). Plain Node cannot
+  // import those TypeScript sources, so filesystem discovery would abort route
+  // registration with ERR_MODULE_NOT_FOUND / ERR_UNKNOWN_FILE_EXTENSION and the
+  // server would never listen. Every module is compiled into the bundle via the
+  // static manifest, so prefer it in production and skip filesystem discovery
+  // entirely. Dev (tsx) and tests can load .ts, so they keep live discovery.
+  // An explicit rootDir (used by the loader's own tests) always uses discovery.
+  const preferStaticManifest =
+    useStaticFallback && options.rootDir === undefined && process.env.NODE_ENV === "production";
 
   let modules: DomainModuleDefinition[] = [];
-  if (files.length > 0) {
-    modules = await Promise.all(files.map(async (file) => {
-      const imported = await import(pathToFileURL(file).href);
-      return validateModuleDefinition(imported[MODULE_EXPORT_NAME], file);
-    }));
-  } else if (useStaticFallback) {
+  if (preferStaticManifest) {
     modules = staticDomainModules.map((mod, index) => validateModuleDefinition(mod, `staticManifest[${index}]`));
+  } else {
+    const files = await discoverModuleFiles(root);
+    if (files.length > 0) {
+      modules = await Promise.all(files.map(async (file) => {
+        const imported = await import(pathToFileURL(file).href);
+        return validateModuleDefinition(imported[MODULE_EXPORT_NAME], file);
+      }));
+    } else if (useStaticFallback) {
+      modules = staticDomainModules.map((mod, index) => validateModuleDefinition(mod, `staticManifest[${index}]`));
+    }
   }
 
   const enabledModules = modules.filter((mod) => mod.enabled !== false).sort((a, b) => a.name.localeCompare(b.name));

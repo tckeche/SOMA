@@ -364,3 +364,28 @@ post-fix code and returned structured verdicts. **All five: HELD, zero gaps.**
 
 No regressions or security gaps were found by the independent pass.
 
+---
+
+## Follow-up (post-merge) — P1 production-startup fix
+
+A Codex PR review on #142 flagged a **P1**: wiring `registerDomainModules()`
+made `discoverDomainModules()` scan `process.cwd()/server/modules` at runtime.
+In the bundled production build (`NODE_ENV=production node dist/index.cjs`) with
+the repo source present (e.g. Replit copies the source tree alongside `dist`),
+the loader found the TypeScript module indexes and tried to dynamically import
+them — which plain Node cannot do — instead of the compiled-in `staticManifest`,
+aborting route registration with `ERR_MODULE_NOT_FOUND` so the server never
+listened. (CI never caught this: it runs `build` + `vitest`, never
+`node dist/index.cjs`.)
+
+**Reproduced** under plain Node against the esbuild-bundled loader:
+`CRASH: ERR_MODULE_NOT_FOUND - Cannot find module '.../authAccount/routes'`.
+
+**Fix** (`server/modules/routerLoader.ts`): when `NODE_ENV==="production"` and no
+explicit `rootDir` is given, `discoverDomainModules()` uses the static manifest
+and skips filesystem discovery entirely. Dev (tsx) and tests (vitest) still load
+`.ts` via live discovery; the loader's own tests pass an explicit `rootDir` and
+keep discovery. Post-fix, the bundled loader returns all 29 manifest modules
+with no filesystem access. Pinned by `tests/routerLoaderProduction.test.ts`
+(mocks `readdir` to throw → production must not touch the filesystem).
+
